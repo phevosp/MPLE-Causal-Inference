@@ -1,0 +1,14 @@
+[workspace]
+authors = ["Phevos Paschalidis <phevos.paschalidis@gmail.com>"]
+channels = ["conda-forge"]
+name = "MPLE-Causal-Inference"
+platforms = ["win-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+numpy = ">=2.4.2,<3"
+networkx = ">=3.6.1,<4"
+omegaconf = ">=2.3.0,<3"
+python = ">=3.14.3,<3.15"
