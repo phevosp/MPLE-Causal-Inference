@@ -1,0 +1,21 @@
+2026-03-16 14:50:23 | INFO | Loading data...
+2026-03-16 14:50:24 | INFO | Loaded gamma_matrix with shape=(1000, 1000)
+2026-03-16 14:50:24 | INFO | Running MPLE on x with shape=(100, 1000)
+2026-03-16 14:50:24 | INFO | Eval 0  |  Loss: 0.689468
+2026-03-16 14:50:24 | INFO |   alpha: +0.0126,  beta: -0.0132,  xi: +0.0640,  eta: +0.0105,  zeta: -0.0536,  psi: +0.0362
+2026-03-16 14:50:24 | INFO | Done fitting.
+2026-03-16 14:50:24 | INFO | Final loss: 0.640392
+2026-03-16 14:50:24 | INFO | Estimated vs True parameters:
+2026-03-16 14:50:24 | INFO |   alpha: 0.3357 (True: 0.3500)
+2026-03-16 14:50:24 | INFO |   alpha SE: 0.000204
+2026-03-16 14:50:24 | INFO |   beta: 0.2319 (True: 0.2500)
+2026-03-16 14:50:24 | INFO |   beta SE: 0.000329
+2026-03-16 14:50:24 | INFO |   xi: 0.0250 (True: 0.0500)
+2026-03-16 14:50:24 | INFO |   xi SE: 0.000623
+2026-03-16 14:50:24 | INFO |   eta: 0.0186 (True: 0.0100)
+2026-03-16 14:50:24 | INFO |   eta SE: 0.000074
+2026-03-16 14:50:24 | INFO |   zeta: -0.0391 (True: -0.0300)
+2026-03-16 14:50:24 | INFO |   zeta SE: 0.000083
+2026-03-16 14:50:24 | INFO |   psi: 0.1029 (True: 0.1000)
+2026-03-16 14:50:24 | INFO |   psi SE: 0.000008
+2026-03-16 14:50:24 | INFO | Log saved to experiments\synthetic_data_20260316_144507\mple.log
