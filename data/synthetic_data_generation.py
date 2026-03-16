@@ -152,18 +152,18 @@ def generate_ising_model(config, gamma_matrix, x_0, rng):
                 network_term = gamma_matrix[i] @ x[t, :]
                 h_x = (
                     config.estimation_params.alpha
-                    + config.estimation_params.eta * x[t - 1, i] if t > 0 else x_0[i]
+                    + config.estimation_params.eta *(x[t - 1, i] if t > 0 else x_0[i])
                     + config.estimation_params.beta * z[t, i]
                     + config.estimation_params.xi * network_term
-                    + config.estimation_params.zeta * z[t + 1, i] if t < config.global_params.T - 1 else 0
-                    + config.estimation_params.eta * x[t + 1, i] if t < config.global_params.T - 1 else 0
+                    + config.estimation_params.zeta * (z[t + 1, i] if t < config.global_params.T - 1 else 0)
+                    + config.estimation_params.eta * (x[t + 1, i] if t < config.global_params.T - 1 else 0)
                 )
                 x[t, i] = spin_sample_from_field(h_x, rng)
                 h_z = (
-                    config.estimation_params.psi * z[t - 1, i] if t > 0 else 0
-                    + config.estimation_params.zeta * x[t - 1, i] if t > 0 else x_0[i]
+                    config.estimation_params.psi * (z[t - 1, i] if t > 0 else 0)
+                    + config.estimation_params.zeta * (x[t - 1, i] if t > 0 else x_0[i])
                     + config.estimation_params.beta * x[t, i]
-                    + config.estimation_params.psi * z[t + 1, i] if t < config.global_params.T - 1 else 0
+                    + config.estimation_params.psi * (z[t + 1, i] if t < config.global_params.T - 1 else 0)
                 )
                 z[t, i] = spin_sample_from_field(h_z, rng)
                 # fmt: on

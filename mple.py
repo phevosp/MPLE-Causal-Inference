@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import networkx as nx
 from omegaconf import OmegaConf
+from scipy.optimize import minimize
 
 
 def setup_logger(log_file):
@@ -32,17 +33,17 @@ def setup_logger(log_file):
     return logger
 
 
-def pseudo_nll(x, z, params, x_0, s, gamma_matrix):
-    """Compute Ising negative log-pseudolikelihood averaged over samples."""
-    # Params
-    alpha, beta, xi, eta, zeta, psi = (
-        params["alpha"],
-        params["beta"],
-        params["xi"],
-        params["eta"],
-        params["zeta"],
-        params["psi"],
-    )
+# Canonical parameter ordering used to pack/unpack the flat vector for scipy.
+_PARAM_KEYS = ("alpha", "beta", "xi", "eta", "zeta", "psi")
+
+
+def pseudo_nll(x, z, theta, x_0, s, gamma_matrix):
+    """Compute Ising negative log-pseudolikelihood averaged over samples.
+
+    Args:
+        theta (np.ndarray): parameter vector ordered by _PARAM_KEYS.
+    """
+    alpha, beta, xi, eta, zeta, psi = theta
     prev_x = np.vstack([x_0, x[:-1, :]])
     prev_z = np.vstack([np.zeros_like(x_0), z[:-1, :]])
     future_x = np.vstack([x[1:, :], np.zeros_like(x_0)])
@@ -68,23 +69,20 @@ def pseudo_nll(x, z, params, x_0, s, gamma_matrix):
 
     total_loss = (loss_x.sum() + loss_z_masked.sum()) / total_size
 
-    # Compute gradients for each param
-    # Gradients from x-sites
-    g_alpha = res_x.sum()
-    g_beta = (res_x * z).sum() + (res_z_masked * x).sum()
-    g_xi = (res_x * m).sum()
-    g_eta = (res_x * (prev_x + future_x)).sum()
-    g_zeta = (res_x * future_z).sum() + (res_z_masked * prev_x).sum()
-    g_psi = (res_z_masked * (prev_z + future_z)).sum()
-
-    grad = {
-        "alpha": g_alpha / total_size,
-        "beta": g_beta / total_size,
-        "xi": g_xi / total_size,
-        "eta": g_eta / total_size,
-        "zeta": g_zeta / total_size,
-        "psi": g_psi / total_size,
-    }
+    # Gradient vector ordered by _PARAM_KEYS: (alpha, beta, xi, eta, zeta, psi)
+    grad = (
+        np.array(
+            [
+                res_x.sum(),  # alpha
+                (res_x * z).sum() + (res_z_masked * x).sum(),  # beta
+                (res_x * m).sum(),  # xi
+                (res_x * (prev_x + future_x)).sum(),  # eta
+                (res_x * future_z).sum() + (res_z_masked * prev_x).sum(),  # zeta
+                (res_z_masked * (prev_z + future_z)).sum(),  # psi
+            ]
+        )
+        / total_size
+    )
     return total_loss, grad
 
 
@@ -94,59 +92,64 @@ def mple_gradient_descent(
     x_0,
     gamma_matrix,
     s,
-    learning_rate=0.05,
     steps=2000,
     seed=0,
     verbose_every=100,
+    tol=1e-9,
     logger=None,
 ):
-    """Fit Ising parameters (h, J) by MPLE using gradient descent.
+    """Fit Ising parameters by MPLE using L-BFGS-B (scipy).
 
     Args:
-        x (np.ndarray): shape (n_samples, n_nodes), outcomes in {-1, +1}.
-        z (np.ndarray): shape (n_samples, n_nodes), interventions in {-1, +1}.
-        x_0 (np.ndarray): shape (n_nodes,), initial state at t=0.
-        gamma_matrix (np.ndarray): the underlying network adjacency matrix on the outcomes.
-        learning_rate (float): gradient descent step size.
-        steps (int): number of optimization steps.
-        seed (int): RNG seed for initialization.
-        verbose_every (int): print objective every this many steps.
+        x (np.ndarray): shape (T, N), outcomes in {-1, +1}.
+        z (np.ndarray): shape (T, N), interventions in {-1, +1}.
+        x_0 (np.ndarray): shape (N,), initial state at t=0.
+        gamma_matrix (np.ndarray): normalised network adjacency matrix.
+        steps (int): maximum number of L-BFGS-B iterations.
+        seed (int): RNG seed for initialisation.
+        verbose_every (int): log objective every this many function evaluations.
+        tol (float): convergence tolerance passed to scipy.
 
     Returns:
-        tuple[np.ndarray, np.ndarray, list[float]]: (h, J, loss_history)
+        tuple[dict, list[float]]: (params, loss_history)
     """
     if x.ndim != 2:
-        raise ValueError("x must be a 2D array with shape (n_samples, n_nodes).")
-
+        raise ValueError("x must be a 2D array with shape (T, N).")
     T, N = x.shape
     assert z.shape == (T, N), "z must have the same shape as x."
-    rng = np.random.default_rng(seed)
 
-    params_hat = {
-        "alpha": rng.uniform(-1, 1),
-        "beta": rng.uniform(-1, 1),
-        "xi": rng.uniform(-1, 1),
-        "eta": rng.uniform(-1, 1),
-        "zeta": rng.uniform(-1, 1),
-        "psi": rng.uniform(-1, 1),
-    }
+    rng = np.random.default_rng(seed)
+    # Small Gaussian init: keeps tanh in the linear regime at the start.
+    x0 = rng.normal(0, 0.1, size=len(_PARAM_KEYS))
 
     history = []
-    for step in range(steps):
-        nll, gradient = pseudo_nll(x, z, params_hat, x_0, s, gamma_matrix)
-        history.append(nll)
+    eval_count = [0]
 
-        if verbose_every and step % verbose_every == 0:
+    def objective(theta):
+        loss, grad = pseudo_nll(x, z, theta, x_0, s, gamma_matrix)
+        history.append(loss)
+        if verbose_every and eval_count[0] % verbose_every == 0:
+            params_str = "  " + ",  ".join(
+                f"{k}: {v:+.4f}" for k, v in zip(_PARAM_KEYS, theta)
+            )
             if logger is not None:
-                logger.info("Step %s/%s, Loss: %.6f", step, steps, nll)
+                logger.info("Eval %s  |  Loss: %.6f", eval_count[0], loss)
+                logger.info(params_str)
             else:
-                print(f"Step {step}/{steps}, Loss: {nll:.6f}")
+                print(f"Eval {eval_count[0]}  |  Loss: {loss:.6f}")
+                print(params_str)
+        eval_count[0] += 1
+        return loss, grad
 
-        # Update params_hat with gradient descent
-        for param in params_hat:
-            params_hat[param] -= learning_rate * gradient[param]
+    result = minimize(
+        objective,
+        x0,
+        method="L-BFGS-B",
+        jac=True,
+        options={"maxiter": steps, "ftol": tol, "gtol": tol},
+    )
 
-    return params_hat, history
+    return result.x, history
 
 
 if __name__ == "__main__":
@@ -158,9 +161,8 @@ if __name__ == "__main__":
         required=True,
         type=str,
     )
-    parser.add_argument("--steps", type=int, default=1000)
-    parser.add_argument("--learning_rate", type=float, default=0.1)
-    parser.add_argument("--l2", type=float, default=1e-4)
+    parser.add_argument("--steps", type=int, default=2000)
+    parser.add_argument("--tol", type=float, default=1e-9)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--log_file",
@@ -193,25 +195,27 @@ if __name__ == "__main__":
         x_0=x_0,
         s=config.global_params.s,
         gamma_matrix=gamma_matrix,
-        learning_rate=args.learning_rate,
         steps=args.steps,
+        tol=args.tol,
         seed=args.seed,
         logger=logger,
     )
-    params_true = {
-        "alpha": config.estimation_params.alpha,
-        "beta": config.estimation_params.beta,
-        "xi": config.estimation_params.xi,
-        "eta": config.estimation_params.eta,
-        "zeta": config.estimation_params.zeta,
-        "psi": config.estimation_params.psi,
-    }
+    params_true = np.array(
+        [
+            config.estimation_params.alpha,
+            config.estimation_params.beta,
+            config.estimation_params.xi,
+            config.estimation_params.eta,
+            config.estimation_params.zeta,
+            config.estimation_params.psi,
+        ]
+    )
 
     logger.info("Done fitting.")
     logger.info("Final loss: %.6f", loss_history[-1])
     logger.info("Estimated vs True parameters:")
-    for param, value in params_hat.items():
-        logger.info("  %s: %.4f (True: %.4f)", param, value, params_true[param])
-        logger.info("  %s MSE: %.6f", param, np.mean((value - params_true[param]) ** 2))
+    for key, est, true in zip(_PARAM_KEYS, params_hat, params_true):
+        logger.info("  %s: %.4f (True: %.4f)", key, est, true)
+        logger.info("  %s MSE: %.6f", key, (est - true) ** 2)
 
     logger.info("Log saved to %s", log_file)
