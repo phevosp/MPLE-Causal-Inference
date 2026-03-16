@@ -120,7 +120,7 @@ def mple_gradient_descent(
 
     rng = np.random.default_rng(seed)
     # Small Gaussian init: keeps tanh in the linear regime at the start.
-    x0 = rng.normal(0, 0.1, size=len(_PARAM_KEYS))
+    theta_init = rng.normal(0, 0.1, size=len(_PARAM_KEYS))
 
     history = []
     eval_count = [0]
@@ -143,7 +143,7 @@ def mple_gradient_descent(
 
     result = minimize(
         objective,
-        x0,
+        theta_init,
         method="L-BFGS-B",
         jac=True,
         options={"maxiter": steps, "ftol": tol, "gtol": tol},
