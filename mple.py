@@ -216,6 +216,6 @@ if __name__ == "__main__":
     logger.info("Estimated vs True parameters:")
     for key, est, true in zip(_PARAM_KEYS, params_hat, params_true):
         logger.info("  %s: %.4f (True: %.4f)", key, est, true)
-        logger.info("  %s MSE: %.6f", key, (est - true) ** 2)
+        logger.info("  %s SE: %.6f", key, (est - true) ** 2)
 
     logger.info("Log saved to %s", log_file)

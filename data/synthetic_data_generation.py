@@ -34,6 +34,7 @@ def read_and_realize_config(config_name):
     # Generate Gamma
     # TODO: add lattice graph
     # TODO: add weights to edges & figure out specification for config
+    print("Generating graph...")
     if config.global_params.gamma_matrix_generator == "erdos_renyi":
         gamma_graph = nx.erdos_renyi_graph(
             config.global_params.N,
@@ -48,12 +49,13 @@ def read_and_realize_config(config_name):
         raise ValueError(
             f"Invalid gamma matrix generator: {config.global_params.gamma_matrix_generator}"
         )
-    # Convert to adjacency matrix
+    # Convert to adjacency matrix and normalize
+    print("Converting to adjacency matrix and normalizing...")
     node_order = list(gamma_graph.nodes())
     gamma_matrix = nx.to_numpy_array(gamma_graph, nodelist=node_order)
     gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2  # Ensure symmetry
     np.fill_diagonal(gamma_matrix, 0)  # Ensure no self-loops
-    gamma_matrix = gamma_matrix / np.linalg.norm(gamma_matrix)  # Normalize
+    gamma_matrix = gamma_matrix / np.linalg.norm(gamma_matrix, ord=np.inf)  # Normalize
 
     # Generate x_0
     if config.global_params.x_0_generator == "bernoulli":
@@ -99,16 +101,21 @@ def sample_x_t(x_prev, z_curr, config, gamma_matrix, rng):
         np.array: sampled x^{(t)}
     """
     x_t = x_prev.copy()
+    gamma_x_t = gamma_matrix @ x_t
     for _ in range(config.generation_params.gibbs_sweeps):
-        for i in range(config.global_params.N):
-            network_term = gamma_matrix[i] @ x_t
+        node_order = rng.permutation(config.global_params.N)
+        for i in node_order:
+            old_x_i = x_t[i]
             h_x = (
                 config.estimation_params.alpha
                 + config.estimation_params.beta * z_curr[i]
                 + config.estimation_params.eta * x_prev[i]
-                + config.estimation_params.xi * network_term
+                + config.estimation_params.xi * gamma_x_t[i]
             )
             x_t[i] = spin_sample_from_field(h_x, rng)
+            # Update gamma_x_t for next iteration
+            gamma_x_t += (x_t[i] - old_x_i) * gamma_matrix[:, i]
+
     return x_t
 
 
@@ -143,27 +150,36 @@ def generate_ising_model(config, gamma_matrix, x_0, rng):
     # Initialize
     x = rng.choice([-1, 1], size=(config.global_params.T, config.global_params.N))
     z = rng.choice([-1, 1], size=(config.global_params.T, config.global_params.N))
+    z[: config.global_params.s, :] = (
+        -1
+    )  # Set first s time steps of z to -1 (no intervention)
 
+    gamma_x = x @ gamma_matrix.T
     for g in range(config.generation_params.gibbs_sweeps):
         print(f"Performing Gibbs sweep {g}...")
-        for t in range(config.global_params.T):
-            for i in range(config.global_params.N):
+        t_order = rng.permutation(config.global_params.T)
+        for t in t_order:
+            node_order = rng.permutation(config.global_params.N)
+            for i in node_order:
+                old_x_t_i = x[t, i]
                 # fmt: off
-                network_term = gamma_matrix[i] @ x[t, :]
                 h_x = (
                     config.estimation_params.alpha
                     + config.estimation_params.eta *(x[t - 1, i] if t > 0 else x_0[i])
                     + config.estimation_params.beta * z[t, i]
-                    + config.estimation_params.xi * network_term
+                    + config.estimation_params.xi * gamma_x[t, i]
                     + config.estimation_params.zeta * (z[t + 1, i] if t < config.global_params.T - 1 else 0)
                     + config.estimation_params.eta * (x[t + 1, i] if t < config.global_params.T - 1 else 0)
                 )
                 x[t, i] = spin_sample_from_field(h_x, rng)
+                gamma_x[t, :] += (x[t, i] - old_x_t_i) * gamma_matrix[:, i]
+            if t >= config.global_params.s:
                 h_z = (
                     config.estimation_params.psi * (z[t - 1, i] if t > 0 else 0)
                     + config.estimation_params.zeta * (x[t - 1, i] if t > 0 else x_0[i])
                     + config.estimation_params.beta * x[t, i]
-                    + config.estimation_params.psi * (z[t + 1, i] if t < config.global_params.T - 1 else 0)
+                    + config.estimation_params.psi
+                    * (z[t + 1, i] if t < config.global_params.T - 1 else 0)
                 )
                 z[t, i] = spin_sample_from_field(h_z, rng)
                 # fmt: on
@@ -209,3 +225,4 @@ if __name__ == "__main__":
     np.save(f"{data_folder}/x_0.npy", x_0)
 
     print("Done!")
+    print("Frob. Norm of Gamma Matrix:", np.linalg.norm(gamma_matrix, ord="fro"))
