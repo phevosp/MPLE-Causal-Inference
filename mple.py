@@ -1,7 +1,35 @@
 import argparse
+import logging
+from pathlib import Path
 import numpy as np
 import networkx as nx
 from omegaconf import OmegaConf
+
+
+def setup_logger(log_file):
+    """Configure a logger that writes to both console and file."""
+    logger = logging.getLogger("mple")
+    logger.setLevel(logging.INFO)
+
+    # Avoid duplicate handlers if setup is called multiple times.
+    if logger.handlers:
+        return logger
+
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(message)s", "%Y-%m-%d %H:%M:%S"
+    )
+
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    return logger
 
 
 def pseudo_nll(x, z, params, x_0, s, gamma_matrix):
@@ -70,6 +98,7 @@ def mple_gradient_descent(
     steps=2000,
     seed=0,
     verbose_every=100,
+    logger=None,
 ):
     """Fit Ising parameters (h, J) by MPLE using gradient descent.
 
@@ -108,7 +137,10 @@ def mple_gradient_descent(
         history.append(nll)
 
         if verbose_every and step % verbose_every == 0:
-            print(f"Step {step}/{steps}, Loss: {nll:.6f}")
+            if logger is not None:
+                logger.info("Step %s/%s, Loss: %.6f", step, steps, nll)
+            else:
+                print(f"Step {step}/{steps}, Loss: {nll:.6f}")
 
         # Update params_hat with gradient descent
         for param in params_hat:
@@ -123,28 +155,38 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data_folder",
+        required=True,
         type=str,
-        default="data/synthetic_data_20260313_135938",
     )
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--learning_rate", type=float, default=0.1)
     parser.add_argument("--l2", type=float, default=1e-4)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--log_file",
+        type=str,
+        default=None,
+        help="Path to log file. Defaults to <data_folder>/mple.log",
+    )
     args = parser.parse_args()
 
-    print("Loading data...")
+    log_file = args.log_file or str(Path(args.data_folder) / "mple.log")
+    Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+    logger = setup_logger(log_file)
+
+    logger.info("Loading data...")
     # Params
     config = OmegaConf.load(f"{args.data_folder}/realized_config.yaml")
     gamma_matrix = np.load(f"{args.data_folder}/gamma_matrix.npy")
     x_0 = np.load(f"{args.data_folder}/x_0.npy")
-    print(gamma_matrix)
+    logger.info("Loaded gamma_matrix with shape=%s", gamma_matrix.shape)
 
     # data
     data = np.load(f"{args.data_folder}/synthetic_data.npz")
     x = data["x"]
     z = data["z"]
 
-    print(f"Running MPLE on x with shape={x.shape}")
+    logger.info("Running MPLE on x with shape=%s", x.shape)
     params_hat, loss_history = mple_gradient_descent(
         x,
         z,
@@ -154,6 +196,7 @@ if __name__ == "__main__":
         learning_rate=args.learning_rate,
         steps=args.steps,
         seed=args.seed,
+        logger=logger,
     )
     params_true = {
         "alpha": config.estimation_params.alpha,
@@ -164,9 +207,11 @@ if __name__ == "__main__":
         "psi": config.estimation_params.psi,
     }
 
-    print("Done fitting.")
-    print(f"Final loss: {loss_history[-1]:.6f}")
-    print("Estimated vs True parameters:")
+    logger.info("Done fitting.")
+    logger.info("Final loss: %.6f", loss_history[-1])
+    logger.info("Estimated vs True parameters:")
     for param, value in params_hat.items():
-        print(f"  {param}: {value:.4f} (True: {params_true[param]:.4f})")
-        print(f"  {param} MSE: {np.mean((value - params_true[param])**2):.6f}")
+        logger.info("  %s: %.4f (True: %.4f)", param, value, params_true[param])
+        logger.info("  %s MSE: %.6f", param, np.mean((value - params_true[param]) ** 2))
+
+    logger.info("Log saved to %s", log_file)

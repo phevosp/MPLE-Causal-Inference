@@ -1,12 +1,11 @@
-generation_process: "conditional" # options: "conditional", "Ising"
 global_params:
   N: 1000 # size of the network
   T: 100 # number of time steps
-  s: 10 # number of pre-intervention time steps
+  s: 0 # number of pre-intervention time steps
   gamma_matrix_generator: "erdos_renyi" # method for generating the network. Options: "erdos_renyi", "complete", "empty"
   x_0_generator: "bernoulli" # method for generating the initial state. Options: "bernoulli", "fixed"
   gamma_matrix_params:
-    p: 0.1 # probability of edge creation for "erdos-renyi"
+    p: 0.01 # probability of edge creation for "erdos-renyi"
   x_0_params:
     p: 0.5 # probability of being in state 1 for "bernoulli"
     fixed_val: 1   # options 1 or -1 for "fixed"
@@ -21,4 +20,5 @@ estimation_params:
 
 generation_params:
   seed: 42 # random seed for reproducibility
-  gibbs_sweeps: 25 # number of Gibbs sweeps for sampling x^{(t)}
+  process: "Ising" # options: "conditional", "Ising"
+  gibbs_sweeps: 100 # number of Gibbs sweeps for sampling x^{(t)} in conditional model or sampling from the Ising process

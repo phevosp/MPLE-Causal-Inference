@@ -118,7 +118,9 @@ def generate_conditional_model(config, gamma_matrix, x_0, rng):
     z = np.zeros((config.global_params.T, config.global_params.N))
     # Sample initial z and x
     z[0, :] = (
-        sample_z_t(x_0, -np.ones_like(x_0), config, rng)
+        sample_z_t(
+            x_0, np.zeros_like(x_0), config, rng
+        )  # We assume z^{(0)} is all zeros
         if config.global_params.s == 0
         else -np.ones_like(x_0)
     )
@@ -137,8 +139,36 @@ def generate_conditional_model(config, gamma_matrix, x_0, rng):
     return x, z
 
 
-def generate_ising_model(config, gamma_matrix, x_0):
-    pass
+def generate_ising_model(config, gamma_matrix, x_0, rng):
+    # Initialize
+    x = rng.choice([-1, 1], size=(config.global_params.T, config.global_params.N))
+    z = rng.choice([-1, 1], size=(config.global_params.T, config.global_params.N))
+
+    for g in range(config.generation_params.gibbs_sweeps):
+        print(f"Performing Gibbs sweep {g}...")
+        for t in range(config.global_params.T):
+            for i in range(config.global_params.N):
+                # fmt: off
+                network_term = gamma_matrix[i] @ x[t, :]
+                h_x = (
+                    config.estimation_params.alpha
+                    + config.estimation_params.eta * x[t - 1, i] if t > 0 else x_0[i]
+                    + config.estimation_params.beta * z[t, i]
+                    + config.estimation_params.xi * network_term
+                    + config.estimation_params.zeta * z[t + 1, i] if t < config.global_params.T - 1 else 0
+                    + config.estimation_params.eta * x[t + 1, i] if t < config.global_params.T - 1 else 0
+                )
+                x[t, i] = spin_sample_from_field(h_x, rng)
+                h_z = (
+                    config.estimation_params.psi * z[t - 1, i] if t > 0 else 0
+                    + config.estimation_params.zeta * x[t - 1, i] if t > 0 else x_0[i]
+                    + config.estimation_params.beta * x[t, i]
+                    + config.estimation_params.psi * z[t + 1, i] if t < config.global_params.T - 1 else 0
+                )
+                z[t, i] = spin_sample_from_field(h_z, rng)
+                # fmt: on
+
+    return x, z
 
 
 if __name__ == "__main__":
@@ -154,21 +184,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("Starting synthetic data generation...")
-
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    data_folder = f"data/synthetic_data_{timestamp}"
+    data_folder = f"experiments/synthetic_data_{timestamp}"
 
     print("Reading and realizing config...")
     config, gamma_matrix, x_0, rng = read_and_realize_config(args.config_name)
 
-    if config.generation_process == "conditional":
+    if config.generation_params.process == "conditional":
         print("Generating data with conditional process...")
         x, z = generate_conditional_model(config, gamma_matrix, x_0, rng)
-    elif config.generation_process == "Ising":
+    elif config.generation_params.process == "Ising":
         print("Generating data with Ising process...")
-        # x, z = generate_ising_model(config, gamma_matrix, x_0)
+        x, z = generate_ising_model(config, gamma_matrix, x_0, rng)
     else:
-        raise ValueError(f"Invalid generation process: {config.generation_process}")
+        raise ValueError(
+            f"Invalid generation process: {config.generation_params.process}"
+        )
 
     os.makedirs(data_folder)
     print("Saving data, config, and network...")
