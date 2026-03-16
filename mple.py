@@ -161,7 +161,7 @@ if __name__ == "__main__":
         required=True,
         type=str,
     )
-    parser.add_argument("--steps", type=int, default=2000)
+    parser.add_argument("--steps", type=int, default=10000)
     parser.add_argument("--tol", type=float, default=1e-9)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
