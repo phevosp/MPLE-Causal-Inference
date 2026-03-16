@@ -6,6 +6,16 @@ from datetime import datetime
 import os
 
 
+def spin_sample_from_field(h, rng):
+    """
+    Sample spins in {-1, +1} from local field h.
+    P(+1) = sigmoid(2h).
+    Works for scalar or array h.
+    """
+    p = 1.0 / (1.0 + np.exp(-2.0 * h))
+    return 2.0 * (rng.random(np.shape(p)) < p).astype(float) - 1.0
+
+
 def read_and_realize_config(config_name):
     """Function to read and realize (by generating Gamma & x_0) config from relative path 'configs/config_name'
 
@@ -18,141 +28,153 @@ def read_and_realize_config(config_name):
     config = OmegaConf.load(f"data/configs/{config_name}")
 
     # Set seed, if specified
-    config.generation_params.seed = config.generation_params.get("seed", None)
-    if config.generation_params.seed is not None:
-        np.random.seed(config.generation_params.seed)
+    seed = config.generation_params.seed
+    rng = np.random.default_rng(seed)
 
     # Generate Gamma
+    # TODO: add lattice graph
+    # TODO: add weights to edges & figure out specification for config
     if config.global_params.gamma_matrix_generator == "erdos_renyi":
-        gamma_matrix = nx.erdos_renyi_graph(
+        gamma_graph = nx.erdos_renyi_graph(
             config.global_params.N,
             config.global_params.gamma_matrix_params.p,
             seed=config.generation_params.seed,
         )
-    elif config.global_params.gamma_matrix_generator == "lattice":
-        config.global_params.N_side = int(config.global_params.N**0.5)
-        gamma_matrix = nx.grid_2d_graph(
-            config.global_params.N_side, config.global_params.N_side
-        )
     elif config.global_params.gamma_matrix_generator == "complete":
-        gamma_matrix = nx.complete_graph(config.global_params.N)
+        gamma_graph = nx.complete_graph(config.global_params.N)
     elif config.global_params.gamma_matrix_generator == "empty":
-        gamma_matrix = nx.empty_graph(config.global_params.N)
+        gamma_graph = nx.empty_graph(config.global_params.N)
     else:
         raise ValueError(
             f"Invalid gamma matrix generator: {config.global_params.gamma_matrix_generator}"
         )
+    # Convert to adjacency matrix
+    node_order = list(gamma_graph.nodes())
+    gamma_matrix = nx.to_numpy_array(gamma_graph, nodelist=node_order)
+    gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2  # Ensure symmetry
+    np.fill_diagonal(gamma_matrix, 0)  # Ensure no self-loops
+    gamma_matrix = gamma_matrix / np.linalg.norm(gamma_matrix)  # Normalize
 
     # Generate x_0
     if config.global_params.x_0_generator == "bernoulli":
         p = config.global_params.x_0_params.p
-        x_0 = (np.random.rand(config.global_params.N) < p).astype(float) * 2 - 1
+        x_0 = (rng.random(config.global_params.N) < p).astype(float) * 2 - 1
     elif config.global_params.x_0_generator == "fixed":
         fixed_val = config.global_params.x_0_params.fixed_val
         x_0 = np.full(config.global_params.N, fixed_val)
     else:
         raise ValueError(f"Invalid x_0_generator: {config.global_params.x_0_generator}")
 
-    return config, gamma_matrix, x_0
+    return config, gamma_matrix, x_0, rng
 
 
-def sample_z_t(x, z, config):
+def sample_z_t(x_prev, z_prev, config, rng):
     """Sample z^{(t)} given x^{(t-1)} and z^{(t-1)}.
     Since z_t are independent across i, we can sample them in parallel according to a simple logistic
 
     Args:
-        x (np.array): outcomes from time step t-1
-        z (np.array): outcomes from time step t-1
+        x_prev (np.array): outcomes from time step t-1
+        z_prev (np.array): outcomes from time step t-1
         config (OmegaConf): model configuration containing zeta and psi
 
     Returns:
         np.array: sampled z^{(t)}
     """
-    h_z = config.estimation_params.zeta * x + config.estimation_params.psi * z
-    p_z = 1 / (1 + np.exp(-2 * h_z))
-    z = (np.random.rand(config.global_params.N) < p_z).astype(float) * 2 - 1
-    return z
+    h_z = config.estimation_params.zeta * x_prev + config.estimation_params.psi * z_prev
+    return spin_sample_from_field(h_z, rng)
 
 
-def sample_x_t(x, z, config, gamma_matrix):
+def sample_x_t(x_prev, z_curr, config, gamma_matrix, rng):
     """Sample x^{(t)} given x^{(t-1)} and z^{(t)} using Gibbs sampling.
     For each i, sample x_i^(t) given x_{-i}^(t), z^(t), and x^(t-1) according to a logistic function.
 
     Args:
-        x (np.array): outcomes from time step t-1
-        z (np.array): outcomes from time step t
+        x_prev (np.array): outcomes from time step t-1
+        z_curr (np.array): outcomes from time step t
         config (OmegaConf): model configuration containing alpha, beta, eta, xi, and gamma_matrix
-        gamma_matrix (networkx.Graph): the network structure as a networkx graph
+        gamma_matrix (np.array): the network structure as an adjacency matrix
+        rng (np.random.Generator): random number generator
 
     Returns:
         np.array: sampled x^{(t)}
     """
-    x_t = x.copy()
+    x_t = x_prev.copy()
     for _ in range(config.generation_params.gibbs_sweeps):
         for i in range(config.global_params.N):
-            neighbors = list(gamma_matrix.neighbors(i))
+            network_term = gamma_matrix[i] @ x_t
             h_x = (
                 config.estimation_params.alpha
-                + config.estimation_params.beta * z[i]
-                + config.estimation_params.eta * x[i]
-                + config.estimation_params.xi * np.sum(x[neighbors])
+                + config.estimation_params.beta * z_curr[i]
+                + config.estimation_params.eta * x_prev[i]
+                + config.estimation_params.xi * network_term
             )
-            p_x = 1 / (1 + np.exp(-2 * h_x))
-            x_t[i] = (np.random.rand() < p_x).astype(float) * 2 - 1
+            x_t[i] = spin_sample_from_field(h_x, rng)
     return x_t
 
 
-def main(args):
-    print("Starting synthetic data generation...")
-
-    print("Preparing data folder...")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    data_folder = f"data/synthetic_data_{timestamp}"
-
-    print("Reading and realizing config...")
-    config, gamma_matrix, x_0 = read_and_realize_config(args.config_name)
-
+def generate_conditional_model(config, gamma_matrix, x_0, rng):
     # Initialize
     x = np.zeros((config.global_params.T, config.global_params.N))
     z = np.zeros((config.global_params.T, config.global_params.N))
+    # Sample initial z and x
     z[0, :] = (
-        sample_z_t(x_0, np.zeros_like(x_0), config)
+        sample_z_t(x_0, -np.ones_like(x_0), config, rng)
         if config.global_params.s == 0
-        else np.zeros_like(x_0)
+        else -np.ones_like(x_0)
     )
-    x[0, :] = sample_x_t(x_0, z[0, :], config, gamma_matrix)
+    x[0, :] = sample_x_t(x_0, z[0, :], config, gamma_matrix, rng)
 
+    # Sample subsequent time steps
     for t in range(1, config.global_params.T):
         print(f"Sampling time step {t}...")
         z[t, :] = (
-            sample_z_t(x[t - 1, :], z[t - 1, :], config)
+            sample_z_t(x[t - 1, :], z[t - 1, :], config, rng)
             if t >= config.global_params.s
-            else np.zeros_like(x_0)
+            else -np.ones_like(x_0)
         )
-        x[t, :] = sample_x_t(x[t - 1, :], z[t, :], config, gamma_matrix)
+        x[t, :] = sample_x_t(x[t - 1, :], z[t, :], config, gamma_matrix, rng)
 
-    os.makedirs(data_folder)
-    print("Saving data...")
-    np.savez(f"{data_folder}/synthetic_data.npz", x=x, z=z)
-    print("Saving config...")
-    OmegaConf.save(config, f"{data_folder}/realized_config.yaml")
-    print("Saving network")
-    nx.write_graphml(gamma_matrix, f"{data_folder}/gamma_matrix.graphml")
-    print("Saving x0")
-    np.save(f"{data_folder}/x_0.npy", x_0)
+    return x, z
 
-    print("Done!")
+
+def generate_ising_model(config, gamma_matrix, x_0):
+    pass
 
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Generate synthetic data for MPLE experiments."
     )
-    argparser.add_argument(
+    parser.add_argument(
         "--config_name",
         type=str,
         default="synthetic_data_config.yaml",
         help="The name of the config file to use for data generation (located in data/configs/)",
     )
-    args = argparser.parse_args()
-    main(args)
+    args = parser.parse_args()
+
+    print("Starting synthetic data generation...")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    data_folder = f"data/synthetic_data_{timestamp}"
+
+    print("Reading and realizing config...")
+    config, gamma_matrix, x_0, rng = read_and_realize_config(args.config_name)
+
+    if config.generation_process == "conditional":
+        print("Generating data with conditional process...")
+        x, z = generate_conditional_model(config, gamma_matrix, x_0, rng)
+    elif config.generation_process == "Ising":
+        print("Generating data with Ising process...")
+        # x, z = generate_ising_model(config, gamma_matrix, x_0)
+    else:
+        raise ValueError(f"Invalid generation process: {config.generation_process}")
+
+    os.makedirs(data_folder)
+    print("Saving data, config, and network...")
+    OmegaConf.save(config, f"{data_folder}/realized_config.yaml")
+    np.savez(f"{data_folder}/synthetic_data.npz", x=x, z=z)
+    np.save(f"{data_folder}/gamma_matrix.npy", gamma_matrix)
+    np.save(f"{data_folder}/x_0.npy", x_0)
+
+    print("Done!")

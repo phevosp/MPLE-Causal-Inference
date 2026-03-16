@@ -1,23 +1,24 @@
+generation_process: "conditional" # options: "conditional", "Ising"
 global_params:
   N: 1000 # size of the network
   T: 100 # number of time steps
-  s: 0 # number of pre-intervention time steps
-  gamma_matrix_generator: "erdos_renyi" # method for generating the network. Options: "erdos_renyi", "lattice", "complete", "empty"
+  s: 10 # number of pre-intervention time steps
+  gamma_matrix_generator: "erdos_renyi" # method for generating the network. Options: "erdos_renyi", "complete", "empty"
   x_0_generator: "bernoulli" # method for generating the initial state. Options: "bernoulli", "fixed"
   gamma_matrix_params:
-    p: 0.01 # probability of edge creation for "erdos-renyi"
+    p: 0.1 # probability of edge creation for "erdos-renyi"
   x_0_params:
     p: 0.5 # probability of being in state 1 for "bernoulli"
     fixed_val: 1   # options 1 or -1 for "fixed"
 
 estimation_params:
-  alpha: 0.5 # external field param
+  alpha: 0.3 # external field param
   beta: 0.5 # z^{(t)} -> x^{(t)}
-  xi: 0.2 # x^{(t)} -> x^{(t)}
+  xi: 0.1 # x^{(t)} -> x^{(t)}
   eta: 0.05 # x^{(t-1)} -> x^{(t)}
-  zeta: 0.1 # x^{(t-1)} -> z^{(t)}
-  psi: 0.1 # z^{(t-1)} -> z^{(t)}
+  zeta: -0.1 # x^{(t-1)} -> z^{(t)}
+  psi: 0.05 # z^{(t-1)} -> z^{(t)}
 
 generation_params:
   seed: 42 # random seed for reproducibility
-  gibbs_sweeps: 10 # number of Gibbs sweeps for sampling x^{(t)}
+  gibbs_sweeps: 25 # number of Gibbs sweeps for sampling x^{(t)}
