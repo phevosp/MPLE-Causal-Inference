@@ -28,10 +28,18 @@ COMMON_ISING=(
 )
 
 run_generation "conditional baseline" "${COMMON_CONDITIONAL[@]}"
+run_generation "Ising baseline" "${COMMON_ISING[@]}"
+
 run_generation "conditional p_large" "${COMMON_CONDITIONAL[@]}" \
 	--config_override global_params.gamma_matrix_params.p=0.1
+run_generation "Ising p_large" "${COMMON_ISING[@]}" \
+	--config_override global_params.gamma_matrix_params.p=0.1
+
 run_generation "conditional N_large" "${COMMON_CONDITIONAL[@]}" \
 	--config_override global_params.N=5000
+run_generation "Ising N_large" "${COMMON_ISING[@]}" \
+	--config_override global_params.N=5000
+
 run_generation "conditional params_large" "${COMMON_CONDITIONAL[@]}" \
 	--config_override estimation_params.alpha=1 \
 	--config_override estimation_params.beta=1 \
@@ -39,6 +47,14 @@ run_generation "conditional params_large" "${COMMON_CONDITIONAL[@]}" \
 	--config_override estimation_params.eta=0.1 \
 	--config_override estimation_params.zeta=-0.5 \
 	--config_override estimation_params.psi=0.5
+run_generation "Ising params_large" "${COMMON_ISING[@]}" \
+	--config_override estimation_params.alpha=1 \
+	--config_override estimation_params.beta=1 \
+	--config_override estimation_params.xi=0.5 \
+	--config_override estimation_params.eta=0.1 \
+	--config_override estimation_params.zeta=-0.5 \
+	--config_override estimation_params.psi=0.5
+
 run_generation "conditional robustness" "${COMMON_CONDITIONAL[@]}" \
 	--config_override global_params.N=5000 \
 	--config_override global_params.T=10 \
@@ -50,19 +66,6 @@ run_generation "conditional robustness" "${COMMON_CONDITIONAL[@]}" \
 	--config_override estimation_params.xi=1 \
 	--config_override estimation_params.eta=0.5 \
 	--config_override estimation_params.zeta=-0.3 \
-	--config_override estimation_params.psi=0.5
-
-run_generation "Ising baseline" "${COMMON_ISING[@]}"
-run_generation "Ising p_large" "${COMMON_ISING[@]}" \
-	--config_override global_params.gamma_matrix_params.p=0.1
-run_generation "Ising N_large" "${COMMON_ISING[@]}" \
-	--config_override global_params.N=5000
-run_generation "Ising params_large" "${COMMON_ISING[@]}" \
-	--config_override estimation_params.alpha=1 \
-	--config_override estimation_params.beta=1 \
-	--config_override estimation_params.xi=0.5 \
-	--config_override estimation_params.eta=0.1 \
-	--config_override estimation_params.zeta=-0.5 \
 	--config_override estimation_params.psi=0.5
 run_generation "Ising robustness" "${COMMON_ISING[@]}" \
 	--config_override global_params.N=5000 \

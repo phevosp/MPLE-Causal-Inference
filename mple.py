@@ -214,11 +214,11 @@ if __name__ == "__main__":
         "--log_file",
         type=str,
         default=None,
-        help="Path to log file. Defaults to <data_folder>/mple.log",
+        help="Path to log file. Defaults to <data_folder>/mple_full.log",
     )
     args = parser.parse_args()
 
-    log_file = args.log_file or str(Path(args.data_folder) / "mple.log")
+    log_file = args.log_file or str(Path(args.data_folder) / "mple_full.log")
     Path(log_file).parent.mkdir(parents=True, exist_ok=True)
     logger = setup_logger(log_file)
 

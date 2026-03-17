@@ -1,0 +1,53 @@
+2026-03-17 11:12:28 | INFO | Loading data...
+2026-03-17 11:12:28 | INFO | Loaded gamma_matrix with shape=(1000, 1000)
+2026-03-17 11:12:28 | INFO | Running Stage 1 MPLE on x with shape=(100, 1000)
+2026-03-17 11:12:28 | INFO | Eval 0  |  Loss: 0.689898
+2026-03-17 11:12:28 | INFO |   alpha: +0.0126,  beta: -0.0132,  xi: +0.0640,  eta: +0.0105,  zeta: -0.0536,  psi: +0.0362
+2026-03-17 11:12:28 | INFO | Running Stage 2 MPLE (conditioning on all z's and even x's)...
+2026-03-17 11:12:28 | INFO | Eval 0  |  Loss: 0.687173
+2026-03-17 11:12:28 | INFO |   alpha: +0.0126,  beta: -0.0132,  xi: +0.0640,  eta: +0.0105,  zeta: -0.0536,  psi: +0.0362
+2026-03-17 11:12:28 | INFO | Done fitting.
+2026-03-17 11:12:28 | INFO | Final Loss (Unconditioned): 0.631801
+2026-03-17 11:12:28 | INFO | Estimated vs True Parameters (Unconditioned):
+2026-03-17 11:12:28 | INFO |   alpha: 0.3422 (True: 0.3500)
+2026-03-17 11:12:28 | INFO |   alpha SQE: 0.000061
+2026-03-17 11:12:28 | INFO |   beta: 0.2488 (True: 0.2500)
+2026-03-17 11:12:28 | INFO |   beta SQE: 0.000001
+2026-03-17 11:12:28 | INFO |   xi: 0.0894 (True: 0.0500)
+2026-03-17 11:12:28 | INFO |   xi SQE: 0.001552
+2026-03-17 11:12:28 | INFO |   eta: 0.0050 (True: 0.0100)
+2026-03-17 11:12:28 | INFO |   eta SQE: 0.000025
+2026-03-17 11:12:28 | INFO |   zeta: -0.0295 (True: -0.0300)
+2026-03-17 11:12:28 | INFO |   zeta SQE: 0.000000
+2026-03-17 11:12:28 | INFO |   psi: 0.0998 (True: 0.1000)
+2026-03-17 11:12:28 | INFO |   psi SQE: 0.000000
+2026-03-17 11:12:28 | INFO | =================================================
+2026-03-17 11:12:28 | INFO | Final Loss (Conditioned): 0.611957
+2026-03-17 11:12:28 | INFO | Estimated vs True Parameters (Conditioned):
+2026-03-17 11:12:28 | INFO |   alpha: 0.3510 (True: 0.3500)
+2026-03-17 11:12:28 | INFO |   alpha SQE: 0.000001
+2026-03-17 11:12:28 | INFO |   beta: 0.2496 (True: 0.2500)
+2026-03-17 11:12:28 | INFO |   beta SQE: 0.000000
+2026-03-17 11:12:28 | INFO |   xi: 0.0457 (True: 0.0500)
+2026-03-17 11:12:28 | INFO |   xi SQE: 0.000019
+2026-03-17 11:12:28 | INFO |   eta: 0.0057 (True: 0.0100)
+2026-03-17 11:12:28 | INFO |   eta SQE: 0.000018
+2026-03-17 11:12:28 | INFO |   zeta: -0.0285 (True: -0.0300)
+2026-03-17 11:12:28 | INFO |   zeta SQE: 0.000002
+2026-03-17 11:12:28 | INFO |   psi: 0.0362 (True: 0.1000)
+2026-03-17 11:12:28 | INFO |   psi SQE: 0.004076
+2026-03-17 11:12:28 | INFO | =================================================
+2026-03-17 11:12:28 | INFO | Final Parameters:
+2026-03-17 11:12:28 | INFO |   alpha: 0.3510 (True: 0.3500)
+2026-03-17 11:12:28 | INFO |   alpha SQE: 0.000001
+2026-03-17 11:12:28 | INFO |   beta: 0.2488 (True: 0.2500)
+2026-03-17 11:12:28 | INFO |   beta SQE: 0.000001
+2026-03-17 11:12:28 | INFO |   xi: 0.0894 (True: 0.0500)
+2026-03-17 11:12:28 | INFO |   xi SQE: 0.001552
+2026-03-17 11:12:28 | INFO |   eta: 0.0050 (True: 0.0100)
+2026-03-17 11:12:28 | INFO |   eta SQE: 0.000025
+2026-03-17 11:12:28 | INFO |   zeta: -0.0295 (True: -0.0300)
+2026-03-17 11:12:28 | INFO |   zeta SQE: 0.000000
+2026-03-17 11:12:28 | INFO |   psi: 0.0998 (True: 0.1000)
+2026-03-17 11:12:28 | INFO |   psi SQE: 0.000000
+2026-03-17 11:12:28 | INFO | Log saved to experiments\synthetic_data_20260317_110651\mple_full.log
