@@ -8,7 +8,7 @@ global_params:
     p: 0.01 # probability of edge creation for "erdos-renyi"
   x_0_params:
     p: 0.5 # probability of being in state 1 for "bernoulli"
-    fixed_val: 1   # options 1 or -1 for "fixed"
+    fixed_val: 1 # options 1 or -1 for "fixed"
 
 estimation_params:
   alpha: 0.35 # external field param
