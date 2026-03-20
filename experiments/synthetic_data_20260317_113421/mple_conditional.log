@@ -1,0 +1,35 @@
+2026-03-17 12:55:32 | INFO | Loading data...
+2026-03-17 12:55:32 | INFO | Loaded gamma_matrix with shape=(5000, 5000)
+2026-03-17 12:55:32 | INFO | Running conditional-model MPLE on x with shape=(100, 5000)
+2026-03-17 12:55:32 | INFO | Eval 0  |  Loss: 0.689478
+2026-03-17 12:55:32 | INFO |   alpha: +0.0126,  beta: -0.0132,  xi: +0.0640,  eta: +0.0105,  zeta: -0.0536,  psi: +0.0362
+2026-03-17 12:55:33 | INFO | Done fitting.
+2026-03-17 12:55:33 | INFO | Final Loss (Conditional Model): 0.648632
+2026-03-17 12:55:33 | INFO | Estimated vs True Parameters (Conditional Model):
+2026-03-17 12:55:33 | INFO |   alpha: 0.3463 (True: 0.3500)
+2026-03-17 12:55:33 | INFO |   alpha SQE: 0.000013
+2026-03-17 12:55:33 | INFO |   beta: 0.2461 (True: 0.2500)
+2026-03-17 12:55:33 | INFO |   beta SQE: 0.000015
+2026-03-17 12:55:33 | INFO |   xi: 0.0681 (True: 0.0500)
+2026-03-17 12:55:33 | INFO |   xi SQE: 0.000327
+2026-03-17 12:55:33 | INFO |   eta: 0.0086 (True: 0.0100)
+2026-03-17 12:55:33 | INFO |   eta SQE: 0.000002
+2026-03-17 12:55:33 | INFO |   zeta: 0.0056 (True: -0.0300)
+2026-03-17 12:55:33 | INFO |   zeta SQE: 0.001264
+2026-03-17 12:55:33 | INFO |   psi: 0.0959 (True: 0.1000)
+2026-03-17 12:55:33 | INFO |   psi SQE: 0.000017
+2026-03-17 12:55:33 | INFO | =================================================
+2026-03-17 12:55:33 | INFO | Final Parameters:
+2026-03-17 12:55:33 | INFO |   alpha: 0.3463 (True: 0.3500)
+2026-03-17 12:55:33 | INFO |   alpha SQE: 0.000013
+2026-03-17 12:55:33 | INFO |   beta: 0.2461 (True: 0.2500)
+2026-03-17 12:55:33 | INFO |   beta SQE: 0.000015
+2026-03-17 12:55:33 | INFO |   xi: 0.0681 (True: 0.0500)
+2026-03-17 12:55:33 | INFO |   xi SQE: 0.000327
+2026-03-17 12:55:33 | INFO |   eta: 0.0086 (True: 0.0100)
+2026-03-17 12:55:33 | INFO |   eta SQE: 0.000002
+2026-03-17 12:55:33 | INFO |   zeta: 0.0056 (True: -0.0300)
+2026-03-17 12:55:33 | INFO |   zeta SQE: 0.001264
+2026-03-17 12:55:33 | INFO |   psi: 0.0959 (True: 0.1000)
+2026-03-17 12:55:33 | INFO |   psi SQE: 0.000017
+2026-03-17 12:55:33 | INFO | Log saved to experiments\synthetic_data_20260317_113421\mple_full_conditional.log
