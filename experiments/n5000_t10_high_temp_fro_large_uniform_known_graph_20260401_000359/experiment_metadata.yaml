@@ -1,0 +1,39 @@
+descriptor: N5000_T10_high_temp_fro_large_uniform_known_graph
+slug: n5000_t10_high_temp_fro_large_uniform_known_graph
+timestamp: '20260401_000359'
+config_name: base_config.yaml
+config_overrides:
+- global_params.N=5000
+- global_params.T=10
+- global_params.s=5
+- global_params.gamma_matrix_generator="erdos_renyi"
+- global_params.gamma_matrix_params.p=0.01
+- global_params.x_0_generator="bernoulli"
+- global_params.x_0_params.p=0.5
+- global_params.basis_params.num_shared_features=5
+- global_params.basis_params.shared_feature_seed=352
+- generation_params.seed=352
+- generation_params.gibbs_sweeps=10
+- estimation_params.field_coefs=[0.18]
+- estimation_params.beta=0.12
+- estimation_params.interaction_coefs=[0.15]
+- estimation_params.eta=0.01
+- estimation_params.zeta=-0.15
+- estimation_params.psi=0.05
+- global_params.gamma_matrix_generator="cycle"
+- global_params.basis_params.field_mode="uniform"
+- global_params.basis_params.interaction_mode="known_graph"
+gamma_inf_norm: 1.0
+gamma_fro_norm: 50.0
+field_basis_inf_norms:
+- 1.0
+interaction_basis_inf_norms:
+- 1.0
+suite: core_grid
+N_regime: N5000
+T_regime: T10
+temperature_regime: high_temp
+fro_regime: fro_large
+graph_family: cycle
+field_complexity: uniform
+interaction_complexity: known_graph

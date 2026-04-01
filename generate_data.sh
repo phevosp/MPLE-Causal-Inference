@@ -184,37 +184,35 @@ for n in 100 1000 5000; do
 	for t in 10 100; do
 		for temperature in high_temp baseline_temp low_temp; do
 			for fro in fro_small fro_medium fro_large; do
-					for field_complexity in uniform shared_feature_field; do
-						for interaction_complexity in known_graph shared_feature_interactions; do
-							label="N${n}_T${t}_${temperature}_${fro}_${field_complexity}_${interaction_complexity}"
-							args=()
-							add_metadata args suite core_grid
-							add_metadata args N_regime "N${n}"
-							add_metadata args T_regime "T${t}"
-							add_metadata args temperature_regime "$temperature"
-							add_metadata args fro_regime "$fro"
-							add_metadata args graph_family "$(graph_family_for_regime "$fro")"
-							add_metadata args field_complexity "$field_complexity"
-							add_metadata args interaction_complexity "$interaction_complexity"
-							add_common_generation_args args "$n" "$t" "$seed_counter"
-							add_temperature_args args "$temperature"
-							add_graph_fro_args args "$fro"
-							add_simple_model_args args
-							if [ "$field_complexity" = "shared_feature_field" ]; then
-								add_shared_field_args args "$temperature"
-							fi
-							if [ "$interaction_complexity" = "shared_feature_interactions" ]; then
-								add_shared_interaction_args args "$temperature"
-							fi
-							run_generation "$label" "${args[@]}"
-							seed_counter=$((seed_counter + 1))
-						done
+				for field_complexity in uniform shared_feature_field; do
+					for interaction_complexity in known_graph shared_feature_interactions; do
+						label="N${n}_T${t}_${temperature}_${fro}_${field_complexity}_${interaction_complexity}"
+						args=()
+						add_metadata args suite core_grid
+						add_metadata args N_regime "N${n}"
+						add_metadata args T_regime "T${t}"
+						add_metadata args temperature_regime "$temperature"
+						add_metadata args fro_regime "$fro"
+						add_metadata args graph_family "$(graph_family_for_regime "$fro")"
+						add_metadata args field_complexity "$field_complexity"
+						add_metadata args interaction_complexity "$interaction_complexity"
+						add_common_generation_args args "$n" "$t" "$seed_counter"
+						add_temperature_args args "$temperature"
+						add_graph_fro_args args "$fro"
+						add_simple_model_args args
+						if [ "$field_complexity" = "shared_feature_field" ]; then
+							add_shared_field_args args "$temperature"
+						fi
+						if [ "$interaction_complexity" = "shared_feature_interactions" ]; then
+							add_shared_interaction_args args "$temperature"
+						fi
+						run_generation "$label" "${args[@]}"
+						seed_counter=$((seed_counter + 1))
 					done
 				done
 			done
 		done
 	done
 done
-
 echo "Finished generating all datasets."
 echo "Manifest: $MANIFEST_PATH"

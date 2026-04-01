@@ -7,6 +7,28 @@ cd "$SCRIPT_DIR"
 
 MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/latest_manifest.txt}"
 REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$SCRIPT_DIR/reports/conditional_experiment_report}"
+SKIP_GENERATION=0
+MPLE_ARGS=()
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--skip-generation)
+			SKIP_GENERATION=1
+			shift
+			;;
+		--help|-h)
+			echo "Usage: bash run_experiments.sh [--skip-generation] [mple.py args...]"
+			echo
+			echo "  --skip-generation  Reuse the existing manifest instead of rerunning generate_data.sh"
+			echo "  Remaining arguments are passed through to mple.py for every experiment."
+			exit 0
+			;;
+		*)
+			MPLE_ARGS+=("$1")
+			shift
+			;;
+	esac
+done
 
 if command -v pixi >/dev/null 2>&1; then
 	RUNNER=(pixi run python -u)
@@ -19,7 +41,11 @@ fi
 
 mkdir -p "$(dirname "$REPORT_STEM")"
 
-EXPERIMENT_MANIFEST="$MANIFEST_PATH" "$SCRIPT_DIR/generate_data.sh"
+if [ "$SKIP_GENERATION" -eq 0 ]; then
+	EXPERIMENT_MANIFEST="$MANIFEST_PATH" "$SCRIPT_DIR/generate_data.sh"
+else
+	echo "Skipping data generation and reusing manifest: $MANIFEST_PATH"
+fi
 
 if [ ! -f "$MANIFEST_PATH" ]; then
 	echo "Manifest not found: $MANIFEST_PATH" >&2
@@ -27,6 +53,8 @@ if [ ! -f "$MANIFEST_PATH" ]; then
 fi
 
 while IFS= read -r data_folder; do
+	data_folder="${data_folder%$'\r'}"
+
 	if [ -z "$data_folder" ]; then
 		continue
 	fi
@@ -37,7 +65,7 @@ while IFS= read -r data_folder; do
 	fi
 
 	echo "Running conditional MPLE for ${data_folder}..."
-	"${RUNNER[@]}" mple.py --data_folder "$data_folder" "$@"
+	"${RUNNER[@]}" mple.py --data_folder "$data_folder" "${MPLE_ARGS[@]}"
 done <"$MANIFEST_PATH"
 
 echo "Building report..."

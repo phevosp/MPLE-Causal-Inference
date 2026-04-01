@@ -1,0 +1,43 @@
+2026-04-01 10:16:57 | INFO | Loading data...
+2026-04-01 10:16:57 | INFO | Loaded 11 field templates and 1 interaction templates.
+2026-04-01 10:16:57 | INFO | Running conditional-model MPLE on x with shape=(100, 100)
+2026-04-01 10:16:57 | INFO | Eval 0  |  Loss: 0.697471
+2026-04-01 10:16:57 | INFO |   field::intercept: +0.0126,  field::linear::feature_1: -0.0132,  field::quadratic::feature_1: +0.0640,  field::linear::feature_2: +0.0105,  field::quadratic::feature_2: -0.0536,  field::linear::feature_3: +0.0362,  field::quadratic::feature_3: +0.1304,  field::linear::feature_4: +0.0947,  field::quadratic::feature_4: -0.0704,  field::linear::feature_5: -0.1265,  field::quadratic::feature_5: -0.0623,  beta: +0.0041,  interaction::adjacency: -0.2325,  eta: -0.0219,  zeta: -0.1246,  psi: -0.0732
+2026-04-01 10:16:57 | INFO | Done fitting.
+2026-04-01 10:16:57 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-01 10:16:57 | INFO | Final Loss: 0.572339
+2026-04-01 10:16:57 | INFO | Estimated vs True Parameters:
+2026-04-01 10:16:57 | INFO |   field::intercept: 0.3064 (True: 0.3150)
+2026-04-01 10:16:57 | INFO |   field::intercept SQE: 0.000074
+2026-04-01 10:16:57 | INFO |   field::linear::feature_1: 0.3332 (True: 0.3080)
+2026-04-01 10:16:57 | INFO |   field::linear::feature_1 SQE: 0.000637
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_1: 0.3663 (True: 0.3500)
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_1 SQE: 0.000266
+2026-04-01 10:16:57 | INFO |   field::linear::feature_2: -0.6013 (True: -0.5800)
+2026-04-01 10:16:57 | INFO |   field::linear::feature_2 SQE: 0.000454
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_2: 0.3913 (True: 0.5000)
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_2 SQE: 0.011808
+2026-04-01 10:16:57 | INFO |   field::linear::feature_3: -0.5930 (True: -0.6000)
+2026-04-01 10:16:57 | INFO |   field::linear::feature_3 SQE: 0.000049
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_3: 0.0089 (True: -0.0500)
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_3 SQE: 0.003467
+2026-04-01 10:16:57 | INFO |   field::linear::feature_4: -0.0234 (True: 0.0800)
+2026-04-01 10:16:57 | INFO |   field::linear::feature_4 SQE: 0.010696
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_4: 0.0968 (True: 0.1000)
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_4 SQE: 0.000010
+2026-04-01 10:16:57 | INFO |   field::linear::feature_5: 0.3474 (True: 0.3000)
+2026-04-01 10:16:57 | INFO |   field::linear::feature_5 SQE: 0.002243
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_5: 0.4449 (True: 0.4000)
+2026-04-01 10:16:57 | INFO |   field::quadratic::feature_5 SQE: 0.002020
+2026-04-01 10:16:57 | INFO |   beta: 0.3848 (True: 0.4000)
+2026-04-01 10:16:57 | INFO |   beta SQE: 0.000230
+2026-04-01 10:16:57 | INFO |   interaction::adjacency: 0.4900 (True: 0.5000)
+2026-04-01 10:16:57 | INFO |   interaction::adjacency SQE: 0.000100
+2026-04-01 10:16:57 | INFO |   eta: 0.0938 (True: 0.1000)
+2026-04-01 10:16:57 | INFO |   eta SQE: 0.000038
+2026-04-01 10:16:57 | INFO |   zeta: -0.5019 (True: -0.5000)
+2026-04-01 10:16:57 | INFO |   zeta SQE: 0.000004
+2026-04-01 10:16:57 | INFO |   psi: 0.3871 (True: 0.4000)
+2026-04-01 10:16:57 | INFO |   psi SQE: 0.000166
+2026-04-01 10:16:57 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n100_t100_baseline_temp_fro_medium_shared_feature_field_known_graph_20260331_230136\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n100_t100_baseline_temp_fro_medium_shared_feature_field_known_graph_20260331_230136\mple_summary.md
+2026-04-01 10:16:57 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n100_t100_baseline_temp_fro_medium_shared_feature_field_known_graph_20260331_230136\mple.log

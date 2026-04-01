@@ -1,0 +1,45 @@
+2026-04-01 10:18:42 | INFO | Loading data...
+2026-04-01 10:18:42 | INFO | Loaded 1 field templates and 11 interaction templates.
+2026-04-01 10:18:42 | INFO | Running conditional-model MPLE on x with shape=(100, 1000)
+2026-04-01 10:18:42 | INFO | Eval 0  |  Loss: 0.689143
+2026-04-01 10:18:42 | INFO |   field::intercept: +0.0126,  beta: -0.0132,  interaction::adjacency: +0.0640,  interaction::distance_kernel::feature_1: +0.0105,  interaction::cross_similarity::feature_1: -0.0536,  interaction::distance_kernel::feature_2: +0.0362,  interaction::cross_similarity::feature_2: +0.1304,  interaction::distance_kernel::feature_3: +0.0947,  interaction::cross_similarity::feature_3: -0.0704,  interaction::distance_kernel::feature_4: -0.1265,  interaction::cross_similarity::feature_4: -0.0623,  interaction::distance_kernel::feature_5: +0.0041,  interaction::cross_similarity::feature_5: -0.2325,  eta: -0.0219,  zeta: -0.1246,  psi: -0.0732
+2026-04-01 10:18:45 | INFO | Eval 100  |  Loss: 0.669547
+2026-04-01 10:18:45 | INFO |   field::intercept: +0.1630,  beta: +0.1214,  interaction::adjacency: +0.1682,  interaction::distance_kernel::feature_1: +0.0792,  interaction::cross_similarity::feature_1: +0.6333,  interaction::distance_kernel::feature_2: +0.1068,  interaction::cross_similarity::feature_2: -0.2347,  interaction::distance_kernel::feature_3: -0.0255,  interaction::cross_similarity::feature_3: +0.0126,  interaction::distance_kernel::feature_4: +0.0414,  interaction::cross_similarity::feature_4: +0.7095,  interaction::distance_kernel::feature_5: +0.0530,  interaction::cross_similarity::feature_5: -0.2877,  eta: +0.0131,  zeta: -0.1454,  psi: +0.0492
+2026-04-01 10:18:45 | INFO | Done fitting.
+2026-04-01 10:18:45 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-01 10:18:45 | INFO | Final Loss: 0.669547
+2026-04-01 10:18:45 | INFO | Estimated vs True Parameters:
+2026-04-01 10:18:45 | INFO |   field::intercept: 0.1622 (True: 0.1800)
+2026-04-01 10:18:45 | INFO |   field::intercept SQE: 0.000317
+2026-04-01 10:18:45 | INFO |   beta: 0.1214 (True: 0.1200)
+2026-04-01 10:18:45 | INFO |   beta SQE: 0.000002
+2026-04-01 10:18:45 | INFO |   interaction::adjacency: 0.1723 (True: 0.1250)
+2026-04-01 10:18:45 | INFO |   interaction::adjacency SQE: 0.002233
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_1: 0.0814 (True: 0.0400)
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_1 SQE: 0.001716
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_1: 0.6343 (True: 0.0200)
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_1 SQE: 0.377418
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_2: 0.1066 (True: 0.0400)
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_2 SQE: 0.004437
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_2: -0.2385 (True: 0.0200)
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_2 SQE: 0.066847
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_3: -0.0290 (True: 0.0400)
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_3 SQE: 0.004759
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_3: 0.0139 (True: 0.0200)
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_3 SQE: 0.000038
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_4: 0.0415 (True: 0.0400)
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_4 SQE: 0.000002
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_4: 0.7205 (True: 0.0200)
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_4 SQE: 0.490720
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_5: 0.0535 (True: 0.0650)
+2026-04-01 10:18:45 | INFO |   interaction::distance_kernel::feature_5 SQE: 0.000132
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_5: -0.2886 (True: 0.0700)
+2026-04-01 10:18:45 | INFO |   interaction::cross_similarity::feature_5 SQE: 0.128599
+2026-04-01 10:18:45 | INFO |   eta: 0.0131 (True: 0.0100)
+2026-04-01 10:18:45 | INFO |   eta SQE: 0.000010
+2026-04-01 10:18:45 | INFO |   zeta: -0.1454 (True: -0.1500)
+2026-04-01 10:18:45 | INFO |   zeta SQE: 0.000021
+2026-04-01 10:18:45 | INFO |   psi: 0.0492 (True: 0.0500)
+2026-04-01 10:18:45 | INFO |   psi SQE: 0.000001
+2026-04-01 10:18:45 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n1000_t100_high_temp_fro_small_uniform_shared_feature_interactions_20260331_231032\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n1000_t100_high_temp_fro_small_uniform_shared_feature_interactions_20260331_231032\mple_summary.md
+2026-04-01 10:18:45 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n1000_t100_high_temp_fro_small_uniform_shared_feature_interactions_20260331_231032\mple.log

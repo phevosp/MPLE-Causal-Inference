@@ -1,0 +1,43 @@
+2026-04-01 10:27:35 | INFO | Loading data...
+2026-04-01 10:27:40 | INFO | Loaded 1 field templates and 11 interaction templates.
+2026-04-01 10:27:40 | INFO | Running conditional-model MPLE on x with shape=(100, 5000)
+2026-04-01 10:27:40 | INFO | Eval 0  |  Loss: 0.687384
+2026-04-01 10:27:40 | INFO |   field::intercept: +0.0126,  beta: -0.0132,  interaction::adjacency: +0.0640,  interaction::distance_kernel::feature_1: +0.0105,  interaction::cross_similarity::feature_1: -0.0536,  interaction::distance_kernel::feature_2: +0.0362,  interaction::cross_similarity::feature_2: +0.1304,  interaction::distance_kernel::feature_3: +0.0947,  interaction::cross_similarity::feature_3: -0.0704,  interaction::distance_kernel::feature_4: -0.1265,  interaction::cross_similarity::feature_4: -0.0623,  interaction::distance_kernel::feature_5: +0.0041,  interaction::cross_similarity::feature_5: -0.2325,  eta: -0.0219,  zeta: -0.1246,  psi: -0.0732
+2026-04-01 10:27:52 | INFO | Done fitting.
+2026-04-01 10:27:52 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-01 10:27:52 | INFO | Final Loss: 0.667623
+2026-04-01 10:27:52 | INFO | Estimated vs True Parameters:
+2026-04-01 10:27:52 | INFO |   field::intercept: 0.1785 (True: 0.1800)
+2026-04-01 10:27:52 | INFO |   field::intercept SQE: 0.000002
+2026-04-01 10:27:52 | INFO |   beta: 0.1190 (True: 0.1200)
+2026-04-01 10:27:52 | INFO |   beta SQE: 0.000001
+2026-04-01 10:27:52 | INFO |   interaction::adjacency: 0.1264 (True: 0.1250)
+2026-04-01 10:27:52 | INFO |   interaction::adjacency SQE: 0.000002
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_1: 0.0377 (True: 0.0400)
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_1 SQE: 0.000005
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_1: -1.0353 (True: 0.0200)
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_1 SQE: 1.113731
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_2: 0.0616 (True: 0.0400)
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_2 SQE: 0.000467
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_2: -0.6646 (True: 0.0200)
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_2 SQE: 0.468666
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_3: 0.0565 (True: 0.0400)
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_3 SQE: 0.000273
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_3: -0.4031 (True: 0.0200)
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_3 SQE: 0.179006
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_4: 0.0177 (True: 0.0400)
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_4 SQE: 0.000496
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_4: 0.0725 (True: 0.0200)
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_4 SQE: 0.002755
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_5: 0.0596 (True: 0.0650)
+2026-04-01 10:27:52 | INFO |   interaction::distance_kernel::feature_5 SQE: 0.000030
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_5: 0.3412 (True: 0.0700)
+2026-04-01 10:27:52 | INFO |   interaction::cross_similarity::feature_5 SQE: 0.073558
+2026-04-01 10:27:52 | INFO |   eta: 0.0088 (True: 0.0100)
+2026-04-01 10:27:52 | INFO |   eta SQE: 0.000002
+2026-04-01 10:27:52 | INFO |   zeta: -0.1508 (True: -0.1500)
+2026-04-01 10:27:52 | INFO |   zeta SQE: 0.000001
+2026-04-01 10:27:52 | INFO |   psi: 0.0503 (True: 0.0500)
+2026-04-01 10:27:52 | INFO |   psi SQE: 0.000000
+2026-04-01 10:27:53 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n5000_t100_high_temp_fro_large_uniform_shared_feature_interactions_20260401_022017\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n5000_t100_high_temp_fro_large_uniform_shared_feature_interactions_20260401_022017\mple_summary.md
+2026-04-01 10:27:53 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n5000_t100_high_temp_fro_large_uniform_shared_feature_interactions_20260401_022017\mple.log

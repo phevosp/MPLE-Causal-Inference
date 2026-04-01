@@ -1,0 +1,23 @@
+2026-04-01 10:24:06 | INFO | Loading data...
+2026-04-01 10:24:07 | INFO | Loaded 1 field templates and 1 interaction templates.
+2026-04-01 10:24:07 | INFO | Running conditional-model MPLE on x with shape=(10, 5000)
+2026-04-01 10:24:07 | INFO | Eval 0  |  Loss: 0.641937
+2026-04-01 10:24:07 | INFO |   field::intercept: +0.0126,  beta: -0.0132,  interaction::adjacency: +0.0640,  eta: +0.0105,  zeta: -0.0536,  psi: +0.0362
+2026-04-01 10:24:07 | INFO | Done fitting.
+2026-04-01 10:24:07 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-01 10:24:07 | INFO | Final Loss: 0.169469
+2026-04-01 10:24:07 | INFO | Estimated vs True Parameters:
+2026-04-01 10:24:07 | INFO |   field::intercept: 1.0586 (True: 1.0000)
+2026-04-01 10:24:07 | INFO |   field::intercept SQE: 0.003433
+2026-04-01 10:24:07 | INFO |   beta: 1.1294 (True: 1.1000)
+2026-04-01 10:24:07 | INFO |   beta SQE: 0.000865
+2026-04-01 10:24:07 | INFO |   interaction::adjacency: 2.0217 (True: 2.0000)
+2026-04-01 10:24:07 | INFO |   interaction::adjacency SQE: 0.000470
+2026-04-01 10:24:07 | INFO |   eta: 0.6874 (True: 0.7000)
+2026-04-01 10:24:07 | INFO |   eta SQE: 0.000160
+2026-04-01 10:24:07 | INFO |   zeta: -1.0032 (True: -1.0000)
+2026-04-01 10:24:07 | INFO |   zeta SQE: 0.000010
+2026-04-01 10:24:07 | INFO |   psi: 0.3856 (True: 0.4000)
+2026-04-01 10:24:07 | INFO |   psi SQE: 0.000208
+2026-04-01 10:24:08 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n5000_t10_low_temp_fro_medium_uniform_known_graph_20260401_003241\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n5000_t10_low_temp_fro_medium_uniform_known_graph_20260401_003241\mple_summary.md
+2026-04-01 10:24:08 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\n5000_t10_low_temp_fro_medium_uniform_known_graph_20260401_003241\mple.log
