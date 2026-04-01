@@ -5,26 +5,48 @@ from dataclasses import dataclass
 import numpy as np
 
 
-DEFAULT_FIELD_TEMPLATES = ("intercept", "linear", "quadratic")
-DEFAULT_INTERACTION_TEMPLATES = (
-    "adjacency",
-    "distance_kernel",
-    "cross_similarity",
-)
+DEFAULT_NUM_SHARED_FEATURES = 5
+DEFAULT_FIELD_MODE = "uniform"
+DEFAULT_INTERACTION_MODE = "known_graph"
 
 
 @dataclass(frozen=True)
 class BasisExpansion:
-    """Container for the known low-dimensional field and interaction templates."""
+    """Container for the field and interaction bases used in one experiment."""
 
     field_basis: np.ndarray
     interaction_basis: np.ndarray
     field_names: tuple[str, ...]
     interaction_names: tuple[str, ...]
+    shared_features: np.ndarray
+    shared_feature_names: tuple[str, ...]
+
+
+def validate_basis_infinity_norms(
+    field_basis: np.ndarray,
+    interaction_basis: np.ndarray,
+    tol: float = 1e-8,
+) -> None:
+    """Ensure every nondegenerate basis element has infinity norm one."""
+    field_norms = np.linalg.norm(np.asarray(field_basis, dtype=float), ord=np.inf, axis=1)
+    interaction_norms = np.array(
+        [
+            np.linalg.norm(np.asarray(matrix, dtype=float), ord=np.inf)
+            for matrix in np.asarray(interaction_basis, dtype=float)
+        ]
+    )
+
+    if np.any(field_norms < tol) or np.any(interaction_norms < tol):
+        raise ValueError("Basis construction produced a degenerate zero template.")
+    if not np.allclose(field_norms, 1.0, atol=tol, rtol=0.0):
+        raise ValueError("Each field basis vector must have infinity norm one.")
+    if not np.allclose(interaction_norms, 1.0, atol=tol, rtol=0.0):
+        raise ValueError("Each interaction basis matrix must have infinity norm one.")
 
 
 def _safe_normalize_vector(vector: np.ndarray) -> np.ndarray:
     """Normalize a vector by infinity norm, returning zeros if it is degenerate."""
+    vector = np.asarray(vector, dtype=float)
     norm = np.linalg.norm(vector, ord=np.inf)
     if norm < 1e-12:
         return np.zeros_like(vector)
@@ -42,103 +64,112 @@ def _safe_normalize_matrix(matrix: np.ndarray) -> np.ndarray:
     return matrix / norm
 
 
-def _node_coordinate(n_nodes: int) -> np.ndarray:
-    """Create a deterministic one-dimensional node coordinate on [-1, 1]."""
-    if n_nodes == 1:
-        return np.zeros(1, dtype=float)
-    return np.linspace(-1.0, 1.0, n_nodes, dtype=float)
+def _stack_vector_basis(vectors: list[np.ndarray]) -> np.ndarray:
+    """Stack field templates after infinity-norm normalization without re-scaling them."""
+    normalized = [_safe_normalize_vector(vector) for vector in vectors]
+    return np.vstack(normalized)
 
 
-def _orthonormalize_vectors(vectors: list[np.ndarray]) -> np.ndarray:
-    """Apply Gram-Schmidt to a list of vectors and return an orthonormal row stack."""
-    basis = []
-    for vector in vectors:
-        residual = np.asarray(vector, dtype=float).copy()
-        for prev in basis:
-            residual -= np.dot(residual, prev) * prev
-        norm = np.linalg.norm(residual)
-        if norm < 1e-12:
-            raise ValueError("Configured field templates are linearly dependent.")
-        basis.append(residual / norm)
-    return np.vstack(basis)
+def _stack_matrix_basis(matrices: list[np.ndarray]) -> np.ndarray:
+    """Stack interaction templates after infinity-norm normalization without re-scaling them."""
+    normalized = [_safe_normalize_matrix(matrix) for matrix in matrices]
+    return np.stack(normalized)
 
 
-def _orthonormalize_matrices(matrices: list[np.ndarray]) -> np.ndarray:
-    """Apply Gram-Schmidt to symmetric matrices under the Frobenius inner product."""
-    basis_flat = []
-    basis_mats = []
-    for matrix in matrices:
-        residual = np.asarray(matrix, dtype=float).copy().reshape(-1)
-        for prev in basis_flat:
-            residual -= np.dot(residual, prev) * prev
-        norm = np.linalg.norm(residual)
-        if norm < 1e-12:
-            raise ValueError("Configured interaction templates are linearly dependent.")
-        residual /= norm
-        basis_flat.append(residual)
-        basis_mats.append(residual.reshape(matrix.shape))
-    return np.stack(basis_mats)
+def _basis_params(config):
+    """Return the basis configuration section, if present."""
+    if "basis_params" in config.global_params:
+        return config.global_params.basis_params
+    return None
 
 
-def _template_names(
-    config_section, key: str, default: tuple[str, ...]
-) -> tuple[str, ...]:
-    """Read a tuple of configured template names, falling back to defaults when absent."""
-    if config_section is None or key not in config_section:
+def _get_basis_setting(config, key: str, default):
+    """Read one basis setting with a default fallback."""
+    basis_params = _basis_params(config)
+    if basis_params is None or key not in basis_params:
         return default
-    return tuple(config_section[key])
+    return basis_params[key]
+
+
+def _centered_quadratic(feature: np.ndarray) -> np.ndarray:
+    """Return a centered quadratic transform of one shared feature."""
+    squared = np.asarray(feature, dtype=float) ** 2
+    return squared - squared.mean()
+
+
+def build_shared_features(config, n_nodes: int) -> tuple[np.ndarray, tuple[str, ...]]:
+    """Generate the shared node features used by both the field and interaction bases."""
+    num_features = int(_get_basis_setting(config, "num_shared_features", DEFAULT_NUM_SHARED_FEATURES))
+    feature_seed = int(
+        _get_basis_setting(config, "shared_feature_seed", config.generation_params.seed)
+    )
+    rng = np.random.default_rng(feature_seed)
+    raw_features = rng.normal(size=(num_features, n_nodes))
+    centered = raw_features - raw_features.mean(axis=1, keepdims=True)
+    shared_features = np.vstack(
+        [_safe_normalize_vector(feature) for feature in centered]
+    )
+    feature_names = tuple(f"feature_{idx + 1}" for idx in range(num_features))
+    return shared_features, feature_names
+
+
+def _interaction_distance_kernel(
+    feature: np.ndarray,
+    decay: float,
+) -> np.ndarray:
+    """Construct a distance-kernel interaction template from one shared feature."""
+    pairwise_distance = np.abs(feature[:, None] - feature[None, :])
+    return np.exp(-decay * pairwise_distance)
+
+
+def _interaction_cross_similarity(feature: np.ndarray) -> np.ndarray:
+    """Construct a simple similarity template from one shared feature."""
+    return np.outer(feature, feature)
 
 
 def build_basis_expansion(config, gamma_matrix: np.ndarray) -> BasisExpansion:
-    """Construct the configured field and interaction bases from the observed network."""
-    basis_config = (
-        config.global_params.basis_params
-        if "basis_params" in config.global_params
-        else None
-    )
-    field_templates = _template_names(
-        basis_config,
-        "field_templates",
-        DEFAULT_FIELD_TEMPLATES,
-    )
-    interaction_templates = _template_names(
-        basis_config,
-        "interaction_templates",
-        DEFAULT_INTERACTION_TEMPLATES,
-    )
-
+    """Construct infinity-normalized field and interaction bases from shared features."""
     n_nodes = gamma_matrix.shape[0]
-    u = _node_coordinate(n_nodes)
-    quadratic = u**2 - np.mean(u**2)
-    pairwise_distance = np.abs(u[:, None] - u[None, :])
-    cross_similarity = 0.5 * (np.outer(u, quadratic) + np.outer(quadratic, u))
-
-    field_template_map = {
-        "intercept": np.ones(n_nodes, dtype=float),
-        "linear": u,
-        "quadratic": quadratic,
-    }
-    interaction_template_map = {
-        "adjacency": gamma_matrix,
-        "distance_kernel": np.exp(-3.0 * pairwise_distance),
-        "cross_similarity": cross_similarity,
-    }
-
-    field_basis = _orthonormalize_vectors(
-        [_safe_normalize_vector(field_template_map[name]) for name in field_templates]
+    shared_features, shared_feature_names = build_shared_features(config, n_nodes)
+    field_mode = str(_get_basis_setting(config, "field_mode", DEFAULT_FIELD_MODE))
+    interaction_mode = str(
+        _get_basis_setting(config, "interaction_mode", DEFAULT_INTERACTION_MODE)
     )
-    interaction_basis = _orthonormalize_matrices(
-        [
-            _safe_normalize_matrix(interaction_template_map[name])
-            for name in interaction_templates
-        ]
-    )
+    distance_decay = float(_get_basis_setting(config, "distance_kernel_decay", 3.0))
+
+    field_vectors = [np.ones(n_nodes, dtype=float)]
+    field_names = ["intercept"]
+    if field_mode == "shared_feature_field":
+        for feature_name, feature in zip(shared_feature_names, shared_features):
+            field_vectors.append(feature)
+            field_names.append(f"linear::{feature_name}")
+            field_vectors.append(_centered_quadratic(feature))
+            field_names.append(f"quadratic::{feature_name}")
+    elif field_mode != "uniform":
+        raise ValueError(f"Unknown field_mode '{field_mode}'.")
+
+    interaction_matrices = [gamma_matrix]
+    interaction_names = ["adjacency"]
+    if interaction_mode == "shared_feature_interactions":
+        for feature_name, feature in zip(shared_feature_names, shared_features):
+            interaction_matrices.append(_interaction_distance_kernel(feature, distance_decay))
+            interaction_names.append(f"distance_kernel::{feature_name}")
+            interaction_matrices.append(_interaction_cross_similarity(feature))
+            interaction_names.append(f"cross_similarity::{feature_name}")
+    elif interaction_mode != "known_graph":
+        raise ValueError(f"Unknown interaction_mode '{interaction_mode}'.")
+
+    field_basis = _stack_vector_basis(field_vectors)
+    interaction_basis = _stack_matrix_basis(interaction_matrices)
+    validate_basis_infinity_norms(field_basis, interaction_basis)
 
     return BasisExpansion(
         field_basis=field_basis,
         interaction_basis=interaction_basis,
-        field_names=field_templates,
-        interaction_names=interaction_templates,
+        field_names=tuple(field_names),
+        interaction_names=tuple(interaction_names),
+        shared_features=shared_features,
+        shared_feature_names=shared_feature_names,
     )
 
 
@@ -170,21 +201,6 @@ def interaction_features(
     return np.einsum("tn,kmn->ktm", x, interaction_basis, optimize=True)
 
 
-def compose_interaction_term(
-    x: np.ndarray,
-    interaction_coeffs: np.ndarray,
-    interaction_basis: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Build the full interaction term and return it alongside the basis features."""
-    features = interaction_features(x, interaction_basis)
-    interaction_term = np.tensordot(
-        np.asarray(interaction_coeffs, dtype=float),
-        features,
-        axes=(0, 0),
-    )
-    return interaction_term, features
-
-
 def get_field_coeffs(config) -> np.ndarray:
     """Load field coefficients from config, with legacy support for scalar alpha."""
     if "field_coefs" in config.estimation_params:
@@ -200,17 +216,24 @@ def get_interaction_coeffs(config) -> np.ndarray:
 
 
 def load_or_build_basis(config, gamma_matrix: np.ndarray) -> BasisExpansion:
-    """Load the configured basis or fall back to the original scalar-field/scalar-network model."""
+    """Build the configured basis or fall back to the original scalar setup."""
     field_coeffs = get_field_coeffs(config)
     interaction_coeffs = get_interaction_coeffs(config)
-    if len(field_coeffs) == 1 and len(interaction_coeffs) == 1:
-        return BasisExpansion(
-            field_basis=np.ones((1, gamma_matrix.shape[0]), dtype=float),
-            interaction_basis=gamma_matrix[None, :, :],
+    basis_params = _basis_params(config)
+    if basis_params is None and len(field_coeffs) == 1 and len(interaction_coeffs) == 1:
+        basis = BasisExpansion(
+            field_basis=_stack_vector_basis([np.ones(gamma_matrix.shape[0], dtype=float)]),
+            interaction_basis=_stack_matrix_basis([gamma_matrix]),
             field_names=("intercept",),
             interaction_names=("adjacency",),
+            shared_features=np.empty((0, gamma_matrix.shape[0]), dtype=float),
+            shared_feature_names=(),
         )
-    return build_basis_expansion(config, gamma_matrix)
+        validate_basis_infinity_norms(basis.field_basis, basis.interaction_basis)
+        return basis
+    basis = build_basis_expansion(config, gamma_matrix)
+    validate_basis_infinity_norms(basis.field_basis, basis.interaction_basis)
+    return basis
 
 
 def parameter_names(
@@ -266,9 +289,7 @@ def unpack_theta(
     beta = float(theta[n_field])
     interaction_start = n_field + 1
     interaction_end = interaction_start + n_interaction
-    interaction_coeffs = np.asarray(
-        theta[interaction_start:interaction_end], dtype=float
-    )
+    interaction_coeffs = np.asarray(theta[interaction_start:interaction_end], dtype=float)
     eta, zeta, psi = np.asarray(theta[interaction_end:], dtype=float)
     return field_coeffs, beta, interaction_coeffs, eta, zeta, psi
 

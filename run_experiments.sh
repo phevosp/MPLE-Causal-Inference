@@ -5,6 +5,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/latest_manifest.txt}"
+REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$SCRIPT_DIR/reports/conditional_experiment_report}"
+
 if command -v pixi >/dev/null 2>&1; then
 	RUNNER=(pixi run python -u)
 elif command -v python >/dev/null 2>&1; then
@@ -14,29 +17,31 @@ else
 	exit 1
 fi
 
-"$SCRIPT_DIR/generate_data.sh"
+mkdir -p "$(dirname "$REPORT_STEM")"
 
-shopt -s nullglob
+EXPERIMENT_MANIFEST="$MANIFEST_PATH" "$SCRIPT_DIR/generate_data.sh"
 
-EXPERIMENT_DIRS=("$SCRIPT_DIR"/experiments/*)
-
-if [ ${#EXPERIMENT_DIRS[@]} -eq 0 ]; then
-	echo "No experiment folders found in experiments/."
-	exit 0
+if [ ! -f "$MANIFEST_PATH" ]; then
+	echo "Manifest not found: $MANIFEST_PATH" >&2
+	exit 1
 fi
 
-for data_folder in "${EXPERIMENT_DIRS[@]}"; do
-	if [ ! -d "$data_folder" ]; then
+while IFS= read -r data_folder; do
+	if [ -z "$data_folder" ]; then
 		continue
 	fi
 
-	if [ ! -f "$data_folder/realized_config.yaml" ] || [ ! -f "$data_folder/synthetic_data.npz" ] || [ ! -f "$data_folder/gamma_matrix.npy" ] || [ ! -f "$data_folder/x_0.npy" ]; then
-		echo "Skipping ${data_folder}: missing required experiment files."
+	if [ ! -d "$data_folder" ]; then
+		echo "Skipping missing experiment folder: $data_folder"
 		continue
 	fi
 
 	echo "Running conditional MPLE for ${data_folder}..."
 	"${RUNNER[@]}" mple.py --data_folder "$data_folder" "$@"
-done
+done <"$MANIFEST_PATH"
 
-echo "Finished running MPLE across experiment folders."
+echo "Building report..."
+"${RUNNER[@]}" report_experiments.py --manifest "$MANIFEST_PATH" --report_stem "$REPORT_STEM"
+
+echo "Finished running MPLE across manifest experiments."
+echo "Report: ${REPORT_STEM}.md"

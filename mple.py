@@ -16,6 +16,7 @@ from model_utils import (
     parameter_names,
     summary_metrics,
     unpack_theta,
+    validate_basis_infinity_norms,
 )
 
 
@@ -51,6 +52,8 @@ def load_basis_artifacts(data_folder, config, gamma_matrix):
     interaction_basis_path = data_path / "interaction_basis.npy"
     field_names_path = data_path / "field_basis_names.npy"
     interaction_names_path = data_path / "interaction_basis_names.npy"
+    shared_features_path = data_path / "shared_features.npy"
+    shared_feature_names_path = data_path / "shared_feature_names.npy"
 
     if field_basis_path.exists() and interaction_basis_path.exists():
         field_basis = np.load(field_basis_path)
@@ -65,11 +68,24 @@ def load_basis_artifacts(data_folder, config, gamma_matrix):
             interaction_names = tuple(
                 f"interaction_{idx}" for idx in range(interaction_basis.shape[0])
             )
+        if shared_features_path.exists():
+            shared_features = np.load(shared_features_path)
+        else:
+            shared_features = np.empty((0, field_basis.shape[1]), dtype=float)
+        if shared_feature_names_path.exists():
+            shared_feature_names = tuple(np.load(shared_feature_names_path).tolist())
+        else:
+            shared_feature_names = tuple(
+                f"feature_{idx}" for idx in range(shared_features.shape[0])
+            )
+        validate_basis_infinity_norms(field_basis, interaction_basis)
         return BasisExpansion(
             field_basis=field_basis,
             interaction_basis=interaction_basis,
             field_names=field_names,
             interaction_names=interaction_names,
+            shared_features=shared_features,
+            shared_feature_names=shared_feature_names,
         )
 
     return load_or_build_basis(config, gamma_matrix)

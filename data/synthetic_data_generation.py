@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse
 import os
 import sys
+import re
 
 import networkx as nx
 import numpy as np
@@ -13,12 +14,19 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from model_utils import (
+    BasisExpansion,
     compose_field,
     compose_interaction_matrix,
     get_field_coeffs,
     get_interaction_coeffs,
     load_or_build_basis,
 )
+
+
+def slugify(text: str) -> str:
+    """Convert free-form experiment labels into filesystem-friendly slugs."""
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", text.strip().lower()).strip("_")
+    return slug or "experiment"
 
 
 def load_config(config_name, config_overrides=None):
@@ -29,10 +37,28 @@ def load_config(config_name, config_overrides=None):
     return config
 
 
+def parse_metadata_entries(entries: list[str] | None) -> dict[str, str]:
+    """Parse repeated KEY=VALUE metadata arguments into a dictionary."""
+    metadata = {}
+    for entry in entries or []:
+        if "=" not in entry:
+            raise ValueError(f"Metadata entry '{entry}' must be in KEY=VALUE format.")
+        key, value = entry.split("=", 1)
+        metadata[key] = value
+    return metadata
+
+
 def spin_sample_from_field(h, rng):
     """Sample spins in {-1, +1} from a local field using the logistic conditional."""
     p = 1.0 / (1.0 + np.exp(-2.0 * h))
     return 2.0 * (rng.random(np.shape(p)) < p).astype(float) - 1.0
+
+
+def scale_gamma_matrix(config, gamma_matrix: np.ndarray) -> np.ndarray:
+    """Normalize the known graph matrix by infinity norm only, without Frobenius re-scaling."""
+    gamma_matrix = np.asarray(gamma_matrix, dtype=float)
+    norm = np.linalg.norm(gamma_matrix, ord=np.inf)
+    return gamma_matrix / norm if norm > 1e-12 else gamma_matrix
 
 
 def read_and_realize_config(config_name, config_overrides=None):
@@ -51,6 +77,8 @@ def read_and_realize_config(config_name, config_overrides=None):
         )
     elif config.global_params.gamma_matrix_generator == "complete":
         gamma_graph = nx.complete_graph(config.global_params.N)
+    elif config.global_params.gamma_matrix_generator == "cycle":
+        gamma_graph = nx.cycle_graph(config.global_params.N)
     elif config.global_params.gamma_matrix_generator == "empty":
         gamma_graph = nx.empty_graph(config.global_params.N)
     else:
@@ -63,7 +91,7 @@ def read_and_realize_config(config_name, config_overrides=None):
     gamma_matrix = nx.to_numpy_array(gamma_graph, nodelist=node_order)
     gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2
     np.fill_diagonal(gamma_matrix, 0)
-    gamma_matrix = gamma_matrix / np.linalg.norm(gamma_matrix, ord=np.inf)
+    gamma_matrix = scale_gamma_matrix(config, gamma_matrix)
 
     if config.global_params.x_0_generator == "bernoulli":
         p = config.global_params.x_0_params.p
@@ -134,6 +162,45 @@ def generate_data(config, field_vector, interaction_matrix, x_0, rng):
     return x, z
 
 
+def save_artifacts(
+    data_folder: str,
+    config,
+    metadata: dict[str, str],
+    basis: BasisExpansion,
+    gamma_matrix: np.ndarray,
+    field_vector: np.ndarray,
+    interaction_matrix: np.ndarray,
+    x_0: np.ndarray,
+    x: np.ndarray,
+    z: np.ndarray,
+) -> None:
+    """Persist the realized config, metadata, basis objects, and sampled data."""
+    os.makedirs(data_folder)
+    print("Saving data, config, and network...")
+    OmegaConf.save(config, f"{data_folder}/realized_config.yaml")
+    OmegaConf.save(OmegaConf.create(metadata), f"{data_folder}/experiment_metadata.yaml")
+    np.savez(f"{data_folder}/synthetic_data.npz", x=x, z=z)
+    np.save(f"{data_folder}/gamma_matrix.npy", gamma_matrix)
+    np.save(f"{data_folder}/x_0.npy", x_0)
+    np.save(f"{data_folder}/field_basis.npy", basis.field_basis)
+    np.save(f"{data_folder}/interaction_basis.npy", basis.interaction_basis)
+    np.save(f"{data_folder}/field_vector.npy", field_vector)
+    np.save(f"{data_folder}/interaction_matrix.npy", interaction_matrix)
+    np.save(f"{data_folder}/shared_features.npy", basis.shared_features)
+    np.save(
+        f"{data_folder}/field_basis_names.npy",
+        np.asarray(basis.field_names, dtype="<U64"),
+    )
+    np.save(
+        f"{data_folder}/interaction_basis_names.npy",
+        np.asarray(basis.interaction_names, dtype="<U64"),
+    )
+    np.save(
+        f"{data_folder}/shared_feature_names.npy",
+        np.asarray(basis.shared_feature_names, dtype="<U64"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate synthetic data for conditional-model MPLE experiments."
@@ -151,11 +218,32 @@ if __name__ == "__main__":
         metavar="KEY=VALUE",
         help="Manual config override in OmegaConf dotlist format. Repeat to set multiple values.",
     )
+    parser.add_argument(
+        "--descriptor",
+        type=str,
+        default=None,
+        help="Optional human-readable label used in the output folder name.",
+    )
+    parser.add_argument(
+        "--manifest_path",
+        type=str,
+        default=None,
+        help="Optional file where the generated experiment folder path will be appended.",
+    )
+    parser.add_argument(
+        "--metadata",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Optional experiment metadata fields to save alongside the generated data.",
+    )
     args = parser.parse_args()
 
     print("Starting synthetic data generation...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    data_folder = f"experiments/synthetic_data_{timestamp}"
+    descriptor = slugify(args.descriptor) if args.descriptor else "synthetic_data"
+    data_folder = f"experiments/{descriptor}_{timestamp}"
+    extra_metadata = parse_metadata_entries(args.metadata)
 
     print("Reading and realizing config...")
     config, gamma_matrix, x_0, rng = read_and_realize_config(
@@ -180,23 +268,34 @@ if __name__ == "__main__":
         rng,
     )
 
-    os.makedirs(data_folder)
-    print("Saving data, config, and network...")
-    OmegaConf.save(config, f"{data_folder}/realized_config.yaml")
-    np.savez(f"{data_folder}/synthetic_data.npz", x=x, z=z)
-    np.save(f"{data_folder}/gamma_matrix.npy", gamma_matrix)
-    np.save(f"{data_folder}/x_0.npy", x_0)
-    np.save(f"{data_folder}/field_basis.npy", basis.field_basis)
-    np.save(f"{data_folder}/interaction_basis.npy", basis.interaction_basis)
-    np.save(f"{data_folder}/field_vector.npy", field_vector)
-    np.save(f"{data_folder}/interaction_matrix.npy", interaction_matrix)
-    np.save(
-        f"{data_folder}/field_basis_names.npy",
-        np.asarray(basis.field_names, dtype="<U64"),
-    )
-    np.save(
-        f"{data_folder}/interaction_basis_names.npy",
-        np.asarray(basis.interaction_names, dtype="<U64"),
+    metadata = {
+        "descriptor": args.descriptor or descriptor,
+        "slug": descriptor,
+        "timestamp": timestamp,
+        "config_name": args.config_name,
+        "config_overrides": list(args.config_override),
+        "gamma_inf_norm": float(np.linalg.norm(gamma_matrix, ord=np.inf)),
+        "gamma_fro_norm": float(np.linalg.norm(gamma_matrix, ord="fro")),
+        "field_basis_inf_norms": [
+            float(np.linalg.norm(vector, ord=np.inf)) for vector in basis.field_basis
+        ],
+        "interaction_basis_inf_norms": [
+            float(np.linalg.norm(matrix, ord=np.inf))
+            for matrix in basis.interaction_basis
+        ],
+        **extra_metadata,
+    }
+    save_artifacts(
+        data_folder=data_folder,
+        config=config,
+        metadata=metadata,
+        basis=basis,
+        gamma_matrix=gamma_matrix,
+        field_vector=field_vector,
+        interaction_matrix=interaction_matrix,
+        x_0=x_0,
+        x=x,
+        z=z,
     )
 
     print("Done!")
@@ -205,3 +304,10 @@ if __name__ == "__main__":
         "Infinity Norm of Interaction Matrix:",
         np.linalg.norm(interaction_matrix, ord=np.inf),
     )
+    print(f"Experiment Folder: {data_folder}")
+
+    if args.manifest_path is not None:
+        manifest_path = Path(args.manifest_path)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        with manifest_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{Path(data_folder).resolve()}\n")
