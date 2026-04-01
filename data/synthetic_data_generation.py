@@ -4,6 +4,20 @@ import networkx as nx
 import numpy as np
 from datetime import datetime
 import os
+from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from model_utils import (
+    compose_field,
+    compose_interaction_matrix,
+    get_field_coeffs,
+    get_interaction_coeffs,
+    load_or_build_basis,
+)
 
 
 def load_config(config_name, config_overrides=None):
@@ -99,42 +113,66 @@ def sample_z_t(x_prev, z_prev, config, rng):
     return spin_sample_from_field(h_z, rng)
 
 
-def sample_x_t(x_prev, z_curr, config, gamma_matrix, rng):
+def sample_x_t(x_prev, z_curr, config, field_vector, interaction_matrix, rng):
     """Sample x^{(t)} given x^{(t-1)} and z^{(t)} using Gibbs sampling.
     For each i, sample x_i^(t) given x_{-i}^{(t)}, z^{(t)}, and x^{(t-1)} according to a logistic function.
 
     Args:
         x_prev (np.array): outcomes from time step t-1
         z_curr (np.array): outcomes from time step t
-        config (OmegaConf): model configuration containing alpha, beta, eta, and xi
-        gamma_matrix (np.array): the network structure as an adjacency matrix
+        config (OmegaConf): model configuration containing beta and eta
+        field_vector (np.array): node-specific external field
+        interaction_matrix (np.array): unknown interaction matrix represented in a known basis
         rng (np.random.Generator): random number generator
 
     Returns:
         np.array: sampled x^{(t)}
     """
     x_t = x_prev.copy()
-    # Store gamma_matrix @ x_t and update incrementally for efficiency
-    gamma_x_t = gamma_matrix @ x_t
+    interaction_x_t = interaction_matrix @ x_t
     for _ in range(config.generation_params.gibbs_sweeps):
         # Random order mixes faster and ensures symmetry in the influence of nodes
         node_order = rng.permutation(config.global_params.N)
         for i in node_order:
             old_x_i = x_t[i]
             h_x = (
-                config.estimation_params.alpha
+                field_vector[i]
                 + config.estimation_params.beta * z_curr[i]
                 + config.estimation_params.eta * x_prev[i]
-                + config.estimation_params.xi * gamma_x_t[i]
+                + interaction_x_t[i]
             )
             x_t[i] = spin_sample_from_field(h_x, rng)
-            # Update gamma_x_t for next iteration
-            gamma_x_t += (x_t[i] - old_x_i) * gamma_matrix[:, i]
+            # Update the current interaction field incrementally after flipping node i.
+            interaction_x_t += (x_t[i] - old_x_i) * interaction_matrix[:, i]
 
     return x_t
 
 
-def generate_conditional_model(config, gamma_matrix, x_0, rng):
+def generate_conditional_model(
+    config,
+    field_vector,
+    interaction_matrix,
+    x_0,
+    rng,
+):
+    """Generate synthetic data for a conditional causal model over time.
+
+    Args:
+        config: Configuration object containing global parameters including:
+            - T: Number of time steps
+            - N: Number of variables/nodes
+            - s: Regime parameter (0 for observational, >0 for interventional)
+        field_vector: Field vector for the causal model dynamics
+        interaction_matrix: Interaction matrix defining variable dependencies
+        x_0: Initial state vector of shape (N,)
+        rng: Random number generator for reproducibility
+
+    Returns:
+        tuple: (x, z) where
+            - x: State trajectories of shape (T, N) sampled from x_t | x_{t-1}, z_t
+            - z: Treatment/intervention trajectories of shape (T, N)
+              sampled from z_t | x_{t-1}, z_{t-1}
+    """
     # Initialize
     x = np.zeros((config.global_params.T, config.global_params.N))
     z = np.zeros((config.global_params.T, config.global_params.N))
@@ -145,7 +183,7 @@ def generate_conditional_model(config, gamma_matrix, x_0, rng):
         if config.global_params.s == 0
         else -np.ones_like(x_0)
     )
-    x[0, :] = sample_x_t(x_0, z[0, :], config, gamma_matrix, rng)
+    x[0, :] = sample_x_t(x_0, z[0, :], config, field_vector, interaction_matrix, rng)
 
     # Sample subsequent time steps
     for t in range(1, config.global_params.T):
@@ -155,12 +193,34 @@ def generate_conditional_model(config, gamma_matrix, x_0, rng):
             if t >= config.global_params.s
             else -np.ones_like(x_0)
         )
-        x[t, :] = sample_x_t(x[t - 1, :], z[t, :], config, gamma_matrix, rng)
+        x[t, :] = sample_x_t(
+            x[t - 1, :],
+            z[t, :],
+            config,
+            field_vector,
+            interaction_matrix,
+            rng,
+        )
 
     return x, z
 
 
-def generate_ising_model(config, gamma_matrix, x_0, rng):
+def generate_ising_model(config, field_vector, interaction_matrix, x_0, rng):
+    """Generate data from the joint space-time Ising model via Gibbs sweeps.
+
+    Args:
+        config: Configuration containing network size, time horizon, intervention horizon,
+            and Gibbs-sampling settings.
+        field_vector: Node-wise external field used in the outcome updates.
+        interaction_matrix: Symmetric within-time interaction matrix for the outcomes.
+        x_0: Initial outcome state used for the first time step.
+        rng: Random number generator controlling all stochastic updates.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]:
+            The sampled outcome matrix ``x`` and intervention matrix ``z``,
+            each with shape ``(T, N)``.
+    """
     # Initialize
     x = rng.choice([-1, 1], size=(config.global_params.T, config.global_params.N))
     z = rng.choice([-1, 1], size=(config.global_params.T, config.global_params.N))
@@ -168,8 +228,8 @@ def generate_ising_model(config, gamma_matrix, x_0, rng):
         -1
     )  # Set first s time steps of z to -1 (no intervention)
 
-    # Precompute gamma_x for efficiency
-    gamma_x = x @ gamma_matrix.T
+    # Precompute interaction term for efficiency
+    interaction_x = x @ interaction_matrix.T
     for g in range(config.generation_params.gibbs_sweeps):
         print(f"Performing Gibbs sweep {g}...")
         # Randomize order for better mixing
@@ -180,15 +240,15 @@ def generate_ising_model(config, gamma_matrix, x_0, rng):
                 old_x_t_i = x[t, i]
                 # fmt: off
                 h_x = (
-                    config.estimation_params.alpha
+                    field_vector[i]
                     + config.estimation_params.eta *(x[t - 1, i] if t > 0 else x_0[i])
                     + config.estimation_params.beta * z[t, i]
-                    + config.estimation_params.xi * gamma_x[t, i]
+                    + interaction_x[t, i]
                     + config.estimation_params.zeta * (z[t + 1, i] if (t + 1 >= config.global_params.s and t + 1 < config.global_params.T) else 0)
                     + config.estimation_params.eta * (x[t + 1, i] if t < config.global_params.T - 1 else 0)
                 )
                 x[t, i] = spin_sample_from_field(h_x, rng)
-                gamma_x[t, :] += (x[t, i] - old_x_t_i) * gamma_matrix[:, i]
+                interaction_x[t, :] += (x[t, i] - old_x_t_i) * interaction_matrix[:, i]
             # Update all z's for time step t in parallel since they are conditionally independent
             if t >= config.global_params.s:
                 h_z = (
@@ -232,13 +292,33 @@ if __name__ == "__main__":
         args.config_name,
         args.config_override,
     )
+    basis = load_or_build_basis(config, gamma_matrix)
+    field_coeffs = get_field_coeffs(config)
+    interaction_coeffs = get_interaction_coeffs(config)
+    field_vector = compose_field(field_coeffs, basis.field_basis)
+    interaction_matrix = compose_interaction_matrix(
+        interaction_coeffs,
+        basis.interaction_basis,
+    )
 
     if config.generation_params.process == "conditional":
         print("Generating data with conditional process...")
-        x, z = generate_conditional_model(config, gamma_matrix, x_0, rng)
+        x, z = generate_conditional_model(
+            config,
+            field_vector,
+            interaction_matrix,
+            x_0,
+            rng,
+        )
     elif config.generation_params.process == "Ising":
         print("Generating data with Ising process...")
-        x, z = generate_ising_model(config, gamma_matrix, x_0, rng)
+        x, z = generate_ising_model(
+            config,
+            field_vector,
+            interaction_matrix,
+            x_0,
+            rng,
+        )
     else:
         raise ValueError(
             f"Invalid generation process: {config.generation_params.process}"
@@ -250,6 +330,22 @@ if __name__ == "__main__":
     np.savez(f"{data_folder}/synthetic_data.npz", x=x, z=z)
     np.save(f"{data_folder}/gamma_matrix.npy", gamma_matrix)
     np.save(f"{data_folder}/x_0.npy", x_0)
+    np.save(f"{data_folder}/field_basis.npy", basis.field_basis)
+    np.save(f"{data_folder}/interaction_basis.npy", basis.interaction_basis)
+    np.save(f"{data_folder}/field_vector.npy", field_vector)
+    np.save(f"{data_folder}/interaction_matrix.npy", interaction_matrix)
+    np.save(
+        f"{data_folder}/field_basis_names.npy",
+        np.asarray(basis.field_names, dtype="<U64"),
+    )
+    np.save(
+        f"{data_folder}/interaction_basis_names.npy",
+        np.asarray(basis.interaction_names, dtype="<U64"),
+    )
 
     print("Done!")
     print("Frob. Norm of Gamma Matrix:", np.linalg.norm(gamma_matrix, ord="fro"))
+    print(
+        "Frob. Norm of Interaction Matrix:",
+        np.linalg.norm(interaction_matrix, ord="fro"),
+    )

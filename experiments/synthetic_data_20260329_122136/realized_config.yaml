@@ -1,0 +1,37 @@
+global_params:
+  'N': 200
+  T: 80
+  s: 8
+  gamma_matrix_generator: erdos_renyi
+  x_0_generator: bernoulli
+  basis_params:
+    field_templates:
+    - intercept
+    - linear
+    - quadratic
+    interaction_templates:
+    - adjacency
+    - distance_kernel
+    - cross_similarity
+  gamma_matrix_params:
+    p: 0.05
+  x_0_params:
+    p: 0.5
+    fixed_val: 1
+estimation_params:
+  field_coefs:
+  - 0.35
+  - -0.2
+  - 0.08
+  beta: 0.25
+  interaction_coefs:
+  - 0.14
+  - 0.08
+  - -0.06
+  eta: 0.01
+  zeta: -0.03
+  psi: 0.1
+generation_params:
+  seed: 19
+  process: conditional
+  gibbs_sweeps: 15

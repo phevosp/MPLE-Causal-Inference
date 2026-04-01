@@ -1,0 +1,31 @@
+2026-03-29 12:20:01 | INFO | Loading data...
+2026-03-29 12:20:01 | INFO | Loaded 3 field templates and 3 interaction templates.
+2026-03-29 12:20:01 | INFO | Running conditional-model MPLE on x with shape=(30, 120)
+2026-03-29 12:20:01 | INFO | Eval 0  |  Loss: 0.715736
+2026-03-29 12:20:01 | INFO |   field::intercept: +0.0001,  field::linear: +0.0299,  field::quadratic: -0.0274,  beta: -0.0891,  interaction::adjacency: -0.0455,  interaction::smooth_similarity: -0.0992,  interaction::weighted_adjacency: +0.0060,  eta: +0.1340,  zeta: -0.0492,  psi: -0.0620
+2026-03-29 12:20:01 | INFO | Done fitting.
+2026-03-29 12:20:01 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-03-29 12:20:01 | INFO | Final Loss (Conditional Model): 0.669141
+2026-03-29 12:20:01 | INFO | Estimated vs True Parameters (Conditional Model):
+2026-03-29 12:20:01 | INFO |   field::intercept: 0.5277 (True: 0.3500)
+2026-03-29 12:20:01 | INFO |   field::intercept SQE: 0.031565
+2026-03-29 12:20:01 | INFO |   field::linear: -0.0705 (True: -0.1500)
+2026-03-29 12:20:01 | INFO |   field::linear SQE: 0.006316
+2026-03-29 12:20:01 | INFO |   field::quadratic: -0.1581 (True: 0.0500)
+2026-03-29 12:20:01 | INFO |   field::quadratic SQE: 0.043307
+2026-03-29 12:20:01 | INFO |   beta: 0.2891 (True: 0.2500)
+2026-03-29 12:20:01 | INFO |   beta SQE: 0.001529
+2026-03-29 12:20:01 | INFO |   interaction::adjacency: 0.8152 (True: 0.0800)
+2026-03-29 12:20:01 | INFO |   interaction::adjacency SQE: 0.540583
+2026-03-29 12:20:01 | INFO |   interaction::smooth_similarity: -0.2546 (True: 0.0300)
+2026-03-29 12:20:01 | INFO |   interaction::smooth_similarity SQE: 0.081016
+2026-03-29 12:20:01 | INFO |   interaction::weighted_adjacency: -0.7145 (True: -0.0200)
+2026-03-29 12:20:01 | INFO |   interaction::weighted_adjacency SQE: 0.482389
+2026-03-29 12:20:01 | INFO |   eta: 0.0173 (True: 0.0100)
+2026-03-29 12:20:01 | INFO |   eta SQE: 0.000054
+2026-03-29 12:20:01 | INFO |   zeta: -0.0379 (True: -0.0300)
+2026-03-29 12:20:01 | INFO |   zeta SQE: 0.000062
+2026-03-29 12:20:01 | INFO |   psi: 0.1015 (True: 0.1000)
+2026-03-29 12:20:01 | INFO |   psi SQE: 0.000002
+2026-03-29 12:20:01 | INFO | Saved summary tables to experiments\synthetic_data_20260329_121943\mple_conditional_summary.csv and experiments\synthetic_data_20260329_121943\mple_conditional_summary.md
+2026-03-29 12:20:01 | INFO | Log saved to experiments\synthetic_data_20260329_121943\mple_conditional.log

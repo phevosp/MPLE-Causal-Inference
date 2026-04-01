@@ -4,6 +4,9 @@ global_params:
   s: 10 # number of pre-intervention time steps
   gamma_matrix_generator: "erdos_renyi" # method for generating the network. Options: "erdos_renyi", "complete", "empty"
   x_0_generator: "bernoulli" # method for generating the initial state. Options: "bernoulli", "fixed"
+  basis_params:
+    field_templates: ["intercept", "linear", "quadratic"] # low-dimensional manifold for the unknown external field
+    interaction_templates: ["adjacency", "distance_kernel", "cross_similarity"] # low-dimensional manifold for the unknown interaction matrix
   gamma_matrix_params:
     p: 0.01 # probability of edge creation for "erdos-renyi"
   x_0_params:
@@ -11,9 +14,9 @@ global_params:
     fixed_val: 1 # options 1 or -1 for "fixed"
 
 estimation_params:
-  alpha: 0.35 # external field param
+  field_coefs: [0.35, -0.15, 0.05] # coefficients for the known field basis templates
   beta: 0.25 # z^{(t)} -> x^{(t)}
-  xi: 0.05 # x^{(t)} -> x^{(t)}
+  interaction_coefs: [0.08, 0.03, -0.02] # coefficients for the known interaction basis templates
   eta: 0.01 # x^{(t-1)} -> x^{(t)}
   zeta: -0.03 # x^{(t-1)} -> z^{(t)}
   psi: 0.1 # z^{(t-1)} -> z^{(t)}

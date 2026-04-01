@@ -1,0 +1,80 @@
+2026-03-29 12:22:09 | INFO | Loading data...
+2026-03-29 12:22:09 | INFO | Loaded 3 field templates and 3 interaction templates.
+2026-03-29 12:22:09 | INFO | Running Stage 1 MPLE on x with shape=(80, 200)
+2026-03-29 12:22:09 | INFO | Eval 0  |  Loss: 0.710946
+2026-03-29 12:22:09 | INFO |   field::intercept: -0.0370,  field::linear: +0.0994,  field::quadratic: +0.0416,  beta: -0.0618,  interaction::adjacency: +0.0672,  interaction::distance_kernel: -0.1450,  interaction::cross_similarity: +0.0593,  eta: -0.0562,  zeta: +0.0631,  psi: +0.0439
+2026-03-29 12:22:10 | INFO | Running Stage 2 MPLE (conditioning on all z's and even x's)...
+2026-03-29 12:22:10 | INFO | Eval 0  |  Loss: 0.716444
+2026-03-29 12:22:10 | INFO |   field::intercept: -0.0370,  field::linear: +0.0994,  field::quadratic: +0.0416,  beta: -0.0618,  interaction::adjacency: +0.0672,  interaction::distance_kernel: -0.1450,  interaction::cross_similarity: +0.0593,  eta: -0.0562,  zeta: +0.0631,  psi: +0.0439
+2026-03-29 12:22:10 | INFO | Done fitting.
+2026-03-29 12:22:10 | INFO | Stage 1 status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-03-29 12:22:10 | INFO | Stage 2 status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-03-29 12:22:10 | INFO | Final Loss (Unconditioned): 0.659053
+2026-03-29 12:22:10 | INFO | Estimated vs True Parameters (Unconditioned):
+2026-03-29 12:22:10 | INFO |   field::intercept: 0.3950 (True: 0.3500)
+2026-03-29 12:22:10 | INFO |   field::intercept SQE: 0.002023
+2026-03-29 12:22:10 | INFO |   field::linear: -0.2033 (True: -0.2000)
+2026-03-29 12:22:10 | INFO |   field::linear SQE: 0.000011
+2026-03-29 12:22:10 | INFO |   field::quadratic: 0.1162 (True: 0.0800)
+2026-03-29 12:22:10 | INFO |   field::quadratic SQE: 0.001309
+2026-03-29 12:22:10 | INFO |   beta: 0.2472 (True: 0.2500)
+2026-03-29 12:22:10 | INFO |   beta SQE: 0.000008
+2026-03-29 12:22:10 | INFO |   interaction::adjacency: 0.0868 (True: 0.1400)
+2026-03-29 12:22:10 | INFO |   interaction::adjacency SQE: 0.002834
+2026-03-29 12:22:10 | INFO |   interaction::distance_kernel: 0.0008 (True: 0.0800)
+2026-03-29 12:22:10 | INFO |   interaction::distance_kernel SQE: 0.006280
+2026-03-29 12:22:10 | INFO |   interaction::cross_similarity: -0.1229 (True: -0.0600)
+2026-03-29 12:22:10 | INFO |   interaction::cross_similarity SQE: 0.003963
+2026-03-29 12:22:10 | INFO |   eta: 0.0080 (True: 0.0100)
+2026-03-29 12:22:10 | INFO |   eta SQE: 0.000004
+2026-03-29 12:22:10 | INFO |   zeta: -0.0216 (True: -0.0300)
+2026-03-29 12:22:10 | INFO |   zeta SQE: 0.000070
+2026-03-29 12:22:10 | INFO |   psi: 0.1073 (True: 0.1000)
+2026-03-29 12:22:10 | INFO |   psi SQE: 0.000053
+2026-03-29 12:22:10 | INFO | =================================================
+2026-03-29 12:22:10 | INFO | Final Loss (Conditioned): 0.660736
+2026-03-29 12:22:10 | INFO | Estimated vs True Parameters (Conditioned):
+2026-03-29 12:22:10 | INFO |   field::intercept: 0.4017 (True: 0.3500)
+2026-03-29 12:22:10 | INFO |   field::intercept SQE: 0.002669
+2026-03-29 12:22:10 | INFO |   field::linear: -0.1164 (True: -0.2000)
+2026-03-29 12:22:10 | INFO |   field::linear SQE: 0.006983
+2026-03-29 12:22:10 | INFO |   field::quadratic: 0.0883 (True: 0.0800)
+2026-03-29 12:22:10 | INFO |   field::quadratic SQE: 0.000069
+2026-03-29 12:22:10 | INFO |   beta: 0.2579 (True: 0.2500)
+2026-03-29 12:22:10 | INFO |   beta SQE: 0.000063
+2026-03-29 12:22:10 | INFO |   interaction::adjacency: -0.1063 (True: 0.1400)
+2026-03-29 12:22:10 | INFO |   interaction::adjacency SQE: 0.060685
+2026-03-29 12:22:10 | INFO |   interaction::distance_kernel: 0.1743 (True: 0.0800)
+2026-03-29 12:22:10 | INFO |   interaction::distance_kernel SQE: 0.008889
+2026-03-29 12:22:10 | INFO |   interaction::cross_similarity: -0.0411 (True: -0.0600)
+2026-03-29 12:22:10 | INFO |   interaction::cross_similarity SQE: 0.000359
+2026-03-29 12:22:10 | INFO |   eta: 0.0075 (True: 0.0100)
+2026-03-29 12:22:10 | INFO |   eta SQE: 0.000006
+2026-03-29 12:22:10 | INFO |   zeta: -0.0139 (True: -0.0300)
+2026-03-29 12:22:10 | INFO |   zeta SQE: 0.000260
+2026-03-29 12:22:10 | INFO |   psi: 0.0439 (True: 0.1000)
+2026-03-29 12:22:10 | INFO |   psi SQE: 0.003146
+2026-03-29 12:22:10 | INFO | =================================================
+2026-03-29 12:22:10 | INFO | Combined Two-Stage Estimate:
+2026-03-29 12:22:10 | INFO |   field::intercept: 0.4017 (True: 0.3500)
+2026-03-29 12:22:10 | INFO |   field::intercept SQE: 0.002669
+2026-03-29 12:22:10 | INFO |   field::linear: -0.1164 (True: -0.2000)
+2026-03-29 12:22:10 | INFO |   field::linear SQE: 0.006983
+2026-03-29 12:22:10 | INFO |   field::quadratic: 0.0883 (True: 0.0800)
+2026-03-29 12:22:10 | INFO |   field::quadratic SQE: 0.000069
+2026-03-29 12:22:10 | INFO |   beta: 0.2472 (True: 0.2500)
+2026-03-29 12:22:10 | INFO |   beta SQE: 0.000008
+2026-03-29 12:22:10 | INFO |   interaction::adjacency: 0.0868 (True: 0.1400)
+2026-03-29 12:22:10 | INFO |   interaction::adjacency SQE: 0.002834
+2026-03-29 12:22:10 | INFO |   interaction::distance_kernel: 0.0008 (True: 0.0800)
+2026-03-29 12:22:10 | INFO |   interaction::distance_kernel SQE: 0.006280
+2026-03-29 12:22:10 | INFO |   interaction::cross_similarity: -0.1229 (True: -0.0600)
+2026-03-29 12:22:10 | INFO |   interaction::cross_similarity SQE: 0.003963
+2026-03-29 12:22:10 | INFO |   eta: 0.0080 (True: 0.0100)
+2026-03-29 12:22:10 | INFO |   eta SQE: 0.000004
+2026-03-29 12:22:10 | INFO |   zeta: -0.0216 (True: -0.0300)
+2026-03-29 12:22:10 | INFO |   zeta SQE: 0.000070
+2026-03-29 12:22:10 | INFO |   psi: 0.1073 (True: 0.1000)
+2026-03-29 12:22:10 | INFO |   psi SQE: 0.000053
+2026-03-29 12:22:10 | INFO | Saved stage summaries to experiments\synthetic_data_20260329_122136
+2026-03-29 12:22:10 | INFO | Log saved to experiments\synthetic_data_20260329_122136\mple.log

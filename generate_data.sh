@@ -41,16 +41,16 @@ run_generation "Ising N_large" "${COMMON_ISING[@]}" \
 	--config_override global_params.N=5000
 
 run_generation "conditional params_large" "${COMMON_CONDITIONAL[@]}" \
-	--config_override estimation_params.alpha=1 \
+	--config_override 'estimation_params.field_coefs=[1,-0.3,0.2]' \
 	--config_override estimation_params.beta=1 \
-	--config_override estimation_params.xi=0.5 \
+	--config_override 'estimation_params.interaction_coefs=[0.5,0.2,-0.1]' \
 	--config_override estimation_params.eta=0.1 \
 	--config_override estimation_params.zeta=-0.5 \
 	--config_override estimation_params.psi=0.5
 run_generation "Ising params_large" "${COMMON_ISING[@]}" \
-	--config_override estimation_params.alpha=1 \
+	--config_override 'estimation_params.field_coefs=[1,-0.3,0.2]' \
 	--config_override estimation_params.beta=1 \
-	--config_override estimation_params.xi=0.5 \
+	--config_override 'estimation_params.interaction_coefs=[0.5,0.2,-0.1]' \
 	--config_override estimation_params.eta=0.1 \
 	--config_override estimation_params.zeta=-0.5 \
 	--config_override estimation_params.psi=0.5
@@ -61,9 +61,9 @@ run_generation "conditional robustness" "${COMMON_CONDITIONAL[@]}" \
 	--config_override global_params.s=0 \
 	--config_override global_params.gamma_matrix_generator=complete \
 	--config_override global_params.x_0_params.p=0.2 \
-	--config_override estimation_params.alpha=1 \
+	--config_override 'estimation_params.field_coefs=[1,-0.5,0.25]' \
 	--config_override estimation_params.beta=-1 \
-	--config_override estimation_params.xi=1 \
+	--config_override 'estimation_params.interaction_coefs=[1,0.3,-0.2]' \
 	--config_override estimation_params.eta=0.5 \
 	--config_override estimation_params.zeta=-0.3 \
 	--config_override estimation_params.psi=0.5
@@ -73,9 +73,9 @@ run_generation "Ising robustness" "${COMMON_ISING[@]}" \
 	--config_override global_params.s=0 \
 	--config_override global_params.gamma_matrix_generator=complete \
 	--config_override global_params.x_0_params.p=0.2 \
-	--config_override estimation_params.alpha=1 \
+	--config_override 'estimation_params.field_coefs=[1,-0.5,0.25]' \
 	--config_override estimation_params.beta=-1 \
-	--config_override estimation_params.xi=1 \
+	--config_override 'estimation_params.interaction_coefs=[1,0.3,-0.2]' \
 	--config_override estimation_params.eta=0.5 \
 	--config_override estimation_params.zeta=-0.3 \
 	--config_override estimation_params.psi=0.5
