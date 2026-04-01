@@ -23,5 +23,4 @@ estimation_params:
 
 generation_params:
   seed: 42 # random seed for reproducibility
-  process: "conditional" # options: "conditional", "Ising"
-  gibbs_sweeps: 25 # number of Gibbs sweeps for sampling x^{(t)} in conditional model or sampling from the Ising process
+  gibbs_sweeps: 25 # number of Gibbs sweeps for sampling x^{(t)} in the conditional model

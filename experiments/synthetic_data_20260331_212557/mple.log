@@ -1,0 +1,31 @@
+2026-03-31 21:26:16 | INFO | Loading data...
+2026-03-31 21:26:17 | INFO | Loaded 3 field templates and 3 interaction templates.
+2026-03-31 21:26:17 | INFO | Running conditional-model MPLE on x with shape=(12, 40)
+2026-03-31 21:26:17 | INFO | Eval 0  |  Loss: 0.692045
+2026-03-31 21:26:17 | INFO |   field::intercept: -0.0989,  field::linear: -0.0368,  field::quadratic: +0.1288,  beta: +0.0194,  interaction::adjacency: +0.0920,  interaction::distance_kernel: +0.0577,  interaction::cross_similarity: -0.0636,  eta: +0.0542,  zeta: -0.0317,  psi: -0.0322
+2026-03-31 21:26:17 | INFO | Done fitting.
+2026-03-31 21:26:17 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-03-31 21:26:17 | INFO | Final Loss: 0.663820
+2026-03-31 21:26:17 | INFO | Estimated vs True Parameters:
+2026-03-31 21:26:17 | INFO |   field::intercept: 0.7710 (True: 0.3500)
+2026-03-31 21:26:17 | INFO |   field::intercept SQE: 0.177257
+2026-03-31 21:26:17 | INFO |   field::linear: 0.3319 (True: -0.1500)
+2026-03-31 21:26:17 | INFO |   field::linear SQE: 0.232193
+2026-03-31 21:26:17 | INFO |   field::quadratic: 0.1273 (True: 0.0500)
+2026-03-31 21:26:17 | INFO |   field::quadratic SQE: 0.005980
+2026-03-31 21:26:17 | INFO |   beta: 0.2874 (True: 0.2500)
+2026-03-31 21:26:17 | INFO |   beta SQE: 0.001402
+2026-03-31 21:26:17 | INFO |   interaction::adjacency: 0.0047 (True: 0.0800)
+2026-03-31 21:26:17 | INFO |   interaction::adjacency SQE: 0.005664
+2026-03-31 21:26:17 | INFO |   interaction::distance_kernel: 0.3518 (True: 0.0300)
+2026-03-31 21:26:17 | INFO |   interaction::distance_kernel SQE: 0.103576
+2026-03-31 21:26:17 | INFO |   interaction::cross_similarity: -0.0053 (True: -0.0200)
+2026-03-31 21:26:17 | INFO |   interaction::cross_similarity SQE: 0.000217
+2026-03-31 21:26:17 | INFO |   eta: -0.0106 (True: 0.0100)
+2026-03-31 21:26:17 | INFO |   eta SQE: 0.000424
+2026-03-31 21:26:17 | INFO |   zeta: -0.0647 (True: -0.0300)
+2026-03-31 21:26:17 | INFO |   zeta SQE: 0.001202
+2026-03-31 21:26:17 | INFO |   psi: 0.1251 (True: 0.1000)
+2026-03-31 21:26:17 | INFO |   psi SQE: 0.000629
+2026-03-31 21:26:17 | INFO | Saved summary tables to experiments\synthetic_data_20260331_212557\mple_summary.csv and experiments\synthetic_data_20260331_212557\mple_summary.md
+2026-03-31 21:26:17 | INFO | Log saved to experiments\synthetic_data_20260331_212557\mple.log

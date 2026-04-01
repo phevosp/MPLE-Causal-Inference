@@ -1,7 +1,7 @@
 global_params:
-  'N': 120
-  T: 30
-  s: 5
+  'N': 40
+  T: 12
+  s: 3
   gamma_matrix_generator: erdos_renyi
   x_0_generator: bernoulli
   basis_params:
@@ -11,10 +11,10 @@ global_params:
     - quadratic
     interaction_templates:
     - adjacency
-    - smooth_similarity
-    - weighted_adjacency
+    - distance_kernel
+    - cross_similarity
   gamma_matrix_params:
-    p: 0.08
+    p: 0.01
   x_0_params:
     p: 0.5
     fixed_val: 1
@@ -32,6 +32,5 @@ estimation_params:
   zeta: -0.03
   psi: 0.1
 generation_params:
-  seed: 7
-  process: conditional
-  gibbs_sweeps: 12
+  seed: 123
+  gibbs_sweeps: 4

@@ -1,145 +1,99 @@
 # MPLE-Causal-Inference
 
-Synthetic experiments for maximum pseudo-likelihood estimation in networked causal Ising-style models.
+Synthetic experiments for maximum pseudo-likelihood estimation in a conditional networked causal model with binary outcomes and binary interventions.
 
 ## What This Repository Does
 
-The repo studies binary outcomes `x_t in {-1,+1}^N` and binary interventions `z_t in {-1,+1}^N` evolving on a network over time. It contains:
+The repo studies trajectories of
 
-- synthetic data generation for two data-generating processes (conditional; Ising-style joint)
-- pseudo-likelihood estimators for both the conditional model and the joint Ising-style model
-- experiment folders that save realized configs, generated data, learned summaries, and logs
+- outcomes `x_t in {-1,+1}^N`
+- interventions `z_t in {-1,+1}^N`
 
-## Model Variants
+over a network and through time. It now supports a single model family throughout the codebase:
 
-### Conditional Generator
+- conditional data generation
+- conditional-model MPLE estimation
 
-The conditional process samples
+The code no longer includes the older joint Ising generator or the two-stage Ising MPLE routine.
 
-- `z^(t)` from a logistic model depending on `x^(t-1)` and `z^(t-1)`
-- `x^(t)` from a Gibbs sampler with node-wise field
+## Model
+
+At each time step:
+
+- `z^(t)` is sampled from a logistic model depending on `x^(t-1)` and `z^(t-1)`
+- `x^(t)` is sampled from a Gibbs kernel with local field
   `h_x^(t) = h + beta z^(t) + eta x^(t-1) + J x^(t)`
 
-This is implemented in `data/synthetic_data_generation.py` through:
+The external field `h` and interaction matrix `J` are not restricted to the old scalar form `alpha * 1` and `xi * Gamma`. Instead, they are built from low-dimensional bases:
 
-- `sample_z_t`
-- `sample_x_t`
-- `generate_conditional_model`
+- `h = sum_k a_k b_k`
+- `J = sum_l w_l G_l`
 
-### Joint Ising Generator
+where `b_k` are known field templates, `G_l` are known symmetric interaction templates, and the coefficient vectors `a` and `w` are estimated.
 
-The joint model performs Gibbs sweeps over the full space-time configuration, using both past and future neighbors in the pseudo-conditional updates. This is implemented in:
+## Basis Construction
 
-- `generate_ising_model`
+The shared basis logic lives in [model_utils.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py).
 
-## New Low-Dimensional Basis Parameterization
-
-The shared basis logic lives in `model_utils.py`.
-
-Default field basis:
+Default field templates:
 
 - `intercept`
 - `linear`
 - `quadratic`
 
-Default interaction basis:
+Default interaction templates:
 
 - `adjacency`
 - `distance_kernel`
 - `cross_similarity`
 
-These templates are orthonormalized before use so the learned coefficients are less confounded. The generator saves the realized basis and the effective objects:
+Both field templates and interaction templates are normalized by infinity norm before orthonormalization. The generator saves:
 
 - `field_basis.npy`
 - `interaction_basis.npy`
 - `field_vector.npy`
 - `interaction_matrix.npy`
 
-Legacy experiment folders without these files still work: the estimator falls back to the old `alpha * 1` and `xi * Gamma` parameterization.
+Legacy experiment folders without saved basis artifacts still load correctly through the scalar fallback in `load_or_build_basis(...)`.
 
-## Estimation Code
+## Main Files
 
-`mple.py` contains three key pieces:
-
-- `conditional_model_pseudo_nll`: conditional-model negative pseudo-log-likelihood and gradient
-- `pseudo_nll`: joint Ising pseudo-log-likelihood and gradient, with both unconditioned and conditioned variants
-- `mple_gradient_descent`: L-BFGS-B wrapper used by both estimators
-
-The optimization variables are:
-
-`[field coefficients, beta, interaction coefficients, eta, zeta, psi]`
-
-For the two-stage Ising estimator, the final combined estimate keeps the stage-1 parameters except for the field coefficients, which are replaced by the conditioned stage-2 field estimate.
-
-## Repository Map
-
-- `data/synthetic_data_generation.py`: graph realization, basis realization, and synthetic data generation
-- `data/configs/base_config.yaml`: default experiment configuration
-- `model_utils.py`: basis construction, parameter packing/unpacking, and summary metrics
-- `mple.py`: pseudo-likelihood objectives, optimizer, logging, and summary-table export
-- `generate_data.sh`: helper script for generating multiple datasets
-- `experiments/`: realized experiment folders with configs, arrays, logs, and summary tables
+- [data/synthetic_data_generation.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/synthetic_data_generation.py): graph realization and conditional synthetic data generation
+- [data/configs/base_config.yaml](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/configs/base_config.yaml): default configuration
+- [model_utils.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py): basis construction, parameter packing, and summary metrics
+- [mple.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/mple.py): conditional pseudo-NLL, optimizer, logging, and summary export
+- [generate_data.sh](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/generate_data.sh): helper script for generating several conditional datasets
+- [run_experiments.sh](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/run_experiments.sh): helper script for generating datasets and fitting MPLE across experiment folders
 
 ## How To Run
 
-Generate a conditional dataset:
+Generate one dataset:
 
 ```bash
 pixi run python -u data/synthetic_data_generation.py --config_name base_config.yaml
 ```
 
-Fit the conditional pseudo-likelihood on one experiment folder:
-
-```bash
-pixi run python -u mple.py --data_folder experiments/<folder> --use_conditional_npll
-```
-
-Fit the joint Ising pseudo-likelihood:
+Fit MPLE on one experiment folder:
 
 ```bash
 pixi run python -u mple.py --data_folder experiments/<folder>
 ```
 
-Each fit writes logs plus machine-readable and markdown summaries such as:
+The estimator writes:
 
-- `mple_conditional_summary.csv`
-- `mple_conditional_summary.md`
-- `mple_stage1_summary.csv`
-- `mple_stage2_summary.csv`
-- `mple_combined_summary.csv`
+- `mple.log`
+- `mple_summary.csv`
+- `mple_summary.md`
 
-## Latest Conditional Demo
+## Current Optimizer Parameterization
 
-Checked run:
+The flattened optimization vector is
 
-- folder: `experiments/synthetic_data_20260329_122136`
-- process: conditional
-- `N=200`, `T=80`, `s=8`, Erdos-Renyi `p=0.05`, seed `19`
-- true field coefficients: `[0.35, -0.20, 0.08]`
-- true interaction coefficients: `[0.14, 0.08, -0.06]`
+`[field coefficients, beta, interaction coefficients, eta, zeta, psi]`
 
-Parameter summary from `mple_conditional_summary.md`:
+The summary tables report:
 
-| Parameter | True | Estimate | Squared Error |
-| --- | ---: | ---: | ---: |
-| `field::intercept` | 0.3500 | 0.3946 | 0.0020 |
-| `field::linear` | -0.2000 | -0.2074 | 0.0001 |
-| `field::quadratic` | 0.0800 | 0.1120 | 0.0010 |
-| `beta` | 0.2500 | 0.2449 | 0.0000 |
-| `interaction::adjacency` | 0.1400 | 0.0923 | 0.0023 |
-| `interaction::distance_kernel` | 0.0800 | 0.0116 | 0.0047 |
-| `interaction::cross_similarity` | -0.0600 | -0.1167 | 0.0032 |
-| `eta` | 0.0100 | 0.0072 | 0.0000 |
-| `zeta` | -0.0300 | -0.0207 | 0.0001 |
-| `psi` | 0.1000 | 0.1045 | 0.0000 |
-
-Aggregate metrics:
-
-| Metric | Value |
-| --- | ---: |
-| final conditional pseudo-NLL | 0.6753 |
-| field RMSE | 0.0039 |
-| interaction Frobenius error | 0.1009 |
-| parameter RMSE | 0.0366 |
-
-The main takeaway from this run is that the conditional estimator recovers the treatment and temporal coefficients very closely, reconstructs the effective field accurately, and captures the interaction structure reasonably well even when the interaction matrix is no longer assumed known up to a single scalar.
+- coefficient-wise estimate vs. truth
+- field RMSE
+- interaction Frobenius error
+- overall parameter RMSE
