@@ -18,6 +18,12 @@ global_params:
 
 estimation_params:
   field_coefs: [0.35] # coefficients for the external field basis; default is intercept only
+  tau_params:
+    mode: "uniform_random" # options: "fixed", "uniform_random"
+    lower: -0.2 # used when mode == "uniform_random"
+    upper: 0.2 # used when mode == "uniform_random"
+    seed: 42 # random seed for generating tau when mode == "uniform_random"
+    vector: null # optional length-T vector used when mode == "fixed"
   beta: 0.25 # z^{(t)} -> x^{(t)}
   interaction_coefs: [0.08] # coefficients for the interaction basis; default is a single known graph up to temperature
   eta: 0.01 # x^{(t-1)} -> x^{(t)}

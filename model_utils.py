@@ -215,6 +215,36 @@ def get_interaction_coeffs(config) -> np.ndarray:
     return np.array([float(config.estimation_params.xi)], dtype=float)
 
 
+def get_temporal_field(config, t_steps: int) -> np.ndarray:
+    """Load the realized shared time-varying field from config."""
+    estimation_params = config.estimation_params
+
+    if "tau_params" not in estimation_params or estimation_params.tau_params is None:
+        return np.zeros(t_steps, dtype=float)
+
+    tau_params = estimation_params.tau_params
+    mode = str(tau_params.mode)
+
+    if mode == "fixed":
+        tau = np.asarray(tau_params["vector"], dtype=float)
+        if tau.shape != (t_steps,):
+            raise ValueError(
+                "Fixed tau vector must have length equal to global_params.T."
+            )
+        return tau
+
+    if mode == "uniform_random":
+        lower = float(tau_params.lower)
+        upper = float(tau_params.upper)
+        if lower > upper:
+            raise ValueError("tau_params.lower must be less than or equal to upper.")
+        tau_seed = int(getattr(tau_params, "seed", config.generation_params.seed))
+        rng = np.random.default_rng(tau_seed)
+        return rng.uniform(lower, upper, size=t_steps)
+
+    raise ValueError(f"Unknown tau generation mode '{mode}'.")
+
+
 def load_or_build_basis(config, gamma_matrix: np.ndarray) -> BasisExpansion:
     """Build the configured basis or fall back to the original scalar setup."""
     field_coeffs = get_field_coeffs(config)
@@ -239,11 +269,13 @@ def load_or_build_basis(config, gamma_matrix: np.ndarray) -> BasisExpansion:
 def parameter_names(
     field_names: tuple[str, ...],
     interaction_names: tuple[str, ...],
+    t_steps: int,
 ) -> list[str]:
     """Create human-readable parameter labels matching the flattened optimizer vector."""
     field_keys = [f"field::{name}" for name in field_names]
+    temporal_keys = [f"tau::t_{idx}" for idx in range(t_steps)]
     interaction_keys = [f"interaction::{name}" for name in interaction_names]
-    return field_keys + ["beta"] + interaction_keys + ["eta", "zeta", "psi"]
+    return field_keys + temporal_keys + ["beta"] + interaction_keys + ["eta", "zeta", "psi"]
 
 
 def pack_true_parameters(
@@ -253,6 +285,7 @@ def pack_true_parameters(
 ) -> np.ndarray:
     """Pack the true configuration parameters into the optimizer's flat ordering."""
     field_coeffs = get_field_coeffs(config)
+    tau = get_temporal_field(config, int(config.global_params.T))
     interaction_coeffs = get_interaction_coeffs(config)
     if len(field_coeffs) != len(field_names):
         raise ValueError(
@@ -265,6 +298,7 @@ def pack_true_parameters(
     return np.concatenate(
         [
             field_coeffs,
+            tau,
             np.array([config.estimation_params.beta], dtype=float),
             interaction_coeffs,
             np.array(
@@ -283,15 +317,27 @@ def unpack_theta(
     theta: np.ndarray,
     n_field: int,
     n_interaction: int,
-) -> tuple[np.ndarray, float, np.ndarray, float, float, float]:
+    t_steps: int,
+) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float, float, float]:
     """Split the optimizer vector into field, treatment, interaction, and temporal blocks."""
     field_coeffs = np.asarray(theta[:n_field], dtype=float)
-    beta = float(theta[n_field])
-    interaction_start = n_field + 1
+    tau = np.asarray(theta[n_field : n_field + t_steps], dtype=float)
+    beta = float(theta[n_field + t_steps])
+    interaction_start = n_field + t_steps + 1
     interaction_end = interaction_start + n_interaction
     interaction_coeffs = np.asarray(theta[interaction_start:interaction_end], dtype=float)
     eta, zeta, psi = np.asarray(theta[interaction_end:], dtype=float)
-    return field_coeffs, beta, interaction_coeffs, eta, zeta, psi
+    return field_coeffs, tau, beta, interaction_coeffs, eta, zeta, psi
+
+
+def compose_field_matrix(
+    field_coeffs: np.ndarray,
+    tau: np.ndarray,
+    field_basis: np.ndarray,
+) -> np.ndarray:
+    """Compose the realized T x N external field with node and time components."""
+    static_field = compose_field(field_coeffs, field_basis)
+    return static_field[None, :] + np.asarray(tau, dtype=float)[:, None]
 
 
 def summary_metrics(
@@ -301,16 +347,21 @@ def summary_metrics(
     interaction_basis: np.ndarray,
 ) -> dict[str, float]:
     """Compute reconstruction metrics for fitted parameters, fields, and interactions."""
+    t_steps = int((len(est_theta) - field_basis.shape[0] - interaction_basis.shape[0] - 4))
+    if t_steps < 0:
+        raise ValueError("Parameter vector is too short for the configured model blocks.")
     n_field = field_basis.shape[0]
     n_interaction = interaction_basis.shape[0]
-    est_field_coeffs, _, est_interaction_coeffs, _, _, _ = unpack_theta(
-        est_theta, n_field, n_interaction
+    est_field_coeffs, est_tau, _, est_interaction_coeffs, _, _, _ = unpack_theta(
+        est_theta, n_field, n_interaction, t_steps
     )
-    true_field_coeffs, _, true_interaction_coeffs, _, _, _ = unpack_theta(
-        true_theta, n_field, n_interaction
+    true_field_coeffs, true_tau, _, true_interaction_coeffs, _, _, _ = unpack_theta(
+        true_theta, n_field, n_interaction, t_steps
     )
     est_field = compose_field(est_field_coeffs, field_basis)
     true_field = compose_field(true_field_coeffs, field_basis)
+    est_field_matrix = compose_field_matrix(est_field_coeffs, est_tau, field_basis)
+    true_field_matrix = compose_field_matrix(true_field_coeffs, true_tau, field_basis)
     est_interaction = compose_interaction_matrix(
         est_interaction_coeffs, interaction_basis
     )
@@ -318,7 +369,12 @@ def summary_metrics(
         true_interaction_coeffs, interaction_basis
     )
     return {
-        "field_rmse": float(np.sqrt(np.mean((est_field - true_field) ** 2))),
+        "field_rmse": float(np.sqrt(np.mean((est_field_matrix - true_field_matrix) ** 2))),
+        "field_l2_error": float(
+            np.linalg.norm((est_field_matrix - true_field_matrix).reshape(-1), ord=2)
+        ),
+        "static_field_rmse": float(np.sqrt(np.mean((est_field - true_field) ** 2))),
+        "tau_rmse": float(np.sqrt(np.mean((est_tau - true_tau) ** 2))),
         "interaction_fro_error": float(
             np.linalg.norm(est_interaction - true_interaction, ord="fro")
         ),

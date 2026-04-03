@@ -10,6 +10,8 @@ from scipy.optimize import minimize
 from model_utils import (
     BasisExpansion,
     compose_field,
+    compose_field_matrix,
+    compose_interaction_matrix,
     interaction_features,
     load_or_build_basis,
     pack_true_parameters,
@@ -93,6 +95,7 @@ def load_basis_artifacts(data_folder, config, gamma_matrix):
 
 def _pack_gradient(
     field_grad,
+    tau_grad,
     beta_grad,
     interaction_grad,
     eta_grad,
@@ -104,6 +107,7 @@ def _pack_gradient(
     return np.concatenate(
         [
             np.asarray(field_grad, dtype=float),
+            np.asarray(tau_grad, dtype=float),
             np.array([beta_grad], dtype=float),
             np.asarray(interaction_grad, dtype=float),
             np.array([eta_grad, zeta_grad, psi_grad], dtype=float),
@@ -121,24 +125,26 @@ def pseudo_nll(
     interaction_features_x,
 ):
     """Compute the conditional-model pseudo-NLL and its analytic gradient."""
+    t_steps = x.shape[0]
     n_field = field_basis.shape[0]
     n_interaction = interaction_features_x.shape[0]
-    field_coeffs, beta, interaction_coeffs, eta, zeta, psi = unpack_theta(
+    field_coeffs, tau, beta, interaction_coeffs, eta, zeta, psi = unpack_theta(
         theta,
         n_field,
         n_interaction,
+        t_steps,
     )
 
     prev_x = np.vstack([x_0, x[:-1, :]])
     prev_z = np.vstack([np.zeros_like(x_0), z[:-1, :]])
-    field_vector = compose_field(field_coeffs, field_basis)
+    field_matrix = compose_field_matrix(field_coeffs, tau, field_basis)
     interaction_term = np.tensordot(
         interaction_coeffs,
         interaction_features_x,
         axes=(0, 0),
     )
 
-    h_x = field_vector[None, :] + beta * z + eta * prev_x + interaction_term
+    h_x = field_matrix + beta * z + eta * prev_x + interaction_term
     h_z = zeta * prev_x + psi * prev_z
 
     loss_x = np.logaddexp(h_x, -h_x) - x * h_x
@@ -155,6 +161,7 @@ def pseudo_nll(
 
     grad = _pack_gradient(
         field_grad=field_basis @ res_x.sum(axis=0),
+        tau_grad=res_x.sum(axis=1),
         beta_grad=(res_x * z).sum(),
         interaction_grad=np.einsum(
             "tn,ktn->k", res_x, interaction_features_x, optimize=True
@@ -212,9 +219,7 @@ def fit_mple(
         )
         history.append(loss)
         if verbose_every and eval_count[0] % verbose_every == 0:
-            params_str = "  " + ",  ".join(
-                f"{key}: {value:+.4f}" for key, value in zip(param_names, theta)
-            )
+            params_str = summarize_theta_for_logging(param_names, theta)
             if logger is not None:
                 logger.info("Eval %s  |  Loss: %.6f", eval_count[0], loss)
                 logger.info(params_str)
@@ -240,6 +245,34 @@ def _fmt(value):
     if value is None:
         return ""
     return f"{float(value):.6f}"
+
+
+def summarize_theta_for_logging(param_names, theta):
+    """Summarize parameter blocks compactly, collapsing the temporal field vector."""
+    tau_values = np.asarray(
+        [value for name, value in zip(param_names, theta) if name.startswith("tau::")],
+        dtype=float,
+    )
+    if tau_values.size == 0:
+        return "  " + ",  ".join(
+            f"{key}: {value:+.4f}" for key, value in zip(param_names, theta)
+        )
+
+    field_count = sum(name.startswith("field::") for name in param_names)
+    non_tau_parts = [
+        f"{key}: {value:+.4f}"
+        for key, value in zip(param_names, theta)
+        if not key.startswith("tau::")
+    ]
+    non_tau_parts.insert(
+        field_count,
+        (
+            "tau block: "
+            f"mean={tau_values.mean():+.4f}, std={tau_values.std():.4f}, "
+            f"min={tau_values.min():+.4f}, max={tau_values.max():+.4f}"
+        ),
+    )
+    return "  " + ",  ".join(non_tau_parts)
 
 
 def write_summary_table(summary_stem, param_names, est_theta, true_theta, metrics, loss):
@@ -288,9 +321,75 @@ def write_summary_table(summary_stem, param_names, est_theta, true_theta, metric
 def log_estimates(logger, title, param_names, est_theta, true_theta):
     """Log estimate-versus-truth comparisons for a fitted parameter vector."""
     logger.info(title)
+    tau_rows = []
     for key, est, true in zip(param_names, est_theta, true_theta):
+        if key.startswith("tau::"):
+            tau_rows.append((est, true))
+            continue
         logger.info("  %s: %.4f (True: %.4f)", key, est, true)
         logger.info("  %s SQE: %.6f", key, (est - true) ** 2)
+    if tau_rows:
+        tau_est = np.asarray([row[0] for row in tau_rows], dtype=float)
+        tau_true = np.asarray([row[1] for row in tau_rows], dtype=float)
+        logger.info(
+            "  tau block: RMSE %.6f | L2 error %.6f | mean(est)=%.4f | mean(true)=%.4f",
+            float(np.sqrt(np.mean((tau_est - tau_true) ** 2))),
+            float(np.linalg.norm(tau_est - tau_true, ord=2)),
+            float(tau_est.mean()),
+            float(tau_true.mean()),
+        )
+
+
+def save_estimated_artifacts(
+    data_folder,
+    est_theta,
+    true_theta,
+    field_basis,
+    interaction_basis,
+):
+    """Save reconstructed field and interaction objects for fitted and true parameters."""
+    t_steps = int((len(est_theta) - field_basis.shape[0] - interaction_basis.shape[0] - 4))
+    n_field = field_basis.shape[0]
+    n_interaction = interaction_basis.shape[0]
+    est_field_coeffs, est_tau, _, est_interaction_coeffs, _, _, _ = unpack_theta(
+        est_theta,
+        n_field,
+        n_interaction,
+        t_steps,
+    )
+    true_field_coeffs, true_tau, _, true_interaction_coeffs, _, _, _ = unpack_theta(
+        true_theta,
+        n_field,
+        n_interaction,
+        t_steps,
+    )
+
+    np.save(Path(data_folder) / "estimated_tau.npy", est_tau)
+    np.save(Path(data_folder) / "true_tau.npy", true_tau)
+    np.save(
+        Path(data_folder) / "estimated_field_vector.npy",
+        compose_field(est_field_coeffs, field_basis),
+    )
+    np.save(
+        Path(data_folder) / "true_field_vector.npy",
+        compose_field(true_field_coeffs, field_basis),
+    )
+    np.save(
+        Path(data_folder) / "estimated_field_matrix.npy",
+        compose_field_matrix(est_field_coeffs, est_tau, field_basis),
+    )
+    np.save(
+        Path(data_folder) / "true_field_matrix.npy",
+        compose_field_matrix(true_field_coeffs, true_tau, field_basis),
+    )
+    np.save(
+        Path(data_folder) / "estimated_interaction_matrix.npy",
+        compose_interaction_matrix(est_interaction_coeffs, interaction_basis),
+    )
+    np.save(
+        Path(data_folder) / "true_interaction_matrix.npy",
+        compose_interaction_matrix(true_interaction_coeffs, interaction_basis),
+    )
 
 
 if __name__ == "__main__":
@@ -326,7 +425,11 @@ if __name__ == "__main__":
     z = data["z"]
 
     basis = load_basis_artifacts(args.data_folder, config, gamma_matrix)
-    param_keys = parameter_names(basis.field_names, basis.interaction_names)
+    param_keys = parameter_names(
+        basis.field_names,
+        basis.interaction_names,
+        x.shape[0],
+    )
     params_true = pack_true_parameters(
         config,
         basis.field_names,
@@ -378,6 +481,13 @@ if __name__ == "__main__":
         params_true,
         metrics,
         loss_history[-1],
+    )
+    save_estimated_artifacts(
+        args.data_folder,
+        params_hat,
+        params_true,
+        basis.field_basis,
+        basis.interaction_basis,
     )
     logger.info(
         "Saved summary tables to %s and %s",

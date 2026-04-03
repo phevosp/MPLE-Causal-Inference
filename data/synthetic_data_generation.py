@@ -16,9 +16,11 @@ if str(REPO_ROOT) not in sys.path:
 from model_utils import (
     BasisExpansion,
     compose_field,
+    compose_field_matrix,
     compose_interaction_matrix,
     get_field_coeffs,
     get_interaction_coeffs,
+    get_temporal_field,
     load_or_build_basis,
 )
 
@@ -111,7 +113,7 @@ def sample_z_t(x_prev, z_prev, config, rng):
     return spin_sample_from_field(h_z, rng)
 
 
-def sample_x_t(x_prev, z_curr, config, field_vector, interaction_matrix, rng):
+def sample_x_t(x_prev, z_curr, config, field_vector_t, interaction_matrix, rng):
     """Sample the outcome vector at time t with Gibbs sweeps under the conditional model."""
     x_t = x_prev.copy()
     interaction_x_t = interaction_matrix @ x_t
@@ -120,7 +122,7 @@ def sample_x_t(x_prev, z_curr, config, field_vector, interaction_matrix, rng):
         for i in node_order:
             old_x_i = x_t[i]
             h_x = (
-                field_vector[i]
+                field_vector_t[i]
                 + config.estimation_params.beta * z_curr[i]
                 + config.estimation_params.eta * x_prev[i]
                 + interaction_x_t[i]
@@ -131,7 +133,7 @@ def sample_x_t(x_prev, z_curr, config, field_vector, interaction_matrix, rng):
     return x_t
 
 
-def generate_data(config, field_vector, interaction_matrix, x_0, rng):
+def generate_data(config, field_matrix, interaction_matrix, x_0, rng):
     """Generate synthetic outcome and intervention trajectories from the conditional model."""
     x = np.zeros((config.global_params.T, config.global_params.N))
     z = np.zeros((config.global_params.T, config.global_params.N))
@@ -141,7 +143,7 @@ def generate_data(config, field_vector, interaction_matrix, x_0, rng):
         if config.global_params.s == 0
         else -np.ones_like(x_0)
     )
-    x[0, :] = sample_x_t(x_0, z[0, :], config, field_vector, interaction_matrix, rng)
+    x[0, :] = sample_x_t(x_0, z[0, :], config, field_matrix[0, :], interaction_matrix, rng)
 
     for t in range(1, config.global_params.T):
         print(f"Sampling time step {t}...")
@@ -154,7 +156,7 @@ def generate_data(config, field_vector, interaction_matrix, x_0, rng):
             x[t - 1, :],
             z[t, :],
             config,
-            field_vector,
+            field_matrix[t, :],
             interaction_matrix,
             rng,
         )
@@ -169,6 +171,8 @@ def save_artifacts(
     basis: BasisExpansion,
     gamma_matrix: np.ndarray,
     field_vector: np.ndarray,
+    tau: np.ndarray,
+    field_matrix: np.ndarray,
     interaction_matrix: np.ndarray,
     x_0: np.ndarray,
     x: np.ndarray,
@@ -185,6 +189,8 @@ def save_artifacts(
     np.save(f"{data_folder}/field_basis.npy", basis.field_basis)
     np.save(f"{data_folder}/interaction_basis.npy", basis.interaction_basis)
     np.save(f"{data_folder}/field_vector.npy", field_vector)
+    np.save(f"{data_folder}/tau.npy", tau)
+    np.save(f"{data_folder}/field_matrix.npy", field_matrix)
     np.save(f"{data_folder}/interaction_matrix.npy", interaction_matrix)
     np.save(f"{data_folder}/shared_features.npy", basis.shared_features)
     np.save(
@@ -252,8 +258,10 @@ if __name__ == "__main__":
     )
     basis = load_or_build_basis(config, gamma_matrix)
     field_coeffs = get_field_coeffs(config)
+    tau = get_temporal_field(config, int(config.global_params.T))
     interaction_coeffs = get_interaction_coeffs(config)
     field_vector = compose_field(field_coeffs, basis.field_basis)
+    field_matrix = compose_field_matrix(field_coeffs, tau, basis.field_basis)
     interaction_matrix = compose_interaction_matrix(
         interaction_coeffs,
         basis.interaction_basis,
@@ -262,7 +270,7 @@ if __name__ == "__main__":
     print("Generating data with the conditional process...")
     x, z = generate_data(
         config,
-        field_vector,
+        field_matrix,
         interaction_matrix,
         x_0,
         rng,
@@ -279,6 +287,7 @@ if __name__ == "__main__":
         "field_basis_inf_norms": [
             float(np.linalg.norm(vector, ord=np.inf)) for vector in basis.field_basis
         ],
+        "tau_l2_norm": float(np.linalg.norm(tau, ord=2)),
         "interaction_basis_inf_norms": [
             float(np.linalg.norm(matrix, ord=np.inf))
             for matrix in basis.interaction_basis
@@ -292,6 +301,8 @@ if __name__ == "__main__":
         basis=basis,
         gamma_matrix=gamma_matrix,
         field_vector=field_vector,
+        tau=tau,
+        field_matrix=field_matrix,
         interaction_matrix=interaction_matrix,
         x_0=x_0,
         x=x,
