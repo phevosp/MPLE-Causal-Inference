@@ -87,9 +87,16 @@ That means the geometry join is complete, and the neighborhood crosswalk is effe
   - for each outcome, both `_pre_sum` and `_pre_mean` are included over quarters `1` through `12`
 - `processed/seattledmi_binary_outcomes.csv.gz`
   - one row per `(block, quarter)` observation
-  - currently includes the requested `{-1,+1}` outcomes:
+  - currently includes the requested `{-1,+1}` outcomes, with:
+    - `+1` = better lower-crime outcome
+    - `-1` = worse higher-crime outcome
     - `i_drugs_gt_0_pm1`
     - `any_crime_gt_0_pm1`
+    - `any_crime_gt_1_pm1`
+    - `any_crime_gt_2_pm1`
+    - `any_crime_gt_3_pm1`
+    - `any_crime_gt_district_mean_pm1`
+    - `any_crime_gt_block_mean_pm1`
 - `processed/seattledmi_binary_threshold_summary.csv`
   - threshold diagnostics for candidate binary outcome rules
 - `processed/seattledmi_binary_threshold_summary.md`
@@ -98,6 +105,10 @@ That means the geometry join is complete, and the neighborhood crosswalk is effe
   - one row per neighborhood district
   - stores the district-level mean of `i_drugs` and `any_crime`
   - used to create district-relative binary thresholds
+- `processed/seattledmi_block_mean_thresholds.csv`
+  - one row per block
+  - stores the block-specific mean of `i_drugs` and `any_crime`
+  - used to create block-relative binary thresholds
 - `processed/seattledmi_block_crosswalk.csv`
   - one row per block
   - non-spatial join table linking block IDs to tract/block-group identifiers, Seattle neighborhood metadata, and centroid coordinates
@@ -151,12 +162,18 @@ To rebuild the binary outcome files and threshold diagnostics:
 pixi run python data/SeattleDMI/build_binary_outcomes.py
 ```
 
-The district-relative rules created by that script are:
+The district-relative rule retained for experiments is:
 
-- `i_drugs_gt_district_mean_pm1`
 - `any_crime_gt_district_mean_pm1`
+- `any_crime_gt_block_mean_pm1`
 
-These compare each block-quarter count to the mean level of that outcome in the block's Seattle neighborhood district.
+This compares each block-quarter `any_crime` count to the mean level of `any_crime` in the block's Seattle neighborhood district.
+The block-relative variant instead compares each block-quarter `any_crime` count to that exact block's own mean over time.
+The analogous `i_drugs` district-mean rule is not kept in the runnable experiment set because it is effectively identical to `i_drugs_gt_0_pm1`.
+The saved sign convention is:
+
+- `+1`: lower-crime "good" outcome
+- `-1`: higher-crime "bad" outcome
 
 ## Real-Data MPLE Pipeline
 
@@ -227,9 +244,17 @@ The pipeline can iterate over many outcomes or many network choices, but each sa
 The default outcome options are:
 
 - `i_drugs_gt_0_pm1`
-- `i_drugs_gt_district_mean_pm1`
 - `any_crime_gt_0_pm1`
+- `any_crime_gt_1_pm1`
+- `any_crime_gt_2_pm1`
+- `any_crime_gt_3_pm1`
 - `any_crime_gt_district_mean_pm1`
+- `any_crime_gt_block_mean_pm1`
+
+The sign convention for `x` is:
+
+- `+1`: good outcome, meaning the crime count is at or below the chosen threshold
+- `-1`: bad outcome, meaning the crime count is above the chosen threshold
 
 ### Current Network Construction
 
@@ -254,7 +279,7 @@ For one chosen outcome column and one chosen network:
 1. The script loads `processed/seattledmi_binary_outcomes.csv.gz` and `processed/seattledmi_blocks.gpkg`.
 2. Blocks are sorted by `GEOID10` to create a fixed node ordering.
 3. The selected binary outcome becomes the `x` panel.
-4. `Intervention` is converted from `{0,1}` to `{-1,+1}` to create the `z` panel.
+4. `Intervention` is converted from `{0,1}` to `{-1,+1}` to create the `z` panel, where `-1` means no intervention and `+1` means intervention.
 5. Quarter `1` is saved separately as `x_0.npy` and `z_0.npy`.
 6. Quarters `2` through `16` are saved in `panel_data.npz` as the fitted panel.
 7. The pre-intervention cutoff `s` is computed from the first quarter in which any block receives treatment.

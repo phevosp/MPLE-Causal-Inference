@@ -2,6 +2,8 @@ source: SeattleDMI
 has_truth: false
 outcome_column: i_drugs_gt_0_pm1
 base_outcome: i_drugs
+x_sign_convention: +1_good_-1_bad
+z_sign_convention: +1_intervention_-1_no_intervention
 network_name: centroid_distance_kernel_8
 field_basis_names:
 - intercept

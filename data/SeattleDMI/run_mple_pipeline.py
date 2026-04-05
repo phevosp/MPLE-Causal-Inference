@@ -4,6 +4,7 @@ import argparse
 import csv
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 import geopandas as gpd
@@ -22,9 +23,12 @@ from model_utils import validate_basis_infinity_norms
 
 DEFAULT_OUTCOMES = (
     "i_drugs_gt_0_pm1",
-    "i_drugs_gt_district_mean_pm1",
     "any_crime_gt_0_pm1",
+    "any_crime_gt_1_pm1",
+    "any_crime_gt_2_pm1",
+    "any_crime_gt_3_pm1",
     "any_crime_gt_district_mean_pm1",
+    "any_crime_gt_block_mean_pm1",
 )
 
 DEFAULT_NETWORKS = (
@@ -66,10 +70,15 @@ def outcome_base_name(outcome_column: str) -> str:
 
 def load_inputs(processed_dir: Path) -> tuple[pd.DataFrame, gpd.GeoDataFrame]:
     """Load the processed SeattleDMI tables needed for real-data MPLE experiments."""
-    binary_outcomes = pd.read_csv(
-        processed_dir / "seattledmi_binary_outcomes.csv.gz",
-        dtype={"GEOID10": str},
-    )
+    binary_outcomes_path = processed_dir / "seattledmi_binary_outcomes.csv.gz"
+    if not binary_outcomes_path.exists():
+        fallback_path = processed_dir / "seattledmi_binary_outcomes.csv"
+        if not fallback_path.exists():
+            raise FileNotFoundError(
+                f"Could not find {binary_outcomes_path.name} or {fallback_path.name} in {processed_dir}."
+            )
+        binary_outcomes_path = fallback_path
+    binary_outcomes = pd.read_csv(binary_outcomes_path, dtype={"GEOID10": str})
     blocks = gpd.read_file(processed_dir / "seattledmi_blocks.gpkg", layer="blocks")
     blocks["GEOID10"] = blocks["GEOID10"].astype(str).str.zfill(15)
     return binary_outcomes, blocks
@@ -475,6 +484,13 @@ def main() -> None:
     processed_dir = (REPO_ROOT / args.processed_dir).resolve()
     output_root = (REPO_ROOT / args.output_root).resolve()
     manifest_path = (REPO_ROOT / args.manifest_path).resolve()
+    if args.overwrite:
+        if output_root.exists():
+            for child in output_root.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child)
+        if manifest_path.exists():
+            manifest_path.unlink()
 
     binary_outcomes, blocks = load_inputs(processed_dir)
     node_table = build_node_table(blocks)
@@ -508,6 +524,8 @@ def main() -> None:
                 "has_truth": False,
                 "outcome_column": outcome_column,
                 "base_outcome": outcome_base_name(outcome_column),
+                "x_sign_convention": "+1_good_-1_bad",
+                "z_sign_convention": "+1_intervention_-1_no_intervention",
                 "network_name": network_name,
                 "field_basis_names": list(field_basis_names),
                 "node_count": int(x.shape[1]),

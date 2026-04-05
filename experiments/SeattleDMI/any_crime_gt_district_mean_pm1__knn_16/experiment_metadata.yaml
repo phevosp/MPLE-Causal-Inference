@@ -2,6 +2,8 @@ source: SeattleDMI
 has_truth: false
 outcome_column: any_crime_gt_district_mean_pm1
 base_outcome: any_crime
+x_sign_convention: +1_good_-1_bad
+z_sign_convention: +1_intervention_-1_no_intervention
 network_name: knn_16
 field_basis_names:
 - intercept

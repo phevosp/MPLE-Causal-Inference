@@ -34,8 +34,8 @@ def add_intervention_groups(panel: pd.DataFrame) -> pd.DataFrame:
 
 
 def binary_pm1(series: pd.Series, threshold: float) -> pd.Series:
-    """Convert a count outcome to {-1, +1} using the rule count > threshold."""
-    return (series.gt(threshold).astype(int) * 2 - 1).astype("int8")
+    """Convert a count outcome to {-1, +1} with +1 for count <= threshold and -1 otherwise."""
+    return (1 - 2 * series.gt(threshold).astype(int)).astype("int8")
 
 
 def transition_rate(panel: pd.DataFrame, column: str) -> float:
@@ -52,12 +52,14 @@ def summarize_threshold(panel: pd.DataFrame, source_col: str, threshold: int) ->
     """Summarize one thresholded binary outcome."""
     column = f"{source_col}_gt_{threshold}_pm1"
     y01 = panel[column].eq(1).astype(int)
+    ypm1 = panel[column].astype(int)
     per_block_variety = panel.assign(y01=y01).groupby("GEOID10")["y01"].nunique()
 
     summary = {
         "outcome": source_col,
         "threshold_rule": f"{source_col} > {threshold}",
         "positive_share_overall": float(y01.mean()),
+        "state_variance_overall": float(ypm1.var(ddof=0)),
         "positive_share_untreated": float(y01.loc[panel["group"] == "untreated"].mean()),
         "positive_share_treated_pre": float(y01.loc[panel["group"] == "treated_pre"].mean()),
         "positive_share_treated_post": float(y01.loc[panel["group"] == "treated_post"].mean()),
@@ -71,11 +73,13 @@ def summarize_threshold(panel: pd.DataFrame, source_col: str, threshold: int) ->
 def summarize_named_threshold(panel: pd.DataFrame, source_col: str, column: str, label: str) -> dict[str, float | int | str]:
     """Summarize one precomputed thresholded binary outcome."""
     y01 = panel[column].eq(1).astype(int)
+    ypm1 = panel[column].astype(int)
     per_block_variety = panel.assign(y01=y01).groupby("GEOID10")["y01"].nunique()
     return {
         "outcome": source_col,
         "threshold_rule": label,
         "positive_share_overall": float(y01.mean()),
+        "state_variance_overall": float(ypm1.var(ddof=0)),
         "positive_share_untreated": float(y01.loc[panel["group"] == "untreated"].mean()),
         "positive_share_treated_pre": float(y01.loc[panel["group"] == "treated_pre"].mean()),
         "positive_share_treated_post": float(y01.loc[panel["group"] == "treated_post"].mean()),
@@ -105,6 +109,26 @@ def district_mean_threshold(
     return binary, district_thresholds
 
 
+def block_mean_threshold(
+    panel: pd.DataFrame,
+    source_col: str,
+) -> tuple[pd.Series, pd.DataFrame]:
+    """Threshold each observation against the mean level of that outcome for its exact block."""
+    block_thresholds = (
+        panel.groupby("GEOID10", dropna=False)[source_col]
+        .mean()
+        .rename(f"{source_col}_block_mean")
+        .reset_index()
+    )
+    panel_with_means = panel.merge(
+        block_thresholds,
+        on="GEOID10",
+        how="left",
+    )
+    binary = binary_pm1(panel_with_means[source_col], panel_with_means[f"{source_col}_block_mean"])
+    return binary, block_thresholds
+
+
 def write_markdown_summary(output_path: Path, threshold_rows: list[dict[str, float | int | str]]) -> None:
     """Write a short Markdown interpretation of the binary outcome thresholds."""
     with output_path.open("w", encoding="utf-8") as handle:
@@ -114,18 +138,26 @@ def write_markdown_summary(output_path: Path, threshold_rows: list[dict[str, flo
             "The requested primary outcomes are the `> 0` rules written to "
             "`seattledmi_binary_outcomes.csv.gz`.\n\n"
         )
+        handle.write(
+            "Throughout this file, `+1` denotes the better lower-crime outcome and `-1` denotes "
+            "the worse higher-crime outcome.\n\n"
+        )
 
         handle.write("## Primary Outcomes Saved\n\n")
-        handle.write("- `i_drugs_gt_0_pm1`: `+1` if `i_drugs >= 1`, `-1` otherwise\n")
-        handle.write("- `any_crime_gt_0_pm1`: `+1` if `any_crime >= 1`, `-1` otherwise\n\n")
-        handle.write("- `i_drugs_gt_district_mean_pm1`: `+1` if `i_drugs` is above the mean `i_drugs` level in that block's neighborhood district, `-1` otherwise\n")
-        handle.write("- `any_crime_gt_district_mean_pm1`: `+1` if `any_crime` is above the mean `any_crime` level in that block's neighborhood district, `-1` otherwise\n\n")
+        handle.write("- `i_drugs_gt_0_pm1`: `+1` if `i_drugs <= 0`, `-1` if `i_drugs > 0`\n")
+        handle.write("- `any_crime_gt_0_pm1`: `+1` if `any_crime <= 0`, `-1` if `any_crime > 0`\n\n")
+        handle.write("- `any_crime_gt_1_pm1`: `+1` if `any_crime <= 1`, `-1` if `any_crime > 1`\n")
+        handle.write("- `any_crime_gt_2_pm1`: `+1` if `any_crime <= 2`, `-1` if `any_crime > 2`\n")
+        handle.write("- `any_crime_gt_3_pm1`: `+1` if `any_crime <= 3`, `-1` if `any_crime > 3`\n")
+        handle.write("- `any_crime_gt_district_mean_pm1`: `+1` if `any_crime` is at or below the mean `any_crime` level in that block's neighborhood district, `-1` otherwise\n\n")
+        handle.write("- `any_crime_gt_block_mean_pm1`: `+1` if `any_crime` is at or below that exact block's mean `any_crime` level across time, `-1` otherwise\n\n")
 
         handle.write("## Threshold Comparison\n\n")
         headers = [
             "outcome",
             "threshold_rule",
             "positive_share_overall",
+            "state_variance_overall",
             "positive_share_untreated",
             "positive_share_treated_pre",
             "positive_share_treated_post",
@@ -143,6 +175,7 @@ def write_markdown_summary(output_path: Path, threshold_rows: list[dict[str, flo
                         str(row["outcome"]),
                         str(row["threshold_rule"]),
                         f"{float(row['positive_share_overall']):.4f}",
+                        f"{float(row['state_variance_overall']):.4f}",
                         f"{float(row['positive_share_untreated']):.4f}",
                         f"{float(row['positive_share_treated_pre']):.4f}",
                         f"{float(row['positive_share_treated_post']):.4f}",
@@ -156,26 +189,31 @@ def write_markdown_summary(output_path: Path, threshold_rows: list[dict[str, flo
 
         handle.write("\n## Interpretation\n\n")
         handle.write(
-            "- `i_drugs > 0` is very sparse. Only about 3% of block-quarters are positive, "
-            "so it isolates drug activity sharply but may be too coarse if you want a more balanced binary state.\n"
+            "- `i_drugs > 0` is very sparse. Under the current sign convention that means roughly 97% of block-quarters are in the `good` state and only about 3% are in the `bad` state, so it isolates drug activity sharply but may be too coarse if you want a more balanced binary state.\n"
         )
         handle.write(
-            "- `any_crime > 0` is much denser, around 49% positive overall, so it has much better class balance and more variation for binary-state modeling.\n"
+            "- `any_crime > 0` is much denser, so the induced good/bad split is far more balanced and has much more temporal variation for binary-state modeling.\n"
         )
         handle.write(
-            "- For `i_drugs`, thresholds above 0 become extremely rare and therefore are usually too aggressive.\n"
+            "- For `i_drugs`, thresholds above 0 make the bad state extremely rare and therefore are usually too aggressive.\n"
         )
         handle.write(
-            "- For `any_crime`, thresholds like `> 1`, `> 2`, or `> 3` are plausible alternatives if you want a more selective definition of a `bad` block-quarter.\n"
+            "- For `any_crime`, thresholds like `> 1`, `> 2`, or `> 3` are plausible alternatives if you want a more selective definition of a bad block-quarter.\n"
         )
         handle.write(
-            "- District-mean thresholding adapts the cutoff to local baseline crime levels, which can be attractive if you want `good` and `bad` to be defined relative to a block's surrounding district rather than globally.\n"
+            "- District-mean thresholding adapts the cutoff to local baseline crime levels, which can be attractive if you want good and bad to be defined relative to a block's surrounding district rather than globally.\n"
+        )
+        handle.write(
+            "- Block-mean thresholding is stricter about being block-specific: it compares each block-quarter to that same block's own time-average crime level. A block can still be constant under this rule if its realized path never crosses its own mean, for example when the count is always zero or when all observations stay on one side of a non-integer mean.\n"
         )
         handle.write(
             "- A reasonable default pair is:\n"
             "  - `i_drugs > 0` if you want a targeted drug-market outcome\n"
-            "  - `any_crime > 1` or `any_crime > 2` if you want a broader but less trivial crime outcome\n"
-            "  - district-mean thresholding if you specifically want relative-within-district classification\n"
+            "  - `any_crime > 0` or `any_crime > 1` if you want a broader crime outcome with more state variation\n"
+            "  - district-mean or block-mean thresholding if you specifically want relative classification\n"
+        )
+        handle.write(
+            "- `i_drugs > district_mean` is omitted from the saved experiment set because, with integer drug counts and district means below 1, it is effectively identical to `i_drugs > 0`.\n"
         )
 
 
@@ -205,13 +243,16 @@ def main() -> None:
     ].copy()
     threshold_rows: list[dict[str, float | int | str]] = []
     district_threshold_tables: list[pd.DataFrame] = []
+    block_threshold_tables: list[pd.DataFrame] = []
 
     for source_col, thresholds in threshold_grid.items():
         for threshold in thresholds:
             out_col = f"{source_col}_gt_{threshold}_pm1"
             panel[out_col] = binary_pm1(panel[source_col], threshold)
             threshold_rows.append(summarize_threshold(panel, source_col, threshold))
-            if threshold == 0:
+            if source_col == "i_drugs" and threshold == 0:
+                binary_output[out_col] = panel[out_col]
+            if source_col == "any_crime" and threshold in {0, 1, 2, 3}:
                 binary_output[out_col] = panel[out_col]
 
         district_col = f"{source_col}_gt_district_mean_pm1"
@@ -225,8 +266,24 @@ def main() -> None:
                 f"{source_col} > district_mean",
             )
         )
-        binary_output[district_col] = panel[district_col]
+        if source_col == "any_crime":
+            binary_output[district_col] = panel[district_col]
         district_threshold_tables.append(district_thresholds)
+
+        block_col = f"{source_col}_gt_block_mean_pm1"
+        block_binary, block_thresholds = block_mean_threshold(panel, source_col)
+        panel[block_col] = block_binary
+        threshold_rows.append(
+            summarize_named_threshold(
+                panel,
+                source_col,
+                block_col,
+                f"{source_col} > block_mean",
+            )
+        )
+        if source_col == "any_crime":
+            binary_output[block_col] = panel[block_col]
+        block_threshold_tables.append(block_thresholds)
 
     binary_output.to_csv(processed_dir / "seattledmi_binary_outcomes.csv.gz", index=False)
 
@@ -237,6 +294,15 @@ def main() -> None:
     )
     district_thresholds.to_csv(
         processed_dir / "seattledmi_district_mean_thresholds.csv",
+        index=False,
+    )
+    block_thresholds = block_threshold_tables[0].merge(
+        block_threshold_tables[1],
+        on="GEOID10",
+        how="outer",
+    )
+    block_thresholds.to_csv(
+        processed_dir / "seattledmi_block_mean_thresholds.csv",
         index=False,
     )
 
