@@ -1,0 +1,24 @@
+source: SeattleDMI
+has_truth: false
+outcome_column: i_drugs_gt_0_pm1
+base_outcome: i_drugs
+network_name: knn_8
+field_basis_names:
+- intercept
+- total_pop
+- black_share
+- hispanic_share
+- male_1521_share
+- family_household_share
+- female_household_share
+- renter_share
+- vacant_share
+node_count: 9642
+time_steps: 15
+pre_intervention_steps: 11
+nnz: 88082
+undirected_edges: 44041
+avg_degree: 0.6090161100739818
+max_degree: 0.9999999999999999
+gamma_inf_norm: 0.9999999999999999
+gamma_fro_norm: 19.785741218249964

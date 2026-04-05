@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import sparse
 
 
 DEFAULT_NUM_SHARED_FEATURES = 5
@@ -22,19 +23,41 @@ class BasisExpansion:
     shared_feature_names: tuple[str, ...]
 
 
+def interaction_basis_count(interaction_basis) -> int:
+    """Return the number of interaction templates represented by one basis object."""
+    if sparse.issparse(interaction_basis):
+        return 1
+    basis_array = np.asarray(interaction_basis)
+    if basis_array.ndim == 2:
+        return 1
+    return int(basis_array.shape[0])
+
+
+def interaction_matrix_infinity_norm(matrix) -> float:
+    """Compute the infinity norm of one dense or sparse interaction matrix."""
+    if sparse.issparse(matrix):
+        row_sums = np.asarray(np.abs(matrix).sum(axis=1)).ravel()
+        return float(row_sums.max()) if row_sums.size else 0.0
+    return float(np.linalg.norm(np.asarray(matrix, dtype=float), ord=np.inf))
+
+
 def validate_basis_infinity_norms(
     field_basis: np.ndarray,
-    interaction_basis: np.ndarray,
+    interaction_basis,
     tol: float = 1e-8,
 ) -> None:
     """Ensure every nondegenerate basis element has infinity norm one."""
     field_norms = np.linalg.norm(np.asarray(field_basis, dtype=float), ord=np.inf, axis=1)
-    interaction_norms = np.array(
-        [
-            np.linalg.norm(np.asarray(matrix, dtype=float), ord=np.inf)
-            for matrix in np.asarray(interaction_basis, dtype=float)
-        ]
-    )
+    if sparse.issparse(interaction_basis):
+        interaction_norms = np.array([interaction_matrix_infinity_norm(interaction_basis)])
+    else:
+        interaction_array = np.asarray(interaction_basis, dtype=float)
+        if interaction_array.ndim == 2:
+            interaction_norms = np.array([interaction_matrix_infinity_norm(interaction_array)])
+        else:
+            interaction_norms = np.array(
+                [interaction_matrix_infinity_norm(matrix) for matrix in interaction_array]
+            )
 
     if np.any(field_norms < tol) or np.any(interaction_norms < tol):
         raise ValueError("Basis construction produced a degenerate zero template.")
@@ -180,12 +203,31 @@ def compose_field(field_coeffs: np.ndarray, field_basis: np.ndarray) -> np.ndarr
 
 def compose_interaction_matrix(
     interaction_coeffs: np.ndarray,
-    interaction_basis: np.ndarray,
-) -> np.ndarray:
+    interaction_basis,
+):
     """Map interaction coefficients to the realized symmetric interaction matrix."""
+    coeffs = np.asarray(interaction_coeffs, dtype=float)
+    if sparse.issparse(interaction_basis):
+        if coeffs.shape != (1,):
+            raise ValueError("Sparse interaction bases currently support exactly one template.")
+        interaction_matrix = interaction_basis.multiply(float(coeffs[0])).tocsr()
+        interaction_matrix = (interaction_matrix + interaction_matrix.T) * 0.5
+        interaction_matrix.setdiag(0.0)
+        interaction_matrix.eliminate_zeros()
+        return interaction_matrix
+
+    basis_array = np.asarray(interaction_basis, dtype=float)
+    if basis_array.ndim == 2:
+        if coeffs.shape != (1,):
+            raise ValueError("A single dense interaction matrix requires exactly one coefficient.")
+        interaction_matrix = coeffs[0] * basis_array
+        interaction_matrix = (interaction_matrix + interaction_matrix.T) / 2.0
+        np.fill_diagonal(interaction_matrix, 0.0)
+        return interaction_matrix
+
     interaction_matrix = np.tensordot(
-        np.asarray(interaction_coeffs, dtype=float),
-        np.asarray(interaction_basis, dtype=float),
+        coeffs,
+        basis_array,
         axes=(0, 0),
     )
     interaction_matrix = (interaction_matrix + interaction_matrix.T) / 2.0
@@ -195,10 +237,19 @@ def compose_interaction_matrix(
 
 def interaction_features(
     x: np.ndarray,
-    interaction_basis: np.ndarray,
+    interaction_basis,
 ) -> np.ndarray:
     """Precompute basis-specific interaction features for each time step and node."""
-    return np.einsum("tn,kmn->ktm", x, interaction_basis, optimize=True)
+    if sparse.issparse(interaction_basis):
+        features = np.asarray(x @ interaction_basis.T)
+        return features.reshape(1, x.shape[0], x.shape[1])
+
+    basis_array = np.asarray(interaction_basis, dtype=float)
+    if basis_array.ndim == 2:
+        features = np.asarray(x @ basis_array.T)
+        return features.reshape(1, x.shape[0], x.shape[1])
+
+    return np.einsum("tn,kmn->ktm", x, basis_array, optimize=True)
 
 
 def get_field_coeffs(config) -> np.ndarray:
@@ -344,14 +395,16 @@ def summary_metrics(
     est_theta: np.ndarray,
     true_theta: np.ndarray,
     field_basis: np.ndarray,
-    interaction_basis: np.ndarray,
+    interaction_basis,
 ) -> dict[str, float]:
     """Compute reconstruction metrics for fitted parameters, fields, and interactions."""
-    t_steps = int((len(est_theta) - field_basis.shape[0] - interaction_basis.shape[0] - 4))
+    t_steps = int(
+        len(est_theta) - field_basis.shape[0] - interaction_basis_count(interaction_basis) - 4
+    )
     if t_steps < 0:
         raise ValueError("Parameter vector is too short for the configured model blocks.")
     n_field = field_basis.shape[0]
-    n_interaction = interaction_basis.shape[0]
+    n_interaction = interaction_basis_count(interaction_basis)
     est_field_coeffs, est_tau, _, est_interaction_coeffs, _, _, _ = unpack_theta(
         est_theta, n_field, n_interaction, t_steps
     )
@@ -368,6 +421,16 @@ def summary_metrics(
     true_interaction = compose_interaction_matrix(
         true_interaction_coeffs, interaction_basis
     )
+    if sparse.issparse(est_interaction):
+        interaction_error = est_interaction - true_interaction
+        interaction_fro_error = float(
+            np.sqrt(interaction_error.multiply(interaction_error).sum())
+        )
+    else:
+        interaction_fro_error = float(
+            np.linalg.norm(est_interaction - true_interaction, ord="fro")
+        )
+
     return {
         "field_rmse": float(np.sqrt(np.mean((est_field_matrix - true_field_matrix) ** 2))),
         "field_l2_error": float(
@@ -375,8 +438,6 @@ def summary_metrics(
         ),
         "static_field_rmse": float(np.sqrt(np.mean((est_field - true_field) ** 2))),
         "tau_rmse": float(np.sqrt(np.mean((est_tau - true_tau) ** 2))),
-        "interaction_fro_error": float(
-            np.linalg.norm(est_interaction - true_interaction, ord="fro")
-        ),
+        "interaction_fro_error": interaction_fro_error,
         "parameter_rmse": float(np.sqrt(np.mean((est_theta - true_theta) ** 2))),
     }

@@ -157,3 +157,143 @@ The district-relative rules created by that script are:
 - `any_crime_gt_district_mean_pm1`
 
 These compare each block-quarter count to the mean level of that outcome in the block's Seattle neighborhood district.
+
+## Real-Data MPLE Pipeline
+
+The SeattleDMI folder also includes:
+
+- `run_mple_pipeline.py`
+
+This script builds full-network MPLE experiment folders under `experiments/SeattleDMI/` using:
+
+- multiple binary outcomes from `processed/seattledmi_binary_outcomes.csv.gz`
+- multiple known-network variants over the same `9,642` blocks
+- an observed field basis built only from static SeattleDMI block covariates
+
+Currently supported network variants are:
+
+- `contiguity`
+- `knn_8`
+- `knn_16`
+- `centroid_distance_kernel_8`
+- `centroid_distance_kernel_16`
+
+The centroid-distance kernel graphs are sparse kernels built from projected block-centroid distances and then restricted to the `k` nearest neighbors for scalability.
+
+Each experiment folder contains:
+
+- `panel_data.npz`
+  - the observed `x` and `z` panel arrays in the same format used by `mple.py`
+- `x_0.npy`, `z_0.npy`
+  - quarter-1 initial conditions
+- `gamma_matrix_sparse.npz`
+  - the normalized known network used for that experiment
+- `interaction_basis_sparse.npz`
+  - identical to the known network for the single-template interaction-basis case
+- `field_basis.npy`
+  - observed, infinity-normalized field templates
+- `field_basis_names.npy`
+- `interaction_basis_names.npy`
+- `node_index.csv`
+  - mapping from node index back to `GEOID10` and neighborhood metadata
+- `time_index.csv`
+  - mapping from model time index back to original SeattleDMI quarter
+- `realized_config.yaml`
+- `experiment_metadata.yaml`
+
+### Current Field Basis
+
+The external field is modeled as a linear combination of static block-level features only.
+The current basis includes:
+
+- `intercept`
+- `total_pop`
+- `black_share`
+- `hispanic_share`
+- `male_1521_share`
+- `family_household_share`
+- `female_household_share`
+- `renter_share`
+- `vacant_share`
+
+Each non-intercept feature is centered across blocks and then normalized to infinity norm `1`.
+No pre-intervention crime summaries are included in the current MPLE field basis.
+
+### Current Outcome Construction
+
+Each experiment folder uses exactly one binary outcome and exactly one fixed known network.
+The pipeline can iterate over many outcomes or many network choices, but each saved folder corresponds to one specific pair.
+
+The default outcome options are:
+
+- `i_drugs_gt_0_pm1`
+- `i_drugs_gt_district_mean_pm1`
+- `any_crime_gt_0_pm1`
+- `any_crime_gt_district_mean_pm1`
+
+### Current Network Construction
+
+The node set is the full SeattleDMI block set of `9,642` census blocks.
+All network variants are symmetrized, have zero diagonal, and are normalized to infinity norm `1`.
+
+- `contiguity`
+  - built from the saved queen-contiguity edge list in `processed/seattledmi_block_adjacency.csv.gz`
+  - two blocks are adjacent when their polygons touch
+- `knn_8` and `knn_16`
+  - built from projected block-centroid coordinates
+  - each block is connected to its `k` nearest neighbors, then the graph is symmetrized
+- `centroid_distance_kernel_8` and `centroid_distance_kernel_16`
+  - built from projected block-centroid coordinates
+  - edge weights are `exp(-distance / median_distance)`
+  - the kernel is truncated to the `k` nearest neighbors for scalability, then symmetrized
+
+### How One Experiment Folder Is Built
+
+For one chosen outcome column and one chosen network:
+
+1. The script loads `processed/seattledmi_binary_outcomes.csv.gz` and `processed/seattledmi_blocks.gpkg`.
+2. Blocks are sorted by `GEOID10` to create a fixed node ordering.
+3. The selected binary outcome becomes the `x` panel.
+4. `Intervention` is converted from `{0,1}` to `{-1,+1}` to create the `z` panel.
+5. Quarter `1` is saved separately as `x_0.npy` and `z_0.npy`.
+6. Quarters `2` through `16` are saved in `panel_data.npz` as the fitted panel.
+7. The pre-intervention cutoff `s` is computed from the first quarter in which any block receives treatment.
+8. The selected known network is built and normalized.
+9. The static field basis is built and normalized.
+10. The folder is written under `experiments/SeattleDMI/<outcome>__<network>/`.
+
+### How MPLE Uses The Folder
+
+`mple.py` now supports both synthetic folders and these SeattleDMI real-data folders.
+For real-data folders it:
+
+- loads `panel_data.npz`
+- loads `gamma_matrix_sparse.npz`
+- loads the saved field and interaction basis artifacts
+- treats `experiment_metadata.yaml: has_truth: false` as a signal that no ground-truth parameter comparison is available
+- writes estimated parameters, fitted interaction objects, and summary tables without truth-based recovery metrics
+
+To build the experiment folders only:
+
+```bash
+pixi run python data/SeattleDMI/run_mple_pipeline.py
+```
+
+To build them and immediately fit MPLE:
+
+```bash
+pixi run python data/SeattleDMI/run_mple_pipeline.py --run_mple
+```
+
+For a small smoke test:
+
+```bash
+pixi run python data/SeattleDMI/run_mple_pipeline.py \
+  --outcomes any_crime_gt_0_pm1 \
+  --networks contiguity \
+  --output_root experiments/SeattleDMI_smoke \
+  --manifest_path experiments/SeattleDMI_smoke/manifest.csv \
+  --run_mple \
+  --steps 25 \
+  --overwrite
+```

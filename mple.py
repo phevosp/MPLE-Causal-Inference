@@ -6,12 +6,14 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 from scipy.optimize import minimize
+from scipy import sparse
 
 from model_utils import (
     BasisExpansion,
     compose_field,
     compose_field_matrix,
     compose_interaction_matrix,
+    interaction_basis_count,
     interaction_features,
     load_or_build_basis,
     pack_true_parameters,
@@ -52,14 +54,20 @@ def load_basis_artifacts(data_folder, config, gamma_matrix):
     data_path = Path(data_folder)
     field_basis_path = data_path / "field_basis.npy"
     interaction_basis_path = data_path / "interaction_basis.npy"
+    interaction_basis_sparse_path = data_path / "interaction_basis_sparse.npz"
     field_names_path = data_path / "field_basis_names.npy"
     interaction_names_path = data_path / "interaction_basis_names.npy"
     shared_features_path = data_path / "shared_features.npy"
     shared_feature_names_path = data_path / "shared_feature_names.npy"
 
-    if field_basis_path.exists() and interaction_basis_path.exists():
+    if field_basis_path.exists() and (
+        interaction_basis_path.exists() or interaction_basis_sparse_path.exists()
+    ):
         field_basis = np.load(field_basis_path)
-        interaction_basis = np.load(interaction_basis_path)
+        if interaction_basis_sparse_path.exists():
+            interaction_basis = sparse.load_npz(interaction_basis_sparse_path).tocsr()
+        else:
+            interaction_basis = np.load(interaction_basis_path)
         if field_names_path.exists():
             field_names = tuple(np.load(field_names_path).tolist())
         else:
@@ -68,7 +76,7 @@ def load_basis_artifacts(data_folder, config, gamma_matrix):
             interaction_names = tuple(np.load(interaction_names_path).tolist())
         else:
             interaction_names = tuple(
-                f"interaction_{idx}" for idx in range(interaction_basis.shape[0])
+                f"interaction_{idx}" for idx in range(interaction_basis_count(interaction_basis))
             )
         if shared_features_path.exists():
             shared_features = np.load(shared_features_path)
@@ -91,6 +99,32 @@ def load_basis_artifacts(data_folder, config, gamma_matrix):
         )
 
     return load_or_build_basis(config, gamma_matrix)
+
+
+def load_gamma_artifact(data_folder):
+    """Load the realized network matrix, supporting dense and sparse storage."""
+    data_path = Path(data_folder)
+    dense_path = data_path / "gamma_matrix.npy"
+    sparse_path = data_path / "gamma_matrix_sparse.npz"
+    if sparse_path.exists():
+        return sparse.load_npz(sparse_path).tocsr()
+    if dense_path.exists():
+        return np.load(dense_path)
+    raise FileNotFoundError(f"Could not find gamma matrix artifact in {data_folder}.")
+
+
+def load_panel_artifact(data_folder):
+    """Load x and z panel arrays from either a real-data or synthetic-data folder."""
+    data_path = Path(data_folder)
+    panel_path = data_path / "panel_data.npz"
+    legacy_path = data_path / "synthetic_data.npz"
+    if panel_path.exists():
+        return np.load(panel_path)
+    if legacy_path.exists():
+        return np.load(legacy_path)
+    raise FileNotFoundError(
+        f"Could not find panel_data.npz or synthetic_data.npz in {data_folder}."
+    )
 
 
 def _pack_gradient(
@@ -120,6 +154,7 @@ def pseudo_nll(
     z,
     theta,
     x_0,
+    z_0,
     s,
     field_basis,
     interaction_features_x,
@@ -136,7 +171,7 @@ def pseudo_nll(
     )
 
     prev_x = np.vstack([x_0, x[:-1, :]])
-    prev_z = np.vstack([np.zeros_like(x_0), z[:-1, :]])
+    prev_z = np.vstack([z_0, z[:-1, :]])
     field_matrix = compose_field_matrix(field_coeffs, tau, field_basis)
     interaction_term = np.tensordot(
         interaction_coeffs,
@@ -179,6 +214,7 @@ def fit_mple(
     x,
     z,
     x_0,
+    z_0,
     s,
     param_names,
     field_basis,
@@ -213,6 +249,7 @@ def fit_mple(
             z,
             theta,
             x_0,
+            z_0,
             s,
             field_basis=field_basis,
             interaction_features_x=interaction_features_x,
@@ -284,8 +321,8 @@ def write_summary_table(summary_stem, param_names, est_theta, true_theta, metric
             "category": "parameter",
             "name": name,
             "estimate": float(est),
-            "true": float(true),
-            "squared_error": float((est - true) ** 2),
+            "true": None if true is None else float(true),
+            "squared_error": None if true is None else float((est - true) ** 2),
         }
         for name, est, true in zip(param_names, est_theta, true_theta)
     ]
@@ -321,6 +358,10 @@ def write_summary_table(summary_stem, param_names, est_theta, true_theta, metric
 def log_estimates(logger, title, param_names, est_theta, true_theta):
     """Log estimate-versus-truth comparisons for a fitted parameter vector."""
     logger.info(title)
+    if all(true is None for true in true_theta):
+        for key, est in zip(param_names, est_theta):
+            logger.info("  %s: %.4f", key, est)
+        return
     tau_rows = []
     for key, est, true in zip(param_names, est_theta, true_theta):
         if key.startswith("tau::"):
@@ -348,48 +389,84 @@ def save_estimated_artifacts(
     interaction_basis,
 ):
     """Save reconstructed field and interaction objects for fitted and true parameters."""
-    t_steps = int((len(est_theta) - field_basis.shape[0] - interaction_basis.shape[0] - 4))
+    t_steps = int(
+        len(est_theta) - field_basis.shape[0] - interaction_basis_count(interaction_basis) - 4
+    )
     n_field = field_basis.shape[0]
-    n_interaction = interaction_basis.shape[0]
+    n_interaction = interaction_basis_count(interaction_basis)
     est_field_coeffs, est_tau, _, est_interaction_coeffs, _, _, _ = unpack_theta(
         est_theta,
         n_field,
         n_interaction,
         t_steps,
     )
-    true_field_coeffs, true_tau, _, true_interaction_coeffs, _, _, _ = unpack_theta(
-        true_theta,
-        n_field,
-        n_interaction,
-        t_steps,
-    )
 
     np.save(Path(data_folder) / "estimated_tau.npy", est_tau)
-    np.save(Path(data_folder) / "true_tau.npy", true_tau)
     np.save(
         Path(data_folder) / "estimated_field_vector.npy",
         compose_field(est_field_coeffs, field_basis),
     )
     np.save(
-        Path(data_folder) / "true_field_vector.npy",
-        compose_field(true_field_coeffs, field_basis),
-    )
-    np.save(
         Path(data_folder) / "estimated_field_matrix.npy",
         compose_field_matrix(est_field_coeffs, est_tau, field_basis),
+    )
+    estimated_interaction = compose_interaction_matrix(est_interaction_coeffs, interaction_basis)
+    if sparse.issparse(estimated_interaction):
+        sparse.save_npz(
+            Path(data_folder) / "estimated_interaction_matrix_sparse.npz",
+            estimated_interaction,
+        )
+    else:
+        np.save(Path(data_folder) / "estimated_interaction_matrix.npy", estimated_interaction)
+
+    if all(true is None for true in true_theta):
+        return
+
+    true_theta_array = np.asarray(true_theta, dtype=float)
+    true_field_coeffs, true_tau, _, true_interaction_coeffs, _, _, _ = unpack_theta(
+        true_theta_array,
+        n_field,
+        n_interaction,
+        t_steps,
+    )
+    np.save(Path(data_folder) / "true_tau.npy", true_tau)
+    np.save(
+        Path(data_folder) / "true_field_vector.npy",
+        compose_field(true_field_coeffs, field_basis),
     )
     np.save(
         Path(data_folder) / "true_field_matrix.npy",
         compose_field_matrix(true_field_coeffs, true_tau, field_basis),
     )
-    np.save(
-        Path(data_folder) / "estimated_interaction_matrix.npy",
-        compose_interaction_matrix(est_interaction_coeffs, interaction_basis),
-    )
-    np.save(
-        Path(data_folder) / "true_interaction_matrix.npy",
-        compose_interaction_matrix(true_interaction_coeffs, interaction_basis),
-    )
+    true_interaction = compose_interaction_matrix(true_interaction_coeffs, interaction_basis)
+    if sparse.issparse(true_interaction):
+        sparse.save_npz(
+            Path(data_folder) / "true_interaction_matrix_sparse.npz",
+            true_interaction,
+        )
+    else:
+        np.save(Path(data_folder) / "true_interaction_matrix.npy", true_interaction)
+
+def maybe_pack_true_parameters(config, field_names, interaction_names, t_steps, has_truth):
+    """Return the true parameter vector when available, otherwise None."""
+    if not has_truth:
+        return None
+    if "estimation_params" not in config:
+        return None
+    if "field_coefs" not in config.estimation_params:
+        return None
+    try:
+        packed = pack_true_parameters(
+            config,
+            field_names,
+            interaction_names,
+        )
+    except Exception:
+        return None
+    expected_length = len(field_names) + t_steps + len(interaction_names) + 4
+    if len(packed) != expected_length:
+        return None
+    return packed
 
 
 if __name__ == "__main__":
@@ -418,9 +495,14 @@ if __name__ == "__main__":
 
     logger.info("Loading data...")
     config = OmegaConf.load(f"{args.data_folder}/realized_config.yaml")
-    gamma_matrix = np.load(f"{args.data_folder}/gamma_matrix.npy")
+    metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
+    metadata = OmegaConf.load(metadata_path) if metadata_path.exists() else OmegaConf.create({})
+    has_truth = bool(metadata.get("has_truth", True))
+    gamma_matrix = load_gamma_artifact(args.data_folder)
     x_0 = np.load(f"{args.data_folder}/x_0.npy")
-    data = np.load(f"{args.data_folder}/synthetic_data.npz")
+    z_0_path = Path(args.data_folder) / "z_0.npy"
+    z_0 = np.load(z_0_path) if z_0_path.exists() else np.zeros_like(x_0)
+    data = load_panel_artifact(args.data_folder)
     x = data["x"]
     z = data["z"]
 
@@ -430,10 +512,12 @@ if __name__ == "__main__":
         basis.interaction_names,
         x.shape[0],
     )
-    params_true = pack_true_parameters(
+    params_true = maybe_pack_true_parameters(
         config,
         basis.field_names,
         basis.interaction_names,
+        x.shape[0],
+        has_truth,
     )
     interaction_features_x = interaction_features(x, basis.interaction_basis)
     logger.info(
@@ -447,6 +531,7 @@ if __name__ == "__main__":
         x,
         z,
         x_0=x_0,
+        z_0=z_0,
         s=config.global_params.s,
         param_names=param_keys,
         field_basis=basis.field_basis,
@@ -462,30 +547,34 @@ if __name__ == "__main__":
     logger.info("Final Loss: %.6f", loss_history[-1])
     log_estimates(
         logger,
-        "Estimated vs True Parameters:",
+        "Estimated vs True Parameters:" if has_truth else "Estimated Parameters:",
         param_keys,
         params_hat,
-        params_true,
+        params_true if params_true is not None else [None] * len(param_keys),
     )
 
-    metrics = summary_metrics(
-        params_hat,
-        params_true,
-        basis.field_basis,
-        basis.interaction_basis,
+    metrics = (
+        summary_metrics(
+            params_hat,
+            params_true,
+            basis.field_basis,
+            basis.interaction_basis,
+        )
+        if params_true is not None
+        else {}
     )
     write_summary_table(
         Path(args.data_folder) / "mple_summary",
         param_keys,
         params_hat,
-        params_true,
+        params_true if params_true is not None else [None] * len(param_keys),
         metrics,
         loss_history[-1],
     )
     save_estimated_artifacts(
         args.data_folder,
         params_hat,
-        params_true,
+        params_true if params_true is not None else [None] * len(param_keys),
         basis.field_basis,
         basis.interaction_basis,
     )

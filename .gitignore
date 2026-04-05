@@ -210,8 +210,13 @@ __marimo__/
 !.pixi/config.toml
 
 # Experiments
-experiments/*/*.npy
-experiments/*/*.npz
+# Keep experiment directories themselves, but ignore bulky artifacts inside them
+# unless they are one of the lightweight report/config files we want to keep.
+experiments/*/*/*
+!experiments/*/*/*.yaml
+!experiments/*/*/*.md
+!experiments/*/*/*.log
+!experiments/*/*/mple_summary.csv
 
 # Data
 data/SeattleDMI/processed/
