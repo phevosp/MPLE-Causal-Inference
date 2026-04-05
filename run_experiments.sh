@@ -69,7 +69,7 @@ while IFS= read -r data_folder; do
 done <"$MANIFEST_PATH"
 
 echo "Building report..."
-"${RUNNER[@]}" report_experiments.py --manifest "$MANIFEST_PATH" --report_stem "$REPORT_STEM"
+"${RUNNER[@]}" report_parameter_recovery_detailed.py --manifest "$MANIFEST_PATH" --report_stem "$REPORT_STEM"
 
 echo "Finished running MPLE across manifest experiments."
 echo "Report: ${REPORT_STEM}.md"

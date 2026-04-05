@@ -11,12 +11,21 @@ MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/latest_manifest.tx
 mkdir -p "$(dirname "$MANIFEST_PATH")"
 : >"$MANIFEST_PATH"
 
+if command -v pixi >/dev/null 2>&1; then
+	RUNNER=(pixi run python -u)
+elif command -v python >/dev/null 2>&1; then
+	RUNNER=(python -u)
+else
+	echo "Error: neither 'pixi' nor 'python' is available in PATH." >&2
+	exit 1
+fi
+
 run_generation() {
 	local label="$1"
 	shift
 
 	echo "Generating ${label}..."
-	pixi run python -u data/synthetic_data_generation.py \
+	"${RUNNER[@]}" data/synthetic_data_generation.py \
 		--config_name "$BASE_CONFIG" \
 		--descriptor "$label" \
 		--manifest_path "$MANIFEST_PATH" \
@@ -38,181 +47,91 @@ add_metadata() {
 	out_ref+=("--metadata" "${key}=${value}")
 }
 
-add_common_generation_args() {
+add_common_args() {
 	local target_name="$1"
-	local n="$2"
-	local t="$3"
-	local seed="$4"
-	add_override "$target_name" global_params.N "$n"
-	add_override "$target_name" global_params.T "$t"
-	add_override "$target_name" global_params.s 5
+	local seed="$2"
+	add_override "$target_name" global_params.N 1000
+	add_override "$target_name" global_params.T 20
+	add_override "$target_name" global_params.s 12
 	add_override "$target_name" global_params.gamma_matrix_generator '"erdos_renyi"'
-	add_override "$target_name" global_params.gamma_matrix_params.p 0.01
+	add_override "$target_name" global_params.gamma_matrix_params.p 0.05
 	add_override "$target_name" global_params.x_0_generator '"bernoulli"'
 	add_override "$target_name" global_params.x_0_params.p 0.5
 	add_override "$target_name" global_params.basis_params.num_shared_features 5
 	add_override "$target_name" global_params.basis_params.shared_feature_seed "$seed"
 	add_override "$target_name" generation_params.seed "$seed"
 	add_override "$target_name" generation_params.gibbs_sweeps 10
-}
-
-add_temperature_args() {
-	local target_name="$1"
-	local regime="$2"
-	case "$regime" in
-		high_temp)
-			add_override "$target_name" estimation_params.field_coefs '[0.18]'
-			add_override "$target_name" estimation_params.beta 0.12
-			add_override "$target_name" estimation_params.interaction_coefs '[0.15]'
-			add_override "$target_name" estimation_params.eta 0.01
-			add_override "$target_name" estimation_params.zeta -0.15
-			add_override "$target_name" estimation_params.psi 0.05
-			;;
-		baseline_temp)
-			add_override "$target_name" estimation_params.field_coefs '[0.5]'
-			add_override "$target_name" estimation_params.beta 0.4
-			add_override "$target_name" estimation_params.interaction_coefs '[0.5]'
-			add_override "$target_name" estimation_params.eta 0.1
-			add_override "$target_name" estimation_params.zeta -0.5
-			add_override "$target_name" estimation_params.psi 0.4
-			;;
-		low_temp)
-			add_override "$target_name" estimation_params.field_coefs '[1]'
-			add_override "$target_name" estimation_params.beta 1.1
-			add_override "$target_name" estimation_params.interaction_coefs '[2]'
-			add_override "$target_name" estimation_params.eta 0.7
-			add_override "$target_name" estimation_params.zeta -1
-			add_override "$target_name" estimation_params.psi 0.4
-			;;
-		*)
-			echo "Unknown temperature regime: $regime" >&2
-			exit 1
-			;;
-	esac
-}
-
-add_graph_fro_args() {
-	local target_name="$1"
-	local regime="$2"
-	case "$regime" in
-		fro_small)
-			add_override "$target_name" global_params.gamma_matrix_generator '"complete"'
-			;;
-		fro_medium)
-			add_override "$target_name" global_params.gamma_matrix_generator '"erdos_renyi"'
-			add_override "$target_name" global_params.gamma_matrix_params.p 0.10
-			;;
-		fro_large)
-			add_override "$target_name" global_params.gamma_matrix_generator '"cycle"'
-			;;
-		*)
-			echo "Unknown Frobenius regime: $regime" >&2
-			exit 1
-			;;
-	esac
-}
-
-graph_family_for_regime() {
-	local regime="$1"
-	case "$regime" in
-		fro_small)
-			echo complete
-			;;
-		fro_medium)
-			echo erdos_renyi
-			;;
-		fro_large)
-			echo cycle
-			;;
-		*)
-			echo unknown
-			;;
-	esac
-}
-
-add_simple_model_args() {
-	local target_name="$1"
-	add_override "$target_name" global_params.basis_params.field_mode '"uniform"'
+	add_override "$target_name" estimation_params.beta 0.35
+	add_override "$target_name" estimation_params.interaction_coefs '[0.35]'
+	add_override "$target_name" estimation_params.eta 0.08
+	add_override "$target_name" estimation_params.zeta -0.25
+	add_override "$target_name" estimation_params.psi 0.20
 	add_override "$target_name" global_params.basis_params.interaction_mode '"known_graph"'
 }
 
-add_shared_field_args() {
+add_uniform_tau_args() {
 	local target_name="$1"
-	local regime="$2"
+	local seed="$2"
+	add_override "$target_name" global_params.basis_params.field_mode '"uniform"'
+	add_override "$target_name" estimation_params.field_coefs '[0.30]'
+	add_override "$target_name" estimation_params.tau_params.mode '"uniform_random"'
+	add_override "$target_name" estimation_params.tau_params.lower -0.20
+	add_override "$target_name" estimation_params.tau_params.upper 0.20
+	add_override "$target_name" estimation_params.tau_params.seed "$seed"
+}
+
+add_shared_field_tau_args() {
+	local target_name="$1"
+	local seed="$2"
 	add_override "$target_name" global_params.basis_params.field_mode '"shared_feature_field"'
-	case "$regime" in
-		high_temp)
-			add_override "$target_name" estimation_params.field_coefs '[0.175,0.140,-0.125,0.007,0.125,0.140,-0.125,-0.040,0.125,-0.180,0.185]'
+	add_override "$target_name" estimation_params.field_coefs '[0.25,0.18,-0.10,0.12,-0.08,0.10,-0.06,0.08,-0.04,0.06,-0.02]'
+	add_override "$target_name" estimation_params.tau_params.mode '"uniform_random"'
+	add_override "$target_name" estimation_params.tau_params.lower -0.25
+	add_override "$target_name" estimation_params.tau_params.upper 0.25
+	add_override "$target_name" estimation_params.tau_params.seed "$seed"
+}
+
+declare -a EXPERIMENT_LABELS=(
+	"tau_uniform_field"
+	"tau_shared_field"
+	"tau_shared_field_alt_seed"
+)
+
+seed_counter=600
+
+for label in "${EXPERIMENT_LABELS[@]}"; do
+	args=()
+	add_metadata args suite tau_short_test
+	add_metadata args test_type "$label"
+	add_common_args args "$seed_counter"
+
+	case "$label" in
+		tau_uniform_field)
+			add_metadata args field_complexity uniform
+			add_metadata args tau_mode uniform_random
+			add_uniform_tau_args args "$seed_counter"
 			;;
-		baseline_temp)
-			add_override "$target_name" estimation_params.field_coefs '[0.315,0.308,0.350,-0.58,0.5,-0.6,-0.05,0.08,+0.10,0.3,0.4]'
+		tau_shared_field)
+			add_metadata args field_complexity shared_feature_field
+			add_metadata args tau_mode uniform_random
+			add_shared_field_tau_args args "$seed_counter"
 			;;
-		low_temp)
-			add_override "$target_name" estimation_params.field_coefs '[0.425,0.220,0.675,0.920,-0.750,0.440,-0.175,0.5,-0.075,0.240,0.855]'
+		tau_shared_field_alt_seed)
+			add_metadata args field_complexity shared_feature_field
+			add_metadata args tau_mode uniform_random
+			add_shared_field_tau_args args "$((seed_counter + 1000))"
+			add_override args global_params.gamma_matrix_params.p 0.08
+			add_override args estimation_params.interaction_coefs '[0.45]'
 			;;
 		*)
-			echo "Unknown temperature regime: $regime" >&2
+			echo "Unknown experiment label: $label" >&2
 			exit 1
 			;;
 	esac
-}
 
-add_shared_interaction_args() {
-	local target_name="$1"
-	local regime="$2"
-	add_override "$target_name" global_params.basis_params.interaction_mode '"shared_feature_interactions"'
-	case "$regime" in
-		high_temp)
-			add_override "$target_name" estimation_params.interaction_coefs '[0.125,0.040,0.020,0.040,0.020,0.040,0.020,0.040,0.020,0.065,0.070]'
-			;;
-		baseline_temp)
-			add_override "$target_name" estimation_params.interaction_coefs '[0.25,0.08,0.04,0.08,0.04,0.08,0.04,0.08,0.04,0.13,0.14]'
-			;;
-		low_temp)
-			add_override "$target_name" estimation_params.interaction_coefs '[0.375,0.120,0.060,0.120,0.060,0.120,0.060,0.120,0.060,0.195,0.210]'
-			;;
-		*)
-			echo "Unknown temperature regime: $regime" >&2
-			exit 1
-			;;
-	esac
-}
-
-seed_counter=200
-
-for n in 100 1000 5000; do
-	for t in 10 100; do
-		for temperature in high_temp baseline_temp low_temp; do
-			for fro in fro_small fro_medium fro_large; do
-				for field_complexity in uniform shared_feature_field; do
-					for interaction_complexity in known_graph shared_feature_interactions; do
-						label="N${n}_T${t}_${temperature}_${fro}_${field_complexity}_${interaction_complexity}"
-						args=()
-						add_metadata args suite core_grid
-						add_metadata args N_regime "N${n}"
-						add_metadata args T_regime "T${t}"
-						add_metadata args temperature_regime "$temperature"
-						add_metadata args fro_regime "$fro"
-						add_metadata args graph_family "$(graph_family_for_regime "$fro")"
-						add_metadata args field_complexity "$field_complexity"
-						add_metadata args interaction_complexity "$interaction_complexity"
-						add_common_generation_args args "$n" "$t" "$seed_counter"
-						add_temperature_args args "$temperature"
-						add_graph_fro_args args "$fro"
-						add_simple_model_args args
-						if [ "$field_complexity" = "shared_feature_field" ]; then
-							add_shared_field_args args "$temperature"
-						fi
-						if [ "$interaction_complexity" = "shared_feature_interactions" ]; then
-							add_shared_interaction_args args "$temperature"
-						fi
-						run_generation "$label" "${args[@]}"
-						seed_counter=$((seed_counter + 1))
-					done
-				done
-			done
-		done
-	done
+	run_generation "$label" "${args[@]}"
+	seed_counter=$((seed_counter + 1))
 done
-echo "Finished generating all datasets."
+
+echo "Finished generating tau smoke-test datasets."
 echo "Manifest: $MANIFEST_PATH"
