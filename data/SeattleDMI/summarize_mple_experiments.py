@@ -1,4 +1,12 @@
-"""Summarize SeattleDMI MPLE experiment folders into tabular reports."""
+"""Summarize SeattleDMI MPLE experiment folders into tabular reports.
+
+The summary script recursively scans the grouped Seattle experiment tree and
+collects every leaf folder that contains an ``mple_summary.csv`` file. When
+called on the Seattle root without explicit output paths, it writes:
+
+- one combined report at ``<root>/reports``
+- one report per experiment group at ``<root>/<group>/reports``
+"""
 
 from __future__ import annotations
 
@@ -95,30 +103,30 @@ def readable_interaction_label(network: str) -> str:
 
 def collect_experiment_rows(experiments_root: Path) -> list[dict[str, float | str]]:
     """Collect one flat experiment-summary row per SeattleDMI experiment folder."""
-    experiment_dirs = sorted(path for path in experiments_root.iterdir() if path.is_dir())
-    if not experiment_dirs:
-        return []
-
     all_keys: set[str] = set()
-    raw_rows: list[tuple[str, str, str, dict[str, float]]] = []
+    raw_rows: list[tuple[str, str, str, str, dict[str, float]]] = []
 
-    for experiment_dir in experiment_dirs:
-        summary_path = experiment_dir / "mple_summary.csv"
-        if not summary_path.exists():
+    summary_paths = sorted(experiments_root.rglob("mple_summary.csv"))
+    for summary_path in summary_paths:
+        experiment_dir = summary_path.parent
+        if experiment_dir.name == "reports" or "__" not in experiment_dir.name:
             continue
         outcome, network = parse_experiment_name(experiment_dir.name)
         values = load_summary_rows(summary_path)
         all_keys.update(values.keys())
-        raw_rows.append((experiment_dir.name, outcome, network, values))
+        relative_parts = experiment_dir.relative_to(experiments_root).parts
+        experiment_group = relative_parts[0] if len(relative_parts) > 1 else ""
+        raw_rows.append((experiment_dir.name, experiment_group, outcome, network, values))
 
     ordered_keys = sorted(
         key for key in all_keys if key != "final_loss"
     ) + (["final_loss"] if "final_loss" in all_keys else [])
 
     rows: list[dict[str, float | str]] = []
-    for experiment_name, outcome, network, values in raw_rows:
+    for experiment_name, experiment_group, outcome, network, values in raw_rows:
         row: dict[str, float | str] = {
             "experiment_name": experiment_name,
+            "experiment_group": experiment_group,
             "outcome_code": outcome,
             "outcome_label": readable_outcome_label(outcome),
             "outcome_definition": readable_outcome_definition(outcome),
@@ -170,6 +178,33 @@ def write_markdown(output_path: Path, rows: list[dict[str, float | str]]) -> Non
             handle.write("| " + " | ".join(rendered) + " |\n")
 
 
+def write_report_pair(output_csv: Path, output_md: Path, rows: list[dict[str, float | str]]) -> None:
+    """Write matching CSV and Markdown reports to a pair of output paths."""
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    output_md.parent.mkdir(parents=True, exist_ok=True)
+    write_csv(output_csv, rows)
+    write_markdown(output_md, rows)
+
+
+def write_grouped_reports(experiments_root: Path, rows: list[dict[str, float | str]]) -> None:
+    """Write the combined Seattle report plus one report per experiment group."""
+    root_csv = (experiments_root / "reports" / "MPLE_experiment_summary.csv").resolve()
+    root_md = (experiments_root / "reports" / "MPLE_experiment_summary.md").resolve()
+    write_report_pair(root_csv, root_md, rows)
+
+    grouped_rows: dict[str, list[dict[str, float | str]]] = {}
+    for row in rows:
+        group = str(row.get("experiment_group", "")).strip()
+        if not group:
+            continue
+        grouped_rows.setdefault(group, []).append(row)
+
+    for group, group_rows in grouped_rows.items():
+        group_csv = (experiments_root / group / "reports" / "MPLE_experiment_summary.csv").resolve()
+        group_md = (experiments_root / group / "reports" / "MPLE_experiment_summary.md").resolve()
+        write_report_pair(group_csv, group_md, group_rows)
+
+
 def main() -> None:
     """Create one experiment-level summary table across the SeattleDMI MPLE runs."""
     parser = argparse.ArgumentParser(
@@ -196,21 +231,21 @@ def main() -> None:
     args = parser.parse_args()
 
     experiments_root = args.experiments_root.resolve()
-    output_csv = (
-        args.output_csv.resolve()
-        if args.output_csv is not None
-        else (experiments_root / "reports" / "MPLE_experiment_summary.csv").resolve()
-    )
-    output_md = (
-        args.output_md.resolve()
-        if args.output_md is not None
-        else (experiments_root / "reports" / "MPLE_experiment_summary.md").resolve()
-    )
-
     rows = collect_experiment_rows(experiments_root)
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
-    write_csv(output_csv, rows)
-    write_markdown(output_md, rows)
+    if args.output_csv is not None or args.output_md is not None:
+        output_csv = (
+            args.output_csv.resolve()
+            if args.output_csv is not None
+            else (experiments_root / "reports" / "MPLE_experiment_summary.csv").resolve()
+        )
+        output_md = (
+            args.output_md.resolve()
+            if args.output_md is not None
+            else (experiments_root / "reports" / "MPLE_experiment_summary.md").resolve()
+        )
+        write_report_pair(output_csv, output_md, rows)
+    else:
+        write_grouped_reports(experiments_root, rows)
 
 
 if __name__ == "__main__":

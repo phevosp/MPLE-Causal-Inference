@@ -12,7 +12,6 @@ fit_intervention_model: true
 network_name: contiguity
 network_source: ohio_standardized_contiguity
 field_basis_names:
-- intercept
 - log_total_population
 - median_household_income
 - pct_below_poverty

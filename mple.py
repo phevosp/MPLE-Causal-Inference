@@ -18,7 +18,6 @@ from model_utils import (
     intervention_model_enabled,
     interaction_basis_count,
     interaction_features,
-    load_or_build_basis,
     pack_true_parameters,
     parameter_names,
     scalar_parameter_count,
@@ -53,8 +52,8 @@ def setup_logger(log_file):
     return logger
 
 
-def load_basis_artifacts(data_folder, config, gamma_matrix):
-    """Load saved basis arrays from an experiment folder or rebuild legacy defaults."""
+def load_basis_artifacts(data_folder):
+    """Load the saved basis arrays from an experiment folder."""
     data_path = Path(data_folder)
     field_basis_path = data_path / "field_basis.npy"
     interaction_basis_path = data_path / "interaction_basis.npy"
@@ -63,72 +62,50 @@ def load_basis_artifacts(data_folder, config, gamma_matrix):
     interaction_names_path = data_path / "interaction_basis_names.npy"
     shared_features_path = data_path / "shared_features.npy"
     shared_feature_names_path = data_path / "shared_feature_names.npy"
-
-    if field_basis_path.exists() and (
-        interaction_basis_path.exists() or interaction_basis_sparse_path.exists()
-    ):
-        field_basis = np.load(field_basis_path)
-        if interaction_basis_sparse_path.exists():
-            interaction_basis = sparse.load_npz(interaction_basis_sparse_path).tocsr()
-        else:
-            interaction_basis = np.load(interaction_basis_path)
-        if field_names_path.exists():
-            field_names = tuple(np.load(field_names_path).tolist())
-        else:
-            field_names = tuple(f"field_{idx}" for idx in range(field_basis.shape[0]))
-        if interaction_names_path.exists():
-            interaction_names = tuple(np.load(interaction_names_path).tolist())
-        else:
-            interaction_names = tuple(
-                f"interaction_{idx}" for idx in range(interaction_basis_count(interaction_basis))
-            )
-        if shared_features_path.exists():
-            shared_features = np.load(shared_features_path)
-        else:
-            shared_features = np.empty((0, field_basis.shape[1]), dtype=float)
-        if shared_feature_names_path.exists():
-            shared_feature_names = tuple(np.load(shared_feature_names_path).tolist())
-        else:
-            shared_feature_names = tuple(
-                f"feature_{idx}" for idx in range(shared_features.shape[0])
-            )
-        validate_basis_infinity_norms(field_basis, interaction_basis)
-        return BasisExpansion(
-            field_basis=field_basis,
-            interaction_basis=interaction_basis,
-            field_names=field_names,
-            interaction_names=interaction_names,
-            shared_features=shared_features,
-            shared_feature_names=shared_feature_names,
+    required = [
+        field_basis_path,
+        field_names_path,
+        interaction_names_path,
+        shared_features_path,
+        shared_feature_names_path,
+    ]
+    if interaction_basis_sparse_path.exists():
+        required.append(interaction_basis_sparse_path)
+    else:
+        required.append(interaction_basis_path)
+    missing = [path.name for path in required if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing required basis artifacts in {data_folder}: {', '.join(missing)}"
         )
 
-    return load_or_build_basis(config, gamma_matrix)
-
-
-def load_gamma_artifact(data_folder):
-    """Load the realized network matrix, supporting dense and sparse storage."""
-    data_path = Path(data_folder)
-    dense_path = data_path / "gamma_matrix.npy"
-    sparse_path = data_path / "gamma_matrix_sparse.npz"
-    if sparse_path.exists():
-        return sparse.load_npz(sparse_path).tocsr()
-    if dense_path.exists():
-        return np.load(dense_path)
-    raise FileNotFoundError(f"Could not find gamma matrix artifact in {data_folder}.")
+    field_basis = np.load(field_basis_path)
+    if interaction_basis_sparse_path.exists():
+        interaction_basis = sparse.load_npz(interaction_basis_sparse_path).tocsr()
+    else:
+        interaction_basis = np.load(interaction_basis_path)
+    field_names = tuple(np.load(field_names_path).tolist())
+    interaction_names = tuple(np.load(interaction_names_path).tolist())
+    shared_features = np.load(shared_features_path)
+    shared_feature_names = tuple(np.load(shared_feature_names_path).tolist())
+    validate_basis_infinity_norms(field_basis, interaction_basis)
+    return BasisExpansion(
+        field_basis=field_basis,
+        interaction_basis=interaction_basis,
+        field_names=field_names,
+        interaction_names=interaction_names,
+        shared_features=shared_features,
+        shared_feature_names=shared_feature_names,
+    )
 
 
 def load_panel_artifact(data_folder):
-    """Load x and z panel arrays from either a real-data or synthetic-data folder."""
+    """Load x and z panel arrays from an experiment folder."""
     data_path = Path(data_folder)
     panel_path = data_path / "panel_data.npz"
-    legacy_path = data_path / "synthetic_data.npz"
     if panel_path.exists():
         return np.load(panel_path)
-    if legacy_path.exists():
-        return np.load(legacy_path)
-    raise FileNotFoundError(
-        f"Could not find panel_data.npz or synthetic_data.npz in {data_folder}."
-    )
+    raise FileNotFoundError(f"Could not find panel_data.npz in {data_folder}.")
 
 
 def _pack_gradient(
@@ -539,7 +516,6 @@ if __name__ == "__main__":
     metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
     metadata = OmegaConf.load(metadata_path) if metadata_path.exists() else OmegaConf.create({})
     has_truth = bool(metadata.get("has_truth", True))
-    gamma_matrix = load_gamma_artifact(args.data_folder)
     x_0 = np.load(f"{args.data_folder}/x_0.npy")
     z_0_path = Path(args.data_folder) / "z_0.npy"
     z_0 = np.load(z_0_path) if z_0_path.exists() else np.zeros_like(x_0)
@@ -547,7 +523,7 @@ if __name__ == "__main__":
     x = data["x"]
     z = data["z"]
 
-    basis = load_basis_artifacts(args.data_folder, config, gamma_matrix)
+    basis = load_basis_artifacts(args.data_folder)
     param_keys = parameter_names(
         basis.field_names,
         basis.interaction_names,

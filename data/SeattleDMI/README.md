@@ -223,7 +223,6 @@ Each experiment folder contains:
 The external field is modeled as a linear combination of static block-level features only.
 The current basis includes:
 
-- `intercept`
 - `total_pop`
 - `black_share`
 - `hispanic_share`
@@ -233,13 +232,24 @@ The current basis includes:
 - `renter_share`
 - `vacant_share`
 
-Each non-intercept feature is centered across blocks and then normalized to infinity norm `1`.
+Each feature is centered across blocks and then normalized to infinity norm `1`.
 No pre-intervention crime summaries are included in the current MPLE field basis.
+
+For experiments that should use only the time-varying `tau_t` terms and no feature-based
+external field, the builder script also supports `--field_basis_mode zero`. In that mode the
+field basis is empty and the external field is driven entirely by the time-specific `tau_t`
+terms.
 
 ### Current Outcome Construction
 
 Each experiment folder uses exactly one binary outcome and exactly one fixed known network.
 The pipeline can iterate over many outcomes or many network choices, but each saved folder corresponds to one specific pair.
+The current experiment tree is grouped by mode under `experiments/SeattleDMI/`:
+
+- `static/<outcome>__<network>/`
+- `outcome_only/<outcome>__<network>/`
+- `zero_basis/<outcome>__<network>/`
+- `outcome_only_zero_basis/<outcome>__<network>/`
 
 The default outcome options are:
 
@@ -284,19 +294,35 @@ For one chosen outcome column and one chosen network:
 6. Quarters `2` through `16` are saved in `panel_data.npz` as the fitted panel.
 7. The pre-intervention cutoff `s` is computed from the first quarter in which any block receives treatment.
 8. The selected known network is built and normalized.
-9. The static field basis is built and normalized.
-10. The folder is written under `experiments/SeattleDMI/<outcome>__<network>/`.
+9. The static field basis is built and normalized, or reduced to an empty basis if
+   `--field_basis_mode zero` is used.
+10. The folder is written under `experiments/SeattleDMI/<mode>/<outcome>__<network>/`.
 
 ### How MPLE Uses The Folder
 
-`mple.py` now supports both synthetic folders and these SeattleDMI real-data folders.
-For real-data folders it:
+`mple.py` expects the current panel and basis artifacts written by this repository.
+For SeattleDMI folders it:
 
 - loads `panel_data.npz`
 - loads `gamma_matrix_sparse.npz`
 - loads the saved field and interaction basis artifacts
 - treats `experiment_metadata.yaml: has_truth: false` as a signal that no ground-truth parameter comparison is available
 - writes estimated parameters, fitted interaction objects, and summary tables without truth-based recovery metrics
+
+### Reporting Layout
+
+The Seattle summary script now writes reports in the same grouped layout as the
+experiment tree. If you point it at `experiments/SeattleDMI`, it writes:
+
+- a combined report at `experiments/SeattleDMI/reports/`
+- group-specific reports at:
+  - `experiments/SeattleDMI/static/reports/`
+  - `experiments/SeattleDMI/outcome_only/reports/`
+  - `experiments/SeattleDMI/zero_basis/reports/`
+
+By default, the report contains all experiment rows found under the Seattle root.
+If you want a single custom output location, you can still pass `--output_csv`
+and `--output_md` explicitly.
 
 To build the experiment folders only:
 
@@ -322,3 +348,5 @@ pixi run python data/SeattleDMI/run_mple_pipeline.py \
   --steps 25 \
   --overwrite
 ```
+
+This will write the smoke experiment under `experiments/SeattleDMI_smoke/static/`.

@@ -18,7 +18,7 @@ global_params:
 
 estimation_params:
   fit_intervention_model: true # if false, MPLE conditions on observed z and does not estimate the z-process parameters zeta and psi
-  field_coefs: [0.35] # coefficients for the external field basis; default is intercept only
+  field_coefs: [] # coefficients for the external field basis; the default uniform mode now uses no field templates
   tau_params:
     mode: "uniform_random" # options: "fixed", "uniform_random"
     lower: -0.2 # used when mode == "uniform_random"

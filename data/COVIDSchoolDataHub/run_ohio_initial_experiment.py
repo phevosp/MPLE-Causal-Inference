@@ -321,7 +321,6 @@ def build_node_table(
 def build_field_basis(node_table: pd.DataFrame) -> tuple[np.ndarray, tuple[str, ...]]:
     """Construct a compact, infinity-normalized field basis."""
     feature_specs = [
-        ("intercept", np.ones(len(node_table), dtype=float)),
         (
             "log_total_population",
             np.log1p(node_table["edge_acsed_total_population"].to_numpy(dtype=float)),
@@ -345,10 +344,6 @@ def build_field_basis(node_table: pd.DataFrame) -> tuple[np.ndarray, tuple[str, 
     basis_vectors: list[np.ndarray] = []
     basis_names: list[str] = []
     for name, raw in feature_specs:
-        if name == "intercept":
-            basis_vectors.append(np.ones(len(node_table), dtype=float))
-            basis_names.append(name)
-            continue
         centered = center_and_normalize_vector_infinity(raw)
         if np.linalg.norm(centered, ord=np.inf) < 1e-12:
             continue

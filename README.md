@@ -37,8 +37,8 @@ The shared basis logic lives in [model_utils.py](c:/Users/phevo/Documents/MIT/Co
 
 Default field templates:
 
-- `intercept` for the default `uniform` field mode
-- `intercept` plus shared-feature linear/quadratic templates when `field_mode=shared_feature_field`
+- no field templates for the default `uniform` field mode
+- shared-feature linear/quadratic templates when `field_mode=shared_feature_field`
 
 Default interaction templates:
 
@@ -47,12 +47,13 @@ Default interaction templates:
 
 Both field templates and interaction templates are normalized by infinity norm before they are stacked into bases. The generator saves:
 
+- `panel_data.npz`
 - `field_basis.npy`
 - `interaction_basis.npy`
 - `field_vector.npy`
 - `interaction_matrix.npy`
 
-Legacy experiment folders without saved basis artifacts still load correctly through the scalar fallback in `load_or_build_basis(...)`.
+The current MPLE loader expects the saved basis artifacts and panel file format written by the repository scripts.
 
 ## Main Files
 

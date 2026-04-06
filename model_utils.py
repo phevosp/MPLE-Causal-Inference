@@ -106,6 +106,8 @@ def _safe_normalize_matrix(matrix: np.ndarray) -> np.ndarray:
 
 def _stack_vector_basis(vectors: list[np.ndarray]) -> np.ndarray:
     """Stack field templates after infinity-norm normalization without re-scaling them."""
+    if not vectors:
+        return np.empty((0, 0), dtype=float)
     normalized = [_safe_normalize_vector(vector) for vector in vectors]
     return np.vstack(normalized)
 
@@ -177,8 +179,8 @@ def build_basis_expansion(config, gamma_matrix: np.ndarray) -> BasisExpansion:
     )
     distance_decay = float(_get_basis_setting(config, "distance_kernel_decay", 3.0))
 
-    field_vectors = [np.ones(n_nodes, dtype=float)]
-    field_names = ["intercept"]
+    field_vectors: list[np.ndarray] = []
+    field_names: list[str] = []
     if field_mode == "shared_feature_field":
         for feature_name, feature in zip(shared_feature_names, shared_features):
             field_vectors.append(feature)
@@ -200,6 +202,8 @@ def build_basis_expansion(config, gamma_matrix: np.ndarray) -> BasisExpansion:
         raise ValueError(f"Unknown interaction_mode '{interaction_mode}'.")
 
     field_basis = _stack_vector_basis(field_vectors)
+    if field_basis.size == 0:
+        field_basis = np.empty((0, n_nodes), dtype=float)
     interaction_basis = _stack_matrix_basis(interaction_matrices)
     validate_basis_infinity_norms(field_basis, interaction_basis)
 
@@ -270,17 +274,17 @@ def interaction_features(
 
 
 def get_field_coeffs(config) -> np.ndarray:
-    """Load field coefficients from config, with legacy support for scalar alpha."""
-    if "field_coefs" in config.estimation_params:
-        return np.asarray(config.estimation_params.field_coefs, dtype=float)
-    return np.array([float(config.estimation_params.alpha)], dtype=float)
+    """Load field coefficients from config."""
+    if "field_coefs" not in config.estimation_params:
+        raise KeyError("estimation_params.field_coefs is required.")
+    return np.asarray(config.estimation_params.field_coefs, dtype=float)
 
 
 def get_interaction_coeffs(config) -> np.ndarray:
-    """Load interaction coefficients from config, with legacy support for scalar xi."""
-    if "interaction_coefs" in config.estimation_params:
-        return np.asarray(config.estimation_params.interaction_coefs, dtype=float)
-    return np.array([float(config.estimation_params.xi)], dtype=float)
+    """Load interaction coefficients from config."""
+    if "interaction_coefs" not in config.estimation_params:
+        raise KeyError("estimation_params.interaction_coefs is required.")
+    return np.asarray(config.estimation_params.interaction_coefs, dtype=float)
 
 
 def get_temporal_field(config, t_steps: int) -> np.ndarray:
@@ -314,21 +318,7 @@ def get_temporal_field(config, t_steps: int) -> np.ndarray:
 
 
 def load_or_build_basis(config, gamma_matrix: np.ndarray) -> BasisExpansion:
-    """Build the configured basis or fall back to the original scalar setup."""
-    field_coeffs = get_field_coeffs(config)
-    interaction_coeffs = get_interaction_coeffs(config)
-    basis_params = _basis_params(config)
-    if basis_params is None and len(field_coeffs) == 1 and len(interaction_coeffs) == 1:
-        basis = BasisExpansion(
-            field_basis=_stack_vector_basis([np.ones(gamma_matrix.shape[0], dtype=float)]),
-            interaction_basis=_stack_matrix_basis([gamma_matrix]),
-            field_names=("intercept",),
-            interaction_names=("adjacency",),
-            shared_features=np.empty((0, gamma_matrix.shape[0]), dtype=float),
-            shared_feature_names=(),
-        )
-        validate_basis_infinity_norms(basis.field_basis, basis.interaction_basis)
-        return basis
+    """Build the configured basis from the current basis configuration."""
     basis = build_basis_expansion(config, gamma_matrix)
     validate_basis_infinity_norms(basis.field_basis, basis.interaction_basis)
     return basis

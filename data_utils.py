@@ -80,8 +80,12 @@ def center_and_normalize_vector_infinity(vector: np.ndarray) -> np.ndarray:
 
 
 def normalize_vector_infinity(vector: np.ndarray) -> np.ndarray:
-    """Backward-compatible alias for :func:`center_and_normalize_vector_infinity`."""
-    return center_and_normalize_vector_infinity(vector)
+    """Scale a vector by its infinity norm without centering."""
+    values = np.asarray(vector, dtype=float)
+    norm = float(np.linalg.norm(values, ord=np.inf))
+    if norm < 1e-12:
+        return np.zeros_like(values)
+    return values / norm
 
 
 def normalize_sparse_matrix_infinity(matrix: sparse.spmatrix) -> sparse.csr_matrix:

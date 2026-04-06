@@ -1,0 +1,27 @@
+global_params:
+  'N': 9642
+  T: 15
+  s: 11
+  gamma_matrix_generator: real_data
+  x_0_generator: observed
+estimation_params:
+  fit_intervention_model: true
+  beta: 0.0
+  eta: 0.0
+  zeta: 0.0
+  psi: 0.0
+  tau_params: null
+real_data_params:
+  source: SeattleDMI
+  outcome_column: any_crime_gt_3_pm1
+  network_name: knn_8
+  field_basis_mode: static
+  field_basis_names:
+  - total_pop
+  - black_share
+  - hispanic_share
+  - male_1521_share
+  - family_household_share
+  - female_household_share
+  - renter_share
+  - vacant_share

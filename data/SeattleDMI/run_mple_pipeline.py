@@ -20,8 +20,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from model_utils import validate_basis_infinity_norms
 from data_utils import (
-    center_and_normalize_vector_infinity,
     normalize_sparse_matrix_infinity,
+    center_and_normalize_vector_infinity,
     safe_ratio,
 )
 
@@ -45,6 +45,18 @@ DEFAULT_NETWORKS = (
 )
 
 
+def experiment_group(field_basis_mode: str, outcome_only: bool) -> str:
+    """Return the SeattleDMI experiment subfolder for the requested fit mode."""
+    parts: list[str] = []
+    if outcome_only:
+        parts.append("outcome_only")
+    if field_basis_mode == "zero":
+        parts.append("zero_basis")
+    if not parts:
+        parts.append("static")
+    return "_".join(parts)
+
+
 def outcome_base_name(outcome_column: str) -> str:
     """Map a binary outcome column name back to its underlying crime count variable."""
     if outcome_column.startswith("i_drugs"):
@@ -58,12 +70,9 @@ def load_inputs(processed_dir: Path) -> tuple[pd.DataFrame, gpd.GeoDataFrame]:
     """Load the processed SeattleDMI tables needed for real-data MPLE experiments."""
     binary_outcomes_path = processed_dir / "seattledmi_binary_outcomes.csv.gz"
     if not binary_outcomes_path.exists():
-        fallback_path = processed_dir / "seattledmi_binary_outcomes.csv"
-        if not fallback_path.exists():
-            raise FileNotFoundError(
-                f"Could not find {binary_outcomes_path.name} or {fallback_path.name} in {processed_dir}."
-            )
-        binary_outcomes_path = fallback_path
+        raise FileNotFoundError(
+            f"Could not find {binary_outcomes_path.name} in {processed_dir}."
+        )
     binary_outcomes = pd.read_csv(binary_outcomes_path, dtype={"GEOID10": str})
     blocks = gpd.read_file(processed_dir / "seattledmi_blocks.gpkg", layer="blocks")
     blocks["GEOID10"] = blocks["GEOID10"].astype(str).str.zfill(15)
@@ -202,27 +211,43 @@ def build_networks(
     return networks
 
 
-def build_field_basis(node_table: pd.DataFrame) -> tuple[np.ndarray, tuple[str, ...]]:
-    """Construct an infinity-normalized field basis from static block covariates only."""
-    candidate_features = [
-        ("intercept", np.ones(len(node_table), dtype=float), False),
-        ("total_pop", np.nan_to_num(node_table["TotalPop"].to_numpy(dtype=float), nan=0.0), True),
-        ("black_share", safe_ratio(node_table["BLACK"], node_table["TotalPop"]), True),
-        ("hispanic_share", safe_ratio(node_table["HISPANIC"], node_table["TotalPop"]), True),
-        ("male_1521_share", safe_ratio(node_table["Males_1521"], node_table["TotalPop"]), True),
-        ("family_household_share", safe_ratio(node_table["FAMILYHOUS"], node_table["HOUSEHOLDS"]), True),
-        ("female_household_share", safe_ratio(node_table["FEMALE_HOU"], node_table["HOUSEHOLDS"]), True),
-        ("renter_share", safe_ratio(node_table["RENTER_HOU"], node_table["HOUSEHOLDS"]), True),
-        ("vacant_share", safe_ratio(node_table["VACANT_HOU"], node_table["HOUSEHOLDS"]), True),
-    ]
+def build_field_basis(
+    node_table: pd.DataFrame,
+    field_basis_mode: str = "static",
+) -> tuple[np.ndarray, tuple[str, ...]]:
+    """Construct an infinity-normalized field basis for a SeattleDMI experiment."""
+    if field_basis_mode == "zero":
+        return np.empty((0, len(node_table)), dtype=float), ()
+    elif field_basis_mode == "static":
+        candidate_features = [
+            (
+                "total_pop",
+                np.nan_to_num(node_table["TotalPop"].to_numpy(dtype=float), nan=0.0),
+            ),
+            ("black_share", safe_ratio(node_table["BLACK"], node_table["TotalPop"])),
+            ("hispanic_share", safe_ratio(node_table["HISPANIC"], node_table["TotalPop"])),
+            (
+                "male_1521_share",
+                safe_ratio(node_table["Males_1521"], node_table["TotalPop"]),
+            ),
+            (
+                "family_household_share",
+                safe_ratio(node_table["FAMILYHOUS"], node_table["HOUSEHOLDS"]),
+            ),
+            (
+                "female_household_share",
+                safe_ratio(node_table["FEMALE_HOU"], node_table["HOUSEHOLDS"]),
+            ),
+            ("renter_share", safe_ratio(node_table["RENTER_HOU"], node_table["HOUSEHOLDS"])),
+            ("vacant_share", safe_ratio(node_table["VACANT_HOU"], node_table["HOUSEHOLDS"])),
+        ]
+    else:
+        raise ValueError(f"Unknown field_basis_mode '{field_basis_mode}'.")
 
     basis_vectors: list[np.ndarray] = []
     basis_names: list[str] = []
-    for name, raw_feature, center in candidate_features:
-        feature = np.asarray(raw_feature, dtype=float)
-        if center:
-            feature = feature - feature.mean()
-        normalized = center_and_normalize_vector_infinity(feature)
+    for name, raw_feature in candidate_features:
+        normalized = center_and_normalize_vector_infinity(np.asarray(raw_feature, dtype=float))
         if np.linalg.norm(normalized, ord=np.inf) < 1e-12:
             continue
         basis_vectors.append(normalized)
@@ -250,6 +275,7 @@ def create_config(
     t_steps: int,
     s: int,
     field_basis_names: tuple[str, ...],
+    field_basis_mode: str,
     network_name: str,
     outcome_column: str,
     fit_intervention_model: bool = True,
@@ -276,6 +302,7 @@ def create_config(
                 "source": "SeattleDMI",
                 "outcome_column": outcome_column,
                 "network_name": network_name,
+                "field_basis_mode": field_basis_mode,
                 "field_basis_names": list(field_basis_names),
             },
         }
@@ -459,6 +486,12 @@ def main() -> None:
         help="Pass --outcome_only through to mple.py so only the x-outcome model is fit.",
     )
     parser.add_argument(
+        "--field_basis_mode",
+        choices=["static", "zero"],
+        default="static",
+        help="Choose a static covariate basis or a zero basis for the external field.",
+    )
+    parser.add_argument(
         "--steps",
         type=int,
         default=2000,
@@ -492,6 +525,11 @@ def main() -> None:
     processed_dir = (REPO_ROOT / args.processed_dir).resolve()
     output_root = (REPO_ROOT / args.output_root).resolve()
     manifest_path = (REPO_ROOT / args.manifest_path).resolve()
+    default_manifest_path = (REPO_ROOT / Path("experiments/SeattleDMI/manifest.csv")).resolve()
+    experiment_group_name = experiment_group(args.field_basis_mode, args.outcome_only)
+    output_root = output_root / experiment_group_name
+    if manifest_path == default_manifest_path:
+        manifest_path = output_root / "manifest.csv"
     if args.overwrite:
         if output_root.exists():
             for child in output_root.iterdir():
@@ -512,7 +550,7 @@ def main() -> None:
             raise ValueError(f"Unknown outcome column '{outcome_column}'.")
 
         x, z, x_0, z_0, times, s = build_panel_arrays(binary_outcomes, outcome_column, node_order)
-        field_basis, field_basis_names = build_field_basis(node_table)
+        field_basis, field_basis_names = build_field_basis(node_table, args.field_basis_mode)
 
         for network_name, gamma_matrix in networks.items():
             validate_basis_infinity_norms(field_basis, gamma_matrix)
@@ -524,6 +562,7 @@ def main() -> None:
                 t_steps=x.shape[0],
                 s=s,
                 field_basis_names=field_basis_names,
+                field_basis_mode=args.field_basis_mode,
                 network_name=network_name,
                 outcome_column=outcome_column,
                 fit_intervention_model=not args.outcome_only,
@@ -536,7 +575,9 @@ def main() -> None:
                 "x_sign_convention": "+1_above_threshold_-1_below_threshold",
                 "z_sign_convention": "+1_intervention_-1_no_intervention",
                 "fit_intervention_model": bool(not args.outcome_only),
+                "experiment_group": experiment_group_name,
                 "network_name": network_name,
+                "field_basis_mode": args.field_basis_mode,
                 "field_basis_names": list(field_basis_names),
                 "node_count": int(x.shape[1]),
                 "time_steps": int(x.shape[0]),
@@ -546,6 +587,7 @@ def main() -> None:
 
             manifest_row = {
                 "experiment_name": experiment_name,
+                "experiment_group": experiment_group_name,
                 "path": str(experiment_dir),
                 "outcome_column": outcome_column,
                 "network_name": network_name,

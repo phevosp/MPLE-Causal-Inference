@@ -1,0 +1,32 @@
+2026-04-06 17:43:39 | INFO | Loading data...
+2026-04-06 17:43:39 | INFO | Loaded 0 field templates and 1 interaction templates.
+2026-04-06 17:43:39 | INFO | Intervention-process model enabled: True
+2026-04-06 17:43:39 | INFO | Running conditional-model MPLE on x with shape=(15, 9642)
+2026-04-06 17:43:39 | INFO | Eval 0  |  Loss: 0.707866
+2026-04-06 17:43:39 | INFO |   tau block: mean=-0.0235, std=0.0899, min=-0.2325, max=+0.1304,  beta: -0.0732,  interaction::contiguity: -0.0544,  eta: -0.0316,  zeta: +0.0412,  psi: +0.1043
+2026-04-06 17:43:41 | INFO | Done fitting.
+2026-04-06 17:43:41 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-06 17:43:41 | INFO | Final Loss: 0.401656
+2026-04-06 17:43:41 | INFO | Estimated Parameters:
+2026-04-06 17:43:41 | INFO |   tau::t_0: -0.3436
+2026-04-06 17:43:41 | INFO |   tau::t_1: -0.2434
+2026-04-06 17:43:41 | INFO |   tau::t_2: -0.2889
+2026-04-06 17:43:41 | INFO |   tau::t_3: -0.3634
+2026-04-06 17:43:41 | INFO |   tau::t_4: -0.3149
+2026-04-06 17:43:41 | INFO |   tau::t_5: -0.2884
+2026-04-06 17:43:41 | INFO |   tau::t_6: -0.2926
+2026-04-06 17:43:41 | INFO |   tau::t_7: -0.3189
+2026-04-06 17:43:41 | INFO |   tau::t_8: -0.2828
+2026-04-06 17:43:41 | INFO |   tau::t_9: -0.2321
+2026-04-06 17:43:41 | INFO |   tau::t_10: -0.2777
+2026-04-06 17:43:41 | INFO |   tau::t_11: -0.2731
+2026-04-06 17:43:41 | INFO |   tau::t_12: -0.2504
+2026-04-06 17:43:41 | INFO |   tau::t_13: -0.2353
+2026-04-06 17:43:41 | INFO |   tau::t_14: -0.4074
+2026-04-06 17:43:41 | INFO |   beta: -0.0890
+2026-04-06 17:43:41 | INFO |   interaction::contiguity: 2.5431
+2026-04-06 17:43:41 | INFO |   eta: 0.4127
+2026-04-06 17:43:41 | INFO |   zeta: 0.1352
+2026-04-06 17:43:41 | INFO |   psi: 3.4136
+2026-04-06 17:43:41 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI\zero_basis\any_crime_gt_district_mean_pm1__contiguity\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI\zero_basis\any_crime_gt_district_mean_pm1__contiguity\mple_summary.md
+2026-04-06 17:43:41 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI\zero_basis\any_crime_gt_district_mean_pm1__contiguity\mple.log

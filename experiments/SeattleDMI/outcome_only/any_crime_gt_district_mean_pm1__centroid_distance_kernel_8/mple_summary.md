@@ -1,0 +1,29 @@
+| category | name | estimate | true | squared_error |
+| --- | --- | ---: | ---: | ---: |
+| parameter | field::total_pop | 4.001760 |  |  |
+| parameter | field::black_share | 0.119211 |  |  |
+| parameter | field::hispanic_share | 0.131653 |  |  |
+| parameter | field::male_1521_share | -0.128835 |  |  |
+| parameter | field::family_household_share | -0.162840 |  |  |
+| parameter | field::female_household_share | 0.114399 |  |  |
+| parameter | field::renter_share | 0.130777 |  |  |
+| parameter | field::vacant_share | 1.379983 |  |  |
+| parameter | tau::t_0 | -0.346108 |  |  |
+| parameter | tau::t_1 | -0.241878 |  |  |
+| parameter | tau::t_2 | -0.284521 |  |  |
+| parameter | tau::t_3 | -0.360365 |  |  |
+| parameter | tau::t_4 | -0.315792 |  |  |
+| parameter | tau::t_5 | -0.290848 |  |  |
+| parameter | tau::t_6 | -0.291402 |  |  |
+| parameter | tau::t_7 | -0.319841 |  |  |
+| parameter | tau::t_8 | -0.280924 |  |  |
+| parameter | tau::t_9 | -0.233824 |  |  |
+| parameter | tau::t_10 | -0.274743 |  |  |
+| parameter | tau::t_11 | -0.273317 |  |  |
+| parameter | tau::t_12 | -0.245643 |  |  |
+| parameter | tau::t_13 | -0.232876 |  |  |
+| parameter | tau::t_14 | -0.403203 |  |  |
+| parameter | beta | -0.113191 |  |  |
+| parameter | interaction::centroid_distance_kernel_8 | 1.080250 |  |  |
+| parameter | eta | 0.361316 |  |  |
+| metric | final_loss | 0.490103 |  |  |

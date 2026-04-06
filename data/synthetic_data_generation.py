@@ -183,7 +183,7 @@ def save_artifacts(
     print("Saving data, config, and network...")
     OmegaConf.save(config, f"{data_folder}/realized_config.yaml")
     OmegaConf.save(OmegaConf.create(metadata), f"{data_folder}/experiment_metadata.yaml")
-    np.savez(f"{data_folder}/synthetic_data.npz", x=x, z=z)
+    np.savez(f"{data_folder}/panel_data.npz", x=x, z=z)
     np.save(f"{data_folder}/gamma_matrix.npy", gamma_matrix)
     np.save(f"{data_folder}/x_0.npy", x_0)
     np.save(f"{data_folder}/field_basis.npy", basis.field_basis)
