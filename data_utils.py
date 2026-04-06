@@ -1,4 +1,9 @@
-"""Shared data-preparation helpers for the repository's preprocessing scripts."""
+"""Shared data-preparation helpers for the repository's preprocessing scripts.
+
+This module collects small, reusable utilities for loading, normalizing, and
+joining data across the synthetic, SeattleDMI, and COVID School Data Hub
+pipelines.
+"""
 
 from __future__ import annotations
 
@@ -59,6 +64,44 @@ def parse_numeric_text(value: str | None) -> float | None:
     if cleaned in {"", "-", ".", "-."}:
         return None
     return float(cleaned)
+
+
+def center_and_normalize_vector_infinity(vector: np.ndarray) -> np.ndarray:
+    """Center a vector and scale it to infinity norm one."""
+    values = np.asarray(vector, dtype=float)
+    if np.all(np.isnan(values)):
+        return np.zeros_like(values)
+    values = np.nan_to_num(values, nan=np.nanmean(values))
+    values = values - np.nanmean(values)
+    norm = float(np.linalg.norm(values, ord=np.inf))
+    if norm < 1e-12:
+        return np.zeros_like(values)
+    return values / norm
+
+
+def normalize_vector_infinity(vector: np.ndarray) -> np.ndarray:
+    """Backward-compatible alias for :func:`center_and_normalize_vector_infinity`."""
+    return center_and_normalize_vector_infinity(vector)
+
+
+def normalize_sparse_matrix_infinity(matrix: sparse.spmatrix) -> sparse.csr_matrix:
+    """Scale one sparse matrix so its infinity norm is one."""
+    csr = matrix.tocsr().astype(float)
+    row_sums = np.asarray(np.abs(csr).sum(axis=1)).ravel()
+    norm = float(row_sums.max()) if row_sums.size else 0.0
+    if norm < 1e-12:
+        return csr
+    return (csr / norm).tocsr()
+
+
+def safe_ratio(numerator, denominator) -> np.ndarray:
+    """Compute a safe ratio feature, returning zeros where the denominator vanishes."""
+    num = np.nan_to_num(np.asarray(numerator, dtype=float), nan=0.0)
+    den = np.nan_to_num(np.asarray(denominator, dtype=float), nan=0.0)
+    out = np.zeros_like(num, dtype=float)
+    valid = np.abs(den) > 1e-12
+    out[valid] = num[valid] / den[valid]
+    return out
 
 
 def fetch_arcgis_geojson(layer_url: str, out_fields: str = "*") -> gpd.GeoDataFrame:

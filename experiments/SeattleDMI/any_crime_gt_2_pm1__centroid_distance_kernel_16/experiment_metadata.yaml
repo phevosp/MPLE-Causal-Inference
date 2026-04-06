@@ -2,8 +2,9 @@ source: SeattleDMI
 has_truth: false
 outcome_column: any_crime_gt_2_pm1
 base_outcome: any_crime
-x_sign_convention: +1_good_-1_bad
+x_sign_convention: +1_above_threshold_-1_below_threshold
 z_sign_convention: +1_intervention_-1_no_intervention
+fit_intervention_model: true
 network_name: centroid_distance_kernel_16
 field_basis_names:
 - intercept

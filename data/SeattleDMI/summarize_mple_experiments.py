@@ -1,3 +1,5 @@
+"""Summarize SeattleDMI MPLE experiment folders into tabular reports."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,25 +8,25 @@ from pathlib import Path
 
 
 OUTCOME_LABELS = {
-    "i_drugs_gt_0_pm1": "Drug crime indicator: zero drug crimes vs at least one drug crime",
-    "i_drugs_gt_district_mean_pm1": "Drug crime indicator: at or below district-average drug crime vs above district average",
-    "any_crime_gt_0_pm1": "Any-crime indicator: zero total crimes vs at least one total crime",
-    "any_crime_gt_1_pm1": "Any-crime indicator: at most one total crime vs more than one total crime",
-    "any_crime_gt_2_pm1": "Any-crime indicator: at most two total crimes vs more than two total crimes",
-    "any_crime_gt_3_pm1": "Any-crime indicator: at most three total crimes vs more than three total crimes",
-    "any_crime_gt_district_mean_pm1": "Any-crime indicator: at or below district-average total crime vs above district average",
-    "any_crime_gt_block_mean_pm1": "Any-crime indicator: at or below the block-specific mean total crime vs above the block-specific mean",
+    "i_drugs_gt_0_pm1": "Drug crime indicator: at least one drug crime vs zero drug crimes",
+    "i_drugs_gt_district_mean_pm1": "Drug crime indicator: above district-average drug crime vs at or below district average",
+    "any_crime_gt_0_pm1": "Any-crime indicator: at least one total crime vs zero total crimes",
+    "any_crime_gt_1_pm1": "Any-crime indicator: more than one total crime vs at most one total crime",
+    "any_crime_gt_2_pm1": "Any-crime indicator: more than two total crimes vs at most two total crimes",
+    "any_crime_gt_3_pm1": "Any-crime indicator: more than three total crimes vs at most three total crimes",
+    "any_crime_gt_district_mean_pm1": "Any-crime indicator: above district-average total crime vs at or below district average",
+    "any_crime_gt_block_mean_pm1": "Any-crime indicator: above the block-specific mean total crime vs at or below the block-specific mean",
 }
 
 OUTCOME_DEFINITIONS = {
-    "i_drugs_gt_0_pm1": "+1 means no drug crime in the period; -1 means at least one drug crime in the period.",
-    "i_drugs_gt_district_mean_pm1": "+1 means drug crime is at or below the neighborhood-district mean; -1 means above the district mean.",
-    "any_crime_gt_0_pm1": "+1 means no recorded crime in the period; -1 means at least one recorded crime in the period.",
-    "any_crime_gt_1_pm1": "+1 means there is at most one recorded crime in the period; -1 means there are two or more recorded crimes in the period.",
-    "any_crime_gt_2_pm1": "+1 means there are at most two recorded crimes in the period; -1 means there are three or more recorded crimes in the period.",
-    "any_crime_gt_3_pm1": "+1 means there are at most three recorded crimes in the period; -1 means there are four or more recorded crimes in the period.",
-    "any_crime_gt_district_mean_pm1": "+1 means total crime is at or below the neighborhood-district mean; -1 means above the district mean.",
-    "any_crime_gt_block_mean_pm1": "+1 means total crime is at or below that exact block's own time-average total crime; -1 means above the block-specific mean.",
+    "i_drugs_gt_0_pm1": "+1 means at least one drug crime in the period; -1 means zero drug crimes in the period.",
+    "i_drugs_gt_district_mean_pm1": "+1 means drug crime is above the neighborhood-district mean; -1 means at or below the district mean.",
+    "any_crime_gt_0_pm1": "+1 means at least one recorded crime in the period; -1 means zero recorded crimes in the period.",
+    "any_crime_gt_1_pm1": "+1 means more than one recorded crime in the period; -1 means at most one recorded crime in the period.",
+    "any_crime_gt_2_pm1": "+1 means more than two recorded crimes in the period; -1 means at most two recorded crimes in the period.",
+    "any_crime_gt_3_pm1": "+1 means more than three recorded crimes in the period; -1 means at most three recorded crimes in the period.",
+    "any_crime_gt_district_mean_pm1": "+1 means total crime is above the neighborhood-district mean; -1 means at or below the district mean.",
+    "any_crime_gt_block_mean_pm1": "+1 means total crime is above that exact block's own time-average total crime; -1 means at or below the block-specific mean.",
 }
 
 NETWORK_LABELS = {
@@ -151,8 +153,8 @@ def write_markdown(output_path: Path, rows: list[dict[str, float | str]]) -> Non
         handle.write("# SeattleDMI MPLE Experiment Summary\n\n")
         handle.write(
             "This table summarizes one MPLE fit per outcome/network pair. "
-            "For the binary outcome, `x = +1` denotes the better lower-crime state and "
-            "`x = -1` denotes the worse higher-crime state. "
+            "For the binary outcome, `x = +1` denotes the above-threshold state and "
+            "`x = -1` denotes the below-threshold state. "
             "For the intervention, `z = +1` denotes intervention and `z = -1` denotes no intervention.\n\n"
         )
         handle.write("| " + " | ".join(fieldnames) + " |\n")

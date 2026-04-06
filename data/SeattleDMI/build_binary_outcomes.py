@@ -1,3 +1,9 @@
+"""Build binary SeattleDMI outcomes and threshold diagnostics.
+
+The script saves thresholded block-quarter outcomes, comparison summaries,
+and short documentation for the current sign convention.
+"""
+
 from __future__ import annotations
 
 import csv
@@ -34,8 +40,8 @@ def add_intervention_groups(panel: pd.DataFrame) -> pd.DataFrame:
 
 
 def binary_pm1(series: pd.Series, threshold: float) -> pd.Series:
-    """Convert a count outcome to {-1, +1} with +1 for count <= threshold and -1 otherwise."""
-    return (1 - 2 * series.gt(threshold).astype(int)).astype("int8")
+    """Convert a count outcome to {-1, +1} with +1 for count > threshold and -1 otherwise."""
+    return (2 * series.gt(threshold).astype(int) - 1).astype("int8")
 
 
 def transition_rate(panel: pd.DataFrame, column: str) -> float:
@@ -139,18 +145,18 @@ def write_markdown_summary(output_path: Path, threshold_rows: list[dict[str, flo
             "`seattledmi_binary_outcomes.csv.gz`.\n\n"
         )
         handle.write(
-            "Throughout this file, `+1` denotes the better lower-crime outcome and `-1` denotes "
-            "the worse higher-crime outcome.\n\n"
+            "Throughout this file, `+1` denotes the above-threshold outcome and `-1` denotes "
+            "the below-threshold outcome.\n\n"
         )
 
         handle.write("## Primary Outcomes Saved\n\n")
-        handle.write("- `i_drugs_gt_0_pm1`: `+1` if `i_drugs <= 0`, `-1` if `i_drugs > 0`\n")
-        handle.write("- `any_crime_gt_0_pm1`: `+1` if `any_crime <= 0`, `-1` if `any_crime > 0`\n\n")
-        handle.write("- `any_crime_gt_1_pm1`: `+1` if `any_crime <= 1`, `-1` if `any_crime > 1`\n")
-        handle.write("- `any_crime_gt_2_pm1`: `+1` if `any_crime <= 2`, `-1` if `any_crime > 2`\n")
-        handle.write("- `any_crime_gt_3_pm1`: `+1` if `any_crime <= 3`, `-1` if `any_crime > 3`\n")
-        handle.write("- `any_crime_gt_district_mean_pm1`: `+1` if `any_crime` is at or below the mean `any_crime` level in that block's neighborhood district, `-1` otherwise\n\n")
-        handle.write("- `any_crime_gt_block_mean_pm1`: `+1` if `any_crime` is at or below that exact block's mean `any_crime` level across time, `-1` otherwise\n\n")
+        handle.write("- `i_drugs_gt_0_pm1`: `+1` if `i_drugs > 0`, `-1` if `i_drugs <= 0`\n")
+        handle.write("- `any_crime_gt_0_pm1`: `+1` if `any_crime > 0`, `-1` if `any_crime <= 0`\n\n")
+        handle.write("- `any_crime_gt_1_pm1`: `+1` if `any_crime > 1`, `-1` if `any_crime <= 1`\n")
+        handle.write("- `any_crime_gt_2_pm1`: `+1` if `any_crime > 2`, `-1` if `any_crime <= 2`\n")
+        handle.write("- `any_crime_gt_3_pm1`: `+1` if `any_crime > 3`, `-1` if `any_crime <= 3`\n")
+        handle.write("- `any_crime_gt_district_mean_pm1`: `+1` if `any_crime` is above the mean `any_crime` level in that block's neighborhood district, `-1` otherwise\n\n")
+        handle.write("- `any_crime_gt_block_mean_pm1`: `+1` if `any_crime` is above that exact block's mean `any_crime` level across time, `-1` otherwise\n\n")
 
         handle.write("## Threshold Comparison\n\n")
         headers = [
@@ -189,19 +195,19 @@ def write_markdown_summary(output_path: Path, threshold_rows: list[dict[str, flo
 
         handle.write("\n## Interpretation\n\n")
         handle.write(
-            "- `i_drugs > 0` is very sparse. Under the current sign convention that means roughly 97% of block-quarters are in the `good` state and only about 3% are in the `bad` state, so it isolates drug activity sharply but may be too coarse if you want a more balanced binary state.\n"
+            "- `i_drugs > 0` is very sparse. Under the current sign convention that means only about 3% of block-quarters are above threshold, so it isolates drug activity sharply but may be too coarse if you want a more balanced binary state.\n"
         )
         handle.write(
-            "- `any_crime > 0` is much denser, so the induced good/bad split is far more balanced and has much more temporal variation for binary-state modeling.\n"
+            "- `any_crime > 0` is much denser, so the induced above-threshold/below-threshold split is far more balanced and has much more temporal variation for binary-state modeling.\n"
         )
         handle.write(
-            "- For `i_drugs`, thresholds above 0 make the bad state extremely rare and therefore are usually too aggressive.\n"
+            "- For `i_drugs`, thresholds above 0 make the above-threshold state extremely rare and therefore are usually too aggressive.\n"
         )
         handle.write(
-            "- For `any_crime`, thresholds like `> 1`, `> 2`, or `> 3` are plausible alternatives if you want a more selective definition of a bad block-quarter.\n"
+            "- For `any_crime`, thresholds like `> 1`, `> 2`, or `> 3` are plausible alternatives if you want a more selective definition of an above-threshold block-quarter.\n"
         )
         handle.write(
-            "- District-mean thresholding adapts the cutoff to local baseline crime levels, which can be attractive if you want good and bad to be defined relative to a block's surrounding district rather than globally.\n"
+            "- District-mean thresholding adapts the cutoff to local baseline crime levels, which can be attractive if you want the above-threshold label to be defined relative to a block's surrounding district rather than globally.\n"
         )
         handle.write(
             "- Block-mean thresholding is stricter about being block-specific: it compares each block-quarter to that same block's own time-average crime level. A block can still be constant under this rule if its realized path never crosses its own mean, for example when the count is always zero or when all observations stay on one side of a non-integer mean.\n"

@@ -1,3 +1,5 @@
+"""Generate detailed synthetic parameter-recovery summaries and reports."""
+
 from __future__ import annotations
 
 import argparse

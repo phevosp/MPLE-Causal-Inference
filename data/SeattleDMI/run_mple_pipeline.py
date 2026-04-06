@@ -19,6 +19,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from model_utils import validate_basis_infinity_norms
+from data_utils import (
+    center_and_normalize_vector_infinity,
+    normalize_sparse_matrix_infinity,
+    safe_ratio,
+)
 
 
 DEFAULT_OUTCOMES = (
@@ -38,25 +43,6 @@ DEFAULT_NETWORKS = (
     "centroid_distance_kernel_8",
     "centroid_distance_kernel_16",
 )
-
-
-def normalize_vector_infinity(vector: np.ndarray) -> np.ndarray:
-    """Scale one field template so its infinity norm is one."""
-    array = np.asarray(vector, dtype=float)
-    norm = np.linalg.norm(array, ord=np.inf)
-    if norm < 1e-12:
-        return np.zeros_like(array)
-    return array / norm
-
-
-def normalize_sparse_matrix_infinity(matrix: sparse.spmatrix) -> sparse.csr_matrix:
-    """Scale one sparse interaction matrix so its infinity norm is one."""
-    csr = matrix.tocsr().astype(float)
-    row_sums = np.asarray(np.abs(csr).sum(axis=1)).ravel()
-    norm = float(row_sums.max()) if row_sums.size else 0.0
-    if norm < 1e-12:
-        return csr
-    return (csr / norm).tocsr()
 
 
 def outcome_base_name(outcome_column: str) -> str:
@@ -216,28 +202,18 @@ def build_networks(
     return networks
 
 
-def ratio_feature(numerator: pd.Series, denominator: pd.Series) -> np.ndarray:
-    """Build a safe ratio feature, defaulting to zero when the denominator vanishes."""
-    num = np.nan_to_num(numerator.to_numpy(dtype=float), nan=0.0)
-    den = np.nan_to_num(denominator.to_numpy(dtype=float), nan=0.0)
-    out = np.zeros_like(num, dtype=float)
-    valid = np.abs(den) > 1e-12
-    out[valid] = num[valid] / den[valid]
-    return out
-
-
 def build_field_basis(node_table: pd.DataFrame) -> tuple[np.ndarray, tuple[str, ...]]:
     """Construct an infinity-normalized field basis from static block covariates only."""
     candidate_features = [
         ("intercept", np.ones(len(node_table), dtype=float), False),
         ("total_pop", np.nan_to_num(node_table["TotalPop"].to_numpy(dtype=float), nan=0.0), True),
-        ("black_share", ratio_feature(node_table["BLACK"], node_table["TotalPop"]), True),
-        ("hispanic_share", ratio_feature(node_table["HISPANIC"], node_table["TotalPop"]), True),
-        ("male_1521_share", ratio_feature(node_table["Males_1521"], node_table["TotalPop"]), True),
-        ("family_household_share", ratio_feature(node_table["FAMILYHOUS"], node_table["HOUSEHOLDS"]), True),
-        ("female_household_share", ratio_feature(node_table["FEMALE_HOU"], node_table["HOUSEHOLDS"]), True),
-        ("renter_share", ratio_feature(node_table["RENTER_HOU"], node_table["HOUSEHOLDS"]), True),
-        ("vacant_share", ratio_feature(node_table["VACANT_HOU"], node_table["HOUSEHOLDS"]), True),
+        ("black_share", safe_ratio(node_table["BLACK"], node_table["TotalPop"]), True),
+        ("hispanic_share", safe_ratio(node_table["HISPANIC"], node_table["TotalPop"]), True),
+        ("male_1521_share", safe_ratio(node_table["Males_1521"], node_table["TotalPop"]), True),
+        ("family_household_share", safe_ratio(node_table["FAMILYHOUS"], node_table["HOUSEHOLDS"]), True),
+        ("female_household_share", safe_ratio(node_table["FEMALE_HOU"], node_table["HOUSEHOLDS"]), True),
+        ("renter_share", safe_ratio(node_table["RENTER_HOU"], node_table["HOUSEHOLDS"]), True),
+        ("vacant_share", safe_ratio(node_table["VACANT_HOU"], node_table["HOUSEHOLDS"]), True),
     ]
 
     basis_vectors: list[np.ndarray] = []
@@ -246,7 +222,7 @@ def build_field_basis(node_table: pd.DataFrame) -> tuple[np.ndarray, tuple[str, 
         feature = np.asarray(raw_feature, dtype=float)
         if center:
             feature = feature - feature.mean()
-        normalized = normalize_vector_infinity(feature)
+        normalized = center_and_normalize_vector_infinity(feature)
         if np.linalg.norm(normalized, ord=np.inf) < 1e-12:
             continue
         basis_vectors.append(normalized)
@@ -557,7 +533,7 @@ def main() -> None:
                 "has_truth": False,
                 "outcome_column": outcome_column,
                 "base_outcome": outcome_base_name(outcome_column),
-                "x_sign_convention": "+1_good_-1_bad",
+                "x_sign_convention": "+1_above_threshold_-1_below_threshold",
                 "z_sign_convention": "+1_intervention_-1_no_intervention",
                 "fit_intervention_model": bool(not args.outcome_only),
                 "network_name": network_name,

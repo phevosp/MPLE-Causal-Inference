@@ -1,0 +1,38 @@
+2026-04-06 15:29:40 | INFO | Loading data...
+2026-04-06 15:29:40 | INFO | Loaded 7 field templates and 1 interaction templates.
+2026-04-06 15:29:40 | INFO | Intervention-process model enabled: True
+2026-04-06 15:29:40 | INFO | Running conditional-model MPLE on x with shape=(12, 609)
+2026-04-06 15:29:40 | INFO | Eval 0  |  Loss: 0.669965
+2026-04-06 15:29:40 | INFO |   field::intercept: +0.0126,  field::log_total_population: -0.0132,  field::median_household_income: +0.0640,  field::pct_below_poverty: +0.0105,  field::pct_black: -0.0536,  field::pct_hispanic: +0.0362,  field::pct_in_labor_force: +0.1304,  tau block: mean=-0.0548, std=0.0811, min=-0.2325, max=+0.0947,  beta: +0.1043,  interaction::adjacency: -0.0129,  eta: +0.1366,  zeta: -0.0665,  psi: +0.0352
+2026-04-06 15:29:40 | INFO | Eval 100  |  Loss: 0.289586
+2026-04-06 15:29:40 | INFO |   field::intercept: +0.4518,  field::log_total_population: -0.3062,  field::median_household_income: +0.2672,  field::pct_below_poverty: +0.1323,  field::pct_black: +0.4134,  field::pct_hispanic: -0.1852,  field::pct_in_labor_force: +0.3249,  tau block: mean=-0.0182, std=1.7562, min=-3.8524, max=+2.5964,  beta: -0.0455,  interaction::adjacency: +9.6438,  eta: +0.1974,  zeta: +0.1691,  psi: +0.6280
+2026-04-06 15:29:41 | INFO | Done fitting.
+2026-04-06 15:29:41 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-06 15:29:41 | INFO | Final Loss: 0.289580
+2026-04-06 15:29:41 | INFO | Estimated Parameters:
+2026-04-06 15:29:41 | INFO |   field::intercept: 0.6917
+2026-04-06 15:29:41 | INFO |   field::log_total_population: -0.3183
+2026-04-06 15:29:41 | INFO |   field::median_household_income: 0.2911
+2026-04-06 15:29:41 | INFO |   field::pct_below_poverty: 0.1493
+2026-04-06 15:29:41 | INFO |   field::pct_black: 0.4465
+2026-04-06 15:29:41 | INFO |   field::pct_hispanic: -0.1920
+2026-04-06 15:29:41 | INFO |   field::pct_in_labor_force: 0.3352
+2026-04-06 15:29:41 | INFO |   tau::t_0: -0.5095
+2026-04-06 15:29:41 | INFO |   tau::t_1: -0.6650
+2026-04-06 15:29:41 | INFO |   tau::t_2: -0.6053
+2026-04-06 15:29:41 | INFO |   tau::t_3: -0.5026
+2026-04-06 15:29:41 | INFO |   tau::t_4: 4.0754
+2026-04-06 15:29:41 | INFO |   tau::t_5: 4.5883
+2026-04-06 15:29:41 | INFO |   tau::t_6: 5.0505
+2026-04-06 15:29:41 | INFO |   tau::t_7: -0.6248
+2026-04-06 15:29:41 | INFO |   tau::t_8: -0.8210
+2026-04-06 15:29:41 | INFO |   tau::t_9: -0.6976
+2026-04-06 15:29:41 | INFO |   tau::t_10: -1.5112
+2026-04-06 15:29:41 | INFO |   tau::t_11: -7.7555
+2026-04-06 15:29:41 | INFO |   beta: -0.0468
+2026-04-06 15:29:41 | INFO |   interaction::adjacency: 9.6254
+2026-04-06 15:29:41 | INFO |   eta: 0.1978
+2026-04-06 15:29:41 | INFO |   zeta: 0.1691
+2026-04-06 15:29:41 | INFO |   psi: 0.6280
+2026-04-06 15:29:41 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\COVIDSchoolDataHub_OH\ohio_monthly_case_gt_12p5_monthlyshare0p5__contiguity\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\COVIDSchoolDataHub_OH\ohio_monthly_case_gt_12p5_monthlyshare0p5__contiguity\mple_summary.md
+2026-04-06 15:29:41 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\COVIDSchoolDataHub_OH\ohio_monthly_case_gt_12p5_monthlyshare0p5__contiguity\mple.log

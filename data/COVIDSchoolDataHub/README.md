@@ -1,8 +1,9 @@
 # COVIDSchoolDataHub
 
-This folder contains a local data package built from the COVID School Data Hub district learning-model files, the COVID School Data Hub community case-rate data, and school-district geography for Ohio and Massachusetts. The package is organized so we can later construct state-level MPLE experiments with:
+This folder contains a local data package built from the COVID School Data Hub district learning-model files, the COVID School Data Hub monthly in-person share files, the COVID School Data Hub community case-rate data, and school-district geography for Ohio and Massachusetts. The package is organized so we can later construct state-level MPLE experiments with:
 
 - observed district learning-mode interventions
+- observed district monthly in-person-share interventions
 - district-week COVID community outcomes
 - multiple known-network options derived from public school-district geography
 
@@ -21,6 +22,8 @@ The current raw files in this folder were downloaded and processed on `2026-04-0
   <https://www.covidschooldatahub.com/data-resources>
 - district learning-model files:
   <https://assets.ctfassets.net/9fbw4onh0qc1/3JXV9ahOubLLnh9aHTHgKv/6e3c8a2baf1f2e0517edd9e454ee5c74/CSDH_District_Files_-_CSV.zip>
+- district monthly in-person shares:
+  <https://assets.ctfassets.net/9fbw4onh0qc1/4LRV2nKQOBoCudvyVxLx6w/fdb67c6da6252d520b83d173f3a41237/District_Monthly_Shares_03.08.23.csv>
 - community case-rate data by district:
   <https://downloads.ctfassets.net/9fbw4onh0qc1/1FyYF7Qqmn2fXfWYqcqZUB/d2f9ec9d4a78bdedbc93869396393c09/Matched_Districts_and_Case_Rates.zip>
 - community case-rate codebook:
@@ -73,6 +76,8 @@ The two core CSDH resources used here are:
 
 - district learning-model periods:
   one row per district-period, with district identifiers, dates, and learning-model labels
+- district monthly in-person shares:
+  one row per district-month, with `share_inperson`, `share_hybrid`, and `share_virtual`
 - community case-rate records:
   one row per district-week-ZIP, with weekly community COVID case-rate fields assigned to ZIPs attached to each NCES district ID
 
@@ -81,6 +86,7 @@ Current realized counts in this package:
 - `173,346` district learning-period rows across `6,791` districts in `24` learning-data states
 - `1,127,802` district-week-ZIP case-rate rows across `19,786` districts in `51` case-data jurisdictions
 - `280,562` joined district-week-ZIP rows after matching learning periods to overlapping case-rate weeks
+- `1,127,802` joined district-week-ZIP rows after matching monthly in-person shares to weekly case-rate rows
 
 Ohio realized counts:
 
@@ -125,6 +131,23 @@ The community case-rate file is stored in one pipe-delimited CSV. The preprocess
   - `WeekStartDate`
   - `WeekEndDate`
 - preserves the case-rate, testing, and ZIP-allocation fields from the source
+
+### Monthly in-person-share processing
+
+The district monthly-share file contains one row per district-month. The preprocessing script:
+
+- loads the CSDH monthly in-person share CSV
+- standardizes:
+  - `NCESDistrictID`
+  - `StateAbbrev`
+  - `Month`
+  - `MonthStartDate`
+  - `MonthEndDate`
+- preserves the monthly intervention-share fields:
+  - `share_inperson`
+  - `share_hybrid`
+  - `share_virtual`
+- joins those shares onto the weekly case-rate rows using the month of each `WeekStartDate`
 
 ### Learning-to-case join
 
@@ -209,10 +232,14 @@ So the current Massachusetts geometry package is strong for municipal and region
 
 - `processed/csdh_district_learning_periods.csv.gz`
   - cleaned national learning-model table
+- `processed/csdh_district_monthly_shares.csv.gz`
+  - cleaned national monthly share table
 - `processed/csdh_case_rates_by_district_zip_week.csv.gz`
   - cleaned national district-week-ZIP case-rate table
 - `processed/csdh_learning_case_joined.csv.gz`
   - joined district-week-ZIP panel with one learning assignment per district-week
+- `processed/csdh_learning_case_joined_monthly_shares.csv.gz`
+  - joined district-week-ZIP panel with a monthly in-person share assigned to each week
 - `processed/csdh_learning_case_joined_district_week.csv.gz`
   - district-week aggregate built from ZIP-level rows using `tot_zip_week` weights
 - `processed/csdh_nces_district_master.csv`
@@ -221,6 +248,10 @@ So the current Massachusetts geometry package is strong for municipal and region
   - Ohio-only subsets of the main learning, case, and joined tables
 - `processed/csdh_*_massachusetts.csv.gz`
   - Massachusetts-only subsets of the main learning, case, and joined tables
+- `processed/csdh_district_monthly_shares_*`
+  - Ohio and Massachusetts subsets of the monthly-share table
+- `processed/csdh_learning_case_joined_monthly_shares_*`
+  - Ohio and Massachusetts subsets of the monthly-share joined weekly panel
 - `processed/ohio_district_crosswalk.csv`
 - `processed/massachusetts_district_crosswalk.csv`
   - district crosswalks with official and standardized geometry match flags
@@ -318,6 +349,7 @@ It will:
 - rebuild the cleaned learning, case, and joined tables
 - rebuild the crosswalks, GeoPackages, centroids, and adjacency-ready edge lists
 - rebuild the district feature tables and feature dictionary
+- rebuild the monthly-share tables and the monthly-share joined panel
 - rewrite the package summary files
 
 This package stops at data acquisition, joins, and adjacency-ready geometry. It does not yet threshold interventions or outcomes, and it does not run MPLE.

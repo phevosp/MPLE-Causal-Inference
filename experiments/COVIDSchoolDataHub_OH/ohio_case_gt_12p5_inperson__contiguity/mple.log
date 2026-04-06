@@ -1,0 +1,66 @@
+2026-04-06 14:21:59 | INFO | Loading data...
+2026-04-06 14:21:59 | INFO | Loaded 7 field templates and 1 interaction templates.
+2026-04-06 14:21:59 | INFO | Intervention-process model enabled: True
+2026-04-06 14:21:59 | INFO | Running conditional-model MPLE on x with shape=(42, 609)
+2026-04-06 14:21:59 | INFO | Eval 0  |  Loss: 0.717674
+2026-04-06 14:21:59 | INFO |   field::intercept: +0.0126,  field::log_total_population: -0.0132,  field::median_household_income: +0.0640,  field::pct_below_poverty: +0.0105,  field::pct_black: -0.0536,  field::pct_hispanic: +0.0362,  field::pct_in_labor_force: +0.1304,  tau block: mean=+0.0078, std=0.0948, min=-0.2325, max=+0.1960,  beta: +0.1315,  interaction::adjacency: +0.0357,  eta: -0.1208,  zeta: -0.0004,  psi: +0.0656
+2026-04-06 14:21:59 | INFO | Done fitting.
+2026-04-06 14:21:59 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-06 14:21:59 | INFO | Final Loss: 0.149827
+2026-04-06 14:21:59 | INFO | Estimated Parameters:
+2026-04-06 14:21:59 | INFO |   field::intercept: 1.2558
+2026-04-06 14:21:59 | INFO |   field::log_total_population: -0.1040
+2026-04-06 14:21:59 | INFO |   field::median_household_income: -0.0437
+2026-04-06 14:21:59 | INFO |   field::pct_below_poverty: 0.0073
+2026-04-06 14:21:59 | INFO |   field::pct_black: -0.0013
+2026-04-06 14:21:59 | INFO |   field::pct_hispanic: -0.2063
+2026-04-06 14:21:59 | INFO |   field::pct_in_labor_force: 0.0731
+2026-04-06 14:21:59 | INFO |   tau::t_0: -1.3756
+2026-04-06 14:21:59 | INFO |   tau::t_1: -1.1789
+2026-04-06 14:21:59 | INFO |   tau::t_2: -1.0994
+2026-04-06 14:21:59 | INFO |   tau::t_3: -0.9220
+2026-04-06 14:21:59 | INFO |   tau::t_4: -1.1987
+2026-04-06 14:21:59 | INFO |   tau::t_5: -1.1989
+2026-04-06 14:21:59 | INFO |   tau::t_6: -1.0941
+2026-04-06 14:21:59 | INFO |   tau::t_7: -1.1399
+2026-04-06 14:21:59 | INFO |   tau::t_8: -1.0088
+2026-04-06 14:21:59 | INFO |   tau::t_9: -1.1402
+2026-04-06 14:21:59 | INFO |   tau::t_10: -1.1114
+2026-04-06 14:21:59 | INFO |   tau::t_11: -1.0757
+2026-04-06 14:21:59 | INFO |   tau::t_12: -0.3658
+2026-04-06 14:21:59 | INFO |   tau::t_13: 2.5750
+2026-04-06 14:21:59 | INFO |   tau::t_14: 2.4449
+2026-04-06 14:21:59 | INFO |   tau::t_15: 2.6239
+2026-04-06 14:21:59 | INFO |   tau::t_16: 2.5459
+2026-04-06 14:21:59 | INFO |   tau::t_17: 2.4928
+2026-04-06 14:21:59 | INFO |   tau::t_18: 2.5604
+2026-04-06 14:21:59 | INFO |   tau::t_19: 2.6231
+2026-04-06 14:21:59 | INFO |   tau::t_20: 2.6552
+2026-04-06 14:21:59 | INFO |   tau::t_21: 2.6104
+2026-04-06 14:21:59 | INFO |   tau::t_22: 2.5423
+2026-04-06 14:21:59 | INFO |   tau::t_23: 2.6441
+2026-04-06 14:21:59 | INFO |   tau::t_24: 2.5826
+2026-04-06 14:21:59 | INFO |   tau::t_25: 2.5791
+2026-04-06 14:21:59 | INFO |   tau::t_26: 2.5238
+2026-04-06 14:21:59 | INFO |   tau::t_27: -1.5683
+2026-04-06 14:21:59 | INFO |   tau::t_28: -1.5790
+2026-04-06 14:21:59 | INFO |   tau::t_29: -1.6042
+2026-04-06 14:21:59 | INFO |   tau::t_30: -1.5463
+2026-04-06 14:21:59 | INFO |   tau::t_31: -1.3614
+2026-04-06 14:21:59 | INFO |   tau::t_32: -0.9954
+2026-04-06 14:21:59 | INFO |   tau::t_33: -1.2567
+2026-04-06 14:21:59 | INFO |   tau::t_34: -1.4607
+2026-04-06 14:21:59 | INFO |   tau::t_35: -0.9669
+2026-04-06 14:21:59 | INFO |   tau::t_36: -1.4607
+2026-04-06 14:21:59 | INFO |   tau::t_37: -1.3889
+2026-04-06 14:21:59 | INFO |   tau::t_38: -1.2847
+2026-04-06 14:21:59 | INFO |   tau::t_39: -1.2931
+2026-04-06 14:21:59 | INFO |   tau::t_40: -1.3019
+2026-04-06 14:21:59 | INFO |   tau::t_41: -1.4560
+2026-04-06 14:21:59 | INFO |   beta: -0.0280
+2026-04-06 14:21:59 | INFO |   interaction::adjacency: 8.1058
+2026-04-06 14:21:59 | INFO |   eta: 0.4912
+2026-04-06 14:21:59 | INFO |   zeta: -0.0084
+2026-04-06 14:21:59 | INFO |   psi: 1.4485
+2026-04-06 14:21:59 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\COVIDSchoolDataHub_OH\ohio_case_gt_12p5_inperson__contiguity\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\COVIDSchoolDataHub_OH\ohio_case_gt_12p5_inperson__contiguity\mple_summary.md
+2026-04-06 14:21:59 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\COVIDSchoolDataHub_OH\ohio_case_gt_12p5_inperson__contiguity\mple.log

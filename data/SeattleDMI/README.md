@@ -88,8 +88,8 @@ That means the geometry join is complete, and the neighborhood crosswalk is effe
 - `processed/seattledmi_binary_outcomes.csv.gz`
   - one row per `(block, quarter)` observation
   - currently includes the requested `{-1,+1}` outcomes, with:
-    - `+1` = better lower-crime outcome
-    - `-1` = worse higher-crime outcome
+    - `+1` = above-threshold outcome
+    - `-1` = below-threshold outcome
     - `i_drugs_gt_0_pm1`
     - `any_crime_gt_0_pm1`
     - `any_crime_gt_1_pm1`
@@ -172,8 +172,8 @@ The block-relative variant instead compares each block-quarter `any_crime` count
 The analogous `i_drugs` district-mean rule is not kept in the runnable experiment set because it is effectively identical to `i_drugs_gt_0_pm1`.
 The saved sign convention is:
 
-- `+1`: lower-crime "good" outcome
-- `-1`: higher-crime "bad" outcome
+- `+1`: above-threshold outcome
+- `-1`: below-threshold outcome
 
 ## Real-Data MPLE Pipeline
 
@@ -253,8 +253,8 @@ The default outcome options are:
 
 The sign convention for `x` is:
 
-- `+1`: good outcome, meaning the crime count is at or below the chosen threshold
-- `-1`: bad outcome, meaning the crime count is above the chosen threshold
+- `+1`: above-threshold outcome, meaning the crime count is above the chosen threshold
+- `-1`: below-threshold outcome, meaning the crime count is at or below the chosen threshold
 
 ### Current Network Construction
 

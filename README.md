@@ -37,17 +37,15 @@ The shared basis logic lives in [model_utils.py](c:/Users/phevo/Documents/MIT/Co
 
 Default field templates:
 
-- `intercept`
-- `linear`
-- `quadratic`
+- `intercept` for the default `uniform` field mode
+- `intercept` plus shared-feature linear/quadratic templates when `field_mode=shared_feature_field`
 
 Default interaction templates:
 
-- `adjacency`
-- `distance_kernel`
-- `cross_similarity`
+- `adjacency` for the default `known_graph` interaction mode
+- `adjacency` plus shared-feature distance-kernel and cross-similarity templates when `interaction_mode=shared_feature_interactions`
 
-Both field templates and interaction templates are normalized by infinity norm before orthonormalization. The generator saves:
+Both field templates and interaction templates are normalized by infinity norm before they are stacked into bases. The generator saves:
 
 - `field_basis.npy`
 - `interaction_basis.npy`
@@ -59,6 +57,8 @@ Legacy experiment folders without saved basis artifacts still load correctly thr
 ## Main Files
 
 - [data/synthetic_data_generation.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/synthetic_data_generation.py): graph realization and conditional synthetic data generation
+- [data/SeattleDMI/prepare_seattledmi.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/SeattleDMI/prepare_seattledmi.py): SeattleDMI preprocessing and geography joins
+- [data/COVIDSchoolDataHub/prepare_csdh_data.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/COVIDSchoolDataHub/prepare_csdh_data.py): Ohio and Massachusetts school-district preprocessing, joins, and geometry
 - [data/configs/base_config.yaml](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/configs/base_config.yaml): default configuration
 - [model_utils.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py): basis construction, parameter packing, and summary metrics
 - [mple.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/mple.py): conditional pseudo-NLL, optimizer, logging, and summary export
@@ -89,7 +89,9 @@ The estimator writes:
 
 The flattened optimization vector is
 
-`[field coefficients, beta, interaction coefficients, eta, zeta, psi]`
+`[field coefficients, tau coefficients, beta, interaction coefficients, eta, zeta, psi]`
+
+When `--outcome_only` is enabled, the `zeta` and `psi` terms are omitted and only the outcome-side parameters are estimated.
 
 The summary tables report:
 

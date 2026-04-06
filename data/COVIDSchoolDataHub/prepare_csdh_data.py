@@ -40,6 +40,7 @@ PROCESSED_DIR = BASE_DIR / "processed"
 
 
 CSDH_URLS = {
+    "district_monthly_shares": "https://assets.ctfassets.net/9fbw4onh0qc1/4LRV2nKQOBoCudvyVxLx6w/fdb67c6da6252d520b83d173f3a41237/District_Monthly_Shares_03.08.23.csv",
     "learning_csv_zip": "https://assets.ctfassets.net/9fbw4onh0qc1/3JXV9ahOubLLnh9aHTHgKv/6e3c8a2baf1f2e0517edd9e454ee5c74/CSDH_District_Files_-_CSV.zip",
     "community_case_rate_zip": "https://downloads.ctfassets.net/9fbw4onh0qc1/1FyYF7Qqmn2fXfWYqcqZUB/d2f9ec9d4a78bdedbc93869396393c09/Matched_Districts_and_Case_Rates.zip",
     "community_case_rate_codebook": "https://assets.ctfassets.net/9fbw4onh0qc1/3vad828a7tYRJ2F7Qeqfbh/1c4612a5918ac618e9b05eeae46344ee/Cate_Rate_Codebook.xlsx",
@@ -125,6 +126,7 @@ def ensure_directories() -> dict[str, Path]:
         "features_edge": RAW_DIR / "features" / "edge",
         "features_edge_dashboards": RAW_DIR / "features" / "edge" / "acs_dashboard_html",
         "features_saipe": RAW_DIR / "features" / "saipe",
+        "features_csdh": RAW_DIR / "features" / "csdh",
     }
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=True)
@@ -214,6 +216,26 @@ def load_case_rates(case_zip_path: Path) -> pd.DataFrame:
     return case_rates
 
 
+def load_monthly_shares(monthly_csv_path: Path) -> pd.DataFrame:
+    """Load and standardize the CSDH district monthly in-person share file."""
+    monthly = pd.read_csv(monthly_csv_path, low_memory=False)
+    monthly["NCESDistrictID"] = standardize_id(monthly["NCESDistrictID"], width=7)
+    monthly["StateAbbrev"] = standardize_id(monthly["StateAbbrev"])
+    monthly["Month"] = monthly["month"].astype(str).str.strip()
+    month_parts = monthly["Month"].str.extract(r"(?P<year>\d{4})m(?P<month>\d{1,2})")
+    monthly["MonthStartDate"] = pd.to_datetime(
+        month_parts["year"] + "-" + month_parts["month"] + "-01",
+        errors="coerce",
+    )
+    monthly["MonthEndDate"] = monthly["MonthStartDate"] + pd.offsets.MonthEnd(0)
+    monthly["DistrictNameNormalized"] = monthly["DistrictName"].map(normalize_name)
+    for column in ["share_inperson", "share_hybrid", "share_virtual"]:
+        monthly[column] = pd.to_numeric(monthly[column], errors="coerce")
+    monthly = monthly.dropna(subset=["NCESDistrictID", "MonthStartDate"])
+    monthly = monthly.sort_values(["StateAbbrev", "NCESDistrictID", "MonthStartDate"]).reset_index(drop=True)
+    return monthly
+
+
 def load_nces_district_master(nces_csv_path: Path) -> pd.DataFrame:
     """Load the NCES district demographics file as the canonical district master."""
     nces = pd.read_csv(nces_csv_path, low_memory=False)
@@ -243,6 +265,17 @@ def save_core_tables(
         )
         case_rates.loc[case_rates["StateAbbrev"] == state_abbrev].to_csv(
             PROCESSED_DIR / f"csdh_case_rates_by_district_zip_week_{slug}.csv.gz",
+            index=False,
+        )
+
+
+def save_monthly_share_tables(monthly_shares: pd.DataFrame) -> None:
+    """Write the district monthly share table and state-specific subsets."""
+    monthly_shares.to_csv(PROCESSED_DIR / "csdh_district_monthly_shares.csv.gz", index=False)
+    for state_abbrev, state_name in STATE_NAMES.items():
+        slug = state_name.lower()
+        monthly_shares.loc[monthly_shares["StateAbbrev"] == state_abbrev].to_csv(
+            PROCESSED_DIR / f"csdh_district_monthly_shares_{slug}.csv.gz",
             index=False,
         )
 
@@ -333,6 +366,40 @@ def join_learning_to_case_rates(
             ["StateAbbrev", "NCESDistrictID", "WeekStartDate", "zip"]
         ).reset_index(drop=True)
     return joined
+
+
+def join_monthly_shares_to_case_rates(
+    case_rates: pd.DataFrame,
+    monthly_shares: pd.DataFrame,
+) -> pd.DataFrame:
+    """Join monthly in-person shares to the weekly case-rate panel."""
+    panel = case_rates.copy()
+    panel["Month"] = panel["WeekStartDate"].dt.year.astype(str) + "m" + panel["WeekStartDate"].dt.month.astype(str)
+    panel = panel.merge(
+        monthly_shares[
+            [
+                "StateAbbrev",
+                "NCESDistrictID",
+                "Month",
+                "DistrictName",
+                "share_inperson",
+                "share_hybrid",
+                "share_virtual",
+                "MonthStartDate",
+                "MonthEndDate",
+            ]
+        ],
+        on=["StateAbbrev", "NCESDistrictID", "Month"],
+        how="left",
+        suffixes=("", "_monthly"),
+    )
+    panel["InterventionShare_pm1"] = np.where(
+        panel["share_inperson"].notna() & (panel["share_inperson"] >= 0.5),
+        1,
+        np.where(panel["share_inperson"].notna(), -1, np.nan),
+    ).astype("float")
+    panel["InterventionShare_binary"] = panel["InterventionShare_pm1"].astype("Int64")
+    return panel.sort_values(["StateAbbrev", "NCESDistrictID", "WeekStartDate", "zip"]).reset_index(drop=True)
 
 
 def load_edge_standardized_geometry(zip_path: Path, state_abbrev: str) -> gpd.GeoDataFrame:
@@ -986,6 +1053,8 @@ def write_summary_json(
     learning: pd.DataFrame,
     case_rates: pd.DataFrame,
     joined: pd.DataFrame,
+    monthly_shares: pd.DataFrame,
+    monthly_joined: pd.DataFrame,
     mass_crosswalk: pd.DataFrame,
     ohio_crosswalk: pd.DataFrame,
     network_summary: pd.DataFrame,
@@ -998,6 +1067,10 @@ def write_summary_json(
         "learning_districts": int(learning["NCESDistrictID"].nunique()),
         "case_rows": int(len(case_rates)),
         "case_districts": int(case_rates["NCESDistrictID"].nunique()),
+        "monthly_share_rows": int(len(monthly_shares)),
+        "monthly_share_districts": int(monthly_shares["NCESDistrictID"].nunique()) if not monthly_shares.empty else 0,
+        "monthly_joined_rows": int(len(monthly_joined)),
+        "monthly_joined_districts": int(monthly_joined["NCESDistrictID"].nunique()) if not monthly_joined.empty else 0,
         "joined_rows": int(len(joined)),
         "joined_districts": int(joined["NCESDistrictID"].nunique()) if not joined.empty else 0,
         "states_in_learning": sorted(learning["StateAbbrev"].dropna().unique().tolist()),
@@ -1024,6 +1097,7 @@ def main() -> None:
     paths = ensure_directories()
 
     csdh_targets = {
+        "district_monthly_shares": paths["csdh"] / "District_Monthly_Shares_03.08.23.csv",
         "learning_csv_zip": paths["csdh"] / "CSDH_District_Files_-_CSV.zip",
         "community_case_rate_zip": paths["csdh"] / "Matched_Districts_and_Case_Rates.zip",
         "community_case_rate_codebook": paths["csdh"] / "Cate_Rate_Codebook.xlsx",
@@ -1032,6 +1106,8 @@ def main() -> None:
     }
     for key, destination in csdh_targets.items():
         download_if_missing(CSDH_URLS[key], destination)
+    monthly_shares = load_monthly_shares(csdh_targets["district_monthly_shares"])
+    save_monthly_share_tables(monthly_shares)
 
     download_if_missing(EDGE_STANDARDIZED_URL, paths["geo_edge"] / Path(EDGE_STANDARDIZED_URL).name)
     for key in ["ohio", "massachusetts", "layout"]:
@@ -1056,6 +1132,14 @@ def main() -> None:
                 PROCESSED_DIR / f"csdh_learning_case_joined_{state_name.lower()}.csv.gz",
                 index=False,
             )
+
+    monthly_joined = join_monthly_shares_to_case_rates(case_rates, monthly_shares)
+    monthly_joined.to_csv(PROCESSED_DIR / "csdh_learning_case_joined_monthly_shares.csv.gz", index=False)
+    for state_abbrev, state_name in STATE_NAMES.items():
+        monthly_joined.loc[monthly_joined["StateAbbrev"] == state_abbrev].to_csv(
+            PROCESSED_DIR / f"csdh_learning_case_joined_monthly_shares_{state_name.lower()}.csv.gz",
+            index=False,
+        )
 
     mass_official = build_massachusetts_official_geometry(paths)
     ohio_official = build_ohio_official_geometry(paths)
@@ -1148,6 +1232,8 @@ def main() -> None:
         learning,
         case_rates,
         joined,
+        monthly_shares,
+        monthly_joined,
         mass_crosswalk,
         ohio_crosswalk,
         network_summary,
