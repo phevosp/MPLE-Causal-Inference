@@ -1,0 +1,41 @@
+2026-04-06 09:08:30 | INFO | Loading data...
+2026-04-06 09:08:30 | INFO | Loaded 9 field templates and 1 interaction templates.
+2026-04-06 09:08:30 | INFO | Intervention-process model enabled: False
+2026-04-06 09:08:30 | INFO | Running conditional-model MPLE on x with shape=(15, 9642)
+2026-04-06 09:08:30 | INFO | Eval 0  |  Loss: 0.812767
+2026-04-06 09:08:30 | INFO |   field::intercept: +0.0126,  field::total_pop: -0.0132,  field::black_share: +0.0640,  field::hispanic_share: +0.0105,  field::male_1521_share: -0.0536,  field::family_household_share: +0.0362,  field::female_household_share: +0.1304,  field::renter_share: +0.0947,  field::vacant_share: -0.0704,  tau block: mean=-0.0323, std=0.0897, min=-0.2325, max=+0.1366,  beta: +0.0903,  interaction::contiguity: +0.0094,  eta: -0.0743
+2026-04-06 09:08:32 | INFO | Eval 100  |  Loss: 0.455974
+2026-04-06 09:08:32 | INFO |   field::intercept: +0.1570,  field::total_pop: -5.7069,  field::black_share: -0.2868,  field::hispanic_share: -0.2648,  field::male_1521_share: +0.1145,  field::family_household_share: +0.2842,  field::female_household_share: -0.2066,  field::renter_share: -0.1175,  field::vacant_share: -1.5906,  tau block: mean=-0.0227, std=0.0598, min=-0.1013, max=+0.1161,  beta: -0.1613,  interaction::contiguity: +2.0516,  eta: +0.4056
+2026-04-06 09:08:32 | INFO | Done fitting.
+2026-04-06 09:08:32 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-06 09:08:32 | INFO | Final Loss: 0.455974
+2026-04-06 09:08:32 | INFO | Estimated Parameters:
+2026-04-06 09:08:32 | INFO |   field::intercept: 0.1549
+2026-04-06 09:08:32 | INFO |   field::total_pop: -5.7017
+2026-04-06 09:08:32 | INFO |   field::black_share: -0.2870
+2026-04-06 09:08:32 | INFO |   field::hispanic_share: -0.2632
+2026-04-06 09:08:32 | INFO |   field::male_1521_share: 0.1121
+2026-04-06 09:08:32 | INFO |   field::family_household_share: 0.2839
+2026-04-06 09:08:32 | INFO |   field::female_household_share: -0.2051
+2026-04-06 09:08:32 | INFO |   field::renter_share: -0.1176
+2026-04-06 09:08:32 | INFO |   field::vacant_share: -1.5968
+2026-04-06 09:08:32 | INFO |   tau::t_0: 0.0439
+2026-04-06 09:08:32 | INFO |   tau::t_1: -0.0857
+2026-04-06 09:08:32 | INFO |   tau::t_2: -0.0303
+2026-04-06 09:08:32 | INFO |   tau::t_3: 0.0567
+2026-04-06 09:08:32 | INFO |   tau::t_4: 0.0167
+2026-04-06 09:08:32 | INFO |   tau::t_5: -0.0311
+2026-04-06 09:08:32 | INFO |   tau::t_6: -0.0308
+2026-04-06 09:08:32 | INFO |   tau::t_7: 0.0136
+2026-04-06 09:08:32 | INFO |   tau::t_8: -0.0276
+2026-04-06 09:08:32 | INFO |   tau::t_9: -0.0924
+2026-04-06 09:08:32 | INFO |   tau::t_10: -0.0584
+2026-04-06 09:08:32 | INFO |   tau::t_11: -0.0505
+2026-04-06 09:08:32 | INFO |   tau::t_12: -0.0815
+2026-04-06 09:08:32 | INFO |   tau::t_13: -0.1014
+2026-04-06 09:08:32 | INFO |   tau::t_14: 0.1159
+2026-04-06 09:08:32 | INFO |   beta: -0.1634
+2026-04-06 09:08:32 | INFO |   interaction::contiguity: 2.0528
+2026-04-06 09:08:32 | INFO |   eta: 0.4056
+2026-04-06 09:08:32 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI_outcome_only\any_crime_gt_1_pm1__contiguity\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI_outcome_only\any_crime_gt_1_pm1__contiguity\mple_summary.md
+2026-04-06 09:08:32 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI_outcome_only\any_crime_gt_1_pm1__contiguity\mple.log

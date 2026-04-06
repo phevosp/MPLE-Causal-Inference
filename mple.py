@@ -13,11 +13,13 @@ from model_utils import (
     compose_field,
     compose_field_matrix,
     compose_interaction_matrix,
+    intervention_model_enabled,
     interaction_basis_count,
     interaction_features,
     load_or_build_basis,
     pack_true_parameters,
     parameter_names,
+    scalar_parameter_count,
     summary_metrics,
     unpack_theta,
     validate_basis_infinity_norms,
@@ -133,20 +135,22 @@ def _pack_gradient(
     beta_grad,
     interaction_grad,
     eta_grad,
-    zeta_grad,
-    psi_grad,
     total_size,
+    fit_intervention_model=True,
+    zeta_grad=0.0,
+    psi_grad=0.0,
 ):
     """Assemble the flattened gradient vector in the optimizer's parameter order."""
-    return np.concatenate(
-        [
-            np.asarray(field_grad, dtype=float),
-            np.asarray(tau_grad, dtype=float),
-            np.array([beta_grad], dtype=float),
-            np.asarray(interaction_grad, dtype=float),
-            np.array([eta_grad, zeta_grad, psi_grad], dtype=float),
-        ]
-    ) / total_size
+    parts = [
+        np.asarray(field_grad, dtype=float),
+        np.asarray(tau_grad, dtype=float),
+        np.array([beta_grad], dtype=float),
+        np.asarray(interaction_grad, dtype=float),
+        np.array([eta_grad], dtype=float),
+    ]
+    if fit_intervention_model:
+        parts.append(np.array([zeta_grad, psi_grad], dtype=float))
+    return np.concatenate(parts) / total_size
 
 
 def pseudo_nll(
@@ -158,6 +162,7 @@ def pseudo_nll(
     s,
     field_basis,
     interaction_features_x,
+    fit_intervention_model=True,
 ):
     """Compute the conditional-model pseudo-NLL and its analytic gradient."""
     t_steps = x.shape[0]
@@ -168,6 +173,7 @@ def pseudo_nll(
         n_field,
         n_interaction,
         t_steps,
+        fit_intervention_model,
     )
 
     prev_x = np.vstack([x_0, x[:-1, :]])
@@ -180,19 +186,24 @@ def pseudo_nll(
     )
 
     h_x = field_matrix + beta * z + eta * prev_x + interaction_term
-    h_z = zeta * prev_x + psi * prev_z
-
     loss_x = np.logaddexp(h_x, -h_x) - x * h_x
     res_x = np.tanh(h_x) - x
 
-    mask = np.ones_like(z)
-    mask[:s, :] = 0
-
-    loss_z = (np.logaddexp(h_z, -h_z) - z * h_z) * mask
-    res_z = (np.tanh(h_z) - z) * mask
-
-    total_size = x.size + mask.sum()
-    total_loss = (loss_x.sum() + loss_z.sum()) / total_size
+    if fit_intervention_model:
+        h_z = zeta * prev_x + psi * prev_z
+        mask = np.ones_like(z)
+        mask[:s, :] = 0
+        loss_z = (np.logaddexp(h_z, -h_z) - z * h_z) * mask
+        res_z = (np.tanh(h_z) - z) * mask
+        total_size = x.size + mask.sum()
+        total_loss = (loss_x.sum() + loss_z.sum()) / total_size
+        zeta_grad = (res_z * prev_x).sum()
+        psi_grad = (res_z * prev_z).sum()
+    else:
+        total_size = x.size
+        total_loss = loss_x.sum() / total_size
+        zeta_grad = 0.0
+        psi_grad = 0.0
 
     grad = _pack_gradient(
         field_grad=field_basis @ res_x.sum(axis=0),
@@ -202,9 +213,10 @@ def pseudo_nll(
             "tn,ktn->k", res_x, interaction_features_x, optimize=True
         ),
         eta_grad=(res_x * prev_x).sum(),
-        zeta_grad=(res_z * prev_x).sum(),
-        psi_grad=(res_z * prev_z).sum(),
         total_size=total_size,
+        fit_intervention_model=fit_intervention_model,
+        zeta_grad=zeta_grad,
+        psi_grad=psi_grad,
     )
 
     return total_loss, grad
@@ -225,6 +237,7 @@ def fit_mple(
     tol=1e-9,
     logger=None,
     theta_init=None,
+    fit_intervention_model=True,
 ):
     """Optimize the conditional pseudo-likelihood with L-BFGS-B and track the loss history."""
     if x.ndim != 2:
@@ -253,6 +266,7 @@ def fit_mple(
             s,
             field_basis=field_basis,
             interaction_features_x=interaction_features_x,
+            fit_intervention_model=fit_intervention_model,
         )
         history.append(loss)
         if verbose_every and eval_count[0] % verbose_every == 0:
@@ -387,10 +401,14 @@ def save_estimated_artifacts(
     true_theta,
     field_basis,
     interaction_basis,
+    fit_intervention_model=True,
 ):
     """Save reconstructed field and interaction objects for fitted and true parameters."""
     t_steps = int(
-        len(est_theta) - field_basis.shape[0] - interaction_basis_count(interaction_basis) - 4
+        len(est_theta)
+        - field_basis.shape[0]
+        - interaction_basis_count(interaction_basis)
+        - scalar_parameter_count(fit_intervention_model)
     )
     n_field = field_basis.shape[0]
     n_interaction = interaction_basis_count(interaction_basis)
@@ -399,6 +417,7 @@ def save_estimated_artifacts(
         n_field,
         n_interaction,
         t_steps,
+        fit_intervention_model,
     )
 
     np.save(Path(data_folder) / "estimated_tau.npy", est_tau)
@@ -428,6 +447,7 @@ def save_estimated_artifacts(
         n_field,
         n_interaction,
         t_steps,
+        fit_intervention_model,
     )
     np.save(Path(data_folder) / "true_tau.npy", true_tau)
     np.save(
@@ -447,7 +467,14 @@ def save_estimated_artifacts(
     else:
         np.save(Path(data_folder) / "true_interaction_matrix.npy", true_interaction)
 
-def maybe_pack_true_parameters(config, field_names, interaction_names, t_steps, has_truth):
+def maybe_pack_true_parameters(
+    config,
+    field_names,
+    interaction_names,
+    t_steps,
+    has_truth,
+    fit_intervention_model,
+):
     """Return the true parameter vector when available, otherwise None."""
     if not has_truth:
         return None
@@ -460,10 +487,16 @@ def maybe_pack_true_parameters(config, field_names, interaction_names, t_steps, 
             config,
             field_names,
             interaction_names,
+            fit_intervention_model=fit_intervention_model,
         )
     except Exception:
         return None
-    expected_length = len(field_names) + t_steps + len(interaction_names) + 4
+    expected_length = (
+        len(field_names)
+        + t_steps
+        + len(interaction_names)
+        + scalar_parameter_count(fit_intervention_model)
+    )
     if len(packed) != expected_length:
         return None
     return packed
@@ -482,6 +515,11 @@ if __name__ == "__main__":
     parser.add_argument("--tol", type=float, default=1e-9)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
+        "--outcome_only",
+        action="store_true",
+        help="Fit only the x-outcome pseudo-likelihood and do not model the intervention process z.",
+    )
+    parser.add_argument(
         "--log_file",
         type=str,
         default=None,
@@ -495,6 +533,7 @@ if __name__ == "__main__":
 
     logger.info("Loading data...")
     config = OmegaConf.load(f"{args.data_folder}/realized_config.yaml")
+    fit_intervention_model = intervention_model_enabled(config) and not args.outcome_only
     metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
     metadata = OmegaConf.load(metadata_path) if metadata_path.exists() else OmegaConf.create({})
     has_truth = bool(metadata.get("has_truth", True))
@@ -511,6 +550,7 @@ if __name__ == "__main__":
         basis.field_names,
         basis.interaction_names,
         x.shape[0],
+        fit_intervention_model=fit_intervention_model,
     )
     params_true = maybe_pack_true_parameters(
         config,
@@ -518,12 +558,17 @@ if __name__ == "__main__":
         basis.interaction_names,
         x.shape[0],
         has_truth,
+        fit_intervention_model,
     )
     interaction_features_x = interaction_features(x, basis.interaction_basis)
     logger.info(
         "Loaded %s field templates and %s interaction templates.",
         len(basis.field_names),
         len(basis.interaction_names),
+    )
+    logger.info(
+        "Intervention-process model enabled: %s",
+        fit_intervention_model,
     )
 
     logger.info("Running conditional-model MPLE on x with shape=%s", x.shape)
@@ -540,6 +585,7 @@ if __name__ == "__main__":
         tol=args.tol,
         seed=args.seed,
         logger=logger,
+        fit_intervention_model=fit_intervention_model,
     )
 
     logger.info("Done fitting.")
@@ -559,6 +605,7 @@ if __name__ == "__main__":
             params_true,
             basis.field_basis,
             basis.interaction_basis,
+            fit_intervention_model=fit_intervention_model,
         )
         if params_true is not None
         else {}
@@ -577,6 +624,7 @@ if __name__ == "__main__":
         params_true if params_true is not None else [None] * len(param_keys),
         basis.field_basis,
         basis.interaction_basis,
+        fit_intervention_model=fit_intervention_model,
     )
     logger.info(
         "Saved summary tables to %s and %s",

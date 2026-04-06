@@ -1,0 +1,42 @@
+2026-04-05 18:54:48 | INFO | Loading data...
+2026-04-05 18:54:49 | INFO | Loaded 9 field templates and 1 interaction templates.
+2026-04-05 18:54:49 | INFO | Running conditional-model MPLE on x with shape=(15, 9642)
+2026-04-05 18:54:49 | INFO | Eval 0  |  Loss: 0.753586
+2026-04-05 18:54:49 | INFO |   field::intercept: +0.0126,  field::total_pop: -0.0132,  field::black_share: +0.0640,  field::hispanic_share: +0.0105,  field::male_1521_share: -0.0536,  field::family_household_share: +0.0362,  field::female_household_share: +0.1304,  field::renter_share: +0.0947,  field::vacant_share: -0.0704,  tau block: mean=-0.0323, std=0.0897, min=-0.2325, max=+0.1366,  beta: +0.0903,  interaction::centroid_distance_kernel_16: +0.0094,  eta: -0.0743,  zeta: -0.0922,  psi: -0.0458
+2026-04-05 18:54:52 | INFO | Eval 100  |  Loss: 0.502441
+2026-04-05 18:54:52 | INFO |   field::intercept: +0.2809,  field::total_pop: -1.0100,  field::black_share: -0.0951,  field::hispanic_share: -0.0369,  field::male_1521_share: -0.0353,  field::family_household_share: +0.0227,  field::female_household_share: -0.0234,  field::renter_share: -0.1012,  field::vacant_share: -0.1573,  tau block: mean=-0.0145, std=0.0575, min=-0.0939, max=+0.0776,  beta: +0.0573,  interaction::centroid_distance_kernel_16: +0.5419,  eta: +0.0792,  zeta: -0.2184,  psi: +3.4474
+2026-04-05 18:54:53 | INFO | Done fitting.
+2026-04-05 18:54:53 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-05 18:54:53 | INFO | Final Loss: 0.502441
+2026-04-05 18:54:53 | INFO | Estimated Parameters:
+2026-04-05 18:54:53 | INFO |   field::intercept: 0.2774
+2026-04-05 18:54:53 | INFO |   field::total_pop: -1.0127
+2026-04-05 18:54:53 | INFO |   field::black_share: -0.0952
+2026-04-05 18:54:53 | INFO |   field::hispanic_share: -0.0365
+2026-04-05 18:54:53 | INFO |   field::male_1521_share: -0.0315
+2026-04-05 18:54:53 | INFO |   field::family_household_share: 0.0227
+2026-04-05 18:54:53 | INFO |   field::female_household_share: -0.0247
+2026-04-05 18:54:53 | INFO |   field::renter_share: -0.1012
+2026-04-05 18:54:53 | INFO |   field::vacant_share: -0.1793
+2026-04-05 18:54:53 | INFO |   tau::t_0: 0.0552
+2026-04-05 18:54:53 | INFO |   tau::t_1: -0.0479
+2026-04-05 18:54:53 | INFO |   tau::t_2: -0.0270
+2026-04-05 18:54:53 | INFO |   tau::t_3: 0.0629
+2026-04-05 18:54:53 | INFO |   tau::t_4: 0.0417
+2026-04-05 18:54:53 | INFO |   tau::t_5: 0.0065
+2026-04-05 18:54:53 | INFO |   tau::t_6: -0.0066
+2026-04-05 18:54:53 | INFO |   tau::t_7: 0.0357
+2026-04-05 18:54:53 | INFO |   tau::t_8: -0.0138
+2026-04-05 18:54:53 | INFO |   tau::t_9: -0.0942
+2026-04-05 18:54:53 | INFO |   tau::t_10: -0.0746
+2026-04-05 18:54:53 | INFO |   tau::t_11: -0.0597
+2026-04-05 18:54:53 | INFO |   tau::t_12: -0.0826
+2026-04-05 18:54:53 | INFO |   tau::t_13: -0.0935
+2026-04-05 18:54:53 | INFO |   tau::t_14: 0.0775
+2026-04-05 18:54:53 | INFO |   beta: 0.0536
+2026-04-05 18:54:53 | INFO |   interaction::centroid_distance_kernel_16: 0.5422
+2026-04-05 18:54:53 | INFO |   eta: 0.0792
+2026-04-05 18:54:53 | INFO |   zeta: -0.2209
+2026-04-05 18:54:53 | INFO |   psi: 3.4462
+2026-04-05 18:54:53 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI\any_crime_gt_block_mean_pm1__centroid_distance_kernel_16\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI\any_crime_gt_block_mean_pm1__centroid_distance_kernel_16\mple_summary.md
+2026-04-05 18:54:53 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SeattleDMI\any_crime_gt_block_mean_pm1__centroid_distance_kernel_16\mple.log

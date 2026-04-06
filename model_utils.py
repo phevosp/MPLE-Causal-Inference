@@ -23,6 +23,21 @@ class BasisExpansion:
     shared_feature_names: tuple[str, ...]
 
 
+def intervention_model_enabled(config) -> bool:
+    """Return whether the MPLE fit should include a model for the intervention process z."""
+    if "estimation_params" not in config:
+        return True
+    estimation_params = config.estimation_params
+    if "fit_intervention_model" not in estimation_params:
+        return True
+    return bool(estimation_params.fit_intervention_model)
+
+
+def scalar_parameter_count(fit_intervention_model: bool) -> int:
+    """Return the number of non-basis scalar parameters in the flattened optimizer vector."""
+    return 4 if fit_intervention_model else 2
+
+
 def interaction_basis_count(interaction_basis) -> int:
     """Return the number of interaction templates represented by one basis object."""
     if sparse.issparse(interaction_basis):
@@ -321,20 +336,25 @@ def parameter_names(
     field_names: tuple[str, ...],
     interaction_names: tuple[str, ...],
     t_steps: int,
+    fit_intervention_model: bool = True,
 ) -> list[str]:
     """Create human-readable parameter labels matching the flattened optimizer vector."""
     field_keys = [f"field::{name}" for name in field_names]
     temporal_keys = [f"tau::t_{idx}" for idx in range(t_steps)]
     interaction_keys = [f"interaction::{name}" for name in interaction_names]
-    return field_keys + temporal_keys + ["beta"] + interaction_keys + ["eta", "zeta", "psi"]
+    tail_keys = ["eta", "zeta", "psi"] if fit_intervention_model else ["eta"]
+    return field_keys + temporal_keys + ["beta"] + interaction_keys + tail_keys
 
 
 def pack_true_parameters(
     config,
     field_names: tuple[str, ...],
     interaction_names: tuple[str, ...],
+    fit_intervention_model: bool | None = None,
 ) -> np.ndarray:
     """Pack the true configuration parameters into the optimizer's flat ordering."""
+    if fit_intervention_model is None:
+        fit_intervention_model = intervention_model_enabled(config)
     field_coeffs = get_field_coeffs(config)
     tau = get_temporal_field(config, int(config.global_params.T))
     interaction_coeffs = get_interaction_coeffs(config)
@@ -352,13 +372,19 @@ def pack_true_parameters(
             tau,
             np.array([config.estimation_params.beta], dtype=float),
             interaction_coeffs,
-            np.array(
+            np.array([config.estimation_params.eta], dtype=float),
+            *(
                 [
-                    config.estimation_params.eta,
-                    config.estimation_params.zeta,
-                    config.estimation_params.psi,
-                ],
-                dtype=float,
+                    np.array(
+                        [
+                            config.estimation_params.zeta,
+                            config.estimation_params.psi,
+                        ],
+                        dtype=float,
+                    )
+                ]
+                if fit_intervention_model
+                else []
             ),
         ]
     )
@@ -369,6 +395,7 @@ def unpack_theta(
     n_field: int,
     n_interaction: int,
     t_steps: int,
+    fit_intervention_model: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float, float, float]:
     """Split the optimizer vector into field, treatment, interaction, and temporal blocks."""
     field_coeffs = np.asarray(theta[:n_field], dtype=float)
@@ -377,7 +404,13 @@ def unpack_theta(
     interaction_start = n_field + t_steps + 1
     interaction_end = interaction_start + n_interaction
     interaction_coeffs = np.asarray(theta[interaction_start:interaction_end], dtype=float)
-    eta, zeta, psi = np.asarray(theta[interaction_end:], dtype=float)
+    tail = np.asarray(theta[interaction_end:], dtype=float)
+    if fit_intervention_model:
+        eta, zeta, psi = tail
+    else:
+        eta = float(tail[0])
+        zeta = 0.0
+        psi = 0.0
     return field_coeffs, tau, beta, interaction_coeffs, eta, zeta, psi
 
 
@@ -396,20 +429,24 @@ def summary_metrics(
     true_theta: np.ndarray,
     field_basis: np.ndarray,
     interaction_basis,
+    fit_intervention_model: bool = True,
 ) -> dict[str, float]:
     """Compute reconstruction metrics for fitted parameters, fields, and interactions."""
     t_steps = int(
-        len(est_theta) - field_basis.shape[0] - interaction_basis_count(interaction_basis) - 4
+        len(est_theta)
+        - field_basis.shape[0]
+        - interaction_basis_count(interaction_basis)
+        - scalar_parameter_count(fit_intervention_model)
     )
     if t_steps < 0:
         raise ValueError("Parameter vector is too short for the configured model blocks.")
     n_field = field_basis.shape[0]
     n_interaction = interaction_basis_count(interaction_basis)
     est_field_coeffs, est_tau, _, est_interaction_coeffs, _, _, _ = unpack_theta(
-        est_theta, n_field, n_interaction, t_steps
+        est_theta, n_field, n_interaction, t_steps, fit_intervention_model
     )
     true_field_coeffs, true_tau, _, true_interaction_coeffs, _, _, _ = unpack_theta(
-        true_theta, n_field, n_interaction, t_steps
+        true_theta, n_field, n_interaction, t_steps, fit_intervention_model
     )
     est_field = compose_field(est_field_coeffs, field_basis)
     true_field = compose_field(true_field_coeffs, field_basis)

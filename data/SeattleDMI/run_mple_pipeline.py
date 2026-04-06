@@ -276,6 +276,7 @@ def create_config(
     field_basis_names: tuple[str, ...],
     network_name: str,
     outcome_column: str,
+    fit_intervention_model: bool = True,
 ) -> OmegaConf:
     """Build the minimal realized config needed by mple.py for a real-data experiment."""
     config = OmegaConf.create(
@@ -288,6 +289,7 @@ def create_config(
                 "x_0_generator": "observed",
             },
             "estimation_params": {
+                "fit_intervention_model": bool(fit_intervention_model),
                 "beta": 0.0,
                 "eta": 0.0,
                 "zeta": 0.0,
@@ -410,6 +412,31 @@ def run_mple(experiment_dir: Path, steps: int, tol: float, seed: int) -> None:
     subprocess.run(command, check=True, cwd=REPO_ROOT)
 
 
+def run_mple_with_mode(
+    experiment_dir: Path,
+    steps: int,
+    tol: float,
+    seed: int,
+    outcome_only: bool,
+) -> None:
+    """Launch mple.py on one prepared SeattleDMI experiment folder, optionally in outcome-only mode."""
+    command = [
+        sys.executable,
+        str(REPO_ROOT / "mple.py"),
+        "--data_folder",
+        str(experiment_dir),
+        "--steps",
+        str(steps),
+        "--tol",
+        str(tol),
+        "--seed",
+        str(seed),
+    ]
+    if outcome_only:
+        command.append("--outcome_only")
+    subprocess.run(command, check=True, cwd=REPO_ROOT)
+
+
 def main() -> None:
     """Build SeattleDMI real-data MPLE experiments and optionally run the fits."""
     parser = argparse.ArgumentParser(
@@ -449,6 +476,11 @@ def main() -> None:
         "--run_mple",
         action="store_true",
         help="Run mple.py after writing each experiment folder.",
+    )
+    parser.add_argument(
+        "--outcome_only",
+        action="store_true",
+        help="Pass --outcome_only through to mple.py so only the x-outcome model is fit.",
     )
     parser.add_argument(
         "--steps",
@@ -518,6 +550,7 @@ def main() -> None:
                 field_basis_names=field_basis_names,
                 network_name=network_name,
                 outcome_column=outcome_column,
+                fit_intervention_model=not args.outcome_only,
             )
             metadata = {
                 "source": "SeattleDMI",
@@ -526,6 +559,7 @@ def main() -> None:
                 "base_outcome": outcome_base_name(outcome_column),
                 "x_sign_convention": "+1_good_-1_bad",
                 "z_sign_convention": "+1_intervention_-1_no_intervention",
+                "fit_intervention_model": bool(not args.outcome_only),
                 "network_name": network_name,
                 "field_basis_names": list(field_basis_names),
                 "node_count": int(x.shape[1]),
@@ -552,7 +586,13 @@ def main() -> None:
                         "Re-run with --overwrite to rebuild it cleanly."
                     )
                 if args.run_mple and not experiment_has_fit_outputs(experiment_dir):
-                    run_mple(experiment_dir, steps=args.steps, tol=args.tol, seed=args.seed)
+                    run_mple_with_mode(
+                        experiment_dir,
+                        steps=args.steps,
+                        tol=args.tol,
+                        seed=args.seed,
+                        outcome_only=args.outcome_only,
+                    )
                 experiment_count += 1
                 if args.max_experiments is not None and experiment_count >= args.max_experiments:
                     return
@@ -575,7 +615,13 @@ def main() -> None:
             )
             append_manifest_row(manifest_path, manifest_row)
             if args.run_mple:
-                run_mple(experiment_dir, steps=args.steps, tol=args.tol, seed=args.seed)
+                run_mple_with_mode(
+                    experiment_dir,
+                    steps=args.steps,
+                    tol=args.tol,
+                    seed=args.seed,
+                    outcome_only=args.outcome_only,
+                )
 
             experiment_count += 1
             if args.max_experiments is not None and experiment_count >= args.max_experiments:

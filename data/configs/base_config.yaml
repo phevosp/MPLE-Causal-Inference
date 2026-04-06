@@ -17,6 +17,7 @@ global_params:
     fixed_val: 1 # options 1 or -1 for "fixed"
 
 estimation_params:
+  fit_intervention_model: true # if false, MPLE conditions on observed z and does not estimate the z-process parameters zeta and psi
   field_coefs: [0.35] # coefficients for the external field basis; default is intercept only
   tau_params:
     mode: "uniform_random" # options: "fixed", "uniform_random"
