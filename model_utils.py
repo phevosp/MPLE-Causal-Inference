@@ -1,3 +1,5 @@
+"""Shared model-building helpers for the conditional MPLE experiments."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

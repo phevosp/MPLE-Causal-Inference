@@ -1,3 +1,5 @@
+"""Fit conditional MPLE models for synthetic and real-data experiments."""
+
 import argparse
 import csv
 import logging

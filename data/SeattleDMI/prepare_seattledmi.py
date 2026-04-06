@@ -1,14 +1,22 @@
+"""Prepare the SeattleDMI block-level analysis package."""
+
 from __future__ import annotations
 
 import json
+import sys
 import tarfile
-import urllib.request
 import zipfile
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 import pyreadr
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from data_utils import build_touching_edge_list, download_if_missing, standardize_id  # noqa: E402
 
 
 MICROSYNTH_URL = "https://michaelwrobbins.r-universe.dev/src/contrib/microsynth_2.0.51.tar.gz"
@@ -37,13 +45,6 @@ def ensure_directories(base_dir: Path) -> dict[str, Path]:
     }
 
 
-def download_if_missing(url: str, destination: Path) -> None:
-    """Download one file unless it already exists locally."""
-    if destination.exists():
-        return
-    urllib.request.urlretrieve(url, destination)
-
-
 def extract_if_missing(paths: dict[str, Path]) -> tuple[Path, Path]:
     """Extract the microsynth package contents and the geography zip as needed."""
     microsynth_tar = paths["microsynth"] / "microsynth_2.0.51.tar.gz"
@@ -66,7 +67,7 @@ def load_seattledmi_panel(rda_path: Path) -> pd.DataFrame:
     """Load the SeattleDMI panel from the microsynth package data archive."""
     panel = pyreadr.read_r(str(rda_path))["seattledmi"].copy()
     panel["ID"] = panel["ID"].round().astype("int64")
-    panel["GEOID10"] = panel["ID"].astype(str).str.zfill(15)
+    panel["GEOID10"] = standardize_id(panel["ID"], width=15)
     panel["time"] = panel["time"].astype("int64")
     panel["Intervention"] = panel["Intervention"].astype("int64")
     return panel.sort_values(["GEOID10", "time"]).reset_index(drop=True)
@@ -190,16 +191,6 @@ def build_crosswalk(joined_gdf: gpd.GeoDataFrame) -> pd.DataFrame:
     return crosswalk.sort_values("GEOID10").reset_index(drop=True)
 
 
-def build_adjacency(joined_gdf: gpd.GeoDataFrame) -> pd.DataFrame:
-    """Create an undirected edge list using queen contiguity between matched blocks."""
-    left = joined_gdf[["GEOID10", "geometry"]].copy()
-    right = left.rename(columns={"GEOID10": "neighbor_GEOID10"})
-    edges = gpd.sjoin(left, right, how="inner", predicate="touches")
-    edges = edges[["GEOID10", "neighbor_GEOID10"]].copy()
-    edges = edges[edges["GEOID10"] < edges["neighbor_GEOID10"]].drop_duplicates()
-    return edges.sort_values(["GEOID10", "neighbor_GEOID10"]).reset_index(drop=True)
-
-
 def save_outputs(
     paths: dict[str, Path],
     panel: pd.DataFrame,
@@ -261,7 +252,11 @@ def main() -> None:
     block_gdf = load_block_geometries(shp_path)
     joined_gdf = build_joined_geography(block_features, correlation, block_gdf)
     crosswalk = build_crosswalk(joined_gdf)
-    adjacency = build_adjacency(joined_gdf)
+    adjacency = build_touching_edge_list(
+        joined_gdf,
+        id_column="GEOID10",
+        neighbor_column="neighbor_GEOID10",
+    )
     summary = save_outputs(
         paths,
         panel,
