@@ -24,8 +24,8 @@ I only mention `shared_feature_interactions` briefly at the end, since those run
 
 Supporting tables:
 
-- experiment-level table: `reports/presentation_experiment_table.csv`
-- factor summary table for the core known-graph setting: `reports/parameter_recovery_factor_summary.csv`
+- experiment-level table: `experiments/SyntheticExperimentsGrid/reports/presentation_experiment_table.csv`
+- factor summary table for the core known-graph setting: `experiments/SyntheticExperimentsGrid/reports/parameter_recovery_factor_summary.csv`
 
 ## High-level takeaways
 

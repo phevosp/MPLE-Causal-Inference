@@ -3,7 +3,7 @@
 ## What I audited
 
 - I reviewed all 216 experiments listed in `experiments/latest_manifest.txt`.
-- I built a parseable one-row-per-experiment table at `reports/presentation_experiment_table.csv`.
+- I built a parseable one-row-per-experiment table at `experiments/SyntheticExperimentsGrid/reports/presentation_experiment_table.csv`.
 - The table includes the main fit metrics plus block-level parameter error summaries:
   - `parameter_rmse`
   - `field_rmse`

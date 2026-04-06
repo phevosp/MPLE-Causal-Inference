@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/latest_manifest.txt}"
-REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$SCRIPT_DIR/reports/conditional_experiment_report}"
+REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/reports/conditional_experiment_report}"
 SKIP_GENERATION=0
 MPLE_ARGS=()
 

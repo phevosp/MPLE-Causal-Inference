@@ -182,20 +182,28 @@ def main() -> None:
     parser.add_argument(
         "--output_csv",
         type=Path,
-        default=Path("experiments/SeattleDMI/MPLE_experiment_summary.csv"),
+        default=None,
         help="Where to write the consolidated CSV summary.",
     )
     parser.add_argument(
         "--output_md",
         type=Path,
-        default=Path("experiments/SeattleDMI/MPLE_experiment_summary.md"),
+        default=None,
         help="Where to write the consolidated Markdown summary.",
     )
     args = parser.parse_args()
 
     experiments_root = args.experiments_root.resolve()
-    output_csv = args.output_csv.resolve()
-    output_md = args.output_md.resolve()
+    output_csv = (
+        args.output_csv.resolve()
+        if args.output_csv is not None
+        else (experiments_root / "reports" / "MPLE_experiment_summary.csv").resolve()
+    )
+    output_md = (
+        args.output_md.resolve()
+        if args.output_md is not None
+        else (experiments_root / "reports" / "MPLE_experiment_summary.md").resolve()
+    )
 
     rows = collect_experiment_rows(experiments_root)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
