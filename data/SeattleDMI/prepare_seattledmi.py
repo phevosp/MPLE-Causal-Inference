@@ -16,7 +16,13 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from data_utils import build_touching_edge_list, download_if_missing, standardize_id  # noqa: E402
+from data_utils import (  # noqa: E402
+    build_knn_and_kernel_edges,
+    build_touching_edge_list,
+    count_connected_components,
+    download_if_missing,
+    standardize_id,
+)
 
 
 MICROSYNTH_URL = "https://michaelwrobbins.r-universe.dev/src/contrib/microsynth_2.0.51.tar.gz"
@@ -159,6 +165,66 @@ def build_joined_geography(
     return joined
 
 
+def build_centroid_table(joined_gdf: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Save projected and lon/lat centroid coordinates so experiment runs can skip the GeoPackage."""
+    projected = joined_gdf.to_crs(2285).copy()
+    centroids = projected.geometry.centroid
+    centroids_ll = gpd.GeoSeries(centroids, crs=projected.crs).to_crs(joined_gdf.crs)
+    table = pd.DataFrame(
+        {
+            "GEOID10": projected["GEOID10"].astype(str).str.zfill(15),
+            "centroid_x": centroids.x.to_numpy(),
+            "centroid_y": centroids.y.to_numpy(),
+            "centroid_lon": centroids_ll.x.to_numpy(),
+            "centroid_lat": centroids_ll.y.to_numpy(),
+        }
+    )
+    return table.sort_values("GEOID10").reset_index(drop=True)
+
+
+def build_network_artifacts(
+    centroids: pd.DataFrame,
+    contiguity: pd.DataFrame,
+) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
+    """Build the reusable Seattle network edge lists and a compact summary table."""
+    knn_8, kernel_8 = build_knn_and_kernel_edges(
+        centroids,
+        id_column="GEOID10",
+        x_column="centroid_x",
+        y_column="centroid_y",
+        k=8,
+    )
+    knn_16, kernel_16 = build_knn_and_kernel_edges(
+        centroids,
+        id_column="GEOID10",
+        x_column="centroid_x",
+        y_column="centroid_y",
+        k=16,
+    )
+    network_tables = {
+        "contiguity": contiguity.sort_values(["GEOID10", "neighbor_GEOID10"]).reset_index(drop=True),
+        "knn_8": knn_8.rename(columns={"neighbor_id": "neighbor_GEOID10"}),
+        "knn_16": knn_16.rename(columns={"neighbor_id": "neighbor_GEOID10"}),
+        "centroid_distance_kernel_8": kernel_8.rename(columns={"neighbor_id": "neighbor_GEOID10"}),
+        "centroid_distance_kernel_16": kernel_16.rename(columns={"neighbor_id": "neighbor_GEOID10"}),
+    }
+
+    node_ids = centroids["GEOID10"].tolist()
+    summary_rows: list[dict[str, int | str]] = []
+    for name, edges in network_tables.items():
+        summary_rows.append(
+            {
+                "network_name": name,
+                "node_count": int(len(node_ids)),
+                "edge_count": int(len(edges)),
+                "connected_components": int(
+                    count_connected_components(node_ids, edges, "GEOID10", "neighbor_GEOID10")
+                ),
+            }
+        )
+    return network_tables, pd.DataFrame(summary_rows)
+
+
 def build_crosswalk(joined_gdf: gpd.GeoDataFrame) -> pd.DataFrame:
     """Create a lightweight non-spatial block crosswalk for merging and auditing."""
     columns = [
@@ -197,8 +263,11 @@ def save_outputs(
     block_features: pd.DataFrame,
     preperiod_features: pd.DataFrame,
     crosswalk: pd.DataFrame,
+    centroids: pd.DataFrame,
     joined_gdf: gpd.GeoDataFrame,
     adjacency: pd.DataFrame,
+    network_tables: dict[str, pd.DataFrame],
+    network_summary: pd.DataFrame,
     correlation: pd.DataFrame,
 ) -> dict[str, int]:
     """Write processed SeattleDMI files and a compact processing summary."""
@@ -207,7 +276,19 @@ def save_outputs(
     block_features.to_csv(processed / "seattledmi_block_features.csv", index=False)
     preperiod_features.to_csv(processed / "seattledmi_block_preperiod_crime.csv", index=False)
     crosswalk.to_csv(processed / "seattledmi_block_crosswalk.csv", index=False)
+    centroids.to_csv(processed / "seattledmi_block_centroids.csv", index=False)
     adjacency.to_csv(processed / "seattledmi_block_adjacency.csv.gz", index=False)
+    network_tables["knn_8"].to_csv(processed / "seattledmi_block_knn_8_adjacency.csv.gz", index=False)
+    network_tables["knn_16"].to_csv(processed / "seattledmi_block_knn_16_adjacency.csv.gz", index=False)
+    network_tables["centroid_distance_kernel_8"].to_csv(
+        processed / "seattledmi_block_distance_kernel_8_adjacency.csv.gz",
+        index=False,
+    )
+    network_tables["centroid_distance_kernel_16"].to_csv(
+        processed / "seattledmi_block_distance_kernel_16_adjacency.csv.gz",
+        index=False,
+    )
+    network_summary.to_csv(processed / "seattledmi_network_summary.csv", index=False)
     joined_gdf.to_file(processed / "seattledmi_blocks.gpkg", layer="blocks", driver="GPKG")
 
     missing_corr = crosswalk.loc[crosswalk["has_neighborhood_match"] == 0, ["GEOID10"]].copy()
@@ -219,6 +300,7 @@ def save_outputs(
         "treated_blocks": int(block_features["treated_ever"].sum()),
         "time_periods": int(panel["time"].nunique()),
         "adjacency_edges": int(len(adjacency)),
+        "network_rows": int(len(network_summary)),
         "blocks_with_neighborhood_match": int(crosswalk["has_neighborhood_match"].sum()),
         "blocks_missing_neighborhood_match": int((crosswalk["has_neighborhood_match"] == 0).sum()),
         "correlation_rows": int(len(correlation)),
@@ -252,19 +334,24 @@ def main() -> None:
     block_gdf = load_block_geometries(shp_path)
     joined_gdf = build_joined_geography(block_features, correlation, block_gdf)
     crosswalk = build_crosswalk(joined_gdf)
+    centroids = build_centroid_table(joined_gdf)
     adjacency = build_touching_edge_list(
         joined_gdf,
         id_column="GEOID10",
         neighbor_column="neighbor_GEOID10",
     )
+    network_tables, network_summary = build_network_artifacts(centroids, adjacency)
     summary = save_outputs(
         paths,
         panel,
         block_features,
         preperiod_features,
         crosswalk,
+        centroids,
         joined_gdf,
         adjacency,
+        network_tables,
+        network_summary,
         correlation,
     )
 

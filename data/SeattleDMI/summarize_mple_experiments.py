@@ -14,6 +14,9 @@ import argparse
 import csv
 from pathlib import Path
 
+import pandas as pd
+from omegaconf import OmegaConf
+
 
 OUTCOME_LABELS = {
     "i_drugs_gt_0_pm1": "Drug crime indicator: at least one drug crime vs zero drug crimes",
@@ -81,6 +84,34 @@ def load_summary_rows(summary_path: Path) -> dict[str, float]:
     return values
 
 
+def load_binary_summary(summary_path: Path) -> dict[str, object]:
+    """Load one per-experiment binary summary if it was written by the runner."""
+    if not summary_path.exists():
+        return {}
+    table = pd.read_csv(summary_path)
+    values: dict[str, object] = {}
+    for _, row in table.iterrows():
+        prefix = str(row["variable"])
+        values[f"{prefix}_rule"] = row["rule"]
+        for column in ["positive_share", "variance", "transition_rate", "time_periods", "blocks"]:
+            values[f"{prefix}_{column}"] = row[column]
+    return values
+
+
+def load_manifest_row(experiment_dir: Path) -> dict[str, object]:
+    """Load one manifest row from the experiment-group manifest when available."""
+    manifest_path = experiment_dir.parent / "manifest.csv"
+    if not manifest_path.exists():
+        return {}
+    manifest = pd.read_csv(manifest_path)
+    if "experiment_name" not in manifest.columns:
+        return {}
+    matches = manifest.loc[manifest["experiment_name"] == experiment_dir.name]
+    if matches.empty:
+        return {}
+    return matches.iloc[-1].to_dict()
+
+
 def readable_outcome_label(outcome: str) -> str:
     """Return a report-friendly English label for one outcome code."""
     return OUTCOME_LABELS.get(outcome, outcome.replace("_", " "))
@@ -104,7 +135,7 @@ def readable_interaction_label(network: str) -> str:
 def collect_experiment_rows(experiments_root: Path) -> list[dict[str, float | str]]:
     """Collect one flat experiment-summary row per SeattleDMI experiment folder."""
     all_keys: set[str] = set()
-    raw_rows: list[tuple[str, str, str, str, dict[str, float]]] = []
+    raw_rows: list[tuple[Path, str, str, str, str, dict[str, float]]] = []
 
     summary_paths = sorted(experiments_root.rglob("mple_summary.csv"))
     for summary_path in summary_paths:
@@ -116,14 +147,17 @@ def collect_experiment_rows(experiments_root: Path) -> list[dict[str, float | st
         all_keys.update(values.keys())
         relative_parts = experiment_dir.relative_to(experiments_root).parts
         experiment_group = relative_parts[0] if len(relative_parts) > 1 else ""
-        raw_rows.append((experiment_dir.name, experiment_group, outcome, network, values))
+        raw_rows.append((experiment_dir, experiment_dir.name, experiment_group, outcome, network, values))
 
     ordered_keys = sorted(
         key for key in all_keys if key != "final_loss"
     ) + (["final_loss"] if "final_loss" in all_keys else [])
 
     rows: list[dict[str, float | str]] = []
-    for experiment_name, experiment_group, outcome, network, values in raw_rows:
+    for experiment_dir, experiment_name, experiment_group, outcome, network, values in raw_rows:
+        metadata_path = experiment_dir / "experiment_metadata.yaml"
+        metadata = OmegaConf.load(metadata_path) if metadata_path.exists() else OmegaConf.create({})
+        manifest_row = load_manifest_row(experiment_dir)
         row: dict[str, float | str] = {
             "experiment_name": experiment_name,
             "experiment_group": experiment_group,
@@ -134,7 +168,15 @@ def collect_experiment_rows(experiments_root: Path) -> list[dict[str, float | st
             "network_code": network,
             "network_label": readable_network_label(network),
             "interaction_matrix_label": readable_interaction_label(network),
+            "field_basis_mode": metadata.get("field_basis_mode", ""),
+            "fit_intervention_model": metadata.get("fit_intervention_model", manifest_row.get("fit_intervention_model", "")),
+            "tau_zero_mean": metadata.get("tau_zero_mean", manifest_row.get("tau_zero_mean", "")),
+            "tau_smoothness_lambda": metadata.get("tau_smoothness_lambda", manifest_row.get("tau_smoothness_lambda", "")),
+            "node_count": metadata.get("node_count", manifest_row.get("node_count", "")),
+            "time_steps": metadata.get("time_steps", manifest_row.get("time_steps", "")),
+            "pre_intervention_steps": metadata.get("pre_intervention_steps", manifest_row.get("pre_intervention_steps", "")),
         }
+        row.update(load_binary_summary(experiment_dir / "binary_definition_summary.csv"))
         for key in ordered_keys:
             row[key] = values.get(key, "")
         rows.append(row)

@@ -113,6 +113,9 @@ That means the geometry join is complete, and the neighborhood crosswalk is effe
   - one row per block
   - non-spatial join table linking block IDs to tract/block-group identifiers, Seattle neighborhood metadata, and centroid coordinates
   - includes `has_neighborhood_match`
+- `processed/seattledmi_block_centroids.csv`
+  - one row per block
+  - cached projected centroid coordinates used directly by the Seattle experiment runner
 - `processed/seattledmi_blocks.gpkg`
   - GeoPackage with one geometry row per SeattleDMI block
   - contains the joined geometry plus static features and neighborhood metadata
@@ -120,6 +123,14 @@ That means the geometry join is complete, and the neighborhood crosswalk is effe
 - `processed/seattledmi_block_adjacency.csv.gz`
   - undirected edge list for a known network over SeattleDMI blocks
   - built using queen contiguity: two blocks share an edge if their polygons touch at any boundary point
+- `processed/seattledmi_block_knn_8_adjacency.csv.gz`
+- `processed/seattledmi_block_knn_16_adjacency.csv.gz`
+  - cached undirected k-nearest-neighbor edge lists built from projected centroids
+- `processed/seattledmi_block_distance_kernel_8_adjacency.csv.gz`
+- `processed/seattledmi_block_distance_kernel_16_adjacency.csv.gz`
+  - cached weighted centroid-distance-kernel edge lists on the same nearest-neighbor supports
+- `processed/seattledmi_network_summary.csv`
+  - node, edge, and connected-component counts for every saved Seattle network
 - `processed/seattledmi_blocks_missing_correlation.csv`
   - the blocks that failed to match the neighborhood workbook
 - `processed/processing_summary.json`
@@ -135,11 +146,9 @@ The known network saved here is a geographic contiguity network over the Seattle
 
 This is a natural starting point for a known interaction graph because it depends only on public geography, not on outcomes.
 
-If you want a different known network, the saved geometry file also supports alternatives such as:
-
-- centroid-distance kernels
-- k-nearest-neighbor graphs
-- tract-restricted or neighborhood-restricted adjacency
+The preprocessing step now writes the default contiguity, k-nearest-neighbor,
+and centroid-distance-kernel edge lists up front, so the experiment runner can
+reuse them directly instead of rebuilding them for every launch.
 
 ## Reproducibility
 
@@ -154,7 +163,9 @@ Run it from the repo root with:
 pixi run python data/SeattleDMI/prepare_seattledmi.py
 ```
 
-It downloads the raw files if needed, extracts them, rebuilds the processed tables, and rewrites the GeoPackage and adjacency edge list.
+It downloads the raw files if needed, extracts them, rebuilds the processed
+tables, and rewrites the GeoPackage, centroid table, and cached Seattle network
+edge lists.
 
 To rebuild the binary outcome files and threshold diagnostics:
 
@@ -201,6 +212,8 @@ Each experiment folder contains:
 
 - `panel_data.npz`
   - the observed `x` and `z` panel arrays in the same format used by `mple.py`
+- `panel_data.csv.gz`
+  - human-readable block-quarter panel for the chosen binary outcome and the observed intervention
 - `x_0.npy`, `z_0.npy`
   - quarter-1 initial conditions
 - `gamma_matrix_sparse.npz`
@@ -211,12 +224,17 @@ Each experiment folder contains:
   - observed, infinity-normalized field templates
 - `field_basis_names.npy`
 - `interaction_basis_names.npy`
+- `adjacency_edge_list.csv.gz`
+  - the saved edge list actually used for the chosen Seattle network
 - `node_index.csv`
   - mapping from node index back to `GEOID10` and neighborhood metadata
 - `time_index.csv`
   - mapping from model time index back to original SeattleDMI quarter
 - `realized_config.yaml`
 - `experiment_metadata.yaml`
+- `binary_definition_summary.csv`
+- `binary_definition_summary.md`
+  - positive-share and transition-rate diagnostics for the saved outcome and intervention binaries
 
 ### Current Field Basis
 
@@ -275,10 +293,10 @@ All network variants are symmetrized, have zero diagonal, and are normalized to 
   - built from the saved queen-contiguity edge list in `processed/seattledmi_block_adjacency.csv.gz`
   - two blocks are adjacent when their polygons touch
 - `knn_8` and `knn_16`
-  - built from projected block-centroid coordinates
+  - loaded from the cached projected-centroid edge lists in `processed/seattledmi_block_knn_*.csv.gz`
   - each block is connected to its `k` nearest neighbors, then the graph is symmetrized
 - `centroid_distance_kernel_8` and `centroid_distance_kernel_16`
-  - built from projected block-centroid coordinates
+  - loaded from the cached projected-centroid kernel edge lists in `processed/seattledmi_block_distance_kernel_*.csv.gz`
   - edge weights are `exp(-distance / median_distance)`
   - the kernel is truncated to the `k` nearest neighbors for scalability, then symmetrized
 
@@ -286,17 +304,23 @@ All network variants are symmetrized, have zero diagonal, and are normalized to 
 
 For one chosen outcome column and one chosen network:
 
-1. The script loads `processed/seattledmi_binary_outcomes.csv.gz` and `processed/seattledmi_blocks.gpkg`.
+1. The script loads `processed/seattledmi_binary_outcomes.csv.gz`, `processed/seattledmi_block_features.csv`, `processed/seattledmi_block_crosswalk.csv`, and `processed/seattledmi_block_centroids.csv`.
 2. Blocks are sorted by `GEOID10` to create a fixed node ordering.
 3. The selected binary outcome becomes the `x` panel.
 4. `Intervention` is converted from `{0,1}` to `{-1,+1}` to create the `z` panel, where `-1` means no intervention and `+1` means intervention.
 5. Quarter `1` is saved separately as `x_0.npy` and `z_0.npy`.
 6. Quarters `2` through `16` are saved in `panel_data.npz` as the fitted panel.
 7. The pre-intervention cutoff `s` is computed from the first quarter in which any block receives treatment.
-8. The selected known network is built and normalized.
+8. The selected known network edge list is loaded from the processed cache and normalized.
 9. The static field basis is built and normalized, or reduced to an empty basis if
    `--field_basis_mode zero` is used.
 10. The folder is written under `experiments/SeattleDMI/<mode>/<outcome>__<network>/`.
+
+The runner also supports the same optional `tau` controls used in the other
+real-data pipelines:
+
+- `--tau_zero_mean`
+- `--tau_smoothness_lambda <float>`
 
 ### How MPLE Uses The Folder
 
@@ -319,6 +343,7 @@ experiment tree. If you point it at `experiments/SeattleDMI`, it writes:
   - `experiments/SeattleDMI/static/reports/`
   - `experiments/SeattleDMI/outcome_only/reports/`
   - `experiments/SeattleDMI/zero_basis/reports/`
+  - `experiments/SeattleDMI/outcome_only_zero_basis/reports/`
 
 By default, the report contains all experiment rows found under the Seattle root.
 If you want a single custom output location, you can still pass `--output_csv`
@@ -334,6 +359,12 @@ To build them and immediately fit MPLE:
 
 ```bash
 pixi run python data/SeattleDMI/run_mple_pipeline.py --run_mple
+```
+
+To write the combined Seattle CSV and Markdown reports:
+
+```bash
+pixi run python data/SeattleDMI/summarize_mple_experiments.py
 ```
 
 For a small smoke test:

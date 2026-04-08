@@ -14,7 +14,7 @@ estimation_params:
 real_data_params:
   source: COVIDSchoolDataHub
   state: Ohio
-  outcome_column: case_rate_per100k_zip_le_12p5_pm1
+  outcome_column: case_rate_per100k_zip_gt_12p5_pm1
   outcome_threshold: 12.5
   outcome_rule: case_rate_per100k_zip > 12.5
   intervention_rule: LearningModel == In-person

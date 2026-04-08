@@ -27,6 +27,44 @@ from model_utils import (
 )
 
 
+def _center_tau(tau: np.ndarray) -> np.ndarray:
+    """Project tau onto the zero-mean subspace."""
+    tau = np.asarray(tau, dtype=float)
+    if tau.size == 0:
+        return tau
+    return tau - tau.mean()
+
+
+def _smoothness_penalty_and_grad(tau: np.ndarray, penalty_lambda: float) -> tuple[float, np.ndarray]:
+    """Return a first-difference quadratic penalty and its gradient."""
+    tau = np.asarray(tau, dtype=float)
+    grad = np.zeros_like(tau)
+    if tau.size <= 1 or penalty_lambda <= 0.0:
+        return 0.0, grad
+    diffs = np.diff(tau)
+    penalty = float(penalty_lambda * np.sum(diffs ** 2))
+    grad[0] = -2.0 * penalty_lambda * diffs[0]
+    grad[-1] = 2.0 * penalty_lambda * diffs[-1]
+    if tau.size > 2:
+        grad[1:-1] = 2.0 * penalty_lambda * (diffs[:-1] - diffs[1:])
+    return penalty, grad
+
+
+def _canonicalize_theta(
+    theta: np.ndarray,
+    n_field: int,
+    t_steps: int,
+    tau_zero_mean: bool,
+) -> np.ndarray:
+    """Map raw optimizer parameters to the constrained tau representation used by the model."""
+    theta = np.asarray(theta, dtype=float).copy()
+    if not tau_zero_mean or t_steps <= 0:
+        return theta
+    tau_slice = slice(n_field, n_field + t_steps)
+    theta[tau_slice] = _center_tau(theta[tau_slice])
+    return theta
+
+
 def setup_logger(log_file):
     """Configure a logger that writes to both console and file."""
     logger = logging.getLogger(log_file)
@@ -142,6 +180,8 @@ def pseudo_nll(
     field_basis,
     interaction_features_x,
     fit_intervention_model=True,
+    tau_zero_mean=False,
+    tau_smoothness_lambda=0.0,
 ):
     """Compute the conditional-model pseudo-NLL and its analytic gradient."""
     t_steps = x.shape[0]
@@ -154,6 +194,8 @@ def pseudo_nll(
         t_steps,
         fit_intervention_model,
     )
+    if tau_zero_mean:
+        tau = _center_tau(tau)
 
     prev_x = np.vstack([x_0, x[:-1, :]])
     prev_z = np.vstack([z_0, z[:-1, :]])
@@ -184,9 +226,15 @@ def pseudo_nll(
         zeta_grad = 0.0
         psi_grad = 0.0
 
+    tau_penalty, tau_penalty_grad = _smoothness_penalty_and_grad(tau, float(tau_smoothness_lambda))
+    total_loss += tau_penalty / total_size
+    tau_grad = res_x.sum(axis=1) + tau_penalty_grad
+    if tau_zero_mean and tau_grad.size:
+        tau_grad = tau_grad - tau_grad.mean()
+
     grad = _pack_gradient(
         field_grad=field_basis @ res_x.sum(axis=0),
-        tau_grad=res_x.sum(axis=1),
+        tau_grad=tau_grad,
         beta_grad=(res_x * z).sum(),
         interaction_grad=np.einsum(
             "tn,ktn->k", res_x, interaction_features_x, optimize=True
@@ -217,12 +265,15 @@ def fit_mple(
     logger=None,
     theta_init=None,
     fit_intervention_model=True,
+    tau_zero_mean=False,
+    tau_smoothness_lambda=0.0,
 ):
     """Optimize the conditional pseudo-likelihood with L-BFGS-B and track the loss history."""
     if x.ndim != 2:
         raise ValueError("x must be a 2D array with shape (T, N).")
     t_steps, n_nodes = x.shape
     assert z.shape == (t_steps, n_nodes), "z must have the same shape as x."
+    n_field = field_basis.shape[0]
 
     rng = np.random.default_rng(seed)
     theta_init = (
@@ -230,26 +281,35 @@ def fit_mple(
         if theta_init is None
         else np.asarray(theta_init, dtype=float)
     )
+    theta_init = _canonicalize_theta(theta_init, n_field=n_field, t_steps=t_steps, tau_zero_mean=tau_zero_mean)
 
     history = []
     eval_count = [0]
 
     def objective(theta):
         """Wrap the objective so scipy receives both loss and gradient."""
+        constrained_theta = _canonicalize_theta(
+            theta,
+            n_field=n_field,
+            t_steps=t_steps,
+            tau_zero_mean=tau_zero_mean,
+        )
         loss, grad = pseudo_nll(
             x,
             z,
-            theta,
+            constrained_theta,
             x_0,
             z_0,
             s,
             field_basis=field_basis,
             interaction_features_x=interaction_features_x,
             fit_intervention_model=fit_intervention_model,
+            tau_zero_mean=tau_zero_mean,
+            tau_smoothness_lambda=tau_smoothness_lambda,
         )
         history.append(loss)
         if verbose_every and eval_count[0] % verbose_every == 0:
-            params_str = summarize_theta_for_logging(param_names, theta)
+            params_str = summarize_theta_for_logging(param_names, constrained_theta)
             if logger is not None:
                 logger.info("Eval %s  |  Loss: %.6f", eval_count[0], loss)
                 logger.info(params_str)
@@ -267,7 +327,13 @@ def fit_mple(
         options={"maxiter": steps, "ftol": tol, "gtol": tol},
     )
 
-    return result.x, history, result
+    constrained_result = _canonicalize_theta(
+        result.x,
+        n_field=n_field,
+        t_steps=t_steps,
+        tau_zero_mean=tau_zero_mean,
+    )
+    return constrained_result, history, result
 
 
 def _fmt(value):
@@ -513,6 +579,12 @@ if __name__ == "__main__":
     logger.info("Loading data...")
     config = OmegaConf.load(f"{args.data_folder}/realized_config.yaml")
     fit_intervention_model = intervention_model_enabled(config) and not args.outcome_only
+    tau_zero_mean = bool(config.estimation_params.get("tau_zero_mean", False)) if "estimation_params" in config else False
+    tau_smoothness_lambda = (
+        float(config.estimation_params.get("tau_smoothness_lambda", 0.0))
+        if "estimation_params" in config
+        else 0.0
+    )
     metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
     metadata = OmegaConf.load(metadata_path) if metadata_path.exists() else OmegaConf.create({})
     has_truth = bool(metadata.get("has_truth", True))
@@ -548,6 +620,8 @@ if __name__ == "__main__":
         "Intervention-process model enabled: %s",
         fit_intervention_model,
     )
+    logger.info("Tau zero-mean enabled: %s", tau_zero_mean)
+    logger.info("Tau smoothness lambda: %.6f", tau_smoothness_lambda)
 
     logger.info("Running conditional-model MPLE on x with shape=%s", x.shape)
     params_hat, loss_history, result = fit_mple(
@@ -564,6 +638,8 @@ if __name__ == "__main__":
         seed=args.seed,
         logger=logger,
         fit_intervention_model=fit_intervention_model,
+        tau_zero_mean=tau_zero_mean,
+        tau_smoothness_lambda=tau_smoothness_lambda,
     )
 
     logger.info("Done fitting.")

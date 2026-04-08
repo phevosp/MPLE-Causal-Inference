@@ -1,0 +1,94 @@
+2026-04-07 13:36:40 | INFO | Loading data...
+2026-04-07 13:36:40 | INFO | Loaded 6 field templates and 1 interaction templates.
+2026-04-07 13:36:40 | INFO | Intervention-process model enabled: True
+2026-04-07 13:36:40 | INFO | Tau zero-mean enabled: False
+2026-04-07 13:36:40 | INFO | Tau smoothness lambda: 0.000000
+2026-04-07 13:36:40 | INFO | Running conditional-model MPLE on x with shape=(69, 3135)
+2026-04-07 13:36:40 | INFO | Eval 0  |  Loss: 0.594725
+2026-04-07 13:36:40 | INFO |   field::log_population: +0.0126,  field::median_household_income: -0.0132,  field::poverty_rate: +0.0640,  field::pct_black: +0.0105,  field::pct_hispanic: -0.0536,  field::pct_in_labor_force: +0.0362,  tau block: mean=+0.0117, std=0.0982, min=-0.2325, max=+0.1960,  beta: -0.1320,  interaction::contiguity: -0.0662,  eta: +0.0935,  zeta: +0.0049,  psi: +0.2002
+2026-04-07 13:36:43 | INFO | Done fitting.
+2026-04-07 13:36:43 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-07 13:36:43 | INFO | Final Loss: 0.156839
+2026-04-07 13:36:43 | INFO | Estimated Parameters:
+2026-04-07 13:36:43 | INFO |   field::log_population: 0.1613
+2026-04-07 13:36:43 | INFO |   field::median_household_income: -0.2512
+2026-04-07 13:36:43 | INFO |   field::poverty_rate: -0.0415
+2026-04-07 13:36:43 | INFO |   field::pct_black: -0.1893
+2026-04-07 13:36:43 | INFO |   field::pct_hispanic: -0.0886
+2026-04-07 13:36:43 | INFO |   field::pct_in_labor_force: 0.0712
+2026-04-07 13:36:43 | INFO |   tau::t_0: -0.1477
+2026-04-07 13:36:43 | INFO |   tau::t_1: -0.1960
+2026-04-07 13:36:43 | INFO |   tau::t_2: -0.2287
+2026-04-07 13:36:43 | INFO |   tau::t_3: -0.2499
+2026-04-07 13:36:43 | INFO |   tau::t_4: -0.3832
+2026-04-07 13:36:43 | INFO |   tau::t_5: -0.0026
+2026-04-07 13:36:43 | INFO |   tau::t_6: -0.2443
+2026-04-07 13:36:43 | INFO |   tau::t_7: -0.0536
+2026-04-07 13:36:43 | INFO |   tau::t_8: -0.1331
+2026-04-07 13:36:43 | INFO |   tau::t_9: -0.0607
+2026-04-07 13:36:43 | INFO |   tau::t_10: -0.1493
+2026-04-07 13:36:43 | INFO |   tau::t_11: -0.0437
+2026-04-07 13:36:43 | INFO |   tau::t_12: -0.1060
+2026-04-07 13:36:43 | INFO |   tau::t_13: -0.2603
+2026-04-07 13:36:43 | INFO |   tau::t_14: -0.2605
+2026-04-07 13:36:43 | INFO |   tau::t_15: -0.3673
+2026-04-07 13:36:43 | INFO |   tau::t_16: -0.3967
+2026-04-07 13:36:43 | INFO |   tau::t_17: -0.5741
+2026-04-07 13:36:43 | INFO |   tau::t_18: -0.5301
+2026-04-07 13:36:43 | INFO |   tau::t_19: -0.7887
+2026-04-07 13:36:43 | INFO |   tau::t_20: -0.5119
+2026-04-07 13:36:43 | INFO |   tau::t_21: -0.6857
+2026-04-07 13:36:43 | INFO |   tau::t_22: -0.6082
+2026-04-07 13:36:43 | INFO |   tau::t_23: -0.5773
+2026-04-07 13:36:43 | INFO |   tau::t_24: -0.3088
+2026-04-07 13:36:43 | INFO |   tau::t_25: -0.2051
+2026-04-07 13:36:43 | INFO |   tau::t_26: 0.0618
+2026-04-07 13:36:43 | INFO |   tau::t_27: 0.2301
+2026-04-07 13:36:43 | INFO |   tau::t_28: 0.2234
+2026-04-07 13:36:43 | INFO |   tau::t_29: 0.2508
+2026-04-07 13:36:43 | INFO |   tau::t_30: 0.2178
+2026-04-07 13:36:43 | INFO |   tau::t_31: 0.2031
+2026-04-07 13:36:43 | INFO |   tau::t_32: 0.1798
+2026-04-07 13:36:43 | INFO |   tau::t_33: 0.0167
+2026-04-07 13:36:43 | INFO |   tau::t_34: 0.1586
+2026-04-07 13:36:43 | INFO |   tau::t_35: -0.0917
+2026-04-07 13:36:43 | INFO |   tau::t_36: -0.1147
+2026-04-07 13:36:43 | INFO |   tau::t_37: -0.1395
+2026-04-07 13:36:43 | INFO |   tau::t_38: -0.1741
+2026-04-07 13:36:43 | INFO |   tau::t_39: -0.2103
+2026-04-07 13:36:43 | INFO |   tau::t_40: -0.0245
+2026-04-07 13:36:43 | INFO |   tau::t_41: -0.0444
+2026-04-07 13:36:43 | INFO |   tau::t_42: 0.0388
+2026-04-07 13:36:43 | INFO |   tau::t_43: 0.0889
+2026-04-07 13:36:43 | INFO |   tau::t_44: -0.3280
+2026-04-07 13:36:43 | INFO |   tau::t_45: 0.3490
+2026-04-07 13:36:43 | INFO |   tau::t_46: -0.0022
+2026-04-07 13:36:43 | INFO |   tau::t_47: -0.0398
+2026-04-07 13:36:43 | INFO |   tau::t_48: -0.0369
+2026-04-07 13:36:43 | INFO |   tau::t_49: 0.5216
+2026-04-07 13:36:43 | INFO |   tau::t_50: 0.8731
+2026-04-07 13:36:43 | INFO |   tau::t_51: 0.9512
+2026-04-07 13:36:43 | INFO |   tau::t_52: 1.2448
+2026-04-07 13:36:43 | INFO |   tau::t_53: 1.3063
+2026-04-07 13:36:43 | INFO |   tau::t_54: 0.3911
+2026-04-07 13:36:43 | INFO |   tau::t_55: -0.2103
+2026-04-07 13:36:43 | INFO |   tau::t_56: -0.3639
+2026-04-07 13:36:43 | INFO |   tau::t_57: -0.4275
+2026-04-07 13:36:43 | INFO |   tau::t_58: -0.2535
+2026-04-07 13:36:43 | INFO |   tau::t_59: -0.2279
+2026-04-07 13:36:43 | INFO |   tau::t_60: -0.2385
+2026-04-07 13:36:43 | INFO |   tau::t_61: -0.3559
+2026-04-07 13:36:43 | INFO |   tau::t_62: -0.4064
+2026-04-07 13:36:43 | INFO |   tau::t_63: -0.3497
+2026-04-07 13:36:43 | INFO |   tau::t_64: -0.1972
+2026-04-07 13:36:43 | INFO |   tau::t_65: -0.1238
+2026-04-07 13:36:43 | INFO |   tau::t_66: -0.1493
+2026-04-07 13:36:43 | INFO |   tau::t_67: 0.0044
+2026-04-07 13:36:43 | INFO |   tau::t_68: -0.0240
+2026-04-07 13:36:43 | INFO |   beta: -0.0150
+2026-04-07 13:36:43 | INFO |   interaction::contiguity: 2.5953
+2026-04-07 13:36:43 | INFO |   eta: 0.5516
+2026-04-07 13:36:43 | INFO |   zeta: 0.0066
+2026-04-07 13:36:43 | INFO |   psi: 2.0921
+2026-04-07 13:36:43 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\USCountyVaccination_US_tau_unrestricted\outcome_case_rate_100k_ge_200__intervention_partial_cov_ge_40__lag_1w__contiguity\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\USCountyVaccination_US_tau_unrestricted\outcome_case_rate_100k_ge_200__intervention_partial_cov_ge_40__lag_1w__contiguity\mple_summary.md
+2026-04-07 13:36:43 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\USCountyVaccination_US_tau_unrestricted\outcome_case_rate_100k_ge_200__intervention_partial_cov_ge_40__lag_1w__contiguity\mple.log

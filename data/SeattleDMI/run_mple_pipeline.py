@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import subprocess
 import sys
 import shutil
 from pathlib import Path
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
 from scipy import sparse
-from scipy.spatial import cKDTree
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -66,29 +63,43 @@ def outcome_base_name(outcome_column: str) -> str:
     return outcome_column.split("_gt_", 1)[0]
 
 
-def load_inputs(processed_dir: Path) -> tuple[pd.DataFrame, gpd.GeoDataFrame]:
+def load_inputs(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load the processed SeattleDMI tables needed for real-data MPLE experiments."""
     binary_outcomes_path = processed_dir / "seattledmi_binary_outcomes.csv.gz"
-    if not binary_outcomes_path.exists():
-        raise FileNotFoundError(
-            f"Could not find {binary_outcomes_path.name} in {processed_dir}."
-        )
+    block_features_path = processed_dir / "seattledmi_block_features.csv"
+    crosswalk_path = processed_dir / "seattledmi_block_crosswalk.csv"
+    centroids_path = processed_dir / "seattledmi_block_centroids.csv"
+    required = [binary_outcomes_path, block_features_path, crosswalk_path, centroids_path]
+    missing = [path.name for path in required if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"Could not find {', '.join(missing)} in {processed_dir}.")
     binary_outcomes = pd.read_csv(binary_outcomes_path, dtype={"GEOID10": str})
-    blocks = gpd.read_file(processed_dir / "seattledmi_blocks.gpkg", layer="blocks")
-    blocks["GEOID10"] = blocks["GEOID10"].astype(str).str.zfill(15)
-    return binary_outcomes, blocks
+    block_features = pd.read_csv(block_features_path, dtype={"GEOID10": str})
+    crosswalk = pd.read_csv(crosswalk_path, dtype={"GEOID10": str})
+    centroids = pd.read_csv(centroids_path, dtype={"GEOID10": str})
+    return binary_outcomes, block_features, crosswalk, centroids
 
 
-def build_node_table(blocks: gpd.GeoDataFrame) -> pd.DataFrame:
+def build_node_table(
+    block_features: pd.DataFrame,
+    crosswalk: pd.DataFrame,
+    centroids: pd.DataFrame,
+) -> pd.DataFrame:
     """Create the canonical node ordering and projected centroid coordinates."""
-    projected = blocks.to_crs(2285).copy()
-    centroids = projected.geometry.centroid
-    node_table = projected.drop(columns="geometry").copy()
-    node_table["centroid_x"] = centroids.x
-    node_table["centroid_y"] = centroids.y
+    node_table = block_features.merge(
+        crosswalk[["GEOID10", "NEIGHBORHOOD_DISTRICT_NAME"]],
+        on="GEOID10",
+        how="left",
+        validate="one_to_one",
+    ).merge(
+        centroids,
+        on="GEOID10",
+        how="left",
+        validate="one_to_one",
+    )
     node_table = node_table.sort_values("GEOID10").reset_index(drop=True)
     node_table["node_index"] = np.arange(len(node_table), dtype=int)
-    return pd.DataFrame(node_table)
+    return node_table
 
 
 def build_panel_arrays(
@@ -129,57 +140,56 @@ def build_panel_arrays(
     return x, z, x_0, z_0, times, s
 
 
-def build_contiguity_network(
-    processed_dir: Path,
+def build_saved_panel(binary_outcomes: pd.DataFrame, outcome_column: str) -> pd.DataFrame:
+    """Build the human-readable Seattle panel table saved alongside each experiment."""
+    panel = binary_outcomes[["GEOID10", "time", outcome_column, "Intervention"]].copy()
+    panel["Outcome_pm1"] = panel[outcome_column].astype(np.int8)
+    panel["Intervention_pm1"] = panel["Intervention"].map({0: -1, 1: 1}).astype(np.int8)
+    return panel.sort_values(["time", "GEOID10"]).reset_index(drop=True)
+
+
+def compute_binary_summary(binary_outcomes: pd.DataFrame, outcome_column: str) -> pd.DataFrame:
+    """Compute binary share and transition diagnostics for one Seattle outcome/intervention pair."""
+    ordered = binary_outcomes.sort_values(["GEOID10", "time"]).copy()
+    ordered["Outcome_pm1"] = ordered[outcome_column].astype(np.int8)
+    ordered["Intervention_pm1"] = ordered["Intervention"].map({0: -1, 1: 1}).astype(np.int8)
+    summary_rows: list[dict[str, object]] = []
+    for variable, column, rule in [
+        ("outcome", "Outcome_pm1", outcome_column),
+        ("intervention", "Intervention_pm1", "Intervention == 1"),
+    ]:
+        ordered["prev"] = ordered.groupby("GEOID10", sort=False)[column].shift(1)
+        valid = ordered[column].notna() & ordered["prev"].notna()
+        summary_rows.append(
+            {
+                "variable": variable,
+                "rule": rule,
+                "positive_share": float(ordered[column].eq(1).mean()),
+                "variance": float(ordered[column].var(ddof=0)),
+                "transition_rate": float((ordered.loc[valid, column] != ordered.loc[valid, "prev"]).mean()) if valid.any() else float("nan"),
+                "time_periods": int(ordered["time"].nunique()),
+                "blocks": int(ordered["GEOID10"].nunique()),
+            }
+        )
+    return pd.DataFrame(summary_rows)
+
+
+def build_network_from_edge_table(
+    edges: pd.DataFrame,
     node_lookup: dict[str, int],
     n_nodes: int,
 ) -> sparse.csr_matrix:
-    """Load the saved queen-contiguity edge list into a normalized sparse matrix."""
-    edges = pd.read_csv(
-        processed_dir / "seattledmi_block_adjacency.csv.gz",
-        dtype={"GEOID10": str, "neighbor_GEOID10": str},
-    )
+    """Convert one saved Seattle edge list into a normalized sparse matrix."""
     rows = edges["GEOID10"].map(node_lookup).to_numpy()
     cols = edges["neighbor_GEOID10"].map(node_lookup).to_numpy()
-    data = np.ones(len(edges), dtype=float)
+    valid = pd.notna(rows) & pd.notna(cols)
+    rows = rows[valid].astype(int)
+    cols = cols[valid].astype(int)
+    if "weight" in edges.columns:
+        data = pd.to_numeric(edges.loc[valid, "weight"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    else:
+        data = np.ones(len(rows), dtype=float)
     matrix = sparse.coo_matrix((data, (rows, cols)), shape=(n_nodes, n_nodes)).tocsr()
-    matrix = matrix + matrix.T
-    matrix.setdiag(0.0)
-    matrix.eliminate_zeros()
-    return normalize_sparse_matrix_infinity(matrix)
-
-
-def build_knn_network(
-    coords: np.ndarray,
-    k: int,
-) -> sparse.csr_matrix:
-    """Construct a symmetric k-nearest-neighbor graph from projected centroids."""
-    tree = cKDTree(coords)
-    _, neighbor_idx = tree.query(coords, k=min(k + 1, len(coords)))
-    rows = np.repeat(np.arange(len(coords)), neighbor_idx.shape[1] - 1)
-    cols = neighbor_idx[:, 1:].reshape(-1)
-    data = np.ones(len(rows), dtype=float)
-    matrix = sparse.coo_matrix((data, (rows, cols)), shape=(len(coords), len(coords))).tocsr()
-    matrix = matrix.maximum(matrix.T)
-    matrix.setdiag(0.0)
-    matrix.eliminate_zeros()
-    return normalize_sparse_matrix_infinity(matrix)
-
-
-def build_distance_kernel_network(
-    coords: np.ndarray,
-    k: int,
-) -> sparse.csr_matrix:
-    """Construct a sparse centroid-distance kernel restricted to k nearest neighbors."""
-    tree = cKDTree(coords)
-    distances, neighbor_idx = tree.query(coords, k=min(k + 1, len(coords)))
-    neighbor_distances = distances[:, 1:].reshape(-1)
-    positive = neighbor_distances[neighbor_distances > 0]
-    scale = float(np.median(positive)) if positive.size else 1.0
-    weights = np.exp(-neighbor_distances / scale)
-    rows = np.repeat(np.arange(len(coords)), neighbor_idx.shape[1] - 1)
-    cols = neighbor_idx[:, 1:].reshape(-1)
-    matrix = sparse.coo_matrix((weights, (rows, cols)), shape=(len(coords), len(coords))).tocsr()
     matrix = matrix.maximum(matrix.T)
     matrix.setdiag(0.0)
     matrix.eliminate_zeros()
@@ -187,28 +197,41 @@ def build_distance_kernel_network(
 
 
 def build_networks(
-    processed_dir: Path,
     node_table: pd.DataFrame,
-    network_names: tuple[str, ...],
+    edge_tables: dict[str, pd.DataFrame],
 ) -> dict[str, sparse.csr_matrix]:
-    """Build the requested known-network variants for SeattleDMI."""
-    coords = node_table[["centroid_x", "centroid_y"]].to_numpy(dtype=float)
+    """Build the requested known-network variants for SeattleDMI from cached edge tables."""
     node_lookup = dict(zip(node_table["GEOID10"], node_table["node_index"]))
     networks: dict[str, sparse.csr_matrix] = {}
 
-    for network_name in network_names:
-        if network_name == "contiguity":
-            network = build_contiguity_network(processed_dir, node_lookup, len(node_table))
-        elif network_name.startswith("knn_"):
-            k = int(network_name.split("_", 1)[1])
-            network = build_knn_network(coords, k)
-        elif network_name.startswith("centroid_distance_kernel_"):
-            k = int(network_name.rsplit("_", 1)[1])
-            network = build_distance_kernel_network(coords, k)
-        else:
-            raise ValueError(f"Unknown network '{network_name}'.")
+    for network_name, edge_table in edge_tables.items():
+        network = build_network_from_edge_table(edge_table, node_lookup, len(node_table))
         networks[network_name] = network
     return networks
+
+
+def load_network_edge_tables(
+    processed_dir: Path,
+    network_names: tuple[str, ...],
+) -> dict[str, pd.DataFrame]:
+    """Load the requested Seattle edge lists once so they can be reused across the grid."""
+    edge_tables: dict[str, pd.DataFrame] = {}
+    edge_paths = {
+        "contiguity": processed_dir / "seattledmi_block_adjacency.csv.gz",
+        "knn_8": processed_dir / "seattledmi_block_knn_8_adjacency.csv.gz",
+        "knn_16": processed_dir / "seattledmi_block_knn_16_adjacency.csv.gz",
+        "centroid_distance_kernel_8": processed_dir / "seattledmi_block_distance_kernel_8_adjacency.csv.gz",
+        "centroid_distance_kernel_16": processed_dir / "seattledmi_block_distance_kernel_16_adjacency.csv.gz",
+    }
+    for network_name in network_names:
+        edge_path = edge_paths.get(network_name)
+        if edge_path is None:
+            raise ValueError(f"Unknown network '{network_name}'.")
+        edge_tables[network_name] = pd.read_csv(
+            edge_path,
+            dtype={"GEOID10": str, "neighbor_GEOID10": str},
+        )
+    return edge_tables
 
 
 def build_field_basis(
@@ -253,6 +276,8 @@ def build_field_basis(
         basis_vectors.append(normalized)
         basis_names.append(name)
 
+    if not basis_vectors:
+        return np.empty((0, len(node_table)), dtype=float), ()
     field_basis = np.vstack(basis_vectors)
     return field_basis, tuple(basis_names)
 
@@ -278,6 +303,8 @@ def create_config(
     field_basis_mode: str,
     network_name: str,
     outcome_column: str,
+    tau_zero_mean: bool,
+    tau_smoothness_lambda: float,
     fit_intervention_model: bool = True,
 ) -> OmegaConf:
     """Build the minimal realized config needed by mple.py for a real-data experiment."""
@@ -297,6 +324,8 @@ def create_config(
                 "zeta": 0.0,
                 "psi": 0.0,
                 "tau_params": None,
+                "tau_zero_mean": bool(tau_zero_mean),
+                "tau_smoothness_lambda": float(tau_smoothness_lambda),
             },
             "real_data_params": {
                 "source": "SeattleDMI",
@@ -339,6 +368,7 @@ def save_experiment(
     experiment_dir: Path,
     config,
     metadata: dict[str, object],
+    panel: pd.DataFrame,
     x: np.ndarray,
     z: np.ndarray,
     x_0: np.ndarray,
@@ -347,6 +377,7 @@ def save_experiment(
     field_basis_names: tuple[str, ...],
     interaction_matrix: sparse.csr_matrix,
     interaction_name: str,
+    adjacency_edges: pd.DataFrame,
     node_table: pd.DataFrame,
     times: list[int],
 ) -> None:
@@ -368,17 +399,26 @@ def save_experiment(
         np.asarray([interaction_name], dtype="<U128"),
     )
     write_index_tables(experiment_dir, node_table, times)
+    adjacency_edges.to_csv(experiment_dir / "adjacency_edge_list.csv.gz", index=False)
+    panel.to_csv(experiment_dir / "panel_data.csv.gz", index=False)
 
 
-def append_manifest_row(manifest_path: Path, row: dict[str, object]) -> None:
-    """Append one experiment entry to the manifest CSV."""
+def write_manifest(manifest_path: Path, manifest_rows: list[dict[str, object]], overwrite: bool) -> None:
+    """Merge this Seattle run's manifest rows into the output-root manifest."""
+    if not manifest_rows:
+        return
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    write_header = not manifest_path.exists()
-    with manifest_path.open("a", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
+    new_manifest = pd.DataFrame(manifest_rows)
+    if manifest_path.exists() and not overwrite:
+        existing_manifest = pd.read_csv(manifest_path)
+        if "experiment_name" in existing_manifest.columns:
+            existing_manifest = existing_manifest.loc[
+                ~existing_manifest["experiment_name"].isin(new_manifest["experiment_name"])
+            ].copy()
+        combined_manifest = pd.concat([existing_manifest, new_manifest], ignore_index=True, sort=False)
+    else:
+        combined_manifest = new_manifest
+    combined_manifest.to_csv(manifest_path, index=False)
 
 
 def experiment_has_fit_outputs(experiment_dir: Path) -> bool:
@@ -510,6 +550,17 @@ def main() -> None:
         help="Random seed passed to mple.py when --run_mple is enabled.",
     )
     parser.add_argument(
+        "--tau_zero_mean",
+        action="store_true",
+        help="Constrain the fitted tau block to have zero mean.",
+    )
+    parser.add_argument(
+        "--tau_smoothness_lambda",
+        type=float,
+        default=0.0,
+        help="Quadratic penalty weight on first differences of tau to discourage sudden jumps.",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Allow rewriting existing experiment folders.",
@@ -538,21 +589,26 @@ def main() -> None:
         if manifest_path.exists():
             manifest_path.unlink()
 
-    binary_outcomes, blocks = load_inputs(processed_dir)
-    node_table = build_node_table(blocks)
+    binary_outcomes, block_features, crosswalk, centroids = load_inputs(processed_dir)
+    node_table = build_node_table(block_features, crosswalk, centroids)
     node_order = node_table["GEOID10"].tolist()
 
-    networks = build_networks(processed_dir, node_table, tuple(args.networks))
+    network_edge_tables = load_network_edge_tables(processed_dir, tuple(args.networks))
+    networks = build_networks(node_table, network_edge_tables)
+    field_basis, field_basis_names = build_field_basis(node_table, args.field_basis_mode)
     experiment_count = 0
+    manifest_rows: list[dict[str, object]] = []
 
     for outcome_column in args.outcomes:
         if outcome_column not in binary_outcomes.columns:
             raise ValueError(f"Unknown outcome column '{outcome_column}'.")
 
         x, z, x_0, z_0, times, s = build_panel_arrays(binary_outcomes, outcome_column, node_order)
-        field_basis, field_basis_names = build_field_basis(node_table, args.field_basis_mode)
+        saved_panel = build_saved_panel(binary_outcomes, outcome_column)
+        binary_summary = compute_binary_summary(binary_outcomes, outcome_column)
 
         for network_name, gamma_matrix in networks.items():
+            adjacency_edges = network_edge_tables[network_name]
             validate_basis_infinity_norms(field_basis, gamma_matrix)
             experiment_name = f"{outcome_column}__{network_name}"
             experiment_dir = output_root / experiment_name
@@ -565,6 +621,8 @@ def main() -> None:
                 field_basis_mode=args.field_basis_mode,
                 network_name=network_name,
                 outcome_column=outcome_column,
+                tau_zero_mean=args.tau_zero_mean,
+                tau_smoothness_lambda=args.tau_smoothness_lambda,
                 fit_intervention_model=not args.outcome_only,
             )
             metadata = {
@@ -579,6 +637,8 @@ def main() -> None:
                 "network_name": network_name,
                 "field_basis_mode": args.field_basis_mode,
                 "field_basis_names": list(field_basis_names),
+                "tau_zero_mean": bool(args.tau_zero_mean),
+                "tau_smoothness_lambda": float(args.tau_smoothness_lambda),
                 "node_count": int(x.shape[1]),
                 "time_steps": int(x.shape[0]),
                 "pre_intervention_steps": int(s),
@@ -594,6 +654,9 @@ def main() -> None:
                 "node_count": int(x.shape[1]),
                 "time_steps": int(x.shape[0]),
                 "pre_intervention_steps": int(s),
+                "fit_intervention_model": bool(not args.outcome_only),
+                "tau_zero_mean": bool(args.tau_zero_mean),
+                "tau_smoothness_lambda": float(args.tau_smoothness_lambda),
                 **stats,
             }
 
@@ -611,8 +674,10 @@ def main() -> None:
                         seed=args.seed,
                         outcome_only=args.outcome_only,
                     )
+                manifest_rows.append(manifest_row)
                 experiment_count += 1
                 if args.max_experiments is not None and experiment_count >= args.max_experiments:
+                    write_manifest(manifest_path, manifest_rows, overwrite=args.overwrite)
                     return
                 continue
 
@@ -620,6 +685,7 @@ def main() -> None:
                 experiment_dir=experiment_dir,
                 config=config,
                 metadata=metadata,
+                panel=saved_panel,
                 x=x,
                 z=z,
                 x_0=x_0,
@@ -628,10 +694,25 @@ def main() -> None:
                 field_basis_names=field_basis_names,
                 interaction_matrix=gamma_matrix,
                 interaction_name=network_name,
+                adjacency_edges=adjacency_edges,
                 node_table=node_table,
                 times=times,
             )
-            append_manifest_row(manifest_path, manifest_row)
+            binary_summary.to_csv(experiment_dir / "binary_definition_summary.csv", index=False)
+            binary_lookup = binary_summary.set_index("variable")
+            (experiment_dir / "binary_definition_summary.md").write_text(
+                "# SeattleDMI Binary Experiment Summary\n\n"
+                f"- Outcome: `{outcome_column}`\n"
+                f"- Outcome positive share: `{binary_lookup.loc['outcome', 'positive_share']:.6f}`\n"
+                f"- Outcome variance: `{binary_lookup.loc['outcome', 'variance']:.6f}`\n"
+                f"- Outcome transition rate: `{binary_lookup.loc['outcome', 'transition_rate']:.6f}`\n"
+                "- Intervention: `Intervention == 1`\n"
+                f"- Intervention positive share: `{binary_lookup.loc['intervention', 'positive_share']:.6f}`\n"
+                f"- Intervention variance: `{binary_lookup.loc['intervention', 'variance']:.6f}`\n"
+                f"- Intervention transition rate: `{binary_lookup.loc['intervention', 'transition_rate']:.6f}`\n"
+                f"- Network: `{network_name}`\n",
+                encoding="utf-8",
+            )
             if args.run_mple:
                 run_mple_with_mode(
                     experiment_dir,
@@ -640,10 +721,14 @@ def main() -> None:
                     seed=args.seed,
                     outcome_only=args.outcome_only,
                 )
+            manifest_rows.append(manifest_row)
 
             experiment_count += 1
             if args.max_experiments is not None and experiment_count >= args.max_experiments:
+                write_manifest(manifest_path, manifest_rows, overwrite=args.overwrite)
                 return
+
+    write_manifest(manifest_path, manifest_rows, overwrite=args.overwrite)
 
 
 if __name__ == "__main__":

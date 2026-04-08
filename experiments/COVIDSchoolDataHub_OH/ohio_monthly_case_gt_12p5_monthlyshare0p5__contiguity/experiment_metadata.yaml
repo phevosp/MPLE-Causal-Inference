@@ -3,10 +3,13 @@ state: Ohio
 has_truth: false
 x_sign_convention: +1_above_threshold_-1_below_threshold
 z_sign_convention: +1_in_person_or_high_share_-1_not_in_person_or_low_share
+lag_application: none
 panel_frequency: monthly
 outcome_rule: monthly mean case_rate_per100k_zip > 12.5
 intervention_source: monthly_share
 intervention_rule: share_inperson >= 0.5
+lag_period: null
+lag_steps: 0
 outcome_column: monthly_case_rate_per100k_zip_gt_12p5_pm1
 fit_intervention_model: true
 network_name: contiguity

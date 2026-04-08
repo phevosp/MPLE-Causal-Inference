@@ -402,6 +402,85 @@ def join_monthly_shares_to_case_rates(
     return panel.sort_values(["StateAbbrev", "NCESDistrictID", "WeekStartDate", "zip"]).reset_index(drop=True)
 
 
+def aggregate_case_panel_to_district_week(
+    panel: pd.DataFrame,
+    extra_first_columns: tuple[str, ...] = (),
+) -> pd.DataFrame:
+    """Aggregate one district-week-ZIP case panel to one row per district-week."""
+    working = panel.copy()
+    if "DistrictName" in working.columns and "lea_name" in working.columns:
+        working["DistrictNameResolved"] = working["DistrictName"].fillna(working["lea_name"])
+    elif "DistrictName" in working.columns:
+        working["DistrictNameResolved"] = working["DistrictName"]
+    elif "lea_name" in working.columns:
+        working["DistrictNameResolved"] = working["lea_name"]
+    else:
+        working["DistrictNameResolved"] = pd.NA
+
+    if "StateAssignedDistrictID" not in working.columns and "state_leaid" in working.columns:
+        working["StateAssignedDistrictID"] = standardize_id(working["state_leaid"])
+
+    numeric_sum_columns = ["total_tests", "total_positives", "total_negatives", "tot_zip_week", "tot_zip_pop"]
+    for column in numeric_sum_columns:
+        if column in working.columns:
+            working[column] = pd.to_numeric(working[column], errors="coerce").fillna(0.0)
+
+    weight = (
+        pd.to_numeric(working["tot_zip_week"], errors="coerce").fillna(0.0)
+        if "tot_zip_week" in working.columns
+        else pd.Series(1.0, index=working.index, dtype=float)
+    )
+    value_columns = ["case_rate_per100k_zip", "case_rate_per100k_state", "positive_rate"]
+    for column in value_columns:
+        if column not in working.columns:
+            continue
+        values = pd.to_numeric(working[column], errors="coerce")
+        valid_weight = weight.where(values.notna(), 0.0)
+        working[f"{column}__weighted_value"] = values.fillna(0.0) * valid_weight
+        working[f"{column}__weight"] = valid_weight
+        working[column] = values
+
+    group_cols = ["StateAbbrev", "NCESDistrictID"]
+    if "wave_count" in working.columns:
+        group_cols.append("wave_count")
+    group_cols.extend(["WeekStartDate", "WeekEndDate"])
+
+    agg_spec: dict[str, tuple[str, str]] = {
+        "DistrictName": ("DistrictNameResolved", "first"),
+    }
+    if "StateAssignedDistrictID" in working.columns:
+        agg_spec["StateAssignedDistrictID"] = ("StateAssignedDistrictID", "first")
+    for column in extra_first_columns:
+        if column in working.columns:
+            agg_spec[column] = (column, "first")
+    if "zip" in working.columns:
+        agg_spec["zip_rows"] = ("zip", "nunique")
+    for column in numeric_sum_columns:
+        if column in working.columns:
+            agg_spec[column] = (column, "sum")
+    for column in value_columns:
+        if column in working.columns:
+            agg_spec[f"{column}__weighted_value"] = (f"{column}__weighted_value", "sum")
+            agg_spec[f"{column}__weight"] = (f"{column}__weight", "sum")
+            agg_spec[f"{column}__mean"] = (column, "mean")
+
+    aggregated = working.groupby(group_cols, sort=True, dropna=False).agg(**agg_spec).reset_index()
+
+    for column in value_columns:
+        if f"{column}__weighted_value" not in aggregated.columns:
+            continue
+        weighted_value = aggregated[f"{column}__weighted_value"]
+        valid_weight = aggregated[f"{column}__weight"]
+        fallback_mean = aggregated[f"{column}__mean"]
+        aggregated[column] = np.where(valid_weight > 1e-12, weighted_value / valid_weight, fallback_mean)
+        aggregated = aggregated.drop(
+            columns=[f"{column}__weighted_value", f"{column}__weight", f"{column}__mean"]
+        )
+
+    sort_columns = [column for column in ["StateAbbrev", "NCESDistrictID", "WeekStartDate"] if column in aggregated.columns]
+    return aggregated.sort_values(sort_columns).reset_index(drop=True)
+
+
 def load_edge_standardized_geometry(zip_path: Path, state_abbrev: str) -> gpd.GeoDataFrame:
     """Load the NCES EDGE composite school-district boundaries for one state."""
     gdf = gpd.read_file(f"zip://{zip_path}")
@@ -412,7 +491,7 @@ def load_edge_standardized_geometry(zip_path: Path, state_abbrev: str) -> gpd.Ge
     gdf["district_name_normalized"] = gdf["district_name_source"].map(normalize_name)
     gdf["state_abbrev"] = state_abbrev
     gdf["state_name"] = STATE_NAMES[state_abbrev]
-    return gdf.to_crs(4326)
+    return gdf.set_crs(4326, allow_override=True)
 
 
 def build_massachusetts_official_geometry(paths: dict[str, Path]) -> gpd.GeoDataFrame:
@@ -870,7 +949,7 @@ def merge_geometry_with_crosswalk(
 
 def build_centroid_table(gdf: gpd.GeoDataFrame) -> pd.DataFrame:
     """Compute projected centroids for one district geometry file."""
-    projected = gdf.to_crs(3857)
+    projected = gdf.to_crs(2163)
     centroids = projected.geometry.centroid
     centroids_ll = gpd.GeoSeries(centroids, crs=projected.crs).to_crs(4326)
     return pd.DataFrame(
@@ -1123,21 +1202,46 @@ def main() -> None:
 
         joined = join_learning_to_case_rates(learning, case_rates)
         joined.to_csv(PROCESSED_DIR / "csdh_learning_case_joined.csv.gz", index=False)
-        aggregate_joined_district_week(joined).to_csv(
-            PROCESSED_DIR / "csdh_learning_case_joined_district_week.csv.gz",
-            index=False,
-        )
         for state_abbrev, state_name in STATE_NAMES.items():
             joined.loc[joined["StateAbbrev"] == state_abbrev].to_csv(
                 PROCESSED_DIR / f"csdh_learning_case_joined_{state_name.lower()}.csv.gz",
                 index=False,
             )
 
+    aggregate_case_panel_to_district_week(
+        joined,
+        extra_first_columns=("LearningModel", "PeriodStartDate", "PeriodEndDate"),
+    ).to_csv(
+        PROCESSED_DIR / "csdh_learning_case_joined_district_week.csv.gz",
+        index=False,
+    )
+
     monthly_joined = join_monthly_shares_to_case_rates(case_rates, monthly_shares)
     monthly_joined.to_csv(PROCESSED_DIR / "csdh_learning_case_joined_monthly_shares.csv.gz", index=False)
+    monthly_joined_district_week = aggregate_case_panel_to_district_week(
+        monthly_joined,
+        extra_first_columns=(
+            "Month",
+            "MonthStartDate",
+            "MonthEndDate",
+            "share_inperson",
+            "share_hybrid",
+            "share_virtual",
+            "InterventionShare_pm1",
+            "InterventionShare_binary",
+        ),
+    )
+    monthly_joined_district_week.to_csv(
+        PROCESSED_DIR / "csdh_learning_case_joined_monthly_shares_district_week.csv.gz",
+        index=False,
+    )
     for state_abbrev, state_name in STATE_NAMES.items():
         monthly_joined.loc[monthly_joined["StateAbbrev"] == state_abbrev].to_csv(
             PROCESSED_DIR / f"csdh_learning_case_joined_monthly_shares_{state_name.lower()}.csv.gz",
+            index=False,
+        )
+        monthly_joined_district_week.loc[monthly_joined_district_week["StateAbbrev"] == state_abbrev].to_csv(
+            PROCESSED_DIR / f"csdh_learning_case_joined_monthly_shares_district_week_{state_name.lower()}.csv.gz",
             index=False,
         )
 

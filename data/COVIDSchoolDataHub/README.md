@@ -162,6 +162,20 @@ For each district learning period, the script:
 
 This produces a clean district-week-ZIP panel with one learning-model assignment per district-week.
 
+### Lagged Ohio Experiments
+
+The Ohio experiment builder supports lagging the intervention series before
+thresholding. In the current causal-lag interpretation, the outcome stays at
+the current time while only the intervention series is shifted backward within
+each district. The supported lag choices are:
+
+- weekly panels: `2w`, `3w`, or `4w`
+- monthly panels: `1m`
+
+For the monthly-share intervention path, observations before August 2020 are
+treated as no intervention, so the lagged intervention series still starts from
+`-1` until the CSDH share data begins.
+
 ### Geometry crosswalks
 
 The primary district key throughout the package is `NCESDistrictID`.
@@ -242,6 +256,8 @@ So the current Massachusetts geometry package is strong for municipal and region
   - joined district-week-ZIP panel with a monthly in-person share assigned to each week
 - `processed/csdh_learning_case_joined_district_week.csv.gz`
   - district-week aggregate built from ZIP-level rows using `tot_zip_week` weights
+- `processed/csdh_learning_case_joined_monthly_shares_district_week.csv.gz`
+  - district-week aggregate of the monthly-share joined panel, reused directly by the Ohio runner
 - `processed/csdh_nces_district_master.csv`
   - cleaned NCES district master
 - `processed/csdh_*_ohio.csv.gz`
@@ -252,6 +268,8 @@ So the current Massachusetts geometry package is strong for municipal and region
   - Ohio and Massachusetts subsets of the monthly-share table
 - `processed/csdh_learning_case_joined_monthly_shares_*`
   - Ohio and Massachusetts subsets of the monthly-share joined weekly panel
+- `processed/csdh_learning_case_joined_monthly_shares_district_week_*`
+  - Ohio and Massachusetts subsets of the monthly-share joined district-week panel
 - `processed/ohio_district_crosswalk.csv`
 - `processed/massachusetts_district_crosswalk.csv`
   - district crosswalks with official and standardized geometry match flags
@@ -321,7 +339,8 @@ Current network summaries:
   - `knn_8`: `2,856` edges, connected
   - distance-kernel: `2,856` weighted edges, connected
 
-These files are intended as adjacency-ready inputs for later state-level MPLE experiments.
+These files are also the direct network inputs used by the Ohio MPLE runner, so
+the experiment stage no longer rebuilds contiguity from geometry.
 
 ## Reproducibility
 
@@ -352,4 +371,63 @@ It will:
 - rebuild the monthly-share tables and the monthly-share joined panel
 - rewrite the package summary files
 
-This package stops at data acquisition, joins, and adjacency-ready geometry. It does not yet threshold interventions or outcomes, and it does not run MPLE.
+## Ohio Experiment Runner
+
+The Ohio experiment runner now follows the same high-level pattern used by
+`data/SeattleDMI/run_mple_pipeline.py` and
+`data/USCountyVaccination/run_us_county_vaccination_experiments.py`:
+
+- preparation writes the processed Ohio panels, centroids, and contiguity edge list
+- the runner loads those processed artifacts once
+- the runner caches the reusable weekly and monthly Ohio panels once per launch
+- experiment folders are materialized under one output root
+- MPLE fitting is optional and enabled with `--run_mple`
+- a manifest is written at the experiment-root level
+- a separate summary script writes combined CSV and Markdown reports
+
+The Ohio runner scripts are:
+
+- `run_ohio_initial_experiment.py`
+- `summarize_mple_experiments.py`
+
+The default Ohio grid currently contains:
+
+- weekly learning-model experiments at lags `0w`, `2w`, `3w`, `4w`
+- weekly monthly-share experiments at lags `0w`, `2w`, `3w`, `4w`
+- monthly monthly-share experiments with no lag and with lag `1m`
+
+Materialize the default Ohio grid without fitting:
+
+```bash
+pixi run python data/COVIDSchoolDataHub/run_ohio_initial_experiment.py --run_full_grid
+```
+
+Materialize the default Ohio grid and fit MPLE:
+
+```bash
+pixi run python data/COVIDSchoolDataHub/run_ohio_initial_experiment.py --run_full_grid --run_mple
+```
+
+Smoke-test one Ohio specification with constrained `tau`:
+
+```bash
+pixi run python data/COVIDSchoolDataHub/run_ohio_initial_experiment.py \
+  --panel_frequency monthly \
+  --intervention_source monthly_share \
+  --lag_period 1m \
+  --run_mple \
+  --tau_zero_mean \
+  --tau_smoothness_lambda 1.0 \
+  --experiment_root experiments/COVIDSchoolDataHub_OH_tau_smoke \
+  --overwrite
+```
+
+Write combined Ohio reports:
+
+```bash
+pixi run python data/COVIDSchoolDataHub/summarize_mple_experiments.py
+```
+
+Unlike the earlier one-off Ohio script, the current runner does not rebuild the
+weekly monthly-share panel or contiguity graph for every specification. Those
+artifacts are now written in the processing stage and reused at experiment time.

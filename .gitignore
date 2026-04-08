@@ -220,7 +220,6 @@ experiments/**
 !experiments/**/MPLE_experiment_summary.csv
 
 # Data
-data/SeattleDMI/processed/
-data/SeattleDMI/raw/
-data/COVIDSchoolDataHub/processed/
-data/COVIDSchoolDataHub/raw/
+data/*/processed/
+data/*/raw/
+
