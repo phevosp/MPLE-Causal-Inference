@@ -43,6 +43,11 @@ from data_utils import center_and_normalize_vector_infinity  # noqa: E402
 from model_utils import validate_basis_infinity_norms  # noqa: E402
 
 
+NON_MAINLAND_STATEFPS = frozenset({"02", "15", "60", "66", "69", "72", "78"})
+TRIM_RULE_LABEL = "mainland_us_and_total_population_ge_2000"
+TRIMMED_STATE_SCOPE_LABEL = "Mainland US counties with total_population >= 2000"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Materialize and optionally fit nationwide US county vaccination experiments."
@@ -80,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         default=Path("experiments/USCountyVaccination_US"),
         help="Root directory where experiment folders will be written.",
     )
+    parser.add_argument(
+        "--trim",
+        action="store_true",
+        help="Restrict support to mainland US counties with total population at least 2,000.",
+    )
     return parser.parse_args()
 
 
@@ -111,22 +121,107 @@ def build_node_table(features: pd.DataFrame, centroids: pd.DataFrame) -> pd.Data
     return node_table
 
 
+def apply_optional_trim(
+    node_table: pd.DataFrame,
+    panel: pd.DataFrame,
+    trim_requested: bool,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, object]]:
+    pre_trim_node_count = int(len(node_table))
+    if not trim_requested:
+        return (
+            node_table.copy(),
+            panel.copy(),
+            {
+                "trim_applied": False,
+                "trim_rule": "none",
+                "trim_scope_label": STATE_SCOPE_LABEL,
+                "pre_trim_node_count": pre_trim_node_count,
+                "trimmed_node_count": pre_trim_node_count,
+                "trim_excluded_node_count": 0,
+                "trim_excluded_non_mainland_count": 0,
+                "trim_excluded_population_below_2000_count": 0,
+                "trim_excluded_missing_population_count": 0,
+                "trim_population_min": None,
+            },
+        )
+
+    statefp = pd.Series(node_table["STATEFP"], copy=False).astype("string").str.zfill(2)
+    total_population = pd.to_numeric(node_table["total_population"], errors="coerce")
+    mainland_mask = ~statefp.isin(NON_MAINLAND_STATEFPS)
+    population_present_mask = total_population.notna()
+    population_threshold_mask = total_population.ge(2000.0).fillna(False)
+    keep_mask = mainland_mask & population_threshold_mask
+
+    trimmed_node_table = node_table.loc[keep_mask].copy().sort_values("fips").reset_index(drop=True)
+    if trimmed_node_table.empty:
+        raise ValueError("The requested mainland/population trim removed every county.")
+
+    keep_fips = set(trimmed_node_table["fips"])
+    trimmed_panel = panel.loc[panel["fips"].isin(keep_fips)].copy()
+    return (
+        trimmed_node_table,
+        trimmed_panel,
+        {
+            "trim_applied": True,
+            "trim_rule": TRIM_RULE_LABEL,
+            "trim_scope_label": TRIMMED_STATE_SCOPE_LABEL,
+            "pre_trim_node_count": pre_trim_node_count,
+            "trimmed_node_count": int(len(trimmed_node_table)),
+            "trim_excluded_node_count": int((~keep_mask).sum()),
+            "trim_excluded_non_mainland_count": int((~mainland_mask).sum()),
+            "trim_excluded_population_below_2000_count": int(
+                (mainland_mask & population_present_mask & ~population_threshold_mask).sum()
+            ),
+            "trim_excluded_missing_population_count": int((mainland_mask & ~population_present_mask).sum()),
+            "trim_population_min": 2000,
+        },
+    )
+
+
 def build_field_basis(node_table: pd.DataFrame) -> tuple[np.ndarray, tuple[str, ...], str]:
     basis_mode = str(node_table["feature_basis_mode"].iloc[0]) if "feature_basis_mode" in node_table.columns else "unknown"
     if basis_mode == "zero":
         return np.empty((0, len(node_table)), dtype=float), (), basis_mode
 
+    required_columns = ["population_density", "log_population"]
+    if basis_mode == "acs_2021":
+        required_columns.extend(
+            [
+                "senior_population",
+                "college_education",
+                "poverty_rate",
+                "median_household_income",
+                "cdc_svi_2022_overall",
+                "usda_ers_rucc_2023",
+            ]
+        )
+    missing_columns = [column for column in required_columns if column not in node_table.columns]
+    if missing_columns:
+        raise KeyError(
+            "Missing required county feature columns: "
+            + ", ".join(missing_columns)
+            + ". Re-run prepare_us_county_vaccination_data.py to rebuild us_county_feature_basis.csv.gz."
+        )
+
     feature_specs: list[tuple[str, np.ndarray]] = [
-        ("log_population", pd.to_numeric(node_table["log_population"], errors="coerce").to_numpy(dtype=float)),
+        ("population_density", pd.to_numeric(node_table["population_density"], errors="coerce").to_numpy(dtype=float)),
     ]
     if basis_mode == "acs_2021":
         feature_specs.extend(
             [
-                ("median_household_income", pd.to_numeric(node_table["median_household_income"], errors="coerce").to_numpy(dtype=float)),
+                ("senior_population", pd.to_numeric(node_table["senior_population"], errors="coerce").to_numpy(dtype=float)),
+                ("college_education", pd.to_numeric(node_table["college_education"], errors="coerce").to_numpy(dtype=float)),
                 ("poverty_rate", pd.to_numeric(node_table["poverty_rate"], errors="coerce").to_numpy(dtype=float)),
-                ("pct_black", pd.to_numeric(node_table["pct_black"], errors="coerce").to_numpy(dtype=float)),
-                ("pct_hispanic", pd.to_numeric(node_table["pct_hispanic"], errors="coerce").to_numpy(dtype=float)),
-                ("pct_in_labor_force", pd.to_numeric(node_table["pct_in_labor_force"], errors="coerce").to_numpy(dtype=float)),
+                ("log_population", pd.to_numeric(node_table["log_population"], errors="coerce").to_numpy(dtype=float)),
+                ("median_household_income", pd.to_numeric(node_table["median_household_income"], errors="coerce").to_numpy(dtype=float)),
+                ("cdc_svi_2022_overall", pd.to_numeric(node_table["cdc_svi_2022_overall"], errors="coerce").to_numpy(dtype=float)),
+                ("usda_ers_rucc_2023", pd.to_numeric(node_table["usda_ers_rucc_2023"], errors="coerce").to_numpy(dtype=float)),
+            ]
+        )
+    else:
+        feature_specs.extend(
+            [
+                ("log_population", pd.to_numeric(node_table["log_population"], errors="coerce").to_numpy(dtype=float)),
             ]
         )
 
@@ -223,8 +318,6 @@ def build_experiment_grid(args: argparse.Namespace) -> list[dict[str, str]]:
 
 
 def requested_window_for_intervention(intervention_code: str) -> tuple[pd.Timestamp, pd.Timestamp]:
-    if INTERVENTION_SPECS[intervention_code].family == "booster":
-        return BOOSTER_START_DATE, CORE_END_DATE
     return CORE_START_DATE, CORE_END_DATE
 
 
@@ -240,7 +333,9 @@ def prepare_panel_for_experiment(
     lag_steps = lag_code_to_steps(lag_code)
     requested_start, requested_end = requested_window_for_intervention(intervention_code)
 
-    filtered = panel.loc[panel["WeekEndDate"].between(requested_start, requested_end)].copy()
+    filtered = panel.loc[
+        panel["WeekEndDate"].between(requested_start, requested_end) & panel["fips"].isin(node_order)
+    ].copy()
 
     filtered = filtered.sort_values(["fips", "WeekEndDate"]).reset_index(drop=True)
     filtered["Outcome_pm1"] = filtered[x_col].astype("Int64")
@@ -248,6 +343,8 @@ def prepare_panel_for_experiment(
     filtered["Intervention_pm1"] = (
         filtered.groupby("fips", sort=False)["Intervention_pm1_raw"].shift(lag_steps).astype("Int64")
     )
+    leading_lag_mask = filtered.groupby("fips", sort=False).cumcount() < lag_steps
+    filtered.loc[leading_lag_mask & filtered["Intervention_pm1"].isna(), "Intervention_pm1"] = -1
 
     eligible = filtered["Outcome_pm1"].notna() & filtered["Intervention_pm1"].notna()
     eligibility_matrix = (
@@ -368,6 +465,7 @@ def create_config(
     network_name: str,
     field_basis_mode: str,
     field_basis_names: tuple[str, ...],
+    state_scope_label: str,
     tau_zero_mean: bool,
     tau_smoothness_lambda: float,
 ) -> OmegaConf:
@@ -392,7 +490,7 @@ def create_config(
             },
             "real_data_params": {
                 "source": SOURCE_LABEL,
-                "state": STATE_SCOPE_LABEL,
+                "state": state_scope_label,
                 "outcome_code": outcome_code,
                 "intervention_code": intervention_code,
                 "lag_code": lag_code,
@@ -470,13 +568,28 @@ def experiment_has_panel_artifacts(experiment_dir: Path) -> bool:
     return all(path.exists() for path in required)
 
 
+def existing_experiment_trim_setting(experiment_dir: Path) -> bool | None:
+    metadata_path = experiment_dir / "experiment_metadata.yaml"
+    if not metadata_path.exists():
+        return None
+    metadata = OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
+    if not isinstance(metadata, dict):
+        return None
+    if "trim_applied" not in metadata:
+        return False
+    return bool(metadata["trim_applied"])
+
+
 def main() -> None:
     args = parse_args()
     panel, features, centroids = load_inputs()
     full_node_table = build_node_table(features, centroids)
-    full_node_order = full_node_table["fips"].tolist()
-    if set(full_node_order) != set(centroids["fips"]):
+    untrimmed_node_order = full_node_table["fips"].tolist()
+    if set(untrimmed_node_order) != set(centroids["fips"]):
         raise ValueError("Feature basis and centroid county coverage do not match.")
+    full_node_table, panel, trim_metadata = apply_optional_trim(full_node_table, panel, args.trim)
+    full_node_order = full_node_table["fips"].tolist()
+    state_scope_label = str(trim_metadata["trim_scope_label"])
     output_root = (REPO_ROOT / args.output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -532,12 +645,13 @@ def main() -> None:
             network_name=network_name,
             field_basis_mode=field_basis_mode,
             field_basis_names=field_basis_names,
+            state_scope_label=state_scope_label,
             tau_zero_mean=args.tau_zero_mean,
             tau_smoothness_lambda=args.tau_smoothness_lambda,
         )
         metadata = {
             "source": SOURCE_LABEL,
-            "state": STATE_SCOPE_LABEL,
+            "state": state_scope_label,
             "has_truth": False,
             "x_sign_convention": "+1_above_threshold_-1_below_threshold",
             "z_sign_convention": "+1_above_threshold_-1_below_threshold",
@@ -554,6 +668,15 @@ def main() -> None:
             "network_name": network_name,
             "field_basis_mode": field_basis_mode,
             "field_basis_names": list(field_basis_names),
+            "trim_applied": bool(trim_metadata["trim_applied"]),
+            "trim_rule": trim_metadata["trim_rule"],
+            "pre_trim_node_count": int(trim_metadata["pre_trim_node_count"]),
+            "trimmed_node_count": int(trim_metadata["trimmed_node_count"]),
+            "trim_excluded_node_count": int(trim_metadata["trim_excluded_node_count"]),
+            "trim_excluded_non_mainland_count": int(trim_metadata["trim_excluded_non_mainland_count"]),
+            "trim_excluded_population_below_2000_count": int(trim_metadata["trim_excluded_population_below_2000_count"]),
+            "trim_excluded_missing_population_count": int(trim_metadata["trim_excluded_missing_population_count"]),
+            "trim_population_min": trim_metadata["trim_population_min"],
             "tau_zero_mean": bool(args.tau_zero_mean),
             "tau_smoothness_lambda": float(args.tau_smoothness_lambda),
             "requested_node_count": int(support_metadata["requested_node_count"]),
@@ -573,6 +696,12 @@ def main() -> None:
         }
 
         if experiment_dir.exists() and not args.overwrite:
+            existing_trim_applied = existing_experiment_trim_setting(experiment_dir)
+            if existing_trim_applied is not None and existing_trim_applied != bool(args.trim):
+                raise FileExistsError(
+                    f"{experiment_dir} exists with trim_applied={existing_trim_applied}. "
+                    "Use --overwrite or choose a different --output_root for the other sample scope."
+                )
             if not experiment_has_panel_artifacts(experiment_dir):
                 raise FileExistsError(
                     f"{experiment_dir} exists but is missing panel artifacts. Re-run with --overwrite to rebuild it."
@@ -611,6 +740,7 @@ def main() -> None:
                 f"- Intervention transition rate: `{binary_lookup.loc['intervention', 'transition_rate']:.6f}`\n"
                 f"- Lag: `{lag_code}` applied to the intervention only\n"
                 f"- Network: `{network_name}`\n"
+                f"- Trim: `{trim_metadata['trim_rule']}`\n"
                 f"- Requested counties: `{support_metadata['requested_node_count']}`\n"
                 f"- Realized counties: `{len(realized_node_order)}`\n"
                 f"- Realized weeks: `{time_index['WeekEndDate'].min().date()}` through `{time_index['WeekEndDate'].max().date()}`\n",
@@ -644,6 +774,11 @@ def main() -> None:
                 "network_name": network_name,
                 "intervention_family": INTERVENTION_SPECS[intervention_code].family,
                 "field_basis_mode": field_basis_mode,
+                "trim_applied": bool(trim_metadata["trim_applied"]),
+                "trim_rule": trim_metadata["trim_rule"],
+                "pre_trim_node_count": int(trim_metadata["pre_trim_node_count"]),
+                "trimmed_node_count": int(trim_metadata["trimmed_node_count"]),
+                "trim_excluded_node_count": int(trim_metadata["trim_excluded_node_count"]),
                 "requested_node_count": int(support_metadata["requested_node_count"]),
                 "node_count": int(len(realized_node_order)),
                 "dropped_node_count": int(support_metadata["dropped_node_count"]),

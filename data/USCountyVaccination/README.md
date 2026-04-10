@@ -6,13 +6,15 @@ Nationwide county-week real-data package and experiment pipeline for MPLE, paral
 
 - Unit of analysis: county-week
 - Geography scope: all county-equivalent units with valid 5-digit FIPS in the shared geography/NYT/vaccination overlap
-- Core date window: week ends `2021-01-10` through `2022-05-15`
+  - Optional experiment-time trim: `--trim` keeps only mainland US counties with `total_population >= 2000`
+- Core date window: week ends `2020-01-26` through `2022-05-15`
 - Active outcome families:
   - `case_rate_100k >= 100`
   - `case_rate_100k >= 200`
   - `death_rate_100k >= 2`
 - Active intervention families:
   - `complete_cov >= 10`
+  - `complete_cov >= 20`
   - `complete_cov >= 30`
   - `complete_cov >= 40`
   - `complete_cov >= 50`
@@ -20,6 +22,7 @@ Nationwide county-week real-data package and experiment pipeline for MPLE, paral
   - `complete_cov >= 70`
   - `complete_cov >= 80`
   - `partial_cov >= 10`
+  - `partial_cov >= 20`
   - `partial_cov >= 30`
   - `partial_cov >= 40`
   - `partial_cov >= 50`
@@ -117,15 +120,22 @@ The processed weekly panel still carries continuous helper columns such as `comp
 
 ### 6. Feature basis
 
-- The intended ACS feature basis is:
+- The intended county feature basis is:
+  - `population_density`
+  - `senior_population`
+  - `college_education`
+  - `poverty_rate`
   - `log_population`
   - `median_household_income`
-  - `poverty_rate`
-  - `pct_black`
-  - `pct_hispanic`
-  - `pct_in_labor_force`
+  - `cdc_svi_2022_overall`
+  - `usda_ers_rucc_2023`
+- `population_density` is computed as `total_population / land_area_sq_km`, where `land_area_sq_km` comes from TIGER `ALAND`.
+- `senior_population` is the ACS 2021 share of county residents age 65 and older.
+- `college_education` is the ACS 2021 share of adults age 25 and older with a bachelor's degree or higher.
+- `cdc_svi_2022_overall` is the CDC/ATSDR SVI 2022 overall county percentile ranking (`RPL_THEMES`), joined from the U.S. county file plus Puerto Rico county file.
+- `usda_ers_rucc_2023` is the USDA ERS 2023 Rural-Urban Continuum Code, kept as one ordinal urbanicity feature.
 - `log_population` is computed as `log1p(total_population)`.
-- Any county-level ACS missingness after fetch is median-imputed columnwise.
+- Continuous county-feature missingness is median-imputed columnwise; RUCC is mode-imputed.
 
 ## Current Processed Dataset
 
@@ -305,12 +315,14 @@ Result:
 
 - `feature_basis_mode` is now `acs_2021`
 - The experiment basis can now include:
+  - `population_density`
+  - `senior_population`
+  - `college_education`
+  - `poverty_rate`
   - `log_population`
   - `median_household_income`
-  - `poverty_rate`
-  - `pct_black`
-  - `pct_hispanic`
-  - `pct_in_labor_force`
+  - `cdc_svi_2022_overall`
+  - `usda_ers_rucc_2023`
 
 In the current processed feature table, the three Virgin Islands rows are present in `acs_2021` mode and contain median-imputed ACS values rather than forcing the whole nationwide run back to `population_only`.
 
@@ -370,6 +382,14 @@ Materialize the default nationwide threshold-only grid:
 
 ```bash
 pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py
+```
+
+Materialize the mainland-only trimmed grid with `total_population >= 2000`:
+
+```bash
+pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed
 ```
 
 Run MPLE while materializing:

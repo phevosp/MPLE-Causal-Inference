@@ -21,7 +21,7 @@ RAW_DIR = BASE_DIR / "raw"
 PROCESSED_DIR = BASE_DIR / "processed"
 EXPERIMENT_ROOT = REPO_ROOT / "experiments" / "USCountyVaccination_US"
 
-CORE_START_DATE = pd.Timestamp("2021-01-10")
+CORE_START_DATE = pd.Timestamp("2020-01-26")
 CORE_END_DATE = pd.Timestamp("2022-05-15")
 BOOSTER_START_DATE = pd.Timestamp("2021-12-19")
 
@@ -43,6 +43,9 @@ CDC_VACCINATION_URL = (
 )
 TIGER_2021_COUNTY_URL = "https://www2.census.gov/geo/tiger/TIGER2021/COUNTY/tl_2021_us_county.zip"
 TIGER_2022_COUNTY_URL = "https://www2.census.gov/geo/tiger/TIGER2022/COUNTY/tl_2022_us_county.zip"
+CDC_SVI_2022_US_COUNTY_URL = "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/SVI_2022_US_county.csv"
+CDC_SVI_2022_PR_COUNTY_URL = "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/PuertoRico_county.csv"
+USDA_ERS_RUCC_2023_URL = "https://www.ers.usda.gov/media/5768/2023-rural-urban-continuum-codes.csv?v=33808"
 
 ACS_2021_COUNTY_ENDPOINTS = {
     "acs5": "https://api.census.gov/data/2021/acs/acs5",
@@ -106,6 +109,14 @@ INTERVENTION_SPECS = {
         family="core",
         notes="+1 when complete vaccination coverage is at least 10 percentage points.",
     ),
+    "complete_cov_ge_20": InterventionSpec(
+        code="complete_cov_ge_20",
+        label="complete_cov >= 20",
+        source_column="complete_cov",
+        threshold=20.0,
+        family="core",
+        notes="+1 when complete vaccination coverage is at least 20 percentage points.",
+    ),
     "complete_cov_ge_30": InterventionSpec(
         code="complete_cov_ge_30",
         label="complete_cov >= 30",
@@ -161,6 +172,14 @@ INTERVENTION_SPECS = {
         threshold=10.0,
         family="core",
         notes="+1 when first-dose coverage is at least 10 percentage points.",
+    ),
+    "partial_cov_ge_20": InterventionSpec(
+        code="partial_cov_ge_20",
+        label="partial_cov >= 20",
+        source_column="partial_cov",
+        threshold=20.0,
+        family="core",
+        notes="+1 when first-dose coverage is at least 20 percentage points.",
     ),
     "partial_cov_ge_30": InterventionSpec(
         code="partial_cov_ge_30",
@@ -219,6 +238,7 @@ DEFAULT_CORE_OUTCOMES = (
 )
 DEFAULT_CORE_INTERVENTIONS = (
     "complete_cov_ge_10",
+    "complete_cov_ge_20",
     "complete_cov_ge_30",
     "complete_cov_ge_40",
     "complete_cov_ge_50",
@@ -226,6 +246,7 @@ DEFAULT_CORE_INTERVENTIONS = (
     "complete_cov_ge_70",
     "complete_cov_ge_80",
     "partial_cov_ge_10",
+    "partial_cov_ge_20",
     "partial_cov_ge_30",
     "partial_cov_ge_40",
     "partial_cov_ge_50",
@@ -237,6 +258,12 @@ DEFAULT_BOOSTER_INTERVENTIONS = ()
 
 DEFAULT_CORE_LAGS = ("0w", "1w", "2w", "3w", "4w")
 DEFAULT_BOOSTER_LAGS = ("0w", "1w", "2w")
+
+if any(
+    spec.source_column == "partial_cov" and float(spec.threshold) < 10.0
+    for spec in INTERVENTION_SPECS.values()
+):
+    raise ValueError("partial_cov intervention thresholds below 10% are not allowed.")
 
 
 def ensure_directories() -> dict[str, Path]:

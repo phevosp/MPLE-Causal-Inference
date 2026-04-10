@@ -12,7 +12,7 @@ import pandas as pd
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import BOOSTER_START_DATE, INTERVENTION_SPECS, OUTCOME_SPECS, PROCESSED_DIR  # noqa: E402
+from common import INTERVENTION_SPECS, OUTCOME_SPECS, PROCESSED_DIR  # noqa: E402
 
 
 PANEL_PATH = PROCESSED_DIR / "us_county_weekly_panel.csv.gz"
@@ -26,6 +26,23 @@ def binary_from_threshold(series: pd.Series, threshold: float) -> pd.Series:
     out = pd.Series(np.where(values >= threshold, 1, -1), index=series.index, dtype="float")
     out[values.isna()] = np.nan
     return out.astype("Int64")
+
+
+def fill_pre_reporting_with_negative_ones(
+    panel: pd.DataFrame,
+    source_column: str,
+    binary_values: pd.Series,
+) -> pd.Series:
+    source = pd.to_numeric(panel[source_column], errors="coerce")
+    first_observed = (
+        panel.loc[source.notna(), ["fips", "WeekEndDate"]]
+        .groupby("fips", sort=False)["WeekEndDate"]
+        .min()
+    )
+    first_by_row = panel["fips"].map(first_observed)
+    adjusted = binary_values.copy()
+    adjusted.loc[first_by_row.notna() & panel["WeekEndDate"].lt(first_by_row)] = -1
+    return adjusted.astype("Int64")
 
 
 def transition_rate(panel: pd.DataFrame, column: str) -> float:
@@ -84,10 +101,6 @@ def write_markdown_summary(rows: list[dict[str, object]]) -> None:
             "definitions used by the nationwide US county vaccination experiments. "
             "Here `+1` denotes the above-threshold state and `-1` denotes the below-threshold state.\n\n"
         )
-        if any(spec.family == "booster" for spec in INTERVENTION_SPECS.values()):
-            handle.write(
-                f"Booster-era intervention rows are only eligible on or after `{BOOSTER_START_DATE.date()}`.\n\n"
-            )
         handle.write("| " + " | ".join(headers) + " |\n")
         handle.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
         for row in rows:
@@ -122,9 +135,11 @@ def main() -> None:
 
     for intervention_code, spec in INTERVENTION_SPECS.items():
         column = f"z_{intervention_code}_pm1"
-        binary_panel[column] = binary_from_threshold(binary_panel[spec.source_column], spec.threshold)
-        if spec.family == "booster":
-            binary_panel.loc[binary_panel["WeekEndDate"] < BOOSTER_START_DATE, column] = pd.NA
+        binary_panel[column] = fill_pre_reporting_with_negative_ones(
+            binary_panel,
+            spec.source_column,
+            binary_from_threshold(binary_panel[spec.source_column], spec.threshold),
+        )
         diagnostic_rows.append(
             summarize_binary(binary_panel, column, "intervention", spec.label, spec.notes)
         )

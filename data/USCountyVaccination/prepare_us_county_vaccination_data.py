@@ -21,6 +21,8 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 from common import (  # noqa: E402
     ACS_2021_COUNTY_ENDPOINTS,
     BANSAL_VACCINATION_URL,
+    CDC_SVI_2022_PR_COUNTY_URL,
+    CDC_SVI_2022_US_COUNTY_URL,
     CDC_VACCINATION_URL,
     CORE_END_DATE,
     CORE_START_DATE,
@@ -28,6 +30,7 @@ from common import (  # noqa: E402
     TIGER_2021_COUNTY_URL,
     TIGER_2022_COUNTY_URL,
     UNIT_LABEL,
+    USDA_ERS_RUCC_2023_URL,
     add_iso_week_window,
     dump_json,
     ensure_directories,
@@ -327,18 +330,16 @@ def fetch_acs_features(state_fips_list: list[str]) -> pd.DataFrame:
         acs = fetch_json_table(
             ACS_2021_COUNTY_ENDPOINTS["acs5"],
             params={
-                "get": "NAME,B01003_001E,B19013_001E,B02001_003E,B03003_003E",
+                "get": "NAME,B01003_001E,B19013_001E",
                 "for": "county:*",
                 "in": f"state:{state_fips}",
             },
-            empty_columns=["NAME", "B01003_001E", "B19013_001E", "B02001_003E", "B03003_003E", "state", "county"],
+            empty_columns=["NAME", "B01003_001E", "B19013_001E", "state", "county"],
         ).rename(
             columns={
                 "NAME": "county_label",
                 "B01003_001E": "total_population",
                 "B19013_001E": "median_household_income",
-                "B02001_003E": "black_population",
-                "B03003_003E": "hispanic_population",
             }
         )
         subject = fetch_json_table(
@@ -353,14 +354,23 @@ def fetch_acs_features(state_fips_list: list[str]) -> pd.DataFrame:
         profile = fetch_json_table(
             ACS_2021_COUNTY_ENDPOINTS["profile"],
             params={
-                "get": "NAME,DP03_0002PE",
+                "get": "NAME,DP05_0024PE,DP02_0068PE",
                 "for": "county:*",
                 "in": f"state:{state_fips}",
             },
-            empty_columns=["NAME", "DP03_0002PE", "state", "county"],
-        ).rename(columns={"DP03_0002PE": "pct_in_labor_force"})
+            empty_columns=["NAME", "DP05_0024PE", "DP02_0068PE", "state", "county"],
+        ).rename(
+            columns={
+                "DP05_0024PE": "senior_population",
+                "DP02_0068PE": "college_education",
+            }
+        )
         merged = acs.merge(subject[["state", "county", "poverty_rate"]], on=["state", "county"], how="left")
-        merged = merged.merge(profile[["state", "county", "pct_in_labor_force"]], on=["state", "county"], how="left")
+        merged = merged.merge(
+            profile[["state", "county", "senior_population", "college_education"]],
+            on=["state", "county"],
+            how="left",
+        )
         rows.append(merged)
 
     merged = pd.concat(rows, ignore_index=True)
@@ -368,55 +378,110 @@ def fetch_acs_features(state_fips_list: list[str]) -> pd.DataFrame:
     numeric_columns = [
         "total_population",
         "median_household_income",
-        "black_population",
-        "hispanic_population",
         "poverty_rate",
-        "pct_in_labor_force",
+        "senior_population",
+        "college_education",
     ]
     for column in numeric_columns:
         merged[column] = pd.to_numeric(merged[column], errors="coerce")
-    merged["pct_black"] = np.where(
-        merged["total_population"].gt(0),
-        100.0 * merged["black_population"] / merged["total_population"],
-        np.nan,
-    )
-    merged["pct_hispanic"] = np.where(
-        merged["total_population"].gt(0),
-        100.0 * merged["hispanic_population"] / merged["total_population"],
-        np.nan,
-    )
     return merged[
         [
             "fips",
             "total_population",
             "median_household_income",
             "poverty_rate",
-            "pct_black",
-            "pct_hispanic",
-            "pct_in_labor_force",
+            "senior_population",
+            "college_education",
         ]
     ].sort_values("fips").reset_index(drop=True)
 
 
-def build_feature_basis(counties: pd.DataFrame, vaccination_weekly: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+def load_cdc_svi_2022_features(paths: dict[str, Path]) -> pd.DataFrame:
+    us_path = paths["raw_features"] / "cdc_svi_2022_us_county.csv"
+    pr_path = paths["raw_features"] / "cdc_svi_2022_pr_county.csv"
+    download_if_missing(CDC_SVI_2022_US_COUNTY_URL, us_path)
+    download_if_missing(CDC_SVI_2022_PR_COUNTY_URL, pr_path)
+
+    frames: list[pd.DataFrame] = []
+    for path in [us_path, pr_path]:
+        frame = pd.read_csv(
+            path,
+            usecols=["FIPS", "STCNTY", "RPL_THEMES"],
+            dtype={"FIPS": str, "STCNTY": str},
+        )
+        frame = frame.assign(
+            fips=standardize_fips(frame.get("FIPS", frame.get("STCNTY"))),
+            cdc_svi_2022_overall=pd.to_numeric(frame["RPL_THEMES"], errors="coerce"),
+        )
+        frames.append(frame[["fips", "cdc_svi_2022_overall"]].copy())
+
+    return (
+        pd.concat(frames, ignore_index=True)
+        .dropna(subset=["fips"])
+        .drop_duplicates("fips", keep="first")
+        .sort_values("fips")
+        .reset_index(drop=True)
+    )
+
+
+def load_usda_ers_rucc_2023_features(paths: dict[str, Path]) -> pd.DataFrame:
+    target = paths["raw_features"] / "usda_ers_rucc_2023.csv"
+    download_if_missing(USDA_ERS_RUCC_2023_URL, target)
+    raw = pd.read_csv(target, dtype={"FIPS": str}, encoding="latin-1")
+    rucc = raw.loc[raw["Attribute"].eq("RUCC_2023"), ["FIPS", "Value"]].copy()
+    rucc["fips"] = standardize_fips(rucc["FIPS"])
+    rucc["usda_ers_rucc_2023"] = pd.to_numeric(rucc["Value"], errors="coerce")
+    return (
+        rucc[["fips", "usda_ers_rucc_2023"]]
+        .dropna(subset=["fips"])
+        .drop_duplicates("fips", keep="first")
+        .sort_values("fips")
+        .reset_index(drop=True)
+    )
+
+
+def _mode_or_nan(series: pd.Series) -> float:
+    non_null = pd.to_numeric(series, errors="coerce").dropna()
+    if non_null.empty:
+        return float("nan")
+    mode = non_null.mode()
+    if mode.empty:
+        return float(non_null.iloc[0])
+    return float(mode.iloc[0])
+
+
+def build_feature_basis(
+    counties: pd.DataFrame,
+    vaccination_weekly: pd.DataFrame,
+    paths: dict[str, Path],
+) -> tuple[pd.DataFrame, str]:
     try:
         state_fips_list = sorted(counties["STATEFP"].astype(str).unique().tolist())
         acs_features = fetch_acs_features(state_fips_list)
+        svi_features = load_cdc_svi_2022_features(paths)
+        rucc_features = load_usda_ers_rucc_2023_features(paths)
         features = counties.merge(acs_features, on="fips", how="left")
+        features = features.merge(svi_features, on="fips", how="left")
+        features = features.merge(rucc_features, on="fips", how="left")
         for column in [
             "total_population",
             "median_household_income",
             "poverty_rate",
-            "pct_black",
-            "pct_hispanic",
-            "pct_in_labor_force",
+            "senior_population",
+            "college_education",
+            "cdc_svi_2022_overall",
         ]:
             median_value = pd.to_numeric(features[column], errors="coerce").median()
             features[column] = pd.to_numeric(features[column], errors="coerce").fillna(median_value)
+        rucc_fill = _mode_or_nan(features["usda_ers_rucc_2023"])
+        features["usda_ers_rucc_2023"] = pd.to_numeric(
+            features["usda_ers_rucc_2023"],
+            errors="coerce",
+        ).fillna(rucc_fill)
         basis_mode = "acs_2021"
     except Exception as exc:
         warnings.warn(
-            f"ACS feature retrieval failed; falling back to population-only basis. {exc}",
+            f"County feature retrieval failed; falling back to population-only basis. {exc}",
             stacklevel=2,
         )
         population = build_population_lookup(vaccination_weekly)
@@ -425,18 +490,31 @@ def build_feature_basis(counties: pd.DataFrame, vaccination_weekly: pd.DataFrame
             features["total_population"] = features["population"].fillna(features["population"].median())
             features["median_household_income"] = np.nan
             features["poverty_rate"] = np.nan
-            features["pct_black"] = np.nan
-            features["pct_hispanic"] = np.nan
-            features["pct_in_labor_force"] = np.nan
+            features["senior_population"] = np.nan
+            features["college_education"] = np.nan
+            features["cdc_svi_2022_overall"] = np.nan
+            features["usda_ers_rucc_2023"] = np.nan
             basis_mode = "population_only"
         else:
             features["total_population"] = np.nan
             features["median_household_income"] = np.nan
             features["poverty_rate"] = np.nan
-            features["pct_black"] = np.nan
-            features["pct_hispanic"] = np.nan
-            features["pct_in_labor_force"] = np.nan
+            features["senior_population"] = np.nan
+            features["college_education"] = np.nan
+            features["cdc_svi_2022_overall"] = np.nan
+            features["usda_ers_rucc_2023"] = np.nan
             basis_mode = "zero"
+    features["population_density"] = np.where(
+        pd.to_numeric(features["land_area_sq_km"], errors="coerce").gt(0),
+        pd.to_numeric(features["total_population"], errors="coerce")
+        / pd.to_numeric(features["land_area_sq_km"], errors="coerce"),
+        np.nan,
+    )
+    if features["population_density"].notna().any():
+        density_median = pd.to_numeric(features["population_density"], errors="coerce").median()
+        features["population_density"] = pd.to_numeric(features["population_density"], errors="coerce").fillna(
+            density_median
+        )
     features["log_population"] = np.log1p(pd.to_numeric(features["total_population"], errors="coerce"))
     return features.sort_values("fips").reset_index(drop=True), basis_mode
 
@@ -444,6 +522,26 @@ def build_feature_basis(counties: pd.DataFrame, vaccination_weekly: pd.DataFrame
 def feature_dictionary(feature_basis_mode: str) -> pd.DataFrame:
     return pd.DataFrame(
         [
+            {
+                "column": "population_density",
+                "description": "County population density using total population divided by TIGER land area in square kilometers.",
+                "available_in_basis_mode": feature_basis_mode != "zero",
+            },
+            {
+                "column": "senior_population",
+                "description": "ACS 2021 share of the population age 65 and older.",
+                "available_in_basis_mode": feature_basis_mode == "acs_2021",
+            },
+            {
+                "column": "college_education",
+                "description": "ACS 2021 share of adults age 25 and older with a bachelor's degree or higher.",
+                "available_in_basis_mode": feature_basis_mode == "acs_2021",
+            },
+            {
+                "column": "poverty_rate",
+                "description": "ACS 2021 poverty rate percentage.",
+                "available_in_basis_mode": feature_basis_mode == "acs_2021",
+            },
             {
                 "column": "log_population",
                 "description": "Natural log of one plus total county population.",
@@ -455,23 +553,13 @@ def feature_dictionary(feature_basis_mode: str) -> pd.DataFrame:
                 "available_in_basis_mode": feature_basis_mode == "acs_2021",
             },
             {
-                "column": "poverty_rate",
-                "description": "ACS 2021 poverty rate percentage.",
+                "column": "cdc_svi_2022_overall",
+                "description": "CDC/ATSDR SVI 2022 overall county percentile ranking (RPL_THEMES).",
                 "available_in_basis_mode": feature_basis_mode == "acs_2021",
             },
             {
-                "column": "pct_black",
-                "description": "ACS 2021 Black population share percentage.",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-            {
-                "column": "pct_hispanic",
-                "description": "ACS 2021 Hispanic population share percentage.",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-            {
-                "column": "pct_in_labor_force",
-                "description": "ACS 2021 labor force participation percentage.",
+                "column": "usda_ers_rucc_2023",
+                "description": "USDA ERS 2023 Rural-Urban Continuum Code as an ordinal county urbanicity feature.",
                 "available_in_basis_mode": feature_basis_mode == "acs_2021",
             },
         ]
@@ -494,8 +582,9 @@ def load_or_download_geometry(paths: dict[str, Path]) -> tuple[gpd.GeoDataFrame,
     counties["fips"] = counties["GEOID"].astype(str).str.zfill(5)
     counties["county"] = counties["NAME"].astype(str)
     counties["state_name"] = counties["STATE_NAME"].astype(str) if "STATE_NAME" in counties.columns else counties["STATEFP"].astype(str)
+    counties["land_area_sq_km"] = pd.to_numeric(counties.get("ALAND"), errors="coerce") / 1_000_000.0
     counties = counties.loc[counties["fips"].str.len() == 5].copy()
-    counties = counties[["fips", "county", "state_name", "STATEFP", "COUNTYFP", "geometry"]].copy()
+    counties = counties[["fips", "county", "state_name", "STATEFP", "COUNTYFP", "land_area_sq_km", "geometry"]].copy()
     counties = counties.sort_values("fips").reset_index(drop=True)
     return counties, geometry_source
 
@@ -604,6 +693,17 @@ def build_joined_panel(
     panel["population"] = panel["population"].fillna(panel["population_nyt"])
     panel = panel.drop(columns=["population_nyt"], errors="ignore")
     panel = panel.sort_values(["fips", "WeekEndDate"]).reset_index(drop=True)
+    for column in [
+        "new_cases",
+        "new_deaths",
+        "cases",
+        "deaths",
+        "available_daily_rows",
+        "case_rate_100k",
+        "death_rate_100k",
+    ]:
+        if column in panel.columns:
+            panel[column] = pd.to_numeric(panel[column], errors="coerce").fillna(0.0)
     panel["prev_case_rate_100k"] = panel.groupby("fips", sort=False)["case_rate_100k"].shift(1)
     panel["case_growth_ratio"] = np.where(
         panel["prev_case_rate_100k"].gt(0),
@@ -640,7 +740,7 @@ def build_processed_outputs(args: argparse.Namespace) -> None:
         features = pd.read_csv(PROCESSED_DIR / "us_county_feature_basis.csv.gz", dtype={"fips": str})
         feature_basis_mode = str(features.get("feature_basis_mode", pd.Series(["unknown"])).iloc[0])
     else:
-        features, feature_basis_mode = build_feature_basis(counties, vaccination_weekly)
+        features, feature_basis_mode = build_feature_basis(counties, vaccination_weekly, paths)
         features["feature_basis_mode"] = feature_basis_mode
         features.to_csv(PROCESSED_DIR / "us_county_feature_basis.csv.gz", index=False)
         feature_dictionary(feature_basis_mode).to_csv(
