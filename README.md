@@ -1,77 +1,82 @@
 # MPLE-Causal-Inference
 
-Synthetic experiments for maximum pseudo-likelihood estimation in a conditional networked causal model with binary outcomes and binary interventions.
+Minimal conditional MPLE pipeline for binary outcome/intervention panel data.
 
-## What This Repository Does
+## Active Scope
 
-The repo studies trajectories of
+The active repository is centered on three workflows:
+
+- synthetic conditional data generation
+- conditional-model MPLE fitting
+- USCountyVaccination preprocessing and experiment materialization
+
+The active conditional model evolves:
 
 - outcomes `x_t in {-1,+1}^N`
 - interventions `z_t in {-1,+1}^N`
 
-over a network and through time. It now supports a single model family throughout the codebase:
+with
 
-- conditional data generation
-- conditional-model MPLE estimation
+- intervention process: `z^(t)` depends on `x^(t-1)` and `z^(t-1)`
+- outcome process: `x^(t)` depends on a node field, `z^(t)`, `x^(t-1)`, and a fixed known graph
 
-The code no longer includes the older joint Ising generator or the two-stage Ising MPLE routine.
+## Active Model Interface
 
-## Model
+The active pipeline keeps one interaction template only:
 
-At each time step:
+- a fixed known graph `Gamma`
+- one scalar interaction coefficient in `estimation_params.interaction_coefs`
 
-- `z^(t)` is sampled from a logistic model depending on `x^(t-1)` and `z^(t-1)`
-- `x^(t)` is sampled from a Gibbs kernel with local field
-  `h_x^(t) = h + beta z^(t) + eta x^(t-1) + J x^(t)`
+The field side supports:
 
-The external field `h` and interaction matrix `J` are not restricted to the old scalar form `alpha * 1` and `xi * Gamma`. Instead, they are built from low-dimensional bases:
+- `field_mode=uniform`
+- `field_mode=shared_feature_field`
 
-- `h = sum_k a_k b_k`
-- `J = sum_l w_l G_l`
+There is no active support for richer synthetic interaction-template families in the core pipeline.
 
-where `b_k` are known field templates, `G_l` are known symmetric interaction templates, and the coefficient vectors `a` and `w` are estimated.
+## Core Files
 
-## Basis Construction
+- [data/synthetic_data_generation.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/synthetic_data_generation.py): synthetic conditional generator
+- [mple.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/mple.py): MPLE objective, optimizer, logging, and saved summaries
+- [model_utils.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py): minimal basis, parameter, and summary helpers
+- [data/configs/base_config.yaml](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/configs/base_config.yaml): default synthetic config
+- [data/USCountyVaccination/run_us_county_vaccination_experiments.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/USCountyVaccination/run_us_county_vaccination_experiments.py): USCountyVaccination panel materialization and fitting entrypoint
+- [data/USCountyVaccination/create_data_analysis_summary.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/USCountyVaccination/create_data_analysis_summary.py): descriptive county-vaccination reporting bundle
 
-The shared basis logic lives in [model_utils.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py).
+## Saved Artifacts
 
-Default field templates:
-
-- no field templates for the default `uniform` field mode
-- shared-feature linear/quadratic templates when `field_mode=shared_feature_field`
-
-Default interaction templates:
-
-- `adjacency` for the default `known_graph` interaction mode
-- `adjacency` plus shared-feature distance-kernel and cross-similarity templates when `interaction_mode=shared_feature_interactions`
-
-Both field templates and interaction templates are normalized by infinity norm before they are stacked into bases. The generator saves:
+Synthetic and real-data runs use the same core panel-state contract:
 
 - `panel_data.npz`
+- `x_0.npy`
+- `z_0.npy`
+
+MPLE also reads experiment-local basis/network artifacts such as:
+
 - `field_basis.npy`
-- `interaction_basis.npy`
-- `field_vector.npy`
-- `interaction_matrix.npy`
+- `interaction_basis.npy` or `interaction_basis_sparse.npz`
+- `gamma_matrix_sparse.npz` for real-data known graphs
 
-The current MPLE loader expects the saved basis artifacts and panel file format written by the repository scripts.
+`mple.py` can load the panel-state files either from `--data_folder` or from explicit `--panel_path`, `--x0_path`, and `--z0_path` arguments.
 
-## Main Files
-
-- [data/synthetic_data_generation.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/synthetic_data_generation.py): graph realization and conditional synthetic data generation
-- [data/SeattleDMI/prepare_seattledmi.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/SeattleDMI/prepare_seattledmi.py): SeattleDMI preprocessing and geography joins
-- [data/COVIDSchoolDataHub/prepare_csdh_data.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/COVIDSchoolDataHub/prepare_csdh_data.py): Ohio and Massachusetts school-district preprocessing, joins, and geometry
-- [data/configs/base_config.yaml](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/configs/base_config.yaml): default configuration
-- [model_utils.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py): basis construction, parameter packing, and summary metrics
-- [mple.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/mple.py): conditional pseudo-NLL, optimizer, logging, and summary export
-- [generate_data.sh](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/generate_data.sh): helper script for generating several conditional datasets
-- [run_experiments.sh](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/run_experiments.sh): helper script for generating datasets and fitting MPLE across experiment folders
+For USCountyVaccination experiments, those panel-state files are now shared across network variants and written once per `(outcome, intervention, lag, trim scope)` under a shared panel directory.
 
 ## How To Run
 
-Generate one dataset:
+Generate one synthetic dataset:
 
 ```bash
 pixi run python -u data/synthetic_data_generation.py --config_name base_config.yaml
+```
+
+Generate one synthetic dataset with fixed interventions loaded from a shared USCountyVaccination panel:
+
+```bash
+pixi run python -u data/synthetic_data_generation.py \
+  --config_name base_config.yaml \
+  --config_override generation_params.intervention_mode='\"fixed_z\"' \
+  --config_override generation_params.fixed_z_source.panel_path='\"<shared_panel_dir>/panel_data.npz\"' \
+  --config_override generation_params.fixed_z_source.z0_path='\"<shared_panel_dir>/z_0.npy\"'
 ```
 
 Fit MPLE on one experiment folder:
@@ -80,23 +85,26 @@ Fit MPLE on one experiment folder:
 pixi run python -u mple.py --data_folder experiments/<folder>
 ```
 
-The estimator writes:
+Fit MPLE with explicit panel-state artifacts:
 
-- `mple.log`
-- `mple_summary.csv`
-- `mple_summary.md`
+```bash
+pixi run python -u mple.py \
+  --data_folder experiments/<folder> \
+  --panel_path <shared_panel_dir>/panel_data.npz \
+  --x0_path <shared_panel_dir>/x_0.npy \
+  --z0_path <shared_panel_dir>/z_0.npy
+```
 
-## Current Optimizer Parameterization
+Build shared USCountyVaccination experiment artifacts:
 
-The flattened optimization vector is
+```bash
+pixi run python -u data/USCountyVaccination/run_us_county_vaccination_experiments.py --trim
+```
 
-`[field coefficients, tau coefficients, beta, interaction coefficients, eta, zeta, psi]`
+## Parameterization
 
-When `--outcome_only` is enabled, the `zeta` and `psi` terms are omitted and only the outcome-side parameters are estimated.
+The active optimizer vector is:
 
-The summary tables report:
+`[field coefficients, tau coefficients, beta, interaction coefficient, eta, zeta, psi]`
 
-- coefficient-wise estimate vs. truth
-- field RMSE
-- interaction Frobenius error
-- overall parameter RMSE
+When `--outcome_only` is used, the intervention-process parameters `zeta` and `psi` are omitted from the fit while MPLE still conditions on observed `z`.

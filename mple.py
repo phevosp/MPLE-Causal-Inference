@@ -91,7 +91,7 @@ def setup_logger(log_file):
 
 
 def load_basis_artifacts(data_folder):
-    """Load the saved basis arrays from an experiment folder."""
+    """Load the saved field basis and single interaction template from one folder."""
     data_path = Path(data_folder)
     field_basis_path = data_path / "field_basis.npy"
     interaction_basis_path = data_path / "interaction_basis.npy"
@@ -104,8 +104,6 @@ def load_basis_artifacts(data_folder):
         field_basis_path,
         field_names_path,
         interaction_names_path,
-        shared_features_path,
-        shared_feature_names_path,
     ]
     if interaction_basis_sparse_path.exists():
         required.append(interaction_basis_sparse_path)
@@ -124,8 +122,18 @@ def load_basis_artifacts(data_folder):
         interaction_basis = np.load(interaction_basis_path)
     field_names = tuple(np.load(field_names_path).tolist())
     interaction_names = tuple(np.load(interaction_names_path).tolist())
-    shared_features = np.load(shared_features_path)
-    shared_feature_names = tuple(np.load(shared_feature_names_path).tolist())
+    if len(interaction_names) != 1:
+        raise ValueError("The active pipeline expects exactly one interaction template.")
+    shared_features = (
+        np.load(shared_features_path)
+        if shared_features_path.exists()
+        else np.empty((0, field_basis.shape[1]), dtype=float)
+    )
+    shared_feature_names = (
+        tuple(np.load(shared_feature_names_path).tolist())
+        if shared_feature_names_path.exists()
+        else ()
+    )
     validate_basis_infinity_norms(field_basis, interaction_basis)
     return BasisExpansion(
         field_basis=field_basis,
@@ -137,13 +145,12 @@ def load_basis_artifacts(data_folder):
     )
 
 
-def load_panel_artifact(data_folder):
-    """Load x and z panel arrays from an experiment folder."""
-    data_path = Path(data_folder)
-    panel_path = data_path / "panel_data.npz"
-    if panel_path.exists():
-        return np.load(panel_path)
-    raise FileNotFoundError(f"Could not find panel_data.npz in {data_folder}.")
+def load_panel_artifact(panel_path: str | Path):
+    """Load x and z panel arrays from an explicit panel artifact path."""
+    resolved_panel_path = Path(panel_path)
+    if resolved_panel_path.exists():
+        return np.load(resolved_panel_path)
+    raise FileNotFoundError(f"Could not find panel data artifact at {resolved_panel_path}.")
 
 
 def _pack_gradient(
@@ -556,6 +563,24 @@ if __name__ == "__main__":
         required=True,
         type=str,
     )
+    parser.add_argument(
+        "--panel_path",
+        type=str,
+        default=None,
+        help="Optional explicit path to panel_data.npz. Defaults to <data_folder>/panel_data.npz.",
+    )
+    parser.add_argument(
+        "--x0_path",
+        type=str,
+        default=None,
+        help="Optional explicit path to x_0.npy. Defaults to <data_folder>/x_0.npy.",
+    )
+    parser.add_argument(
+        "--z0_path",
+        type=str,
+        default=None,
+        help="Optional explicit path to z_0.npy. Defaults to <data_folder>/z_0.npy.",
+    )
     parser.add_argument("--steps", type=int, default=10000)
     parser.add_argument("--tol", type=float, default=1e-9)
     parser.add_argument("--seed", type=int, default=0)
@@ -588,10 +613,15 @@ if __name__ == "__main__":
     metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
     metadata = OmegaConf.load(metadata_path) if metadata_path.exists() else OmegaConf.create({})
     has_truth = bool(metadata.get("has_truth", True))
-    x_0 = np.load(f"{args.data_folder}/x_0.npy")
-    z_0_path = Path(args.data_folder) / "z_0.npy"
-    z_0 = np.load(z_0_path) if z_0_path.exists() else np.zeros_like(x_0)
-    data = load_panel_artifact(args.data_folder)
+    panel_path = Path(args.panel_path) if args.panel_path else Path(args.data_folder) / "panel_data.npz"
+    x0_path = Path(args.x0_path) if args.x0_path else Path(args.data_folder) / "x_0.npy"
+    z0_path = Path(args.z0_path) if args.z0_path else Path(args.data_folder) / "z_0.npy"
+    logger.info("Using panel artifact: %s", panel_path)
+    logger.info("Using x_0 artifact: %s", x0_path)
+    logger.info("Using z_0 artifact: %s", z0_path)
+    x_0 = np.load(x0_path)
+    z_0 = np.load(z0_path) if z0_path.exists() else np.zeros_like(x_0)
+    data = load_panel_artifact(panel_path)
     x = data["x"]
     z = data["z"]
 

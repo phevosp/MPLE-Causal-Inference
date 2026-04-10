@@ -6,10 +6,9 @@ global_params:
   x_0_generator: "bernoulli" # method for generating the initial state. Options: "bernoulli", "fixed"
   basis_params:
     field_mode: "uniform" # options: "uniform", "shared_feature_field"
-    interaction_mode: "known_graph" # options: "known_graph", "shared_feature_interactions"
-    num_shared_features: 5 # number of known shared node features used in the richer basis construction
-    shared_feature_seed: 42 # random seed used to realize the known shared features
-    distance_kernel_decay: 3.0 # decay used in the per-feature distance kernel interaction templates
+    interaction_mode: "known_graph" # fixed graph only in the active pipeline
+    num_shared_features: 5 # number of synthetic shared node features used when field_mode == "shared_feature_field"
+    shared_feature_seed: 42 # random seed used to realize the shared node features
   gamma_matrix_params:
     p: 0.01 # probability of edge creation for "erdos-renyi"
   x_0_params:
@@ -26,7 +25,7 @@ estimation_params:
     seed: 42 # random seed for generating tau when mode == "uniform_random"
     vector: null # optional length-T vector used when mode == "fixed"
   beta: 0.25 # z^{(t)} -> x^{(t)}
-  interaction_coefs: [0.08] # coefficients for the interaction basis; default is a single known graph up to temperature
+  interaction_coefs: [0.08] # single scalar coefficient on the fixed known graph
   eta: 0.01 # x^{(t-1)} -> x^{(t)}
   zeta: -0.03 # x^{(t-1)} -> z^{(t)}
   psi: 0.1 # z^{(t-1)} -> z^{(t)}
@@ -34,3 +33,12 @@ estimation_params:
 generation_params:
   seed: 42 # random seed for reproducibility
   gibbs_sweeps: 25 # number of Gibbs sweeps for sampling x^{(t)} in the conditional model
+  intervention_mode: "generated_z" # options: "generated_z", "fixed_z"
+  fixed_z_source:
+    panel_path: null # required when intervention_mode == "fixed_z"
+    z0_path: null # required when intervention_mode == "fixed_z"
+    shared_panel_dir: null # optional metadata pointer to the shared artifact directory
+    outcome_code: null # optional metadata for provenance
+    intervention_code: null # optional metadata for provenance
+    lag_code: null # optional metadata for provenance
+    trim_scope: null # optional metadata for provenance

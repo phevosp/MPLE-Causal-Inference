@@ -1,0 +1,47 @@
+global_params:
+  'N': 4
+  T: 4
+  s: 1
+  gamma_matrix_generator: cycle
+  x_0_generator: fixed
+  basis_params:
+    field_mode: uniform
+    interaction_mode: known_graph
+    num_shared_features: 5
+    shared_feature_seed: 42
+  gamma_matrix_params:
+    p: 0.01
+  x_0_params:
+    p: 0.5
+    fixed_val: -1
+estimation_params:
+  fit_intervention_model: true
+  field_coefs: []
+  tau_params:
+    mode: fixed
+    lower: -0.2
+    upper: 0.2
+    seed: 42
+    vector:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  beta: 0.25
+  interaction_coefs:
+  - 0.0
+  eta: 0.01
+  zeta: -0.03
+  psi: 0.1
+generation_params:
+  seed: 42
+  gibbs_sweeps: 1
+  intervention_mode: fixed_z
+  fixed_z_source:
+    panel_path: C:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/experiments/.hidden_fixed_z_smoke_source/panel_data.npz
+    z0_path: C:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/experiments/.hidden_fixed_z_smoke_source/z_0.npy
+    shared_panel_dir: null
+    outcome_code: null
+    intervention_code: null
+    lag_code: null
+    trim_scope: null

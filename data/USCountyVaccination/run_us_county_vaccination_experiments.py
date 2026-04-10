@@ -503,29 +503,53 @@ def create_config(
     )
 
 
+def shared_panel_name(
+    outcome_code: str,
+    intervention_code: str,
+    lag_code: str,
+    trim_applied: bool,
+) -> str:
+    trim_label = "trimmed" if trim_applied else "full"
+    return (
+        f"outcome_{outcome_code}__intervention_{intervention_code}"
+        f"__lag_{lag_code}__scope_{trim_label}"
+    )
+
+
+def write_shared_panel_artifacts(
+    shared_panel_dir: Path,
+    panel: pd.DataFrame,
+    node_table: pd.DataFrame,
+    time_index: pd.DataFrame,
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    z_0: np.ndarray,
+    metadata: dict[str, object],
+) -> None:
+    shared_panel_dir.mkdir(parents=True, exist_ok=True)
+    np.savez(shared_panel_dir / "panel_data.npz", x=x, z=z)
+    np.save(shared_panel_dir / "x_0.npy", x_0)
+    np.save(shared_panel_dir / "z_0.npy", z_0)
+    node_table.to_csv(shared_panel_dir / "node_index.csv", index=False)
+    time_index.to_csv(shared_panel_dir / "time_index.csv", index=False)
+    panel.to_csv(shared_panel_dir / "panel_data.csv.gz", index=False)
+    OmegaConf.save(OmegaConf.create(metadata), shared_panel_dir / "panel_metadata.yaml")
+
+
 def save_experiment(
     experiment_dir: Path,
     config,
     metadata: dict[str, object],
-    panel: pd.DataFrame,
-    node_table: pd.DataFrame,
-    time_index: pd.DataFrame,
     field_basis: np.ndarray,
     field_basis_names: tuple[str, ...],
     gamma_matrix: sparse.csr_matrix,
     interaction_name: str,
     adjacency_edges: pd.DataFrame,
-    x: np.ndarray,
-    z: np.ndarray,
-    x_0: np.ndarray,
-    z_0: np.ndarray,
 ) -> None:
     experiment_dir.mkdir(parents=True, exist_ok=True)
     OmegaConf.save(config, experiment_dir / "realized_config.yaml")
     OmegaConf.save(OmegaConf.create(metadata), experiment_dir / "experiment_metadata.yaml")
-    np.savez(experiment_dir / "panel_data.npz", x=x, z=z)
-    np.save(experiment_dir / "x_0.npy", x_0)
-    np.save(experiment_dir / "z_0.npy", z_0)
     np.save(experiment_dir / "field_basis.npy", field_basis)
     np.save(experiment_dir / "field_basis_names.npy", np.asarray(field_basis_names, dtype="<U128"))
     np.save(experiment_dir / "shared_features.npy", np.empty((0, field_basis.shape[1]), dtype=float))
@@ -533,18 +557,30 @@ def save_experiment(
     sparse.save_npz(experiment_dir / "gamma_matrix_sparse.npz", gamma_matrix)
     sparse.save_npz(experiment_dir / "interaction_basis_sparse.npz", gamma_matrix)
     np.save(experiment_dir / "interaction_basis_names.npy", np.asarray([interaction_name], dtype="<U128"))
-    node_table.to_csv(experiment_dir / "node_index.csv", index=False)
-    time_index.to_csv(experiment_dir / "time_index.csv", index=False)
     adjacency_edges.to_csv(experiment_dir / "adjacency_edge_list.csv.gz", index=False)
-    panel.to_csv(experiment_dir / "panel_data.csv.gz", index=False)
 
 
-def run_mple(experiment_dir: Path, steps: int, tol: float, seed: int, outcome_only: bool = False) -> None:
+def run_mple(
+    experiment_dir: Path,
+    panel_path: Path,
+    x0_path: Path,
+    z0_path: Path,
+    steps: int,
+    tol: float,
+    seed: int,
+    outcome_only: bool = False,
+) -> None:
     command = [
         sys.executable,
         str(REPO_ROOT / "mple.py"),
         "--data_folder",
         str(experiment_dir),
+        "--panel_path",
+        str(panel_path),
+        "--x0_path",
+        str(x0_path),
+        "--z0_path",
+        str(z0_path),
         "--steps",
         str(steps),
         "--tol",
@@ -558,10 +594,19 @@ def run_mple(experiment_dir: Path, steps: int, tol: float, seed: int, outcome_on
 
 
 def experiment_has_panel_artifacts(experiment_dir: Path) -> bool:
+    metadata_path = experiment_dir / "experiment_metadata.yaml"
+    if not metadata_path.exists():
+        return False
+    metadata = OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
+    if not isinstance(metadata, dict):
+        return False
+    panel_path = Path(str(metadata.get("shared_panel_path", "")))
+    x0_path = Path(str(metadata.get("shared_x0_path", "")))
+    z0_path = Path(str(metadata.get("shared_z0_path", "")))
     required = [
-        experiment_dir / "panel_data.npz",
-        experiment_dir / "x_0.npy",
-        experiment_dir / "z_0.npy",
+        panel_path,
+        x0_path,
+        z0_path,
         experiment_dir / "gamma_matrix_sparse.npz",
         experiment_dir / "field_basis.npy",
     ]
@@ -592,6 +637,8 @@ def main() -> None:
     state_scope_label = str(trim_metadata["trim_scope_label"])
     output_root = (REPO_ROOT / args.output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+    shared_panel_root = output_root / "shared_panels"
+    shared_panel_root.mkdir(parents=True, exist_ok=True)
 
     grid = build_experiment_grid(args)
     network_edge_tables = load_network_edge_tables(args.networks)
@@ -634,6 +681,15 @@ def main() -> None:
         gamma_matrix, adjacency_edges = load_network_matrix(network_name, realized_node_order, network_edge_tables)
         validate_basis_infinity_norms(field_basis, gamma_matrix)
         x, z, x_0, z_0, s = build_panel_arrays(aligned_panel, realized_node_order)
+        shared_panel_dir = shared_panel_root / shared_panel_name(
+            outcome_code=outcome_code,
+            intervention_code=intervention_code,
+            lag_code=lag_code,
+            trim_applied=bool(trim_metadata["trim_applied"]),
+        )
+        shared_panel_path = shared_panel_dir / "panel_data.npz"
+        shared_x0_path = shared_panel_dir / "x_0.npy"
+        shared_z0_path = shared_panel_dir / "z_0.npy"
         stats = sparse_matrix_stats(gamma_matrix)
         config = create_config(
             n_nodes=len(realized_node_order),
@@ -692,6 +748,12 @@ def main() -> None:
             "requested_calendar_weeks": int(support_metadata["requested_calendar_weeks"]),
             "weeks_dropped_due_to_missing_or_lag": int(support_metadata["weeks_dropped_due_to_missing_or_lag"]),
             "support_selection_rule": support_metadata["support_selection_rule"],
+            "shared_panel_dir": str(shared_panel_dir),
+            "shared_panel_path": str(shared_panel_path),
+            "shared_x0_path": str(shared_x0_path),
+            "shared_z0_path": str(shared_z0_path),
+            "shared_node_index_path": str(shared_panel_dir / "node_index.csv"),
+            "shared_time_index_path": str(shared_panel_dir / "time_index.csv"),
             **stats,
         }
 
@@ -707,22 +769,57 @@ def main() -> None:
                     f"{experiment_dir} exists but is missing panel artifacts. Re-run with --overwrite to rebuild it."
                 )
         else:
+            shared_panel_metadata = {
+                key: metadata[key]
+                for key in [
+                    "source",
+                    "state",
+                    "outcome_code",
+                    "outcome_label",
+                    "intervention_code",
+                    "intervention_label",
+                    "intervention_family",
+                    "lag_code",
+                    "lag_steps",
+                    "trim_applied",
+                    "trim_rule",
+                    "requested_node_count",
+                    "node_count",
+                    "dropped_node_count",
+                    "time_steps",
+                    "pre_intervention_steps",
+                    "requested_core_start_date",
+                    "requested_core_end_date",
+                    "realized_week_start_date",
+                    "realized_week_end_date",
+                    "realized_calendar_weeks",
+                    "requested_calendar_weeks",
+                    "weeks_dropped_due_to_missing_or_lag",
+                    "support_selection_rule",
+                ]
+                if key in metadata
+            }
+            if args.overwrite or not shared_panel_path.exists():
+                write_shared_panel_artifacts(
+                    shared_panel_dir=shared_panel_dir,
+                    panel=aligned_panel,
+                    node_table=node_table,
+                    time_index=time_index,
+                    x=x,
+                    z=z,
+                    x_0=x_0,
+                    z_0=z_0,
+                    metadata=shared_panel_metadata,
+                )
             save_experiment(
                 experiment_dir,
                 config,
                 metadata,
-                aligned_panel,
-                node_table,
-                time_index,
                 field_basis,
                 field_basis_names,
                 gamma_matrix,
                 network_name,
                 adjacency_edges,
-                x,
-                z,
-                x_0,
-                z_0,
             )
             binary_summary = compute_binary_summary(aligned_panel)
             binary_summary.to_csv(experiment_dir / "binary_definition_summary.csv", index=False)
@@ -753,12 +850,30 @@ def main() -> None:
         fallback_run = False
         if args.run_mple:
             try:
-                run_mple(experiment_dir, steps=args.steps, tol=args.tol, seed=args.seed, outcome_only=False)
+                run_mple(
+                    experiment_dir,
+                    panel_path=shared_panel_path,
+                    x0_path=shared_x0_path,
+                    z0_path=shared_z0_path,
+                    steps=args.steps,
+                    tol=args.tol,
+                    seed=args.seed,
+                    outcome_only=False,
+                )
                 full_fit_status = "completed"
             except subprocess.CalledProcessError:
                 full_fit_status = "failed"
                 try:
-                    run_mple(experiment_dir, steps=args.steps, tol=args.tol, seed=args.seed, outcome_only=True)
+                    run_mple(
+                        experiment_dir,
+                        panel_path=shared_panel_path,
+                        x0_path=shared_x0_path,
+                        z0_path=shared_z0_path,
+                        steps=args.steps,
+                        tol=args.tol,
+                        seed=args.seed,
+                        outcome_only=True,
+                    )
                     outcome_only_fit_status = "completed"
                     fallback_run = True
                 except subprocess.CalledProcessError:
@@ -790,6 +905,7 @@ def main() -> None:
                 "realized_calendar_weeks": int(support_metadata["realized_calendar_weeks"]),
                 "weeks_dropped_due_to_missing_or_lag": int(support_metadata["weeks_dropped_due_to_missing_or_lag"]),
                 "support_selection_rule": support_metadata["support_selection_rule"],
+                "shared_panel_dir": str(shared_panel_dir),
                 "full_fit_status": full_fit_status,
                 "outcome_only_fit_status": outcome_only_fit_status,
                 "fallback_run": fallback_run,

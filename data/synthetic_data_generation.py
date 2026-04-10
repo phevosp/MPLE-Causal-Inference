@@ -133,25 +133,97 @@ def sample_x_t(x_prev, z_curr, config, field_vector_t, interaction_matrix, rng):
     return x_t
 
 
-def generate_data(config, field_matrix, interaction_matrix, x_0, rng):
+def intervention_mode(config) -> str:
+    """Return the configured intervention source mode."""
+    mode = getattr(config.generation_params, "intervention_mode", "generated_z")
+    return str(mode)
+
+
+def load_fixed_intervention_artifacts(config) -> tuple[np.ndarray, np.ndarray, dict[str, str]]:
+    """Load fixed intervention trajectories from externally prepared panel artifacts."""
+    source = getattr(config.generation_params, "fixed_z_source", None)
+    if source is None:
+        raise ValueError("generation_params.fixed_z_source is required when intervention_mode='fixed_z'.")
+
+    panel_path_value = getattr(source, "panel_path", None)
+    z0_path_value = getattr(source, "z0_path", None)
+    if not panel_path_value or not z0_path_value:
+        raise ValueError("fixed_z_source.panel_path and fixed_z_source.z0_path are required.")
+
+    panel_path = Path(str(panel_path_value))
+    z0_path = Path(str(z0_path_value))
+    if not panel_path.exists():
+        raise FileNotFoundError(f"Fixed-z panel artifact does not exist: {panel_path}")
+    if not z0_path.exists():
+        raise FileNotFoundError(f"Fixed-z z_0 artifact does not exist: {z0_path}")
+
+    data = np.load(panel_path)
+    if "z" not in data:
+        raise KeyError(f"Fixed-z panel artifact {panel_path} does not contain a 'z' array.")
+    z = np.asarray(data["z"], dtype=float)
+    z_0 = np.asarray(np.load(z0_path), dtype=float)
+
+    expected_shape = (int(config.global_params.T), int(config.global_params.N))
+    if z.shape != expected_shape:
+        raise ValueError(
+            f"Fixed-z artifact shape {z.shape} does not match configured (T, N)={expected_shape}."
+        )
+    if z_0.shape != (int(config.global_params.N),):
+        raise ValueError(
+            f"Fixed-z initial state shape {z_0.shape} does not match configured N={int(config.global_params.N)}."
+        )
+
+    metadata = {
+        "fixed_z_panel_path": str(panel_path.resolve()),
+        "fixed_z_z0_path": str(z0_path.resolve()),
+    }
+    shared_dir_value = getattr(source, "shared_panel_dir", None)
+    if shared_dir_value:
+        metadata["fixed_z_shared_panel_dir"] = str(Path(str(shared_dir_value)).resolve())
+    for key in ["outcome_code", "intervention_code", "lag_code", "trim_scope"]:
+        value = getattr(source, key, None)
+        if value is not None:
+            metadata[f"fixed_z_{key}"] = str(value)
+    return z, z_0, metadata
+
+
+def derive_pre_intervention_steps(z: np.ndarray) -> int:
+    """Infer the first treated time step from an observed intervention panel."""
+    treated_rows = np.any(np.asarray(z) == 1, axis=1)
+    return int(np.argmax(treated_rows)) if treated_rows.any() else int(z.shape[0])
+
+
+def generate_data(config, field_matrix, interaction_matrix, x_0, rng, fixed_z=None):
     """Generate synthetic outcome and intervention trajectories from the conditional model."""
     x = np.zeros((config.global_params.T, config.global_params.N))
     z = np.zeros((config.global_params.T, config.global_params.N))
+    z_0 = np.zeros(config.global_params.N, dtype=float)
 
-    z[0, :] = (
-        sample_z_t(x_0, np.zeros_like(x_0), config, rng)
-        if config.global_params.s == 0
-        else -np.ones_like(x_0)
-    )
+    mode = intervention_mode(config)
+    if mode == "fixed_z":
+        if fixed_z is None:
+            raise ValueError("fixed_z must be provided when intervention_mode='fixed_z'.")
+        fixed_z = np.asarray(fixed_z, dtype=float)
+        if fixed_z.shape != z.shape:
+            raise ValueError(f"fixed_z has shape {fixed_z.shape}, expected {z.shape}.")
+        z[:, :] = fixed_z
+
+    if mode == "generated_z":
+        z[0, :] = (
+            sample_z_t(x_0, z_0, config, rng)
+            if config.global_params.s == 0
+            else -np.ones_like(x_0)
+        )
     x[0, :] = sample_x_t(x_0, z[0, :], config, field_matrix[0, :], interaction_matrix, rng)
 
     for t in range(1, config.global_params.T):
         print(f"Sampling time step {t}...")
-        z[t, :] = (
-            sample_z_t(x[t - 1, :], z[t - 1, :], config, rng)
-            if t >= config.global_params.s
-            else -np.ones_like(x_0)
-        )
+        if mode == "generated_z":
+            z[t, :] = (
+                sample_z_t(x[t - 1, :], z[t - 1, :], config, rng)
+                if t >= config.global_params.s
+                else -np.ones_like(x_0)
+            )
         x[t, :] = sample_x_t(
             x[t - 1, :],
             z[t, :],
@@ -161,7 +233,7 @@ def generate_data(config, field_matrix, interaction_matrix, x_0, rng):
             rng,
         )
 
-    return x, z
+    return x, z, z_0
 
 
 def save_artifacts(
@@ -175,6 +247,7 @@ def save_artifacts(
     field_matrix: np.ndarray,
     interaction_matrix: np.ndarray,
     x_0: np.ndarray,
+    z_0: np.ndarray,
     x: np.ndarray,
     z: np.ndarray,
 ) -> None:
@@ -186,6 +259,7 @@ def save_artifacts(
     np.savez(f"{data_folder}/panel_data.npz", x=x, z=z)
     np.save(f"{data_folder}/gamma_matrix.npy", gamma_matrix)
     np.save(f"{data_folder}/x_0.npy", x_0)
+    np.save(f"{data_folder}/z_0.npy", z_0)
     np.save(f"{data_folder}/field_basis.npy", basis.field_basis)
     np.save(f"{data_folder}/interaction_basis.npy", basis.interaction_basis)
     np.save(f"{data_folder}/field_vector.npy", field_vector)
@@ -267,14 +341,25 @@ if __name__ == "__main__":
         basis.interaction_basis,
     )
 
+    fixed_z_metadata: dict[str, str] = {}
+    if intervention_mode(config) == "fixed_z":
+        fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
+        config.global_params.s = derive_pre_intervention_steps(fixed_z)
+    else:
+        fixed_z = None
+        z_0 = np.zeros(config.global_params.N, dtype=float)
+
     print("Generating data with the conditional process...")
-    x, z = generate_data(
+    x, z, generated_z_0 = generate_data(
         config,
         field_matrix,
         interaction_matrix,
         x_0,
         rng,
+        fixed_z=fixed_z,
     )
+    if intervention_mode(config) != "fixed_z":
+        z_0 = generated_z_0
 
     metadata = {
         "descriptor": args.descriptor or descriptor,
@@ -292,7 +377,9 @@ if __name__ == "__main__":
             float(np.linalg.norm(matrix, ord=np.inf))
             for matrix in basis.interaction_basis
         ],
+        "intervention_mode": intervention_mode(config),
         **extra_metadata,
+        **fixed_z_metadata,
     }
     save_artifacts(
         data_folder=data_folder,
@@ -305,6 +392,7 @@ if __name__ == "__main__":
         field_matrix=field_matrix,
         interaction_matrix=interaction_matrix,
         x_0=x_0,
+        z_0=z_0,
         x=x,
         z=z,
     )
