@@ -6,6 +6,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -46,6 +47,30 @@ from model_utils import ModelArtifacts, save_model_artifacts, validate_basis_inf
 NON_MAINLAND_STATEFPS = frozenset({"02", "15", "60", "66", "69", "72", "78"})
 TRIM_RULE_LABEL = "mainland_us_and_total_population_ge_2000"
 TRIMMED_STATE_SCOPE_LABEL = "Mainland US counties with total_population >= 2000"
+
+
+@dataclass(frozen=True)
+class RealizedBinaryArtifact:
+    code: str
+    panel_key: str
+    values: np.ndarray
+    initial_values: np.ndarray
+    observed_mask: np.ndarray
+    initial_observed_mask: np.ndarray
+    node_order: list[str]
+    time_index: pd.DataFrame
+    artifact_dir: Path
+    metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class RealizedNetworkArtifact:
+    network_name: str
+    gamma_matrix: sparse.csr_matrix
+    adjacency_edges: pd.DataFrame
+    node_order: list[str]
+    artifact_dir: Path
+    metadata: dict[str, object]
 
 
 def parse_args() -> argparse.Namespace:
@@ -319,6 +344,342 @@ def build_experiment_grid(args: argparse.Namespace) -> list[dict[str, str]]:
 
 def requested_window_for_intervention(intervention_code: str) -> tuple[pd.Timestamp, pd.Timestamp]:
     return CORE_START_DATE, CORE_END_DATE
+
+
+def realized_outcome_name(outcome_code: str, trim_applied: bool) -> str:
+    trim_label = "trimmed" if trim_applied else "full"
+    return f"outcome_{outcome_code}__scope_{trim_label}"
+
+
+def realized_intervention_name(
+    intervention_code: str, lag_code: str, trim_applied: bool
+) -> str:
+    trim_label = "trimmed" if trim_applied else "full"
+    return f"intervention_{intervention_code}__lag_{lag_code}__scope_{trim_label}"
+
+
+def realized_network_name(network_name: str, trim_applied: bool) -> str:
+    trim_label = "trimmed" if trim_applied else "full"
+    return f"network_{network_name}__scope_{trim_label}"
+
+
+def canonical_time_index(panel: pd.DataFrame) -> pd.DataFrame:
+    time_index = (
+        panel.loc[panel["WeekEndDate"].between(CORE_START_DATE, CORE_END_DATE)][
+            ["WeekStartDate", "WeekEndDate", "iso_year", "iso_week"]
+        ]
+        .drop_duplicates()
+        .sort_values("WeekEndDate")
+        .reset_index(drop=True)
+    )
+    time_index["model_index"] = np.arange(len(time_index), dtype=int)
+    return time_index
+
+
+def _panel_grid(
+    panel: pd.DataFrame,
+    node_order: list[str],
+    time_index: pd.DataFrame,
+    value_column: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    pivot = (
+        panel.pivot(index="WeekEndDate", columns="fips", values=value_column)
+        .reindex(index=time_index["WeekEndDate"], columns=node_order)
+        .sort_index()
+    )
+    observed_mask = pivot.notna().to_numpy(dtype=bool)
+    values = pivot.to_numpy(dtype=float)
+    return values, observed_mask
+
+
+def write_realized_binary_artifact(
+    artifact_dir: Path,
+    artifact: RealizedBinaryArtifact,
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        artifact_dir / "panel_data.npz",
+        **{
+            artifact.panel_key: np.asarray(artifact.values, dtype=np.float32),
+            "observed_mask": np.asarray(artifact.observed_mask, dtype=bool),
+        },
+    )
+    np.save(
+        artifact_dir / f"{artifact.panel_key}_0.npy",
+        np.asarray(artifact.initial_values, dtype=np.float32),
+    )
+    np.save(
+        artifact_dir / f"{artifact.panel_key}0_observed_mask.npy",
+        np.asarray(artifact.initial_observed_mask, dtype=bool),
+    )
+    node_frame = pd.DataFrame({"fips": artifact.node_order, "node_index": np.arange(len(artifact.node_order), dtype=int)})
+    node_frame.to_csv(artifact_dir / "node_index.csv", index=False)
+    artifact.time_index.to_csv(artifact_dir / "time_index.csv", index=False)
+    OmegaConf.save(OmegaConf.create(artifact.metadata), artifact_dir / "panel_metadata.yaml")
+
+
+def write_realized_network_artifact(
+    artifact_dir: Path,
+    artifact: RealizedNetworkArtifact,
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    sparse.save_npz(artifact_dir / "gamma_matrix_sparse.npz", artifact.gamma_matrix)
+    artifact.adjacency_edges.to_csv(artifact_dir / "adjacency_edge_list.csv.gz", index=False)
+    pd.DataFrame(
+        {"fips": artifact.node_order, "node_index": np.arange(len(artifact.node_order), dtype=int)}
+    ).to_csv(artifact_dir / "node_index.csv", index=False)
+    OmegaConf.save(
+        OmegaConf.create(artifact.metadata),
+        artifact_dir / "network_metadata.yaml",
+    )
+
+
+def build_realized_outcome_artifact(
+    panel: pd.DataFrame,
+    node_order: list[str],
+    time_index: pd.DataFrame,
+    outcome_code: str,
+    trim_applied: bool,
+    artifact_dir: Path,
+) -> RealizedBinaryArtifact:
+    x_col = f"x_{outcome_code}_pm1"
+    filtered = panel.loc[
+        panel["WeekEndDate"].between(CORE_START_DATE, CORE_END_DATE)
+        & panel["fips"].isin(node_order),
+        ["fips", "WeekEndDate", x_col],
+    ].copy()
+    values_all, observed_all = _panel_grid(filtered, node_order, time_index, x_col)
+    if values_all.shape[0] < 2:
+        raise ValueError(f"Outcome artifact for {outcome_code} does not contain at least two weeks.")
+    metadata = {
+        "artifact_type": "realized_outcome",
+        "source": SOURCE_LABEL,
+        "outcome_code": outcome_code,
+        "outcome_label": OUTCOME_SPECS[outcome_code].label,
+        "trim_applied": bool(trim_applied),
+        "requested_core_start_date": CORE_START_DATE.date().isoformat(),
+        "requested_core_end_date": CORE_END_DATE.date().isoformat(),
+        "node_count": int(len(node_order)),
+        "calendar_weeks": int(len(time_index)),
+    }
+    return RealizedBinaryArtifact(
+        code=outcome_code,
+        panel_key="x",
+        values=values_all[1:],
+        initial_values=values_all[0],
+        observed_mask=observed_all[1:],
+        initial_observed_mask=observed_all[0],
+        node_order=list(node_order),
+        time_index=time_index.copy(),
+        artifact_dir=artifact_dir,
+        metadata=metadata,
+    )
+
+
+def build_realized_intervention_artifact(
+    panel: pd.DataFrame,
+    node_order: list[str],
+    time_index: pd.DataFrame,
+    intervention_code: str,
+    lag_code: str,
+    trim_applied: bool,
+    artifact_dir: Path,
+) -> RealizedBinaryArtifact:
+    z_col = f"z_{intervention_code}_pm1"
+    lag_steps = lag_code_to_steps(lag_code)
+    filtered = panel.loc[
+        panel["WeekEndDate"].between(CORE_START_DATE, CORE_END_DATE)
+        & panel["fips"].isin(node_order),
+        ["fips", "WeekEndDate", z_col],
+    ].copy()
+    filtered = filtered.sort_values(["fips", "WeekEndDate"]).reset_index(drop=True)
+    filtered["Intervention_pm1_raw"] = filtered[z_col].astype("Int64")
+    filtered["Intervention_pm1"] = (
+        filtered.groupby("fips", sort=False)["Intervention_pm1_raw"]
+        .shift(lag_steps)
+        .astype("Int64")
+    )
+    leading_lag_mask = filtered.groupby("fips", sort=False).cumcount() < lag_steps
+    filtered.loc[
+        leading_lag_mask & filtered["Intervention_pm1"].isna(),
+        "Intervention_pm1",
+    ] = -1
+    values_all, observed_all = _panel_grid(
+        filtered, node_order, time_index, "Intervention_pm1"
+    )
+    if values_all.shape[0] < 2:
+        raise ValueError(
+            f"Intervention artifact for {intervention_code} at lag {lag_code} does not contain at least two weeks."
+        )
+    metadata = {
+        "artifact_type": "realized_intervention",
+        "source": SOURCE_LABEL,
+        "intervention_code": intervention_code,
+        "intervention_label": INTERVENTION_SPECS[intervention_code].label,
+        "intervention_family": INTERVENTION_SPECS[intervention_code].family,
+        "lag_code": lag_code,
+        "lag_steps": lag_steps,
+        "trim_applied": bool(trim_applied),
+        "requested_core_start_date": CORE_START_DATE.date().isoformat(),
+        "requested_core_end_date": CORE_END_DATE.date().isoformat(),
+        "node_count": int(len(node_order)),
+        "calendar_weeks": int(len(time_index)),
+    }
+    return RealizedBinaryArtifact(
+        code=intervention_code,
+        panel_key="z",
+        values=values_all[1:],
+        initial_values=values_all[0],
+        observed_mask=observed_all[1:],
+        initial_observed_mask=observed_all[0],
+        node_order=list(node_order),
+        time_index=time_index.copy(),
+        artifact_dir=artifact_dir,
+        metadata=metadata,
+    )
+
+
+def build_realized_network_artifact(
+    network_name: str,
+    node_order: list[str],
+    gamma_matrix: sparse.csr_matrix,
+    adjacency_edges: pd.DataFrame,
+    trim_applied: bool,
+    artifact_dir: Path,
+) -> RealizedNetworkArtifact:
+    metadata = {
+        "artifact_type": "realized_network",
+        "source": SOURCE_LABEL,
+        "network_name": network_name,
+        "trim_applied": bool(trim_applied),
+        "node_count": int(len(node_order)),
+        **sparse_matrix_stats(gamma_matrix),
+    }
+    return RealizedNetworkArtifact(
+        network_name=network_name,
+        gamma_matrix=gamma_matrix,
+        adjacency_edges=adjacency_edges.copy(),
+        node_order=list(node_order),
+        artifact_dir=artifact_dir,
+        metadata=metadata,
+    )
+
+
+def reconstruct_full_binary_panel(
+    artifact: RealizedBinaryArtifact,
+) -> tuple[np.ndarray, np.ndarray]:
+    values = np.vstack([artifact.initial_values[None, :], artifact.values])
+    observed = np.vstack(
+        [artifact.initial_observed_mask[None, :], artifact.observed_mask]
+    )
+    return values, observed
+
+
+def select_dense_suffix_support(
+    outcome_artifact: RealizedBinaryArtifact,
+    intervention_artifact: RealizedBinaryArtifact,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, list[str], dict[str, object]]:
+    if outcome_artifact.node_order != intervention_artifact.node_order:
+        raise ValueError("Outcome and intervention artifacts do not share the same node ordering.")
+    if not outcome_artifact.time_index["WeekEndDate"].equals(
+        intervention_artifact.time_index["WeekEndDate"]
+    ):
+        raise ValueError("Outcome and intervention artifacts do not share the same weekly index.")
+
+    x_all, x_obs = reconstruct_full_binary_panel(outcome_artifact)
+    z_all, z_obs = reconstruct_full_binary_panel(intervention_artifact)
+    eligibility_matrix = x_obs & z_obs
+    best_support: tuple[int, int, int, int, np.ndarray] | None = None
+    for start_index in range(eligibility_matrix.shape[0]):
+        suffix = eligibility_matrix[start_index:, :]
+        complete_nodes = suffix.all(axis=0)
+        node_count = int(complete_nodes.sum())
+        if node_count == 0:
+            continue
+        week_count = int(suffix.shape[0])
+        area = int(node_count * week_count)
+        candidate = (area, node_count, week_count, -start_index, complete_nodes)
+        if best_support is None or candidate[:4] > best_support[:4]:
+            best_support = candidate
+    if best_support is None:
+        raise ValueError("No dense realized panel remains after combining outcome and intervention artifacts.")
+
+    _, realized_node_count, realized_week_count, neg_start_index, complete_nodes = best_support
+    realized_start_index = -neg_start_index
+    node_indices = np.flatnonzero(complete_nodes)
+    realized_node_order = [outcome_artifact.node_order[idx] for idx in node_indices]
+    realized_time_index = (
+        outcome_artifact.time_index.iloc[realized_start_index:]
+        .reset_index(drop=True)
+        .copy()
+    )
+    realized_time_index["model_index"] = np.arange(len(realized_time_index), dtype=int)
+    x_realized = x_all[realized_start_index:, :][:, node_indices]
+    z_realized = z_all[realized_start_index:, :][:, node_indices]
+    x = x_realized[1:].astype(np.int8)
+    z = z_realized[1:].astype(np.int8)
+    x_0 = x_realized[0].astype(np.int8)
+    z_0 = z_realized[0].astype(np.int8)
+    support_metadata = {
+        "requested_node_count": int(len(outcome_artifact.node_order)),
+        "requested_calendar_weeks": int(len(outcome_artifact.time_index)),
+        "requested_start_date": CORE_START_DATE.date().isoformat(),
+        "requested_end_date": CORE_END_DATE.date().isoformat(),
+        "support_selection_rule": "max_complete_suffix_by_node_week_area",
+        "realized_node_count": int(realized_node_count),
+        "realized_calendar_weeks": int(realized_week_count),
+        "weeks_dropped_due_to_missing_or_lag": int(len(outcome_artifact.time_index) - realized_week_count),
+        "dropped_node_count": int(len(outcome_artifact.node_order) - realized_node_count),
+    }
+    return x, z, x_0, z_0, realized_time_index, realized_node_order, support_metadata
+
+
+def assembled_panel_from_arrays(
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    z_0: np.ndarray,
+    time_index: pd.DataFrame,
+    node_order: list[str],
+    outcome_code: str,
+    intervention_code: str,
+) -> pd.DataFrame:
+    x_all = np.vstack([x_0[None, :], x])
+    z_all = np.vstack([z_0[None, :], z])
+    week_count = x_all.shape[0]
+    node_count = len(node_order)
+    return pd.DataFrame(
+        {
+            "WeekStartDate": np.repeat(time_index["WeekStartDate"].to_numpy(), node_count),
+            "WeekEndDate": np.repeat(time_index["WeekEndDate"].to_numpy(), node_count),
+            "iso_year": np.repeat(time_index["iso_year"].to_numpy(), node_count),
+            "iso_week": np.repeat(time_index["iso_week"].to_numpy(), node_count),
+            "fips": np.tile(np.asarray(node_order, dtype=object), week_count),
+            "Outcome_pm1": x_all.reshape(-1).astype(np.int8),
+            "Intervention_pm1": z_all.reshape(-1).astype(np.int8),
+            "outcome_code": outcome_code,
+            "intervention_code": intervention_code,
+            "outcome_label": OUTCOME_SPECS[outcome_code].label,
+            "intervention_label": INTERVENTION_SPECS[intervention_code].label,
+        }
+    )
+
+
+def subset_network_artifact(
+    artifact: RealizedNetworkArtifact, realized_node_order: list[str]
+) -> tuple[sparse.csr_matrix, pd.DataFrame]:
+    lookup = {node_id: idx for idx, node_id in enumerate(artifact.node_order)}
+    indices = np.asarray([lookup[node_id] for node_id in realized_node_order], dtype=int)
+    gamma_matrix = artifact.gamma_matrix[indices][:, indices].tocsr()
+    edge_columns = list(artifact.adjacency_edges.columns)
+    source_column = edge_columns[0]
+    target_column = edge_columns[1]
+    keep = set(realized_node_order)
+    adjacency_edges = artifact.adjacency_edges.loc[
+        artifact.adjacency_edges[source_column].isin(keep)
+        & artifact.adjacency_edges[target_column].isin(keep)
+    ].copy()
+    return gamma_matrix, adjacency_edges
 
 
 def prepare_panel_for_experiment(
@@ -639,11 +1000,81 @@ def main() -> None:
     state_scope_label = str(trim_metadata["trim_scope_label"])
     output_root = (REPO_ROOT / args.output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+    realized_outcome_root = output_root / "realized_outcomes"
+    realized_intervention_root = output_root / "realized_interventions"
+    realized_network_root = output_root / "realized_networks"
     shared_panel_root = output_root / "shared_panels"
+    realized_outcome_root.mkdir(parents=True, exist_ok=True)
+    realized_intervention_root.mkdir(parents=True, exist_ok=True)
+    realized_network_root.mkdir(parents=True, exist_ok=True)
     shared_panel_root.mkdir(parents=True, exist_ok=True)
 
     grid = build_experiment_grid(args)
     network_edge_tables = load_network_edge_tables(args.networks)
+    core_time_index = canonical_time_index(panel)
+    requested_outcomes = sorted({item["outcome_code"] for item in grid})
+    requested_interventions = sorted(
+        {(item["intervention_code"], item["lag_code"]) for item in grid}
+    )
+    requested_networks = sorted({item["network_name"] for item in grid})
+
+    realized_outcome_artifacts: dict[str, RealizedBinaryArtifact] = {}
+    for outcome_code in requested_outcomes:
+        artifact_dir = realized_outcome_root / realized_outcome_name(
+            outcome_code, bool(trim_metadata["trim_applied"])
+        )
+        artifact = build_realized_outcome_artifact(
+            panel=panel,
+            node_order=full_node_order,
+            time_index=core_time_index,
+            outcome_code=outcome_code,
+            trim_applied=bool(trim_metadata["trim_applied"]),
+            artifact_dir=artifact_dir,
+        )
+        if args.overwrite or not (artifact_dir / "panel_data.npz").exists():
+            write_realized_binary_artifact(artifact_dir, artifact)
+        realized_outcome_artifacts[outcome_code] = artifact
+
+    realized_intervention_artifacts: dict[tuple[str, str], RealizedBinaryArtifact] = {}
+    for intervention_code, lag_code in requested_interventions:
+        artifact_dir = realized_intervention_root / realized_intervention_name(
+            intervention_code,
+            lag_code,
+            bool(trim_metadata["trim_applied"]),
+        )
+        artifact = build_realized_intervention_artifact(
+            panel=panel,
+            node_order=full_node_order,
+            time_index=core_time_index,
+            intervention_code=intervention_code,
+            lag_code=lag_code,
+            trim_applied=bool(trim_metadata["trim_applied"]),
+            artifact_dir=artifact_dir,
+        )
+        if args.overwrite or not (artifact_dir / "panel_data.npz").exists():
+            write_realized_binary_artifact(artifact_dir, artifact)
+        realized_intervention_artifacts[(intervention_code, lag_code)] = artifact
+
+    realized_network_artifacts: dict[str, RealizedNetworkArtifact] = {}
+    for network_name in requested_networks:
+        gamma_matrix, adjacency_edges = load_network_matrix(
+            network_name, full_node_order, network_edge_tables
+        )
+        artifact_dir = realized_network_root / realized_network_name(
+            network_name, bool(trim_metadata["trim_applied"])
+        )
+        artifact = build_realized_network_artifact(
+            network_name=network_name,
+            node_order=full_node_order,
+            gamma_matrix=gamma_matrix,
+            adjacency_edges=adjacency_edges,
+            trim_applied=bool(trim_metadata["trim_applied"]),
+            artifact_dir=artifact_dir,
+        )
+        if args.overwrite or not (artifact_dir / "gamma_matrix_sparse.npz").exists():
+            write_realized_network_artifact(artifact_dir, artifact)
+        realized_network_artifacts[network_name] = artifact
+
     manifest_rows: list[dict[str, object]] = []
     experiment_counter = 0
 
@@ -657,17 +1088,24 @@ def main() -> None:
         if experiment_dir.exists() and args.overwrite:
             shutil.rmtree(experiment_dir)
 
-        aligned_panel, time_index, realized_node_order, support_metadata = prepare_panel_for_experiment(
-            panel,
-            full_node_order,
-            outcome_code,
-            intervention_code,
-            lag_code,
+        outcome_artifact = realized_outcome_artifacts[outcome_code]
+        intervention_artifact = realized_intervention_artifacts[
+            (intervention_code, lag_code)
+        ]
+        x, z, x_0, z_0, time_index, realized_node_order, support_metadata = select_dense_suffix_support(
+            outcome_artifact,
+            intervention_artifact,
         )
-        aligned_panel["outcome_code"] = outcome_code
-        aligned_panel["intervention_code"] = intervention_code
-        aligned_panel["outcome_label"] = OUTCOME_SPECS[outcome_code].label
-        aligned_panel["intervention_label"] = INTERVENTION_SPECS[intervention_code].label
+        aligned_panel = assembled_panel_from_arrays(
+            x=x,
+            z=z,
+            x_0=x_0,
+            z_0=z_0,
+            time_index=time_index,
+            node_order=realized_node_order,
+            outcome_code=outcome_code,
+            intervention_code=intervention_code,
+        )
 
         node_table = (
             full_node_table.loc[full_node_table["fips"].isin(realized_node_order)]
@@ -680,9 +1118,12 @@ def main() -> None:
             .reset_index(drop=True)
         )
         field_basis, field_basis_names, field_basis_mode = build_field_basis(node_table)
-        gamma_matrix, adjacency_edges = load_network_matrix(network_name, realized_node_order, network_edge_tables)
+        gamma_matrix, adjacency_edges = subset_network_artifact(
+            realized_network_artifacts[network_name], realized_node_order
+        )
         validate_basis_infinity_norms(field_basis, gamma_matrix)
-        x, z, x_0, z_0, s = build_panel_arrays(aligned_panel, realized_node_order)
+        treated_rows = np.any(z == 1, axis=1)
+        s = int(np.argmax(treated_rows)) if treated_rows.any() else int(z.shape[0])
         shared_panel_dir = shared_panel_root / shared_panel_name(
             outcome_code=outcome_code,
             intervention_code=intervention_code,
@@ -756,6 +1197,9 @@ def main() -> None:
             "shared_z0_path": str(shared_z0_path),
             "shared_node_index_path": str(shared_panel_dir / "node_index.csv"),
             "shared_time_index_path": str(shared_panel_dir / "time_index.csv"),
+            "realized_outcome_dir": str(outcome_artifact.artifact_dir),
+            "realized_intervention_dir": str(intervention_artifact.artifact_dir),
+            "realized_network_dir": str(realized_network_artifacts[network_name].artifact_dir),
             **stats,
         }
 

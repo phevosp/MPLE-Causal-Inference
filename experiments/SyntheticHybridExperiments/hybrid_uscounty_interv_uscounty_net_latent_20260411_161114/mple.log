@@ -1,0 +1,32 @@
+2026-04-11 16:38:06 | INFO | Loading data...
+2026-04-11 16:38:06 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_latent_20260411_161114\panel_data.npz
+2026-04-11 16:38:06 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_latent_20260411_161114\x_0.npy
+2026-04-11 16:38:06 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_latent_20260411_161114\z_0.npy
+2026-04-11 16:38:06 | INFO | Loaded field mode: latent_feature_matrix
+2026-04-11 16:38:06 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 16:38:06 | INFO | Intervention-process model enabled: False
+2026-04-11 16:38:06 | INFO | Eval 0  |  Loss: 0.675212
+2026-04-11 16:38:06 | INFO |   beta: +0.0793,  xi: -0.2085,  eta: +0.0135
+2026-04-11 16:38:12 | INFO | Eval 100  |  Loss: 0.610249
+2026-04-11 16:38:12 | INFO |   beta: +0.3428,  xi: +0.2630,  eta: +0.0736
+2026-04-11 16:38:17 | INFO | Eval 200  |  Loss: 0.610186
+2026-04-11 16:38:17 | INFO |   beta: +0.3547,  xi: +0.1815,  eta: +0.0753
+2026-04-11 16:38:22 | INFO | Eval 300  |  Loss: 0.610078
+2026-04-11 16:38:22 | INFO |   beta: +0.3482,  xi: +0.2662,  eta: +0.0776
+2026-04-11 16:38:23 | INFO | Done fitting.
+2026-04-11 16:38:23 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 16:38:23 | INFO | Final Loss: 0.610078
+2026-04-11 16:38:23 | INFO | Estimated vs True Parameters:
+2026-04-11 16:38:23 | INFO |   beta: 0.3482 (True: 0.3500) | SQE: 0.000003
+2026-04-11 16:38:23 | INFO |   xi: 0.2660 (True: 0.2500) | SQE: 0.000257
+2026-04-11 16:38:23 | INFO |   eta: 0.0775 (True: 0.0800) | SQE: 0.000006
+2026-04-11 16:38:23 | INFO | Field and interaction diagnostics:
+2026-04-11 16:38:23 | INFO |   field_rmse: 0.000919
+2026-04-11 16:38:23 | INFO |   interaction_fro_error: 0.151460
+2026-04-11 16:38:23 | INFO |   estimated_field_inf_norm: 2.000000
+2026-04-11 16:38:23 | INFO |   estimated_field_rank: 40.000000
+2026-04-11 16:38:23 | INFO |   bound_B: 2.000000
+2026-04-11 16:38:23 | INFO |   true_field_inf_norm: 2.000000
+2026-04-11 16:38:23 | INFO |   true_field_rank: 40.000000
+2026-04-11 16:38:23 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_latent_20260411_161114\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_latent_20260411_161114\mple_summary.md
+2026-04-11 16:38:23 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_latent_20260411_161114\mple.log

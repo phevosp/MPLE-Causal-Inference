@@ -5,10 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/latest_manifest.txt}"
-COMPLETED_MANIFEST_PATH="${EXPERIMENT_COMPLETED_MANIFEST:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/completed_manifest.txt}"
-REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/reports/conditional_experiment_report}"
 SKIP_GENERATION=0
+HYBRID_MODE=0
 GENERATE_DATA_SCRIPT="$SCRIPT_DIR/generate_data.sh"
 MPLE_ARGS=()
 
@@ -18,14 +16,20 @@ while [ "$#" -gt 0 ]; do
 			SKIP_GENERATION=1
 			shift
 			;;
-		--fixed-z)
-			GENERATE_DATA_SCRIPT="$SCRIPT_DIR/generate_data_fixed_z.sh"
+		--hybrid-uscounty)
+			HYBRID_MODE=1
+			GENERATE_DATA_SCRIPT="$SCRIPT_DIR/generate_data_hybrid.sh"
 			shift
 			;;
+		--fixed-z)
+			echo "Error: --fixed-z has been removed; use --hybrid-uscounty instead." >&2
+			exit 1
+			;;
 		--help|-h)
-			echo "Usage: bash run_experiments.sh [--skip-generation] [mple.py args...]"
+			echo "Usage: bash run_experiments.sh [--skip-generation] [--hybrid-uscounty] [mple.py args...]"
 			echo
-			echo "  --skip-generation  Reuse the existing manifest instead of rerunning generate_data.sh"
+			echo "  --skip-generation   Reuse the existing manifest instead of rerunning generation."
+			echo "  --hybrid-uscounty   Run the hybrid workflow with USCounty and generated components."
 			echo "  Remaining arguments are passed through to mple.py for every experiment."
 			exit 0
 			;;
@@ -35,6 +39,20 @@ while [ "$#" -gt 0 ]; do
 			;;
 	esac
 done
+
+if [ "$HYBRID_MODE" -eq 1 ]; then
+	DEFAULT_MANIFEST="$SCRIPT_DIR/experiments/SyntheticHybridExperiments/latest_manifest.txt"
+	DEFAULT_COMPLETED="$SCRIPT_DIR/experiments/SyntheticHybridExperiments/completed_manifest.txt"
+	DEFAULT_REPORT="$SCRIPT_DIR/experiments/SyntheticHybridExperiments/reports/hybrid_experiment_report"
+else
+	DEFAULT_MANIFEST="$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/latest_manifest.txt"
+	DEFAULT_COMPLETED="$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/completed_manifest.txt"
+	DEFAULT_REPORT="$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/reports/conditional_experiment_report"
+fi
+
+MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$DEFAULT_MANIFEST}"
+COMPLETED_MANIFEST_PATH="${EXPERIMENT_COMPLETED_MANIFEST:-$DEFAULT_COMPLETED}"
+REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$DEFAULT_REPORT}"
 
 if command -v pixi >/dev/null 2>&1; then
 	RUNNER=(pixi run python -u)
@@ -49,7 +67,7 @@ mkdir -p "$(dirname "$REPORT_STEM")"
 mkdir -p "$(dirname "$COMPLETED_MANIFEST_PATH")"
 
 if [ "$SKIP_GENERATION" -eq 0 ]; then
-	EXPERIMENT_MANIFEST="$MANIFEST_PATH" "$GENERATE_DATA_SCRIPT"
+	EXPERIMENT_MANIFEST="$MANIFEST_PATH" bash "$GENERATE_DATA_SCRIPT"
 else
 	echo "Skipping data generation and reusing manifest: $MANIFEST_PATH"
 fi

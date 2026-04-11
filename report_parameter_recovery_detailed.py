@@ -124,6 +124,13 @@ def collect_rows(manifest_path: Path) -> list[dict[str, object]]:
         row: dict[str, object] = {
             "descriptor": str(metadata.get("descriptor", folder.name)),
             "field_mode": field_mode,
+            "intervention_source": str(metadata.get("intervention_source", "")),
+            "network_source": str(metadata.get("network_source", "")),
+            "intervention_code": str(metadata.get("intervention_code", "")),
+            "lag_code": str(metadata.get("lag_code", "")),
+            "network_name": str(metadata.get("network_name", "")),
+            "trim_scope": str(metadata.get("trim_scope", "")),
+            "outcome_field_setting": str(metadata.get("outcome_field_setting", "")),
             "N": (
                 int(config.global_params.N)
                 if "global_params" in config and "N" in config.global_params
@@ -258,6 +265,10 @@ def write_markdown(path: Path, rows: list[dict[str, object]]) -> None:
     scalar_headers = [
         "descriptor",
         "field_mode",
+        "intervention_code",
+        "network_name",
+        "trim_scope",
+        "outcome_field_setting",
         "N",
         "T",
         "final_loss",
@@ -271,6 +282,10 @@ def write_markdown(path: Path, rows: list[dict[str, object]]) -> None:
     recovery_headers = [
         "descriptor",
         "field_mode",
+        "intervention_code",
+        "network_name",
+        "trim_scope",
+        "outcome_field_setting",
         "N",
         "T",
         "field_rmse",

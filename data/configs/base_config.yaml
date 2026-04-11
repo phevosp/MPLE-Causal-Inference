@@ -3,7 +3,13 @@ global_params:
   T: 100 # number of time steps
   s: 20 # number of pre-intervention time steps
   B: 1 # upper bound on the temperature, i.e. on all coefficients and realized field values
-  gamma_matrix_generator: "erdos_renyi" # method for generating the network. Options: "erdos_renyi", "complete", "cycle", "empty"
+  gamma_matrix_generator: "erdos_renyi" # method for generating the network. Options: "erdos_renyi", "complete", "cycle", "empty", "fixed_artifact"
+  fixed_gamma_source:
+    gamma_path: null # required when gamma_matrix_generator == "fixed_artifact"
+    node_index_path: null # optional provenance pointer for the fixed graph artifact
+    artifact_dir: null # optional provenance pointer for the fixed graph artifact directory
+    network_name: null # optional metadata for provenance
+    trim_scope: null # optional metadata for provenance
   x_0_generator: "bernoulli" # method for generating the initial state. Options: "bernoulli", "fixed"
   basis_params:
     field_mode: "uniform" # options: "uniform", "shared_feature_field", "latent_feature_matrix"
@@ -39,6 +45,7 @@ generation_params:
   fixed_z_source:
     panel_path: null # required when intervention_mode == "fixed_z"
     z0_path: null # required when intervention_mode == "fixed_z"
+    artifact_dir: null # optional provenance pointer for the realized intervention artifact directory
     shared_panel_dir: null # optional metadata pointer to the shared artifact directory
     outcome_code: null # optional metadata for provenance
     intervention_code: null # optional metadata for provenance

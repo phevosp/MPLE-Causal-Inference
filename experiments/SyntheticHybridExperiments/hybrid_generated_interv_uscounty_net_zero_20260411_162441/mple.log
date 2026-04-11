@@ -1,0 +1,23 @@
+2026-04-11 16:38:40 | INFO | Loading data...
+2026-04-11 16:38:40 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_generated_interv_uscounty_net_zero_20260411_162441\panel_data.npz
+2026-04-11 16:38:40 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_generated_interv_uscounty_net_zero_20260411_162441\x_0.npy
+2026-04-11 16:38:40 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_generated_interv_uscounty_net_zero_20260411_162441\z_0.npy
+2026-04-11 16:38:40 | INFO | Loaded field mode: uniform
+2026-04-11 16:38:40 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 16:38:40 | INFO | Intervention-process model enabled: False
+2026-04-11 16:38:40 | INFO | Eval 0  |  Loss: 0.674514
+2026-04-11 16:38:40 | INFO |   beta: +0.0788,  xi: +0.0844,  eta: +0.0076
+2026-04-11 16:38:40 | INFO | Done fitting.
+2026-04-11 16:38:40 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 16:38:40 | INFO | Final Loss: 0.637630
+2026-04-11 16:38:40 | INFO | Estimated vs True Parameters:
+2026-04-11 16:38:40 | INFO |   beta: 0.3468 (True: 0.3500) | SQE: 0.000010
+2026-04-11 16:38:40 | INFO |   xi: 0.2338 (True: 0.2500) | SQE: 0.000261
+2026-04-11 16:38:40 | INFO |   eta: 0.0768 (True: 0.0800) | SQE: 0.000010
+2026-04-11 16:38:40 | INFO | Field and interaction diagnostics:
+2026-04-11 16:38:40 | INFO |   field_rmse: 0.019729
+2026-04-11 16:38:40 | INFO |   static_field_rmse: 0.000000
+2026-04-11 16:38:40 | INFO |   interaction_fro_error: 0.152650
+2026-04-11 16:38:40 | INFO |   tau_rmse: 0.019729
+2026-04-11 16:38:41 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_generated_interv_uscounty_net_zero_20260411_162441\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_generated_interv_uscounty_net_zero_20260411_162441\mple_summary.md
+2026-04-11 16:38:41 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_generated_interv_uscounty_net_zero_20260411_162441\mple.log

@@ -9,6 +9,7 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 from omegaconf import OmegaConf
+from scipy import sparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -19,6 +20,7 @@ from model_utils import (
     build_synthetic_field,
     compose_interaction_matrix,
     get_xi,
+    interaction_matrix_infinity_norm,
     save_model_artifacts,
 )
 
@@ -57,7 +59,33 @@ def read_and_realize_config(
     rng = np.random.default_rng(int(config.generation_params.seed))
 
     generator = str(config.global_params.gamma_matrix_generator)
-    if generator == "erdos_renyi":
+    fixed_gamma_metadata: dict[str, str] = {}
+    if generator == "fixed_artifact":
+        source = getattr(config.global_params, "fixed_gamma_source", None)
+        if source is None:
+            raise ValueError(
+                "global_params.fixed_gamma_source is required when gamma_matrix_generator='fixed_artifact'."
+            )
+        gamma_path = Path(str(getattr(source, "gamma_path", "")))
+        if not gamma_path.exists():
+            raise FileNotFoundError(
+                "fixed_gamma_source.gamma_path must exist when gamma_matrix_generator='fixed_artifact'."
+            )
+        if gamma_path.suffix == ".npz":
+            gamma_matrix = sparse.load_npz(gamma_path).tocsr()
+        else:
+            gamma_matrix = np.asarray(np.load(gamma_path), dtype=float)
+        expected_n = int(config.global_params.N)
+        if gamma_matrix.shape != (expected_n, expected_n):
+            raise ValueError(
+                f"Fixed gamma artifact shape {gamma_matrix.shape} does not match configured N={expected_n}."
+            )
+        for key in ["artifact_dir", "network_name", "trim_scope", "node_index_path"]:
+            value = getattr(source, key, None)
+            if value:
+                fixed_gamma_metadata[f"fixed_gamma_{key}"] = str(value)
+        fixed_gamma_metadata["fixed_gamma_path"] = str(gamma_path.resolve())
+    elif generator == "erdos_renyi":
         gamma_graph = nx.erdos_renyi_graph(
             int(config.global_params.N),
             float(config.global_params.gamma_matrix_params.p),
@@ -72,9 +100,12 @@ def read_and_realize_config(
     else:
         raise ValueError(f"Invalid gamma matrix generator: {generator}")
 
-    gamma_matrix = nx.to_numpy_array(gamma_graph, nodelist=list(gamma_graph.nodes()))
-    gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2.0
-    np.fill_diagonal(gamma_matrix, 0.0)
+    if generator != "fixed_artifact":
+        gamma_matrix = nx.to_numpy_array(
+            gamma_graph, nodelist=list(gamma_graph.nodes())
+        )
+        gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2.0
+        np.fill_diagonal(gamma_matrix, 0.0)
 
     x0_mode = str(config.global_params.x_0_generator)
     if x0_mode == "bernoulli":
@@ -88,7 +119,7 @@ def read_and_realize_config(
     else:
         raise ValueError(f"Invalid x_0_generator: {x0_mode}")
 
-    return config, gamma_matrix, x_0, rng
+    return config, gamma_matrix, x_0, rng, fixed_gamma_metadata
 
 
 def intervention_mode(config) -> str:
@@ -134,6 +165,7 @@ def load_fixed_intervention_artifacts(
         "fixed_z_z0_path": str(z0_path.resolve()),
     }
     for key in [
+        "artifact_dir",
         "shared_panel_dir",
         "outcome_code",
         "intervention_code",
@@ -158,7 +190,7 @@ def sample_z_t(x_prev, z_prev, config, rng):
 
 def sample_x_t(x_prev, z_curr, config, field_t, interaction_matrix, rng):
     x_t = x_prev.copy()
-    interaction_x_t = interaction_matrix @ x_t
+    interaction_x_t = np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
     for _ in range(int(config.generation_params.gibbs_sweeps)):
         for i in rng.permutation(int(config.global_params.N)):
             old_x_i = x_t[i]
@@ -169,7 +201,13 @@ def sample_x_t(x_prev, z_curr, config, field_t, interaction_matrix, rng):
                 + interaction_x_t[i]
             )
             x_t[i] = spin_sample_from_field(h_x, rng)
-            interaction_x_t += (x_t[i] - old_x_i) * interaction_matrix[:, i]
+            delta = x_t[i] - old_x_i
+            if sparse.issparse(interaction_matrix):
+                interaction_x_t += (
+                    delta * interaction_matrix[:, i].toarray().ravel()
+                )
+            else:
+                interaction_x_t += delta * interaction_matrix[:, i]
     return x_t
 
 
@@ -257,16 +295,21 @@ def main() -> None:
     parser.add_argument("--descriptor", type=str, default=None)
     parser.add_argument("--manifest_path", type=str, default=None)
     parser.add_argument("--metadata", action="append", default=[], metavar="KEY=VALUE")
+    parser.add_argument("--experiment_root", type=str, default=None)
     args = parser.parse_args()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     descriptor = slugify(args.descriptor) if args.descriptor else "synthetic_data"
-    experiment_root = Path("experiments") / "SyntheticExperimentsGrid"
+    experiment_root = (
+        Path(args.experiment_root)
+        if args.experiment_root
+        else Path("experiments") / "SyntheticExperimentsGrid"
+    )
     data_folder = experiment_root / f"{descriptor}_{timestamp}"
     extra_metadata = parse_metadata_entries(args.metadata)
 
     print("Starting synthetic data generation...")
-    config, gamma_matrix, x_0, rng = read_and_realize_config(
+    config, gamma_matrix, x_0, rng, fixed_gamma_metadata = read_and_realize_config(
         args.config_name, args.config_override
     )
     artifacts = build_synthetic_field(config, gamma_matrix)
@@ -290,13 +333,19 @@ def main() -> None:
         "timestamp": timestamp,
         "config_name": args.config_name,
         "config_overrides": list(args.config_override),
-        "gamma_inf_norm": float(np.linalg.norm(artifacts.gamma_matrix, ord=np.inf)),
-        "gamma_fro_norm": float(np.linalg.norm(artifacts.gamma_matrix, ord="fro")),
+        "gamma_inf_norm": interaction_matrix_infinity_norm(artifacts.gamma_matrix),
+        "gamma_fro_norm": (
+            float(np.sqrt(artifacts.gamma_matrix.multiply(artifacts.gamma_matrix).sum()))
+            if sparse.issparse(artifacts.gamma_matrix)
+            else float(np.linalg.norm(artifacts.gamma_matrix, ord="fro"))
+        ),
         "field_mode": artifacts.field_mode,
+        "experiment_root": str(experiment_root),
         "intervention_mode": intervention_mode(config),
         "has_truth": True,
         **extra_metadata,
         **fixed_z_metadata,
+        **fixed_gamma_metadata,
     }
     if artifacts.field_basis is not None:
         metadata["field_basis_inf_norms"] = [
@@ -312,13 +361,12 @@ def main() -> None:
     print("Done!")
     print(
         "Infinity Norm of Gamma Matrix:",
-        np.linalg.norm(artifacts.gamma_matrix, ord=np.inf),
+        interaction_matrix_infinity_norm(artifacts.gamma_matrix),
     )
     print(
         "Infinity Norm of Interaction Matrix:",
-        np.linalg.norm(
-            compose_interaction_matrix(get_xi(config), artifacts.gamma_matrix),
-            ord=np.inf,
+        interaction_matrix_infinity_norm(
+            compose_interaction_matrix(get_xi(config), artifacts.gamma_matrix)
         ),
     )
     print(f"Experiment Folder: {data_folder}")

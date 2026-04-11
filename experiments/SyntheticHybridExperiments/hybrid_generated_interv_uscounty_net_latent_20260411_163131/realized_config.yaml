@@ -1,0 +1,51 @@
+global_params:
+  'N': 3009
+  T: 120
+  s: 0
+  B: 2.0
+  gamma_matrix_generator: fixed_artifact
+  fixed_gamma_source:
+    gamma_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+    node_index_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+    artifact_dir: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed
+    network_name: contiguity
+    trim_scope: trimmed
+  x_0_generator: bernoulli
+  basis_params:
+    field_mode: latent_feature_matrix
+    num_shared_features: 5
+    shared_feature_seed: 42
+    latent_rank: 40
+  gamma_matrix_params:
+    p: 0.01
+  x_0_params:
+    p: 0.5
+    fixed_val: 1
+estimation_params:
+  fit_intervention_model: false
+  beta_masked: false
+  field_coefs: []
+  tau_params:
+    mode: uniform_random
+    lower: -0.2
+    upper: 0.2
+    seed: 42
+    vector: null
+  beta: 0.35
+  xi: 0.25
+  eta: 0.08
+  zeta: -0.25
+  psi: 0.2
+generation_params:
+  seed: 923
+  gibbs_sweeps: 5
+  intervention_mode: generated_z
+  fixed_z_source:
+    panel_path: null
+    z0_path: null
+    artifact_dir: null
+    shared_panel_dir: null
+    outcome_code: null
+    intervention_code: null
+    lag_code: null
+    trim_scope: null
