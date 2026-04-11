@@ -1,0 +1,23 @@
+2026-04-11 12:51:16 | INFO | Loading data...
+2026-04-11 12:51:16 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_20_lag2w_trimmed_uniform_zero_xi0p25_20260411_123248\panel_data.npz
+2026-04-11 12:51:16 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_20_lag2w_trimmed_uniform_zero_xi0p25_20260411_123248\x_0.npy
+2026-04-11 12:51:16 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_20_lag2w_trimmed_uniform_zero_xi0p25_20260411_123248\z_0.npy
+2026-04-11 12:51:16 | INFO | Loaded field mode: uniform
+2026-04-11 12:51:16 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 12:51:16 | INFO | Intervention-process model enabled: False
+2026-04-11 12:51:16 | INFO | Eval 0  |  Loss: 0.657991
+2026-04-11 12:51:16 | INFO |   beta: +0.0788,  xi: +0.0844,  eta: +0.0076
+2026-04-11 12:51:18 | INFO | Done fitting.
+2026-04-11 12:51:18 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 12:51:18 | INFO | Final Loss: 0.597704
+2026-04-11 12:51:18 | INFO | Estimated vs True Parameters:
+2026-04-11 12:51:18 | INFO |   beta: 0.3453 (True: 0.3500) | SQE: 0.000022
+2026-04-11 12:51:18 | INFO |   xi: 0.1925 (True: 0.2500) | SQE: 0.003304
+2026-04-11 12:51:18 | INFO |   eta: 0.0824 (True: 0.0800) | SQE: 0.000006
+2026-04-11 12:51:18 | INFO | Field and interaction diagnostics:
+2026-04-11 12:51:18 | INFO |   field_rmse: 0.027188
+2026-04-11 12:51:18 | INFO |   static_field_rmse: 0.000000
+2026-04-11 12:51:18 | INFO |   interaction_fro_error: 0.204496
+2026-04-11 12:51:18 | INFO |   tau_rmse: 0.027188
+2026-04-11 12:51:19 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_20_lag2w_trimmed_uniform_zero_xi0p25_20260411_123248\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_20_lag2w_trimmed_uniform_zero_xi0p25_20260411_123248\mple_summary.md
+2026-04-11 12:51:19 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_20_lag2w_trimmed_uniform_zero_xi0p25_20260411_123248\mple.log

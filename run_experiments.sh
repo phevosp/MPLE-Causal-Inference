@@ -9,12 +9,17 @@ MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/SyntheticExperimen
 COMPLETED_MANIFEST_PATH="${EXPERIMENT_COMPLETED_MANIFEST:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/completed_manifest.txt}"
 REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/reports/conditional_experiment_report}"
 SKIP_GENERATION=0
+GENERATE_DATA_SCRIPT="$SCRIPT_DIR/generate_data.sh"
 MPLE_ARGS=()
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--skip-generation)
 			SKIP_GENERATION=1
+			shift
+			;;
+		--fixed-z)
+			GENERATE_DATA_SCRIPT="$SCRIPT_DIR/generate_data_fixed_z.sh"
 			shift
 			;;
 		--help|-h)
@@ -44,7 +49,7 @@ mkdir -p "$(dirname "$REPORT_STEM")"
 mkdir -p "$(dirname "$COMPLETED_MANIFEST_PATH")"
 
 if [ "$SKIP_GENERATION" -eq 0 ]; then
-	EXPERIMENT_MANIFEST="$MANIFEST_PATH" "$SCRIPT_DIR/generate_data.sh"
+	EXPERIMENT_MANIFEST="$MANIFEST_PATH" "$GENERATE_DATA_SCRIPT"
 else
 	echo "Skipping data generation and reusing manifest: $MANIFEST_PATH"
 fi
