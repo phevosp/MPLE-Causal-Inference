@@ -167,7 +167,8 @@ run_fixed_z_latent() {
 	local field_label="$2"
     local rank="$3"
     local B="$4"
-	local seed="$4"
+	local beta_masked="$5"
+	local seed="$6"
 
 	local shared_panel
 	shared_panel="$(shared_panel_dir "$intervention_code")"
@@ -182,7 +183,7 @@ run_fixed_z_latent() {
 	dims="$(panel_dims "$panel_path")"
 	read -r n_nodes t_steps <<<"$dims"
 
-	local label="fixed_z_${intervention_code}_lag${LAG_CODE}_${TRIM_SCOPE}_latent_rank${rank}_B${B}"
+	local label="fixed_z_${intervention_code}_lag${LAG_CODE}_${TRIM_SCOPE}_latent_rank${rank}_B${B}_beta_masked_${beta_masked}"
 	mapfile -t args < <(
 		fixed_z_common_args \
 			"$panel_path" \
@@ -209,10 +210,10 @@ ensure_uscounty_shared_panels
 # run_fixed_z_uniform complete_cov_ge_40 zero 0.0 830 0.25
 # run_fixed_z_uniform complete_cov_ge_40 uniform025 0.25 831
 
-run_fixed_z_latent complete_cov_ge_30 latent_rank10_B1 10 1.0 920
-run_fixed_z_latent complete_cov_ge_40 latent_rank50_B1 50 1.0 930
-run_fixed_z_latent complete_cov_ge_30 latent_rank10_B3 10 3.0 920
-run_fixed_z_latent complete_cov_ge_40 latent_rank50_B3 50 3.0 930
+run_fixed_z_latent complete_cov_ge_30 latent_rank10_B1 10 1.0 true 920
+run_fixed_z_latent complete_cov_ge_40 latent_rank50_B1 50 1.0 true 930
+run_fixed_z_latent complete_cov_ge_30 latent_rank10_B3 10 3.0 true 920
+run_fixed_z_latent complete_cov_ge_40 latent_rank50_B3 50 3.0 true 930
 
 echo "Finished generating fixed-z synthetic datasets."
 echo "Manifest: $MANIFEST_PATH"

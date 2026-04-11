@@ -113,6 +113,7 @@ def pseudo_nll(
     fit_intervention_model: bool = True,
     tau_zero_mean: bool = False,
     tau_smoothness_lambda: float = 0.0,
+    beta_masked: bool = False,
 ) -> tuple[float, np.ndarray]:
     t_steps = x.shape[0]
     theta_parts = unpack_theta(theta, artifacts, t_steps, fit_intervention_model)
@@ -125,10 +126,13 @@ def pseudo_nll(
 
     prev_x = np.vstack([x_0, x[:-1, :]])
     prev_z = np.vstack([z_0, z[:-1, :]])
+    beta_mask = np.ones_like(z)
+    if beta_masked:
+        beta_mask[:s, :] = 0
     field_matrix = compose_field_matrix_from_theta(theta_parts, artifacts)
     h_x = (
         field_matrix
-        + theta_parts["beta"] * z
+        + theta_parts["beta"] * z * beta_mask
         + theta_parts["eta"] * prev_x
         + theta_parts["xi"] * interaction_effect_x
     )
@@ -139,16 +143,18 @@ def pseudo_nll(
         h_z = theta_parts["zeta"] * prev_x + theta_parts["psi"] * prev_z
         mask = np.ones_like(z)
         mask[:s, :] = 0
-        total_size = x.size + mask.sum()
+        outcome_size = x.size
+        intervention_size = mask.sum()
         total_loss = (
             loss_x.sum() + ((np.logaddexp(h_z, -h_z) - z * h_z) * mask).sum()
-        ) / total_size
+        ) / (outcome_size + intervention_size)
         res_z = (np.tanh(h_z) - z) * mask
-        zeta_grad = float((res_z * prev_x).sum())
-        psi_grad = float((res_z * prev_z).sum())
+        zeta_grad = float((res_z * prev_x).sum()) / intervention_size
+        psi_grad = float((res_z * prev_z).sum()) / intervention_size
     else:
-        total_size = x.size
-        total_loss = loss_x.sum() / total_size
+        outcome_size = x.size
+        total_loss = loss_x.sum() / outcome_size
+        intervention_size = 0
         zeta_grad = 0.0
         psi_grad = 0.0
 
@@ -160,7 +166,7 @@ def pseudo_nll(
         tau_penalty, tau_penalty_grad = _smoothness_penalty_and_grad(
             theta_parts["tau"], float(tau_smoothness_lambda)
         )
-        total_loss += tau_penalty / total_size
+        total_loss += tau_penalty / outcome_size
         tau_grad = res_x.sum(axis=1) + tau_penalty_grad
         if tau_zero_mean and tau_grad.size:
             tau_grad = tau_grad - tau_grad.mean()
@@ -168,15 +174,18 @@ def pseudo_nll(
             [artifacts.field_basis @ res_x.sum(axis=0), tau_grad]
         )
 
+    beta_size = float((beta_mask != 0).sum())
     grad_parts = [
-        field_grad,
-        np.array([float((res_x * z).sum())], dtype=float),
-        np.array([float((res_x * interaction_effect_x).sum())], dtype=float),
-        np.array([float((res_x * prev_x).sum())], dtype=float),
+        field_grad / outcome_size,
+        np.array([float((res_x * z * beta_mask).sum()) / beta_size], dtype=float),
+        np.array(
+            [float((res_x * interaction_effect_x).sum()) / outcome_size], dtype=float
+        ),
+        np.array([float((res_x * prev_x).sum()) / outcome_size], dtype=float),
     ]
     if fit_intervention_model:
         grad_parts.append(np.array([zeta_grad, psi_grad], dtype=float))
-    return float(total_loss), np.concatenate(grad_parts) / total_size
+    return float(total_loss), np.concatenate(grad_parts)
 
 
 def fit_mple(
@@ -198,6 +207,7 @@ def fit_mple(
     tau_zero_mean: bool = False,
     tau_smoothness_lambda: float = 0.0,
     latent_field_bound: float | None = None,
+    beta_masked: bool = False,
 ):
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
@@ -241,6 +251,7 @@ def fit_mple(
             fit_intervention_model=fit_intervention_model,
             tau_zero_mean=tau_zero_mean,
             tau_smoothness_lambda=tau_smoothness_lambda,
+            beta_masked=beta_masked,
         )
         history.append(loss)
         if verbose_every and eval_count[0] % verbose_every == 0:
@@ -342,7 +353,10 @@ def latent_diagnostic_rows(
         )
     if not all(true is None for true in true_theta):
         true_parts = unpack_theta(
-            np.asarray(true_theta, dtype=float), artifacts, t_steps, fit_intervention_model
+            np.asarray(true_theta, dtype=float),
+            artifacts,
+            t_steps,
+            fit_intervention_model,
         )
         true_artifacts = with_theta_field(artifacts, true_parts)
         true_field = np.asarray(true_artifacts.field_matrix, dtype=float)
@@ -440,7 +454,12 @@ def log_field_diagnostics(
     bound_B: float | None,
 ) -> None:
     logger.info("Field and interaction diagnostics:")
-    for name in ["field_rmse", "static_field_rmse", "interaction_fro_error", "tau_rmse"]:
+    for name in [
+        "field_rmse",
+        "static_field_rmse",
+        "interaction_fro_error",
+        "tau_rmse",
+    ]:
         if name in metrics:
             logger.info("  %s: %.6f", name, metrics[name])
     for row in latent_diagnostic_rows(
@@ -564,6 +583,11 @@ def main() -> None:
     latent_field_bound = (
         float(config.global_params.B) if "B" in config.global_params else None
     )
+    beta_masked = (
+        bool(config.estimation_params.get("beta_masked", False))
+        if "estimation_params" in config
+        else False
+    )
     metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
     metadata = (
         OmegaConf.load(metadata_path)
@@ -617,6 +641,7 @@ def main() -> None:
         tau_zero_mean=tau_zero_mean,
         tau_smoothness_lambda=tau_smoothness_lambda,
         latent_field_bound=latent_field_bound,
+        beta_masked=beta_masked,
     )
 
     logger.info("Done fitting.")
