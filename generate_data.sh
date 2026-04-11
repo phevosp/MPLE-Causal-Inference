@@ -114,9 +114,9 @@ run_latent() {
 
 # Compact generated-z sweep covering all active field modes, all target xi values,
 # and small/medium/larger panel sizes without running the full cross product.
-# run_uniform 100 20 12 0.25 700
-# run_uniform 300 40 20 0.75 701
-# run_uniform 600 60 30 1.5 702
+run_uniform 100 20 12 0.25 700
+run_uniform 300 40 20 0.75 701
+run_uniform 600 60 30 1.5 702
 
 # run_shared 100 20 12 0.25 710
 # run_shared 300 40 20 0.75 711

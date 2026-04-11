@@ -21,3 +21,49 @@
 2026-04-11 16:38:04 | INFO |   tau_rmse: 0.017642
 2026-04-11 16:38:04 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple_summary.md
 2026-04-11 16:38:04 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple.log
+2026-04-11 16:42:49 | INFO | Loading data...
+2026-04-11 16:42:49 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\panel_data.npz
+2026-04-11 16:42:49 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\x_0.npy
+2026-04-11 16:42:49 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\z_0.npy
+2026-04-11 16:42:49 | INFO | Loaded field mode: uniform
+2026-04-11 16:42:49 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 16:42:49 | INFO | Intervention-process model enabled: False
+2026-04-11 16:42:49 | INFO | Eval 0  |  Loss: 0.677112
+2026-04-11 16:42:49 | INFO |   beta: +0.0788,  xi: +0.0844,  eta: +0.0076
+2026-04-11 16:42:50 | INFO | Done fitting.
+2026-04-11 16:42:50 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 16:42:50 | INFO | Final Loss: 0.610324
+2026-04-11 16:42:50 | INFO | Estimated vs True Parameters:
+2026-04-11 16:42:50 | INFO |   beta: 0.3476 (True: 0.3500) | SQE: 0.000006
+2026-04-11 16:42:50 | INFO |   xi: 0.2511 (True: 0.2500) | SQE: 0.000001
+2026-04-11 16:42:50 | INFO |   eta: 0.0791 (True: 0.0800) | SQE: 0.000001
+2026-04-11 16:42:50 | INFO | Field and interaction diagnostics:
+2026-04-11 16:42:50 | INFO |   field_rmse: 0.237207
+2026-04-11 16:42:50 | INFO |   static_field_rmse: 0.000000
+2026-04-11 16:42:50 | INFO |   interaction_fro_error: 0.010019
+2026-04-11 16:42:50 | INFO |   tau_rmse: 0.237207
+2026-04-11 16:42:50 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple_summary.md
+2026-04-11 16:42:50 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple.log
+2026-04-11 16:54:30 | INFO | Loading data...
+2026-04-11 16:54:30 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\panel_data.npz
+2026-04-11 16:54:30 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\x_0.npy
+2026-04-11 16:54:30 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\z_0.npy
+2026-04-11 16:54:30 | INFO | Loaded field mode: uniform
+2026-04-11 16:54:30 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 16:54:30 | INFO | Intervention-process model enabled: False
+2026-04-11 16:54:30 | INFO | Eval 0  |  Loss: 0.664509
+2026-04-11 16:54:30 | INFO |   beta: +0.0788,  xi: +0.0844,  eta: +0.0076
+2026-04-11 16:54:31 | INFO | Done fitting.
+2026-04-11 16:54:31 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 16:54:31 | INFO | Final Loss: 0.610324
+2026-04-11 16:54:31 | INFO | Estimated vs True Parameters:
+2026-04-11 16:54:31 | INFO |   beta: 0.3484 (True: 0.3500) | SQE: 0.000003
+2026-04-11 16:54:31 | INFO |   xi: 0.2512 (True: 0.2500) | SQE: 0.000002
+2026-04-11 16:54:31 | INFO |   eta: 0.0791 (True: 0.0800) | SQE: 0.000001
+2026-04-11 16:54:31 | INFO | Field and interaction diagnostics:
+2026-04-11 16:54:31 | INFO |   field_rmse: 0.017642
+2026-04-11 16:54:31 | INFO |   static_field_rmse: 0.000000
+2026-04-11 16:54:31 | INFO |   interaction_fro_error: 0.011777
+2026-04-11 16:54:31 | INFO |   tau_rmse: 0.017642
+2026-04-11 16:54:31 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple_summary.md
+2026-04-11 16:54:31 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_interv_uscounty_net_zero_20260411_160420\mple.log
