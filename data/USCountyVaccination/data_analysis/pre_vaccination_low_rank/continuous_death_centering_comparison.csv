@@ -1,0 +1,4 @@
+matrix_code,matrix_display_name,view_code,view_label,n_weeks,n_counties,leading_singular_value,leading_energy_share,effective_rank_80,effective_rank_90,effective_rank_95,effective_rank_99,elbow_rank,elbow_ratio,low_rank_strength
+continuous_death,Continuous death-rate matrix,raw,Raw,48,3213,1680.638007485245,0.31505943745228265,12,18,24,34,1,1.9480678002435319,weak
+continuous_death,Continuous death-rate matrix,row_centered,Row-centered,48,3213,1211.3755475925914,0.196767991385296,13,20,26,35,1,1.4100393984705986,weak
+continuous_death,Continuous death-rate matrix,row_column_centered,Row-and-column centered,48,3213,1136.9702310486239,0.18541352125842966,14,20,26,35,1,1.3498787356496917,weak

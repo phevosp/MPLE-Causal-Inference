@@ -1,0 +1,52 @@
+2026-04-11 16:46:43 | INFO | Loading data...
+2026-04-11 16:46:44 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\panel_data.npz
+2026-04-11 16:46:44 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\x_0.npy
+2026-04-11 16:46:44 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\z_0.npy
+2026-04-11 16:46:44 | INFO | Loaded field mode: uniform
+2026-04-11 16:46:44 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 16:46:44 | INFO | Intervention-process model enabled: True
+2026-04-11 16:46:44 | INFO | Eval 0  |  Loss: 0.684250
+2026-04-11 16:46:44 | INFO |   beta: -0.0436,  xi: -0.1170,  eta: +0.1739,  zeta: -0.0496,  psi: +0.0329
+2026-04-11 16:46:44 | INFO | Eval 100  |  Loss: 0.486489
+2026-04-11 16:46:44 | INFO |   beta: +0.3581,  xi: +1.4290,  eta: +0.0852,  zeta: -0.2272,  psi: +0.1890
+2026-04-11 16:46:44 | INFO | Done fitting.
+2026-04-11 16:46:44 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 16:46:44 | INFO | Final Loss: 0.486489
+2026-04-11 16:46:44 | INFO | Estimated vs True Parameters:
+2026-04-11 16:46:44 | INFO |   beta: 0.3583 (True: 0.3500) | SQE: 0.000069
+2026-04-11 16:46:44 | INFO |   xi: 1.4290 (True: 1.5000) | SQE: 0.005047
+2026-04-11 16:46:44 | INFO |   eta: 0.0853 (True: 0.0800) | SQE: 0.000029
+2026-04-11 16:46:44 | INFO |   zeta: -0.2272 (True: -0.2500) | SQE: 0.000520
+2026-04-11 16:46:44 | INFO |   psi: 0.1891 (True: 0.2000) | SQE: 0.000118
+2026-04-11 16:46:44 | INFO | Field and interaction diagnostics:
+2026-04-11 16:46:44 | INFO |   field_rmse: 0.287786
+2026-04-11 16:46:44 | INFO |   static_field_rmse: 0.000000
+2026-04-11 16:46:44 | INFO |   interaction_fro_error: 0.207760
+2026-04-11 16:46:44 | INFO |   tau_rmse: 0.287786
+2026-04-11 16:46:44 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\mple_summary.md
+2026-04-11 16:46:44 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\mple.log
+2026-04-11 16:56:03 | INFO | Loading data...
+2026-04-11 16:56:03 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\panel_data.npz
+2026-04-11 16:56:03 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\x_0.npy
+2026-04-11 16:56:03 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\z_0.npy
+2026-04-11 16:56:03 | INFO | Loaded field mode: uniform
+2026-04-11 16:56:03 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 16:56:03 | INFO | Intervention-process model enabled: True
+2026-04-11 16:56:03 | INFO | Eval 0  |  Loss: 0.695680
+2026-04-11 16:56:03 | INFO |   beta: -0.0436,  xi: -0.1170,  eta: +0.1739,  zeta: -0.0496,  psi: +0.0329
+2026-04-11 16:56:04 | INFO | Done fitting.
+2026-04-11 16:56:04 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 16:56:04 | INFO | Final Loss: 0.486489
+2026-04-11 16:56:04 | INFO | Estimated vs True Parameters:
+2026-04-11 16:56:04 | INFO |   beta: 0.3583 (True: 0.3500) | SQE: 0.000069
+2026-04-11 16:56:04 | INFO |   xi: 1.4295 (True: 1.5000) | SQE: 0.004977
+2026-04-11 16:56:04 | INFO |   eta: 0.0854 (True: 0.0800) | SQE: 0.000029
+2026-04-11 16:56:04 | INFO |   zeta: -0.2272 (True: -0.2500) | SQE: 0.000520
+2026-04-11 16:56:04 | INFO |   psi: 0.1891 (True: 0.2000) | SQE: 0.000118
+2026-04-11 16:56:04 | INFO | Field and interaction diagnostics:
+2026-04-11 16:56:04 | INFO |   field_rmse: 0.072899
+2026-04-11 16:56:04 | INFO |   static_field_rmse: 0.000000
+2026-04-11 16:56:04 | INFO |   interaction_fro_error: 0.206300
+2026-04-11 16:56:04 | INFO |   tau_rmse: 0.072899
+2026-04-11 16:56:04 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\mple_summary.md
+2026-04-11 16:56:04 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_uniform_n600_t60_xi1p5_20260411_164521\mple.log
