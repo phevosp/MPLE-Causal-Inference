@@ -5,7 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/latest_manifest.txt}"
+MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/latest_manifest.txt}"
+COMPLETED_MANIFEST_PATH="${EXPERIMENT_COMPLETED_MANIFEST:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/completed_manifest.txt}"
 REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/reports/conditional_experiment_report}"
 SKIP_GENERATION=0
 MPLE_ARGS=()
@@ -40,6 +41,7 @@ else
 fi
 
 mkdir -p "$(dirname "$REPORT_STEM")"
+mkdir -p "$(dirname "$COMPLETED_MANIFEST_PATH")"
 
 if [ "$SKIP_GENERATION" -eq 0 ]; then
 	EXPERIMENT_MANIFEST="$MANIFEST_PATH" "$SCRIPT_DIR/generate_data.sh"
@@ -51,6 +53,8 @@ if [ ! -f "$MANIFEST_PATH" ]; then
 	echo "Manifest not found: $MANIFEST_PATH" >&2
 	exit 1
 fi
+
+: >"$COMPLETED_MANIFEST_PATH"
 
 while IFS= read -r data_folder; do
 	data_folder="${data_folder%$'\r'}"
@@ -65,11 +69,25 @@ while IFS= read -r data_folder; do
 	fi
 
 	echo "Running conditional MPLE for ${data_folder}..."
-	"${RUNNER[@]}" mple.py --data_folder "$data_folder" "${MPLE_ARGS[@]}"
+	if "${RUNNER[@]}" mple.py --data_folder "$data_folder" "${MPLE_ARGS[@]}"; then
+		if [ -f "$data_folder/mple_summary.csv" ] && [ -f "$data_folder/mple_summary.md" ]; then
+			printf '%s\n' "$data_folder" >>"$COMPLETED_MANIFEST_PATH"
+		else
+			echo "Skipping report manifest append; summary outputs missing for $data_folder" >&2
+		fi
+	else
+		echo "MPLE failed for $data_folder; not adding to completed manifest." >&2
+	fi
 done <"$MANIFEST_PATH"
 
+if [ ! -s "$COMPLETED_MANIFEST_PATH" ]; then
+	echo "No completed experiments were available for reporting." >&2
+	exit 1
+fi
+
 echo "Building report..."
-"${RUNNER[@]}" report_parameter_recovery_detailed.py --manifest "$MANIFEST_PATH" --report_stem "$REPORT_STEM"
+"${RUNNER[@]}" report_parameter_recovery_detailed.py --manifest "$COMPLETED_MANIFEST_PATH" --report_stem "$REPORT_STEM"
 
 echo "Finished running MPLE across manifest experiments."
 echo "Report: ${REPORT_STEM}.md"
+echo "Completed manifest: ${COMPLETED_MANIFEST_PATH}"

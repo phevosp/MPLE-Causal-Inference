@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from datetime import datetime
@@ -229,7 +228,7 @@ def generate_data(
 
 
 def save_artifacts(
-    data_folder: str,
+    data_folder: Path,
     config,
     metadata: dict[str, str],
     artifacts: ModelArtifacts,
@@ -238,14 +237,12 @@ def save_artifacts(
     x: np.ndarray,
     z: np.ndarray,
 ) -> None:
-    os.makedirs(data_folder)
-    OmegaConf.save(config, f"{data_folder}/realized_config.yaml")
-    OmegaConf.save(
-        OmegaConf.create(metadata), f"{data_folder}/experiment_metadata.yaml"
-    )
-    np.savez(f"{data_folder}/panel_data.npz", x=x, z=z)
-    np.save(f"{data_folder}/x_0.npy", x_0)
-    np.save(f"{data_folder}/z_0.npy", z_0)
+    data_folder.mkdir(parents=True, exist_ok=False)
+    OmegaConf.save(config, data_folder / "realized_config.yaml")
+    OmegaConf.save(OmegaConf.create(metadata), data_folder / "experiment_metadata.yaml")
+    np.savez(data_folder / "panel_data.npz", x=x, z=z)
+    np.save(data_folder / "x_0.npy", x_0)
+    np.save(data_folder / "z_0.npy", z_0)
     save_model_artifacts(data_folder, artifacts)
 
 
@@ -264,7 +261,8 @@ def main() -> None:
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     descriptor = slugify(args.descriptor) if args.descriptor else "synthetic_data"
-    data_folder = f"experiments/{descriptor}_{timestamp}"
+    experiment_root = Path("experiments") / "SyntheticExperimentsGrid"
+    data_folder = experiment_root / f"{descriptor}_{timestamp}"
     extra_metadata = parse_metadata_entries(args.metadata)
 
     print("Starting synthetic data generation...")

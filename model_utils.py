@@ -464,6 +464,40 @@ def parameter_names(
     return field_keys + ["beta", "xi"] + tail_keys
 
 
+def summarize_theta_for_logging(param_names: list[str], theta: np.ndarray) -> str:
+    """Format theta for compact optimizer logging without dumping high-dimensional fields."""
+    scalar_names = {"beta", "xi", "eta", "zeta", "psi"}
+    scalar_parts = [
+        f"{key}: {value:+.4f}"
+        for key, value in zip(param_names, theta)
+        if key in scalar_names
+    ]
+    if scalar_parts:
+        return "  " + ",  ".join(scalar_parts)
+    tau_values = np.asarray(
+        [value for name, value in zip(param_names, theta) if name.startswith("tau::")],
+        dtype=float,
+    )
+    if tau_values.size == 0:
+        return "  " + ",  ".join(
+            f"{key}: {value:+.4f}" for key, value in zip(param_names, theta)
+        )
+    field_count = sum(name.startswith("field::") for name in param_names)
+    non_tau_parts = [
+        f"{key}: {value:+.4f}"
+        for key, value in zip(param_names, theta)
+        if not key.startswith("tau::")
+    ]
+    non_tau_parts.insert(
+        field_count,
+        (
+            f"tau block: mean={tau_values.mean():+.4f}, std={tau_values.std():.4f}, "
+            f"min={tau_values.min():+.4f}, max={tau_values.max():+.4f}"
+        ),
+    )
+    return "  " + ",  ".join(non_tau_parts)
+
+
 def infer_t_steps_from_theta(
     theta: np.ndarray, artifacts: ModelArtifacts, fit_intervention_model: bool = True
 ) -> int:
@@ -703,19 +737,7 @@ def summary_metrics(
         "interaction_fro_error": interaction_fro_error,
         "parameter_rmse": float(np.sqrt(np.mean((est_theta - true_theta) ** 2))),
     }
-    if artifacts.field_mode == LATENT_FIELD_MODE:
-        metrics["static_field_rmse"] = float(
-            np.sqrt(
-                np.mean(
-                    (
-                        est_artifacts.field_matrix.mean(axis=0)
-                        - true_artifacts.field_matrix.mean(axis=0)
-                    )
-                    ** 2
-                )
-            )
-        )
-    else:
+    if artifacts.field_mode != LATENT_FIELD_MODE:
         metrics["static_field_rmse"] = float(
             np.sqrt(
                 np.mean((est_artifacts.field_vector - true_artifacts.field_vector) ** 2)

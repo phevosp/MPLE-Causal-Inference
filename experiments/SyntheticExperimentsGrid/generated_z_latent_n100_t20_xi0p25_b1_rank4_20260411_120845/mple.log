@@ -1,0 +1,48 @@
+2026-04-11 12:09:39 | INFO | Loading data...
+2026-04-11 12:09:39 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_latent_n100_t20_xi0p25_b1_rank4_20260411_120845\panel_data.npz
+2026-04-11 12:09:39 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_latent_n100_t20_xi0p25_b1_rank4_20260411_120845\x_0.npy
+2026-04-11 12:09:39 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_latent_n100_t20_xi0p25_b1_rank4_20260411_120845\z_0.npy
+2026-04-11 12:09:39 | INFO | Loaded field mode: latent_feature_matrix
+2026-04-11 12:09:39 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 12:09:39 | INFO | Intervention-process model enabled: True
+2026-04-11 12:09:39 | INFO | Eval 0  |  Loss: 0.679917
+2026-04-11 12:09:39 | INFO |   beta: +0.0547,  xi: +0.1764,  eta: -0.0487,  zeta: +0.0094,  psi: -0.0706
+2026-04-11 12:09:39 | INFO | Eval 100  |  Loss: 0.622659
+2026-04-11 12:09:39 | INFO |   beta: +0.3623,  xi: +0.3410,  eta: +0.0713,  zeta: -0.2795,  psi: +0.1609
+2026-04-11 12:09:39 | INFO | Eval 200  |  Loss: 0.622652
+2026-04-11 12:09:39 | INFO |   beta: +0.3628,  xi: +0.3394,  eta: +0.0701,  zeta: -0.2801,  psi: +0.1597
+2026-04-11 12:09:39 | INFO | Eval 300  |  Loss: 0.622652
+2026-04-11 12:09:39 | INFO |   beta: +0.3631,  xi: +0.3388,  eta: +0.0698,  zeta: -0.2803,  psi: +0.1593
+2026-04-11 12:09:39 | INFO | Eval 400  |  Loss: 0.622364
+2026-04-11 12:09:39 | INFO |   beta: +0.3489,  xi: +0.4511,  eta: +0.0709,  zeta: -0.2793,  psi: +0.1561
+2026-04-11 12:09:39 | INFO | Eval 500  |  Loss: 0.622279
+2026-04-11 12:09:39 | INFO |   beta: +0.3433,  xi: +0.4237,  eta: +0.0807,  zeta: -0.2704,  psi: +0.1703
+2026-04-11 12:09:39 | INFO | Eval 600  |  Loss: 0.622266
+2026-04-11 12:09:39 | INFO |   beta: +0.3393,  xi: +0.4373,  eta: +0.0828,  zeta: -0.2720,  psi: +0.1725
+2026-04-11 12:09:39 | INFO | Eval 700  |  Loss: 0.622265
+2026-04-11 12:09:39 | INFO |   beta: +0.3309,  xi: +0.4751,  eta: +0.0862,  zeta: -0.2695,  psi: +0.1768
+2026-04-11 12:09:39 | INFO | Eval 800  |  Loss: 0.622263
+2026-04-11 12:09:39 | INFO |   beta: +0.3297,  xi: +0.4837,  eta: +0.0862,  zeta: -0.2694,  psi: +0.1770
+2026-04-11 12:09:39 | INFO | Eval 900  |  Loss: 0.622201
+2026-04-11 12:09:39 | INFO |   beta: +0.3407,  xi: +0.4835,  eta: +0.0748,  zeta: -0.2757,  psi: +0.1692
+2026-04-11 12:09:39 | INFO | Done fitting.
+2026-04-11 12:09:39 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 12:09:39 | INFO | Final Loss: 0.622201
+2026-04-11 12:09:39 | INFO | Estimated vs True Parameters:
+2026-04-11 12:09:39 | INFO |   beta: 0.3407 (True: 0.3500) | SQE: 0.000086
+2026-04-11 12:09:39 | INFO |   xi: 0.4835 (True: 0.2500) | SQE: 0.054513
+2026-04-11 12:09:39 | INFO |   eta: 0.0748 (True: 0.0800) | SQE: 0.000027
+2026-04-11 12:09:39 | INFO |   zeta: -0.2757 (True: -0.2500) | SQE: 0.000659
+2026-04-11 12:09:39 | INFO |   psi: 0.1692 (True: 0.2000) | SQE: 0.000949
+2026-04-11 12:09:39 | INFO | Field and interaction diagnostics:
+2026-04-11 12:09:39 | INFO |   field_rmse: 0.010557
+2026-04-11 12:09:39 | INFO |   static_field_rmse: 0.002667
+2026-04-11 12:09:39 | INFO |   interaction_fro_error: 0.466960
+2026-04-11 12:09:39 | INFO |   estimated_field_inf_norm: 1.000000
+2026-04-11 12:09:39 | INFO |   estimated_field_rank: 4.000000
+2026-04-11 12:09:39 | INFO |   field_bound_ok: 1.000000
+2026-04-11 12:09:39 | INFO |   rank_ok: 1.000000
+2026-04-11 12:09:39 | INFO |   true_field_inf_norm: 1.000000
+2026-04-11 12:09:39 | INFO |   true_field_rank: 4.000000
+2026-04-11 12:09:39 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_latent_n100_t20_xi0p25_b1_rank4_20260411_120845\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_latent_n100_t20_xi0p25_b1_rank4_20260411_120845\mple_summary.md
+2026-04-11 12:09:39 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\generated_z_latent_n100_t20_xi0p25_b1_rank4_20260411_120845\mple.log

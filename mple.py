@@ -26,6 +26,7 @@ from model_utils import (
     project_latent_field,
     save_field_artifacts,
     summary_metrics,
+    summarize_theta_for_logging,
     unpack_theta,
     with_theta_field,
 )
@@ -178,28 +179,6 @@ def pseudo_nll(
     return float(total_loss), np.concatenate(grad_parts) / total_size
 
 
-def summarize_theta_for_logging(param_names: list[str], theta: np.ndarray) -> str:
-    tau_values = np.asarray(
-        [value for name, value in zip(param_names, theta) if name.startswith("tau::")],
-        dtype=float,
-    )
-    if tau_values.size == 0:
-        return "  " + ",  ".join(
-            f"{key}: {value:+.4f}" for key, value in zip(param_names, theta)
-        )
-    field_count = sum(name.startswith("field::") for name in param_names)
-    non_tau_parts = [
-        f"{key}: {value:+.4f}"
-        for key, value in zip(param_names, theta)
-        if not key.startswith("tau::")
-    ]
-    non_tau_parts.insert(
-        field_count,
-        f"tau block: mean={tau_values.mean():+.4f}, std={tau_values.std():.4f}, min={tau_values.min():+.4f}, max={tau_values.max():+.4f}",
-    )
-    return "  " + ",  ".join(non_tau_parts)
-
-
 def fit_mple(
     x: np.ndarray,
     z: np.ndarray,
@@ -299,21 +278,109 @@ def _fmt(value):
     return f"{float(value):.6f}"
 
 
+def scalar_summary_rows(
+    param_names: list[str],
+    est_theta: np.ndarray,
+    true_theta,
+) -> list[dict[str, object]]:
+    scalar_names = {"beta", "xi", "eta", "zeta", "psi"}
+    rows: list[dict[str, object]] = []
+    for name, est, true in zip(param_names, est_theta, true_theta):
+        if name not in scalar_names:
+            continue
+        rows.append(
+            {
+                "category": "scalar",
+                "name": name,
+                "estimate": float(est),
+                "true": None if true is None else float(true),
+                "squared_error": None if true is None else float((est - true) ** 2),
+            }
+        )
+    return rows
+
+
+def latent_diagnostic_rows(
+    est_theta: np.ndarray,
+    true_theta,
+    artifacts: ModelArtifacts,
+    fit_intervention_model: bool,
+    bound_B: float | None,
+) -> list[dict[str, object]]:
+    if artifacts.field_mode != "latent_feature_matrix":
+        return []
+
+    t_steps = infer_t_steps_from_theta(est_theta, artifacts, fit_intervention_model)
+    est_parts = unpack_theta(est_theta, artifacts, t_steps, fit_intervention_model)
+    est_artifacts = with_theta_field(artifacts, est_parts)
+    est_field = np.asarray(est_artifacts.field_matrix, dtype=float)
+    rows: list[dict[str, object]] = [
+        {
+            "category": "latent_diagnostic",
+            "name": "estimated_field_inf_norm",
+            "estimate": float(np.linalg.norm(est_field, ord=np.inf)),
+            "true": None,
+            "squared_error": None,
+        },
+        {
+            "category": "latent_diagnostic",
+            "name": "estimated_field_rank",
+            "estimate": float(np.linalg.matrix_rank(est_field)),
+            "true": float(artifacts.latent_rank),
+            "squared_error": None,
+        },
+    ]
+    if bound_B is not None:
+        rows.append(
+            {
+                "category": "latent_diagnostic",
+                "name": "bound_B",
+                "estimate": float(bound_B),
+                "true": None,
+                "squared_error": None,
+            }
+        )
+    if not all(true is None for true in true_theta):
+        true_parts = unpack_theta(
+            np.asarray(true_theta, dtype=float), artifacts, t_steps, fit_intervention_model
+        )
+        true_artifacts = with_theta_field(artifacts, true_parts)
+        true_field = np.asarray(true_artifacts.field_matrix, dtype=float)
+        rows.extend(
+            [
+                {
+                    "category": "latent_diagnostic",
+                    "name": "true_field_inf_norm",
+                    "estimate": float(np.linalg.norm(true_field, ord=np.inf)),
+                    "true": None,
+                    "squared_error": None,
+                },
+                {
+                    "category": "latent_diagnostic",
+                    "name": "true_field_rank",
+                    "estimate": float(np.linalg.matrix_rank(true_field)),
+                    "true": float(artifacts.latent_rank),
+                    "squared_error": None,
+                },
+            ]
+        )
+    return rows
+
+
 def write_summary_table(
-    summary_stem, param_names, est_theta, true_theta, metrics, loss
+    summary_stem,
+    param_names,
+    est_theta,
+    true_theta,
+    metrics,
+    loss,
+    artifacts: ModelArtifacts,
+    fit_intervention_model: bool,
+    bound_B: float | None,
 ):
     csv_path = Path(f"{summary_stem}.csv")
     md_path = Path(f"{summary_stem}.md")
-    rows = [
-        {
-            "category": "parameter",
-            "name": name,
-            "estimate": float(est),
-            "true": None if true is None else float(true),
-            "squared_error": None if true is None else float((est - true) ** 2),
-        }
-        for name, est, true in zip(param_names, est_theta, true_theta)
-    ]
+    rows = scalar_summary_rows(param_names, est_theta, true_theta)
     rows.extend(
         {
             "category": "metric",
@@ -323,6 +390,15 @@ def write_summary_table(
             "squared_error": None,
         }
         for name, value in {"final_loss": loss, **metrics}.items()
+    )
+    rows.extend(
+        latent_diagnostic_rows(
+            est_theta,
+            true_theta,
+            artifacts,
+            fit_intervention_model=fit_intervention_model,
+            bound_B=bound_B,
+        )
     )
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
@@ -341,13 +417,40 @@ def write_summary_table(
 
 def log_estimates(logger, title, param_names, est_theta, true_theta):
     logger.info(title)
-    if all(true is None for true in true_theta):
-        for key, est in zip(param_names, est_theta):
-            logger.info("  %s: %.4f", key, est)
-        return
-    for key, est, true in zip(param_names, est_theta, true_theta):
-        logger.info("  %s: %.4f (True: %.4f)", key, est, true)
-        logger.info("  %s SQE: %.6f", key, (est - true) ** 2)
+    for row in scalar_summary_rows(param_names, est_theta, true_theta):
+        if row["true"] is None:
+            logger.info("  %s: %.4f", row["name"], row["estimate"])
+        else:
+            logger.info(
+                "  %s: %.4f (True: %.4f) | SQE: %.6f",
+                row["name"],
+                row["estimate"],
+                row["true"],
+                row["squared_error"],
+            )
+
+
+def log_field_diagnostics(
+    logger,
+    metrics: dict[str, float],
+    est_theta: np.ndarray,
+    true_theta,
+    artifacts: ModelArtifacts,
+    fit_intervention_model: bool,
+    bound_B: float | None,
+) -> None:
+    logger.info("Field and interaction diagnostics:")
+    for name in ["field_rmse", "static_field_rmse", "interaction_fro_error", "tau_rmse"]:
+        if name in metrics:
+            logger.info("  %s: %.6f", name, metrics[name])
+    for row in latent_diagnostic_rows(
+        est_theta,
+        true_theta,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        bound_B=bound_B,
+    ):
+        logger.info("  %s: %s", row["name"], _fmt(row["estimate"]))
 
 
 def save_estimated_artifacts(
@@ -537,6 +640,15 @@ def main() -> None:
         if params_true is not None
         else {}
     )
+    log_field_diagnostics(
+        logger,
+        metrics,
+        params_hat,
+        truth_vector,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        bound_B=latent_field_bound,
+    )
     write_summary_table(
         Path(args.data_folder) / "mple_summary",
         param_keys,
@@ -544,6 +656,9 @@ def main() -> None:
         truth_vector,
         metrics,
         loss_history[-1],
+        artifacts,
+        fit_intervention_model,
+        latent_field_bound,
     )
     save_estimated_artifacts(
         args.data_folder,
