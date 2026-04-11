@@ -2,10 +2,10 @@ global_params:
   'N': 3009
   T: 120
   s: 55
-  B: 2.0
+  B: 1.0
   basis_params:
     field_mode: latent_feature_matrix
-    latent_rank: 40
+    latent_rank: 30
   gamma_matrix_generator: real_data
   x_0_generator: observed
 estimation_params:
@@ -18,7 +18,7 @@ estimation_params:
   tau_zero_mean: false
   tau_smoothness_lambda: 0.0
   beta_mask_pre_intervention: true
-  beta_mask_rescale: false
+  beta_mask_rescale: true
 real_data_params:
   source: USCountyVaccination
   state: Mainland US counties with total_population >= 2000
@@ -30,5 +30,5 @@ real_data_params:
   field_basis_mode: latent_feature_matrix
   field_basis_names: []
   model_field_mode: latent_feature_matrix
-  latent_rank: 40
-  latent_B: 2.0
+  latent_rank: 30
+  latent_B: 1.0

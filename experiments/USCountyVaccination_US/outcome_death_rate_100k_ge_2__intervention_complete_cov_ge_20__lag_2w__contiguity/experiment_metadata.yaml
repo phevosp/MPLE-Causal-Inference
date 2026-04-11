@@ -18,8 +18,8 @@ network_name: contiguity
 field_basis_mode: latent_feature_matrix
 field_basis_names: []
 model_field_mode: latent_feature_matrix
-latent_rank: 40
-latent_B: 2.0
+latent_rank: 30
+latent_B: 1.0
 trim_applied: true
 trim_rule: mainland_us_and_total_population_ge_2000
 pre_trim_node_count: 3213
@@ -32,7 +32,7 @@ trim_population_min: 2000
 tau_zero_mean: false
 tau_smoothness_lambda: 0.0
 beta_mask_pre_intervention: true
-beta_mask_rescale: false
+beta_mask_rescale: true
 requested_node_count: 3009
 node_count: 3009
 dropped_node_count: 0
