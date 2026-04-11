@@ -36,6 +36,12 @@ run_generation() {
 	sleep 1
 }
 
+clamp_to_bound() {
+	local value="$1"
+	local bound="$2"
+	awk -v v="$value" -v b="$bound" 'BEGIN { if (v > b) v = b; if (v < -b) v = -b; printf "%.12g", v }'
+}
+
 realized_intervention_dir() {
 	printf '%s\n' \
 		"$USCOUNTY_OUTPUT_ROOT/realized_interventions/intervention_${ANCHOR_INTERVENTION_CODE}__lag_${LAG_CODE}__scope_${TRIM_SCOPE}"
@@ -90,22 +96,30 @@ common_args() {
 	local n_nodes="$1"
 	local t_steps="$2"
 	local seed="$3"
+	local B="2.0"
+	local beta eta zeta psi xi
+
+	beta="$(clamp_to_bound "0.35" "$B")"
+	eta="$(clamp_to_bound "0.08" "$B")"
+	zeta="$(clamp_to_bound "-0.25" "$B")"
+	psi="$(clamp_to_bound "0.20" "$B")"
+	xi="$(clamp_to_bound "0.25" "$B")"
 
 	printf '%s\n' \
 		--config_override "global_params.N=${n_nodes}" \
 		--config_override "global_params.T=${t_steps}" \
 		--config_override "global_params.s=0" \
-		--config_override "global_params.B=2.0" \
+		--config_override "global_params.B=${B}" \
 		--config_override "global_params.x_0_generator=bernoulli" \
 		--config_override "global_params.x_0_params.p=0.5" \
 		--config_override "generation_params.seed=${seed}" \
 		--config_override "generation_params.gibbs_sweeps=5" \
 		--config_override "estimation_params.fit_intervention_model=false" \
-		--config_override "estimation_params.beta=0.35" \
-		--config_override "estimation_params.xi=0.25" \
-		--config_override "estimation_params.eta=0.08" \
-		--config_override "estimation_params.zeta=-0.25" \
-		--config_override "estimation_params.psi=0.20"
+		--config_override "estimation_params.beta=${beta}" \
+		--config_override "estimation_params.xi=${xi}" \
+		--config_override "estimation_params.eta=${eta}" \
+		--config_override "estimation_params.zeta=${zeta}" \
+		--config_override "estimation_params.psi=${psi}"
 }
 
 intervention_source_args() {

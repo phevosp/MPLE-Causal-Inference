@@ -28,18 +28,32 @@ run_generation() {
 	sleep 1
 }
 
+clamp_to_bound() {
+	local value="$1"
+	local bound="$2"
+	awk -v v="$value" -v b="$bound" 'BEGIN { if (v > b) v = b; if (v < -b) v = -b; printf "%.12g", v }'
+}
+
 common_args() {
 	local n="$1"
 	local t="$2"
 	local s="$3"
 	local seed="$4"
 	local xi="$5"
+	local B="2.0"
+	local beta eta zeta psi xi_clamped
+
+	beta="$(clamp_to_bound "0.35" "$B")"
+	eta="$(clamp_to_bound "0.08" "$B")"
+	zeta="$(clamp_to_bound "-0.25" "$B")"
+	psi="$(clamp_to_bound "0.20" "$B")"
+	xi_clamped="$(clamp_to_bound "$xi" "$B")"
 
 	printf '%s\n' \
 		--config_override "global_params.N=${n}" \
 		--config_override "global_params.T=${t}" \
 		--config_override "global_params.s=${s}" \
-		--config_override "global_params.B=2.0" \
+		--config_override "global_params.B=${B}" \
 		--config_override "global_params.gamma_matrix_generator=erdos_renyi" \
 		--config_override "global_params.gamma_matrix_params.p=0.05" \
 		--config_override "global_params.x_0_generator=bernoulli" \
@@ -47,11 +61,11 @@ common_args() {
 		--config_override "generation_params.seed=${seed}" \
 		--config_override "generation_params.gibbs_sweeps=5" \
 		--config_override "generation_params.intervention_mode=generated_z" \
-		--config_override "estimation_params.beta=0.35" \
-		--config_override "estimation_params.xi=${xi}" \
-		--config_override "estimation_params.eta=0.08" \
-		--config_override "estimation_params.zeta=-0.25" \
-		--config_override "estimation_params.psi=0.20"
+		--config_override "estimation_params.beta=${beta}" \
+		--config_override "estimation_params.xi=${xi_clamped}" \
+		--config_override "estimation_params.eta=${eta}" \
+		--config_override "estimation_params.zeta=${zeta}" \
+		--config_override "estimation_params.psi=${psi}"
 }
 
 run_uniform() {
@@ -102,14 +116,25 @@ run_latent() {
 	local B="$5"
 	local rank="$6"
 	local seed="$7"
-	local xi_slug="${xi/./p}"
+	local beta eta zeta psi xi_clamped
+	beta="$(clamp_to_bound "0.35" "$B")"
+	eta="$(clamp_to_bound "0.08" "$B")"
+	zeta="$(clamp_to_bound "-0.25" "$B")"
+	psi="$(clamp_to_bound "0.20" "$B")"
+	xi_clamped="$(clamp_to_bound "$xi" "$B")"
+	local xi_slug="${xi_clamped/./p}"
 	local label="generated_z_latent_n${n}_t${t}_xi${xi_slug}_B${B}_rank${rank}"
 	mapfile -t args < <(common_args "$n" "$t" "$s" "$seed" "$xi")
 	run_generation "$label" \
 		"${args[@]}" \
 		--config_override "global_params.basis_params.field_mode=latent_feature_matrix" \
 		--config_override "global_params.basis_params.latent_rank=${rank}" \
-		--config_override "global_params.B=${B}"
+		--config_override "global_params.B=${B}" \
+		--config_override "estimation_params.beta=${beta}" \
+		--config_override "estimation_params.xi=${xi_clamped}" \
+		--config_override "estimation_params.eta=${eta}" \
+		--config_override "estimation_params.zeta=${zeta}" \
+		--config_override "estimation_params.psi=${psi}"
 }
 
 # Compact generated-z sweep covering all active field modes, all target xi values,

@@ -419,7 +419,7 @@ Latent controls:
 
 - `--field_mode latent_feature_matrix` enables low-rank field fitting
 - `--latent_rank <int>` sets the latent rank used in `field_artifacts.npz`
-- `--latent_B <float>` sets `global_params.B` and bounds the realized latent field during MPLE optimization
+- `--latent_B <float>` sets `global_params.B`; MPLE clips scalar temperatures to `[-B, B]`, enforces `||xi*Gamma||_inf <= B`, and in latent mode also bounds the realized latent field
 - `--beta_mask_pre_intervention` zeros the `beta*z` feature for rows before the first treated week (`t < s`)
 - `--beta_mask_rescale` rescales the masked `beta*z` feature by `total_cells / active_cells` so beta remains on a comparable scale
 

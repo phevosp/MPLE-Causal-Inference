@@ -148,8 +148,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help=(
-            "Infinity-norm bound B used to constrain the realized latent field in MPLE "
-            "when --field_mode latent_feature_matrix."
+            "Global bound B used in MPLE: clips scalar temperature parameters to [-B, B], "
+            "enforces ||xi*Gamma||_inf <= B, and (in latent mode) constrains the realized latent field."
         ),
     )
     return parser.parse_args()

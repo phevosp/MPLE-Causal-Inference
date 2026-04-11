@@ -17,6 +17,7 @@ from model_utils import (
     compose_field_matrix_from_theta,
     compose_interaction_matrix,
     infer_t_steps_from_theta,
+    interaction_matrix_infinity_norm,
     interaction_effect,
     intervention_model_enabled,
     load_model_artifacts,
@@ -59,15 +60,32 @@ def _canonicalize_theta(
     t_steps: int,
     fit_intervention_model: bool,
     tau_zero_mean: bool,
-    latent_field_bound: float | None,
+    bound_B: float | None,
 ) -> np.ndarray:
     theta_parts = unpack_theta(theta, artifacts, t_steps, fit_intervention_model)
+    if bound_B is not None:
+        scalar_keys = ["beta", "xi", "eta"]
+        if fit_intervention_model:
+            scalar_keys.extend(["zeta", "psi"])
+        for key in scalar_keys:
+            value = theta_parts.get(key, None)
+            if value is None:
+                continue
+            theta_parts[key] = float(np.clip(float(value), -bound_B, bound_B))
+        gamma_inf = interaction_matrix_infinity_norm(artifacts.gamma_matrix)
+        if gamma_inf > 1e-12:
+            xi_interaction_bound = float(bound_B) / float(gamma_inf)
+            effective_xi_bound = min(float(bound_B), xi_interaction_bound)
+            theta_parts["xi"] = float(
+                np.clip(float(theta_parts["xi"]), -effective_xi_bound, effective_xi_bound)
+            )
+
     if artifacts.field_mode == "latent_feature_matrix":
-        if latent_field_bound is not None:
+        if bound_B is not None:
             node_factors, time_factors = project_latent_field(
                 theta_parts["node_factors"],
                 theta_parts["time_factors"],
-                latent_field_bound,
+                bound_B,
             )
             theta_parts["node_factors"] = node_factors
             theta_parts["time_factors"] = time_factors
@@ -214,7 +232,7 @@ def fit_mple(
     fit_intervention_model: bool = True,
     tau_zero_mean: bool = False,
     tau_smoothness_lambda: float = 0.0,
-    latent_field_bound: float | None = None,
+    bound_B: float | None = None,
     beta_mask_pre_intervention: bool = False,
     beta_mask_rescale: bool = False,
 ):
@@ -234,7 +252,7 @@ def fit_mple(
         t_steps,
         fit_intervention_model,
         tau_zero_mean,
-        latent_field_bound,
+        bound_B,
     )
     history: list[float] = []
     eval_count = [0]
@@ -246,7 +264,7 @@ def fit_mple(
             t_steps,
             fit_intervention_model,
             tau_zero_mean,
-            latent_field_bound,
+            bound_B,
         )
         loss, grad = pseudo_nll(
             x,
@@ -288,7 +306,7 @@ def fit_mple(
         t_steps,
         fit_intervention_model,
         tau_zero_mean,
-        latent_field_bound,
+        bound_B,
     )
     return theta_hat, history, result
 
@@ -600,7 +618,7 @@ def main() -> None:
         if "estimation_params" in config
         else False
     )
-    latent_field_bound = (
+    bound_B = (
         float(config.global_params.B) if "B" in config.global_params else None
     )
     metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
@@ -638,6 +656,13 @@ def main() -> None:
     logger.info("Loaded field mode: %s", artifacts.field_mode)
     logger.info("Using a fixed known graph with scalar xi.")
     logger.info("Intervention-process model enabled: %s", fit_intervention_model)
+    logger.info("Global temperature bound B active: %s", bound_B is not None)
+    if bound_B is not None:
+        gamma_inf = interaction_matrix_infinity_norm(artifacts.gamma_matrix)
+        if gamma_inf > 1e-12:
+            logger.info("Effective xi bound from interaction constraint: %.6f", min(bound_B, bound_B / gamma_inf))
+        else:
+            logger.info("Effective xi bound from interaction constraint: %.6f", bound_B)
     logger.info("Beta mask pre-intervention enabled: %s", beta_mask_pre_intervention)
     logger.info("Beta mask rescale enabled: %s", beta_mask_rescale)
 
@@ -657,7 +682,7 @@ def main() -> None:
         fit_intervention_model=fit_intervention_model,
         tau_zero_mean=tau_zero_mean,
         tau_smoothness_lambda=tau_smoothness_lambda,
-        latent_field_bound=latent_field_bound,
+        bound_B=bound_B,
         beta_mask_pre_intervention=beta_mask_pre_intervention,
         beta_mask_rescale=beta_mask_rescale,
     )
@@ -690,7 +715,7 @@ def main() -> None:
         truth_vector,
         artifacts,
         fit_intervention_model=fit_intervention_model,
-        bound_B=latent_field_bound,
+        bound_B=bound_B,
     )
     write_summary_table(
         Path(args.data_folder) / "mple_summary",
@@ -701,7 +726,7 @@ def main() -> None:
         loss_history[-1],
         artifacts,
         fit_intervention_model,
-        latent_field_bound,
+        bound_B,
     )
     save_estimated_artifacts(
         args.data_folder,

@@ -16,15 +16,19 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from data.synthetic_data_generation import load_fixed_intervention_artifacts
+from mple import _canonicalize_theta
 from model_utils import (
+    ModelArtifacts,
     build_synthetic_field,
     compose_interaction_matrix,
     compose_latent_field_matrix,
     get_xi,
+    interaction_matrix_infinity_norm,
     interaction_effect,
     load_model_artifacts,
     load_true_parameters,
     save_model_artifacts,
+    unpack_theta,
     validate_basis_infinity_norms,
 )
 
@@ -160,6 +164,36 @@ class MinimalPipelineTests(unittest.TestCase):
             )
         finally:
             shutil.rmtree(root, ignore_errors=True)
+
+    def test_canonicalization_enforces_B_on_scalars_and_interaction(self) -> None:
+        gamma = np.array([[0.0, 2.0], [2.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            field_mode="uniform",
+            gamma_matrix=gamma,
+            field_basis=np.empty((0, 2), dtype=float),
+            field_names=(),
+        )
+        # theta layout for additive + fit_intervention_model=True with T=1:
+        # [tau_0, beta, xi, eta, zeta, psi]
+        theta = np.array([0.0, 5.0, 4.0, -3.5, 2.5, -2.2], dtype=float)
+        projected = _canonicalize_theta(
+            theta=theta,
+            artifacts=artifacts,
+            t_steps=1,
+            fit_intervention_model=True,
+            tau_zero_mean=False,
+            bound_B=1.0,
+        )
+        parts = unpack_theta(projected, artifacts, t_steps=1, fit_intervention_model=True)
+        self.assertLessEqual(abs(float(parts["beta"])), 1.0 + 1e-12)
+        self.assertLessEqual(abs(float(parts["eta"])), 1.0 + 1e-12)
+        self.assertLessEqual(abs(float(parts["zeta"])), 1.0 + 1e-12)
+        self.assertLessEqual(abs(float(parts["psi"])), 1.0 + 1e-12)
+        interaction = compose_interaction_matrix(float(parts["xi"]), artifacts.gamma_matrix)
+        self.assertLessEqual(
+            interaction_matrix_infinity_norm(interaction),
+            1.0 + 1e-12,
+        )
 
 
 if __name__ == "__main__":

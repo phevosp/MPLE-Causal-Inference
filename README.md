@@ -98,6 +98,8 @@ pixi run python -u data/USCountyVaccination/run_us_county_vaccination_experiment
   --run_mple
 ```
 
+`B` is a global MPLE bound: scalar temperature parameters are clipped to `[-B, B]`, the interaction block satisfies `||xi*Gamma||_inf <= B`, and latent field runs also enforce `||field||_inf <= B`.
+
 Run the minimal regression tests:
 
 ```bash

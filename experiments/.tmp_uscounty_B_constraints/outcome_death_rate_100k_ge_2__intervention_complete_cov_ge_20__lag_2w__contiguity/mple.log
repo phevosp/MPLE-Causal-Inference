@@ -1,0 +1,28 @@
+2026-04-11 18:05:07 | INFO | Loading data...
+2026-04-11 18:05:07 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\.tmp_uscounty_B_constraints\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\panel_data.npz
+2026-04-11 18:05:07 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\.tmp_uscounty_B_constraints\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\x_0.npy
+2026-04-11 18:05:07 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\.tmp_uscounty_B_constraints\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\z_0.npy
+2026-04-11 18:05:07 | INFO | Loaded field mode: latent_feature_matrix
+2026-04-11 18:05:07 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 18:05:07 | INFO | Intervention-process model enabled: True
+2026-04-11 18:05:07 | INFO | Global temperature bound B active: True
+2026-04-11 18:05:07 | INFO | Effective xi bound from interaction constraint: 0.500000
+2026-04-11 18:05:07 | INFO | Beta mask pre-intervention enabled: False
+2026-04-11 18:05:07 | INFO | Beta mask rescale enabled: False
+2026-04-11 18:05:07 | INFO | Eval 0  |  Loss: 0.729219
+2026-04-11 18:05:07 | INFO |   beta: -0.0500,  xi: -0.0469,  eta: -0.1197,  zeta: +0.1218,  psi: +0.0820
+2026-04-11 18:05:08 | INFO | Done fitting.
+2026-04-11 18:05:08 | INFO | Optimizer status: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT
+2026-04-11 18:05:08 | INFO | Final Loss: 0.453919
+2026-04-11 18:05:08 | INFO | Estimated Parameters:
+2026-04-11 18:05:08 | INFO |   beta: -0.0368
+2026-04-11 18:05:08 | INFO |   xi: 0.5000
+2026-04-11 18:05:08 | INFO |   eta: 0.5000
+2026-04-11 18:05:08 | INFO |   zeta: -0.0944
+2026-04-11 18:05:08 | INFO |   psi: 0.5000
+2026-04-11 18:05:08 | INFO | Field and interaction diagnostics:
+2026-04-11 18:05:08 | INFO |   estimated_field_inf_norm: 0.500000
+2026-04-11 18:05:08 | INFO |   estimated_field_rank: 4.000000
+2026-04-11 18:05:08 | INFO |   bound_B: 0.500000
+2026-04-11 18:05:08 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\.tmp_uscounty_B_constraints\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\.tmp_uscounty_B_constraints\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity\mple_summary.md
+2026-04-11 18:05:08 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\.tmp_uscounty_B_constraints\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity\mple.log
