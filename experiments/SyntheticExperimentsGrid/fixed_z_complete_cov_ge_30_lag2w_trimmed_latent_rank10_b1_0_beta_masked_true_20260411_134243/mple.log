@@ -1,0 +1,28 @@
+2026-04-11 13:53:41 | INFO | Loading data...
+2026-04-11 13:53:41 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_30_lag2w_trimmed_latent_rank10_b1_0_beta_masked_true_20260411_134243\panel_data.npz
+2026-04-11 13:53:41 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_30_lag2w_trimmed_latent_rank10_b1_0_beta_masked_true_20260411_134243\x_0.npy
+2026-04-11 13:53:41 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_30_lag2w_trimmed_latent_rank10_b1_0_beta_masked_true_20260411_134243\z_0.npy
+2026-04-11 13:53:41 | INFO | Loaded field mode: latent_feature_matrix
+2026-04-11 13:53:41 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 13:53:41 | INFO | Intervention-process model enabled: False
+2026-04-11 13:53:41 | INFO | Eval 0  |  Loss: 0.701066
+2026-04-11 13:53:41 | INFO |   beta: +0.0584,  xi: -0.0271,  eta: -0.1078
+2026-04-11 13:53:45 | INFO | Eval 100  |  Loss: 0.602116
+2026-04-11 13:53:45 | INFO |   beta: +0.3453,  xi: +0.2617,  eta: +0.0800
+2026-04-11 13:53:45 | INFO | Done fitting.
+2026-04-11 13:53:45 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 13:53:45 | INFO | Final Loss: 0.602116
+2026-04-11 13:53:45 | INFO | Estimated vs True Parameters:
+2026-04-11 13:53:45 | INFO |   beta: 0.3453 (True: 0.3500) | SQE: 0.000022
+2026-04-11 13:53:45 | INFO |   xi: 0.2616 (True: 0.2500) | SQE: 0.000135
+2026-04-11 13:53:45 | INFO |   eta: 0.0800 (True: 0.0800) | SQE: 0.000000
+2026-04-11 13:53:46 | INFO | Field and interaction diagnostics:
+2026-04-11 13:53:46 | INFO |   field_rmse: 0.000343
+2026-04-11 13:53:46 | INFO |   interaction_fro_error: 0.038916
+2026-04-11 13:53:46 | INFO |   estimated_field_inf_norm: 1.000000
+2026-04-11 13:53:46 | INFO |   estimated_field_rank: 10.000000
+2026-04-11 13:53:46 | INFO |   bound_B: 1.000000
+2026-04-11 13:53:46 | INFO |   true_field_inf_norm: 1.000000
+2026-04-11 13:53:46 | INFO |   true_field_rank: 10.000000
+2026-04-11 13:53:46 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_30_lag2w_trimmed_latent_rank10_b1_0_beta_masked_true_20260411_134243\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_30_lag2w_trimmed_latent_rank10_b1_0_beta_masked_true_20260411_134243\mple_summary.md
+2026-04-11 13:53:46 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticExperimentsGrid\fixed_z_complete_cov_ge_30_lag2w_trimmed_latent_rank10_b1_0_beta_masked_true_20260411_134243\mple.log
