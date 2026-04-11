@@ -40,7 +40,7 @@ from common import (  # noqa: E402
     sparse_matrix_stats,
 )
 from data_utils import center_and_normalize_vector_infinity  # noqa: E402
-from model_utils import validate_basis_infinity_norms  # noqa: E402
+from model_utils import ModelArtifacts, save_model_artifacts, validate_basis_infinity_norms  # noqa: E402
 
 
 NON_MAINLAND_STATEFPS = frozenset({"02", "15", "60", "66", "69", "72", "78"})
@@ -544,19 +544,21 @@ def save_experiment(
     field_basis: np.ndarray,
     field_basis_names: tuple[str, ...],
     gamma_matrix: sparse.csr_matrix,
-    interaction_name: str,
     adjacency_edges: pd.DataFrame,
 ) -> None:
     experiment_dir.mkdir(parents=True, exist_ok=True)
     OmegaConf.save(config, experiment_dir / "realized_config.yaml")
     OmegaConf.save(OmegaConf.create(metadata), experiment_dir / "experiment_metadata.yaml")
-    np.save(experiment_dir / "field_basis.npy", field_basis)
-    np.save(experiment_dir / "field_basis_names.npy", np.asarray(field_basis_names, dtype="<U128"))
-    np.save(experiment_dir / "shared_features.npy", np.empty((0, field_basis.shape[1]), dtype=float))
-    np.save(experiment_dir / "shared_feature_names.npy", np.asarray([], dtype="<U1"))
-    sparse.save_npz(experiment_dir / "gamma_matrix_sparse.npz", gamma_matrix)
-    sparse.save_npz(experiment_dir / "interaction_basis_sparse.npz", gamma_matrix)
-    np.save(experiment_dir / "interaction_basis_names.npy", np.asarray([interaction_name], dtype="<U128"))
+    field_mode = "uniform" if field_basis.shape[0] == 0 else "shared_feature_field"
+    save_model_artifacts(
+        experiment_dir,
+        ModelArtifacts(
+            field_mode=field_mode,
+            gamma_matrix=gamma_matrix,
+            field_basis=field_basis,
+            field_names=field_basis_names,
+        ),
+    )
     adjacency_edges.to_csv(experiment_dir / "adjacency_edge_list.csv.gz", index=False)
 
 
@@ -608,7 +610,7 @@ def experiment_has_panel_artifacts(experiment_dir: Path) -> bool:
         x0_path,
         z0_path,
         experiment_dir / "gamma_matrix_sparse.npz",
-        experiment_dir / "field_basis.npy",
+        experiment_dir / "field_artifacts.npz",
     ]
     return all(path.exists() for path in required)
 
@@ -818,7 +820,6 @@ def main() -> None:
                 field_basis,
                 field_basis_names,
                 gamma_matrix,
-                network_name,
                 adjacency_edges,
             )
             binary_summary = compute_binary_summary(aligned_panel)

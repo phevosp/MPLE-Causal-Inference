@@ -1,14 +1,15 @@
 global_params:
   N: 1000 # size of the network
   T: 100 # number of time steps
-  s: 10 # number of pre-intervention time steps
+  s: 20 # number of pre-intervention time steps
+  B: 1 # upper bound on the temperature, i.e. on all coefficients and realized field values
   gamma_matrix_generator: "erdos_renyi" # method for generating the network. Options: "erdos_renyi", "complete", "cycle", "empty"
   x_0_generator: "bernoulli" # method for generating the initial state. Options: "bernoulli", "fixed"
   basis_params:
-    field_mode: "uniform" # options: "uniform", "shared_feature_field"
-    interaction_mode: "known_graph" # fixed graph only in the active pipeline
+    field_mode: "uniform" # options: "uniform", "shared_feature_field", "latent_feature_matrix"
     num_shared_features: 5 # number of synthetic shared node features used when field_mode == "shared_feature_field"
     shared_feature_seed: 42 # random seed used to realize the shared node features
+    latent_rank: 5 # rank of the latent feature matrix used when field_mode == "latent_feature_matrix"
   gamma_matrix_params:
     p: 0.01 # probability of edge creation for "erdos-renyi"
   x_0_params:
@@ -25,7 +26,7 @@ estimation_params:
     seed: 42 # random seed for generating tau when mode == "uniform_random"
     vector: null # optional length-T vector used when mode == "fixed"
   beta: 0.25 # z^{(t)} -> x^{(t)}
-  interaction_coefs: [0.08] # single scalar coefficient on the fixed known graph
+  xi: 0.08 # scalar coefficient on the fixed known graph
   eta: 0.01 # x^{(t-1)} -> x^{(t)}
   zeta: -0.03 # x^{(t-1)} -> z^{(t)}
   psi: 0.1 # z^{(t-1)} -> z^{(t)}
