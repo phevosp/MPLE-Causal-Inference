@@ -1,0 +1,26 @@
+2026-04-11 17:50:33 | INFO | Loading data...
+2026-04-11 17:50:33 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\panel_data.npz
+2026-04-11 17:50:33 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\x_0.npy
+2026-04-11 17:50:33 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\z_0.npy
+2026-04-11 17:50:33 | INFO | Loaded field mode: latent_feature_matrix
+2026-04-11 17:50:33 | INFO | Using a fixed known graph with scalar xi.
+2026-04-11 17:50:33 | INFO | Intervention-process model enabled: True
+2026-04-11 17:50:33 | INFO | Beta mask pre-intervention enabled: True
+2026-04-11 17:50:33 | INFO | Beta mask rescale enabled: False
+2026-04-11 17:50:33 | INFO | Eval 0  |  Loss: 0.782519
+2026-04-11 17:50:33 | INFO |   beta: +0.0793,  xi: -0.2085,  eta: +0.0135,  zeta: -0.2117,  psi: -0.1690
+2026-04-11 17:50:40 | INFO | Done fitting.
+2026-04-11 17:50:40 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-11 17:50:40 | INFO | Final Loss: 0.335883
+2026-04-11 17:50:40 | INFO | Estimated Parameters:
+2026-04-11 17:50:40 | INFO |   beta: -0.0103
+2026-04-11 17:50:40 | INFO |   xi: 1.9914
+2026-04-11 17:50:40 | INFO |   eta: 0.3390
+2026-04-11 17:50:40 | INFO |   zeta: -0.1721
+2026-04-11 17:50:40 | INFO |   psi: 2.1025
+2026-04-11 17:50:40 | INFO | Field and interaction diagnostics:
+2026-04-11 17:50:40 | INFO |   estimated_field_inf_norm: 2.000000
+2026-04-11 17:50:40 | INFO |   estimated_field_rank: 40.000000
+2026-04-11 17:50:40 | INFO |   bound_B: 2.000000
+2026-04-11 17:50:40 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity\mple_summary.md
+2026-04-11 17:50:40 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity\mple.log

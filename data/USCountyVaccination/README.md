@@ -398,6 +398,31 @@ Run MPLE while materializing:
 pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py --run_mple
 ```
 
+Run MPLE with a latent low-rank field (user-specified rank and `B`):
+
+```bash
+pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py \
+  --trim \
+  --outcomes death_rate_100k_ge_2 \
+  --interventions complete_cov_ge_20 \
+  --lags 2w \
+  --max_experiments 1 \
+  --field_mode latent_feature_matrix \
+  --latent_rank 6 \
+  --latent_B 1.5 \
+  --beta_mask_pre_intervention \
+  --beta_mask_rescale \
+  --run_mple
+```
+
+Latent controls:
+
+- `--field_mode latent_feature_matrix` enables low-rank field fitting
+- `--latent_rank <int>` sets the latent rank used in `field_artifacts.npz`
+- `--latent_B <float>` sets `global_params.B` and bounds the realized latent field during MPLE optimization
+- `--beta_mask_pre_intervention` zeros the `beta*z` feature for rows before the first treated week (`t < s`)
+- `--beta_mask_rescale` rescales the masked `beta*z` feature by `total_cells / active_cells` so beta remains on a comparable scale
+
 Write combined CSV and Markdown reports for one experiment root:
 
 ```bash

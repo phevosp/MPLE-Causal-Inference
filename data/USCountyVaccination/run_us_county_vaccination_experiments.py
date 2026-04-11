@@ -93,6 +93,19 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         help="Quadratic penalty weight on first differences of tau to discourage sudden jumps.",
     )
+    parser.add_argument(
+        "--beta_mask_pre_intervention",
+        action="store_true",
+        help="Mask the beta*z term on pre-intervention rows (t < s) when fitting MPLE.",
+    )
+    parser.add_argument(
+        "--beta_mask_rescale",
+        action="store_true",
+        help=(
+            "When beta masking is enabled, rescale the masked beta feature by "
+            "total_cells / active_cells to preserve comparable magnitude."
+        ),
+    )
     parser.add_argument("--max_experiments", type=int, default=None, help="Optional cap on the number of experiments.")
     parser.add_argument("--lags", nargs="*", default=None, help="Lag codes to include, for example 0w 1w 2w.")
     parser.add_argument("--outcomes", nargs="*", default=None, help="Outcome codes to include.")
@@ -114,6 +127,30 @@ def parse_args() -> argparse.Namespace:
         "--trim",
         action="store_true",
         help="Restrict support to mainland US counties with total population at least 2,000.",
+    )
+    parser.add_argument(
+        "--field_mode",
+        choices=["additive", "latent_feature_matrix"],
+        default="additive",
+        help=(
+            "Field parameterization for the outcome process. "
+            "'additive' uses the county feature basis; 'latent_feature_matrix' fits a low-rank latent field."
+        ),
+    )
+    parser.add_argument(
+        "--latent_rank",
+        type=int,
+        default=10,
+        help="Latent rank used when --field_mode latent_feature_matrix.",
+    )
+    parser.add_argument(
+        "--latent_B",
+        type=float,
+        default=1.0,
+        help=(
+            "Infinity-norm bound B used to constrain the realized latent field in MPLE "
+            "when --field_mode latent_feature_matrix."
+        ),
     )
     return parser.parse_args()
 
@@ -826,9 +863,14 @@ def create_config(
     network_name: str,
     field_basis_mode: str,
     field_basis_names: tuple[str, ...],
+    model_field_mode: str,
+    latent_rank: int,
+    latent_B: float,
     state_scope_label: str,
     tau_zero_mean: bool,
     tau_smoothness_lambda: float,
+    beta_mask_pre_intervention: bool,
+    beta_mask_rescale: bool,
 ) -> OmegaConf:
     return OmegaConf.create(
         {
@@ -836,6 +878,11 @@ def create_config(
                 "N": int(n_nodes),
                 "T": int(t_steps),
                 "s": int(s),
+                "B": float(latent_B),
+                "basis_params": {
+                    "field_mode": str(model_field_mode),
+                    "latent_rank": int(latent_rank),
+                },
                 "gamma_matrix_generator": "real_data",
                 "x_0_generator": "observed",
             },
@@ -848,6 +895,8 @@ def create_config(
                 "tau_params": None,
                 "tau_zero_mean": bool(tau_zero_mean),
                 "tau_smoothness_lambda": float(tau_smoothness_lambda),
+                "beta_mask_pre_intervention": bool(beta_mask_pre_intervention),
+                "beta_mask_rescale": bool(beta_mask_rescale),
             },
             "real_data_params": {
                 "source": SOURCE_LABEL,
@@ -859,6 +908,9 @@ def create_config(
                 "network_name": network_name,
                 "field_basis_mode": field_basis_mode,
                 "field_basis_names": list(field_basis_names),
+                "model_field_mode": model_field_mode,
+                "latent_rank": int(latent_rank),
+                "latent_B": float(latent_B),
             },
         }
     )
@@ -904,21 +956,31 @@ def save_experiment(
     metadata: dict[str, object],
     field_basis: np.ndarray,
     field_basis_names: tuple[str, ...],
+    model_field_mode: str,
+    latent_rank: int,
     gamma_matrix: sparse.csr_matrix,
     adjacency_edges: pd.DataFrame,
 ) -> None:
     experiment_dir.mkdir(parents=True, exist_ok=True)
     OmegaConf.save(config, experiment_dir / "realized_config.yaml")
     OmegaConf.save(OmegaConf.create(metadata), experiment_dir / "experiment_metadata.yaml")
-    field_mode = "uniform" if field_basis.shape[0] == 0 else "shared_feature_field"
-    save_model_artifacts(
-        experiment_dir,
-        ModelArtifacts(
+    if model_field_mode == "latent_feature_matrix":
+        artifacts = ModelArtifacts(
+            field_mode="latent_feature_matrix",
+            gamma_matrix=gamma_matrix,
+            latent_rank=int(latent_rank),
+        )
+    else:
+        field_mode = "uniform" if field_basis.shape[0] == 0 else "shared_feature_field"
+        artifacts = ModelArtifacts(
             field_mode=field_mode,
             gamma_matrix=gamma_matrix,
             field_basis=field_basis,
             field_names=field_basis_names,
-        ),
+        )
+    save_model_artifacts(
+        experiment_dir,
+        artifacts,
     )
     adjacency_edges.to_csv(experiment_dir / "adjacency_edge_list.csv.gz", index=False)
 
@@ -990,6 +1052,11 @@ def existing_experiment_trim_setting(experiment_dir: Path) -> bool | None:
 
 def main() -> None:
     args = parse_args()
+    if args.field_mode == "latent_feature_matrix":
+        if args.latent_rank <= 0:
+            raise ValueError("--latent_rank must be positive when --field_mode latent_feature_matrix.")
+        if args.latent_B <= 0.0:
+            raise ValueError("--latent_B must be positive when --field_mode latent_feature_matrix.")
     panel, features, centroids = load_inputs()
     full_node_table = build_node_table(features, centroids)
     untrimmed_node_order = full_node_table["fips"].tolist()
@@ -1117,11 +1184,21 @@ def main() -> None:
             .sort_values("fips")
             .reset_index(drop=True)
         )
-        field_basis, field_basis_names, field_basis_mode = build_field_basis(node_table)
+        if args.field_mode == "latent_feature_matrix":
+            field_basis = np.empty((0, len(node_table)), dtype=float)
+            field_basis_names = ()
+            field_basis_mode = "latent_feature_matrix"
+            model_field_mode = "latent_feature_matrix"
+        else:
+            field_basis, field_basis_names, field_basis_mode = build_field_basis(node_table)
+            model_field_mode = "shared_feature_field" if field_basis.shape[0] > 0 else "uniform"
         gamma_matrix, adjacency_edges = subset_network_artifact(
             realized_network_artifacts[network_name], realized_node_order
         )
-        validate_basis_infinity_norms(field_basis, gamma_matrix)
+        validate_basis_infinity_norms(
+            None if model_field_mode == "latent_feature_matrix" else field_basis,
+            gamma_matrix,
+        )
         treated_rows = np.any(z == 1, axis=1)
         s = int(np.argmax(treated_rows)) if treated_rows.any() else int(z.shape[0])
         shared_panel_dir = shared_panel_root / shared_panel_name(
@@ -1144,9 +1221,14 @@ def main() -> None:
             network_name=network_name,
             field_basis_mode=field_basis_mode,
             field_basis_names=field_basis_names,
+            model_field_mode=model_field_mode,
+            latent_rank=int(args.latent_rank),
+            latent_B=float(args.latent_B),
             state_scope_label=state_scope_label,
             tau_zero_mean=args.tau_zero_mean,
             tau_smoothness_lambda=args.tau_smoothness_lambda,
+            beta_mask_pre_intervention=bool(args.beta_mask_pre_intervention),
+            beta_mask_rescale=bool(args.beta_mask_rescale),
         )
         metadata = {
             "source": SOURCE_LABEL,
@@ -1167,6 +1249,9 @@ def main() -> None:
             "network_name": network_name,
             "field_basis_mode": field_basis_mode,
             "field_basis_names": list(field_basis_names),
+            "model_field_mode": model_field_mode,
+            "latent_rank": int(args.latent_rank) if model_field_mode == "latent_feature_matrix" else None,
+            "latent_B": float(args.latent_B) if model_field_mode == "latent_feature_matrix" else None,
             "trim_applied": bool(trim_metadata["trim_applied"]),
             "trim_rule": trim_metadata["trim_rule"],
             "pre_trim_node_count": int(trim_metadata["pre_trim_node_count"]),
@@ -1178,6 +1263,8 @@ def main() -> None:
             "trim_population_min": trim_metadata["trim_population_min"],
             "tau_zero_mean": bool(args.tau_zero_mean),
             "tau_smoothness_lambda": float(args.tau_smoothness_lambda),
+            "beta_mask_pre_intervention": bool(args.beta_mask_pre_intervention),
+            "beta_mask_rescale": bool(args.beta_mask_rescale),
             "requested_node_count": int(support_metadata["requested_node_count"]),
             "node_count": int(len(realized_node_order)),
             "dropped_node_count": int(support_metadata["dropped_node_count"]),
@@ -1263,6 +1350,8 @@ def main() -> None:
                 metadata,
                 field_basis,
                 field_basis_names,
+                model_field_mode,
+                int(args.latent_rank),
                 gamma_matrix,
                 adjacency_edges,
             )
@@ -1334,6 +1423,9 @@ def main() -> None:
                 "network_name": network_name,
                 "intervention_family": INTERVENTION_SPECS[intervention_code].family,
                 "field_basis_mode": field_basis_mode,
+                "model_field_mode": model_field_mode,
+                "latent_rank": int(args.latent_rank) if model_field_mode == "latent_feature_matrix" else None,
+                "latent_B": float(args.latent_B) if model_field_mode == "latent_feature_matrix" else None,
                 "trim_applied": bool(trim_metadata["trim_applied"]),
                 "trim_rule": trim_metadata["trim_rule"],
                 "pre_trim_node_count": int(trim_metadata["pre_trim_node_count"]),

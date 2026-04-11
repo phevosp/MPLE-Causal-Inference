@@ -113,6 +113,8 @@ def pseudo_nll(
     fit_intervention_model: bool = True,
     tau_zero_mean: bool = False,
     tau_smoothness_lambda: float = 0.0,
+    beta_mask_pre_intervention: bool = False,
+    beta_mask_rescale: bool = False,
 ) -> tuple[float, np.ndarray]:
     t_steps = x.shape[0]
     theta_parts = unpack_theta(theta, artifacts, t_steps, fit_intervention_model)
@@ -125,10 +127,21 @@ def pseudo_nll(
 
     prev_x = np.vstack([x_0, x[:-1, :]])
     prev_z = np.vstack([z_0, z[:-1, :]])
+    beta_feature = np.asarray(z, dtype=float)
+    beta_scale = 1.0
+    if beta_mask_pre_intervention:
+        beta_mask = np.ones_like(beta_feature)
+        beta_mask[:s, :] = 0.0
+        beta_feature = beta_feature * beta_mask
+        if beta_mask_rescale:
+            active = float(beta_mask.sum())
+            if active > 0.0:
+                beta_scale = float(beta_mask.size / active)
+    beta_feature *= beta_scale
     field_matrix = compose_field_matrix_from_theta(theta_parts, artifacts)
     h_x = (
         field_matrix
-        + theta_parts["beta"] * z
+        + theta_parts["beta"] * beta_feature
         + theta_parts["eta"] * prev_x
         + theta_parts["xi"] * interaction_effect_x
     )
@@ -172,7 +185,7 @@ def pseudo_nll(
 
     grad_parts = [
         field_grad / outcome_size,
-        np.array([float((res_x * z).sum()) / outcome_size], dtype=float),
+        np.array([float((res_x * beta_feature).sum()) / outcome_size], dtype=float),
         np.array(
             [float((res_x * interaction_effect_x).sum()) / outcome_size], dtype=float
         ),
@@ -202,6 +215,8 @@ def fit_mple(
     tau_zero_mean: bool = False,
     tau_smoothness_lambda: float = 0.0,
     latent_field_bound: float | None = None,
+    beta_mask_pre_intervention: bool = False,
+    beta_mask_rescale: bool = False,
 ):
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
@@ -245,6 +260,8 @@ def fit_mple(
             fit_intervention_model=fit_intervention_model,
             tau_zero_mean=tau_zero_mean,
             tau_smoothness_lambda=tau_smoothness_lambda,
+            beta_mask_pre_intervention=beta_mask_pre_intervention,
+            beta_mask_rescale=beta_mask_rescale,
         )
         history.append(loss)
         if verbose_every and eval_count[0] % verbose_every == 0:
@@ -573,6 +590,16 @@ def main() -> None:
         if "estimation_params" in config
         else 0.0
     )
+    beta_mask_pre_intervention = (
+        bool(config.estimation_params.get("beta_mask_pre_intervention", False))
+        if "estimation_params" in config
+        else False
+    )
+    beta_mask_rescale = (
+        bool(config.estimation_params.get("beta_mask_rescale", False))
+        if "estimation_params" in config
+        else False
+    )
     latent_field_bound = (
         float(config.global_params.B) if "B" in config.global_params else None
     )
@@ -611,6 +638,8 @@ def main() -> None:
     logger.info("Loaded field mode: %s", artifacts.field_mode)
     logger.info("Using a fixed known graph with scalar xi.")
     logger.info("Intervention-process model enabled: %s", fit_intervention_model)
+    logger.info("Beta mask pre-intervention enabled: %s", beta_mask_pre_intervention)
+    logger.info("Beta mask rescale enabled: %s", beta_mask_rescale)
 
     params_hat, loss_history, result = fit_mple(
         x,
@@ -629,6 +658,8 @@ def main() -> None:
         tau_zero_mean=tau_zero_mean,
         tau_smoothness_lambda=tau_smoothness_lambda,
         latent_field_bound=latent_field_bound,
+        beta_mask_pre_intervention=beta_mask_pre_intervention,
+        beta_mask_rescale=beta_mask_rescale,
     )
 
     logger.info("Done fitting.")

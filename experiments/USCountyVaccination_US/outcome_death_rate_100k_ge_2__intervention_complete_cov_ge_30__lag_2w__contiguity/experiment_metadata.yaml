@@ -7,9 +7,9 @@ lag_application: intervention_only
 outcome_code: death_rate_100k_ge_2
 outcome_label: death_rate_100k >= 2
 outcome_notes: +1 when weekly death rate per 100k is at least 2.
-intervention_code: complete_cov_ge_20
-intervention_label: complete_cov >= 20
-intervention_notes: +1 when complete vaccination coverage is at least 20 percentage
+intervention_code: complete_cov_ge_30
+intervention_label: complete_cov >= 30
+intervention_notes: +1 when complete vaccination coverage is at least 30 percentage
   points.
 intervention_family: core
 lag_code: 2w
@@ -46,14 +46,14 @@ realized_calendar_weeks: 121
 requested_calendar_weeks: 121
 weeks_dropped_due_to_missing_or_lag: 0
 support_selection_rule: max_complete_suffix_by_node_week_area
-shared_panel_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed
-shared_panel_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\panel_data.npz
-shared_x0_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\x_0.npy
-shared_z0_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\z_0.npy
-shared_node_index_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\node_index.csv
-shared_time_index_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__scope_trimmed\time_index.csv
+shared_panel_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed
+shared_panel_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\panel_data.npz
+shared_x0_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\x_0.npy
+shared_z0_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\z_0.npy
+shared_node_index_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\node_index.csv
+shared_time_index_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\time_index.csv
 realized_outcome_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\realized_outcomes\outcome_death_rate_100k_ge_2__scope_trimmed
-realized_intervention_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\realized_interventions\intervention_complete_cov_ge_20__lag_2w__scope_trimmed
+realized_intervention_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\realized_interventions\intervention_complete_cov_ge_30__lag_2w__scope_trimmed
 realized_network_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US\realized_networks\network_contiguity__scope_trimmed
 nnz: 17480
 undirected_edges: 8740

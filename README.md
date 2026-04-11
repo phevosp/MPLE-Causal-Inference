@@ -54,9 +54,9 @@ Generate one synthetic fixed-`z` experiment:
 ```bash
 pixi run python -u data/synthetic_data_generation.py \
   --config_name base_config.yaml \
-  --config_override generation_params.intervention_mode='\"fixed_z\"' \
-  --config_override generation_params.fixed_z_source.panel_path='\"<panel_dir>/panel_data.npz\"' \
-  --config_override generation_params.fixed_z_source.z0_path='\"<panel_dir>/z_0.npy\"'
+  --config_override generation_params.intervention_mode=fixed_z \
+  --config_override generation_params.fixed_z_source.panel_path=<panel_dir>/panel_data.npz \
+  --config_override generation_params.fixed_z_source.z0_path=<panel_dir>/z_0.npy
 ```
 
 Fit MPLE:
@@ -79,4 +79,27 @@ Materialize USCountyVaccination experiments:
 
 ```bash
 pixi run python -u data/USCountyVaccination/run_us_county_vaccination_experiments.py --trim
+```
+
+Materialize and fit one USCounty latent-field experiment with explicit rank and `B`:
+
+```bash
+pixi run python -u data/USCountyVaccination/run_us_county_vaccination_experiments.py \
+  --trim \
+  --outcomes death_rate_100k_ge_2 \
+  --interventions complete_cov_ge_20 \
+  --lags 2w \
+  --max_experiments 1 \
+  --field_mode latent_feature_matrix \
+  --latent_rank 6 \
+  --latent_B 1.5 \
+  --beta_mask_pre_intervention \
+  --beta_mask_rescale \
+  --run_mple
+```
+
+Run the minimal regression tests:
+
+```bash
+pixi run python tests/test_minimal_pipeline.py
 ```
