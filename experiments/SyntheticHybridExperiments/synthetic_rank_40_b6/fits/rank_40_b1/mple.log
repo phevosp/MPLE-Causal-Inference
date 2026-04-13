@@ -1,0 +1,40 @@
+2026-04-12 13:15:04 | INFO | Loading data...
+2026-04-12 13:15:04 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6\panel_data.npz
+2026-04-12 13:15:04 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6\x_0.npy
+2026-04-12 13:15:04 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6\z_0.npy
+2026-04-12 13:15:04 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6\fits\rank_40_b1\fit_realized_config.yaml
+2026-04-12 13:15:04 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6
+2026-04-12 13:15:04 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6
+2026-04-12 13:15:04 | INFO | Configured latent rank: 40
+2026-04-12 13:15:04 | INFO | Using a fixed known graph with scalar xi.
+2026-04-12 13:15:04 | INFO | Intervention-process model enabled: True
+2026-04-12 13:15:04 | INFO | Global temperature bound B active: True
+2026-04-12 13:15:04 | INFO | Effective xi bound from interaction constraint: 1.000000
+2026-04-12 13:15:04 | INFO | Beta mask pre-intervention enabled: False
+2026-04-12 13:15:04 | INFO | Beta mask rescale enabled: False
+2026-04-12 13:15:04 | INFO | Fixed scalar parameters: {}
+2026-04-12 13:15:04 | INFO | Eval 0  |  Loss: 0.711855
+2026-04-12 13:15:04 | INFO |   beta: +0.0567,  xi: -0.0042,  eta: -0.0514,  zeta: -0.1078,  psi: -0.0864
+2026-04-12 13:15:04 | INFO | Eval 100  |  Loss: 0.515874
+2026-04-12 13:15:04 | INFO |   beta: +0.3606,  xi: +0.6952,  eta: +0.4900,  zeta: -0.5629,  psi: +0.8119
+2026-04-12 13:15:05 | INFO | Eval 200  |  Loss: 0.515874
+2026-04-12 13:15:05 | INFO |   beta: +0.3615,  xi: +0.6794,  eta: +0.4918,  zeta: -0.5667,  psi: +0.8170
+2026-04-12 13:15:05 | INFO | Done fitting.
+2026-04-12 13:15:05 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-12 13:15:05 | INFO | Final Loss: 0.515868
+2026-04-12 13:15:05 | INFO | Estimated vs True Parameters:
+2026-04-12 13:15:05 | INFO |   beta: 0.3640 (True: 0.3500) | SQE: 0.000196
+2026-04-12 13:15:05 | INFO |   xi: 0.6808 (True: 0.7500) | SQE: 0.004794
+2026-04-12 13:15:05 | INFO |   eta: 0.4909 (True: 0.4800) | SQE: 0.000119
+2026-04-12 13:15:05 | INFO |   zeta: -0.5581 (True: -0.5500) | SQE: 0.000066
+2026-04-12 13:15:05 | INFO |   psi: 0.8038 (True: 0.8000) | SQE: 0.000015
+2026-04-12 13:15:05 | INFO | Field and interaction diagnostics:
+2026-04-12 13:15:05 | INFO |   field_rmse: 0.011668
+2026-04-12 13:15:05 | INFO |   interaction_fro_error: 0.184225
+2026-04-12 13:15:05 | INFO |   estimated_field_inf_norm: 1.000000
+2026-04-12 13:15:05 | INFO |   estimated_field_rank: 40.000000
+2026-04-12 13:15:05 | INFO |   bound_B: 1.000000
+2026-04-12 13:15:05 | INFO |   true_field_inf_norm: 6.000000
+2026-04-12 13:15:05 | INFO |   true_field_rank: 40.000000
+2026-04-12 13:15:05 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6\fits\rank_40_b1\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6\fits\rank_40_b1\mple_summary.md
+2026-04-12 13:15:05 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b6\fits\rank_40_b1\mple.log

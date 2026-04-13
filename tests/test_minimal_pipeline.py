@@ -1,4 +1,4 @@
-"""Small regression tests for the minimal active MPLE pipeline."""
+"""Small regression tests for the minimal latent-only MPLE pipeline."""
 
 from __future__ import annotations
 
@@ -19,17 +19,18 @@ from data.synthetic_data_generation import load_fixed_intervention_artifacts
 from mple import _canonicalize_theta
 from model_utils import (
     ModelArtifacts,
+    build_fit_model_artifacts,
     build_synthetic_field,
     compose_interaction_matrix,
     compose_latent_field_matrix,
     get_xi,
-    interaction_matrix_infinity_norm,
     interaction_effect,
+    interaction_matrix_infinity_norm,
     load_model_artifacts,
     load_true_parameters,
+    parameter_names,
     save_model_artifacts,
     unpack_theta,
-    validate_basis_infinity_norms,
 )
 
 
@@ -40,14 +41,9 @@ def base_config() -> object:
                 "N": 4,
                 "T": 3,
                 "B": 1.0,
-                "basis_params": {
-                    "field_mode": "uniform",
-                    "num_shared_features": 2,
-                    "shared_feature_seed": 0,
-                },
+                "latent_rank": 0,
             },
             "estimation_params": {
-                "field_coefs": [],
                 "xi": 0.25,
                 "beta": 0.1,
                 "eta": 0.2,
@@ -63,7 +59,7 @@ def base_config() -> object:
 
 
 class MinimalPipelineTests(unittest.TestCase):
-    def test_known_graph_basis_is_single_template(self) -> None:
+    def test_rank_zero_field_realizes_zero_external_field(self) -> None:
         config = base_config()
         gamma = np.array(
             [
@@ -74,10 +70,10 @@ class MinimalPipelineTests(unittest.TestCase):
             ]
         )
         artifacts = build_synthetic_field(config, gamma)
-        self.assertEqual(artifacts.field_mode, "uniform")
-        validate_basis_infinity_norms(artifacts.field_basis, artifacts.gamma_matrix)
-        self.assertEqual(artifacts.field_matrix.shape, (3, 4))
-        self.assertIsNone(getattr(config.estimation_params, "tau_params", None))
+        self.assertEqual(artifacts.latent_rank, 0)
+        self.assertEqual(artifacts.node_factors.shape, (4, 0))
+        self.assertEqual(artifacts.time_factors.shape, (3, 0))
+        self.assertTrue(np.allclose(artifacts.field_matrix, 0.0))
 
     def test_xi_is_scalar(self) -> None:
         config = base_config()
@@ -117,10 +113,9 @@ class MinimalPipelineTests(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_latent_field_mode_is_realized(self) -> None:
+    def test_positive_rank_latent_field_is_realized(self) -> None:
         config = base_config()
-        config.global_params.basis_params.field_mode = "latent_feature_matrix"
-        config.global_params.basis_params.latent_rank = 2
+        config.global_params.latent_rank = 2
         gamma = np.array(
             [
                 [0.0, 1.0, 0.0, 0.0],
@@ -158,33 +153,26 @@ class MinimalPipelineTests(unittest.TestCase):
             save_model_artifacts(root, artifacts)
             loaded = load_model_artifacts(root)
             theta = load_true_parameters(config, loaded)
-            self.assertEqual(loaded.field_mode, "uniform")
-            self.assertEqual(
-                theta.shape[0], len(loaded.field_names) + config.global_params.T + 5
-            )
+            self.assertEqual(loaded.t_steps, 3)
+            self.assertEqual(theta.shape[0], 5)
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
     def test_canonicalization_enforces_B_on_scalars_and_interaction(self) -> None:
         gamma = np.array([[0.0, 2.0], [2.0, 0.0]], dtype=float)
         artifacts = ModelArtifacts(
-            field_mode="uniform",
             gamma_matrix=gamma,
-            field_basis=np.empty((0, 2), dtype=float),
-            field_names=(),
+            t_steps=1,
+            latent_rank=0,
         )
-        # theta layout for additive + fit_intervention_model=True with T=1:
-        # [tau_0, beta, xi, eta, zeta, psi]
-        theta = np.array([0.0, 5.0, 4.0, -3.5, 2.5, -2.2], dtype=float)
+        theta = np.array([5.0, 4.0, -3.5, 2.5, -2.2], dtype=float)
         projected = _canonicalize_theta(
             theta=theta,
             artifacts=artifacts,
-            t_steps=1,
             fit_intervention_model=True,
-            tau_zero_mean=False,
             bound_B=1.0,
         )
-        parts = unpack_theta(projected, artifacts, t_steps=1, fit_intervention_model=True)
+        parts = unpack_theta(projected, artifacts, fit_intervention_model=True)
         self.assertLessEqual(abs(float(parts["beta"])), 1.0 + 1e-12)
         self.assertLessEqual(abs(float(parts["eta"])), 1.0 + 1e-12)
         self.assertLessEqual(abs(float(parts["zeta"])), 1.0 + 1e-12)
@@ -194,6 +182,53 @@ class MinimalPipelineTests(unittest.TestCase):
             interaction_matrix_infinity_norm(interaction),
             1.0 + 1e-12,
         )
+
+    def test_parameter_names_and_unpack_respect_fixed_scalars(self) -> None:
+        artifacts = ModelArtifacts(
+            gamma_matrix=np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float),
+            t_steps=1,
+            latent_rank=0,
+        )
+        theta = np.array([0.1, 0.25, 0.4], dtype=float)
+        names = parameter_names(
+            artifacts,
+            fit_intervention_model=True,
+            fixed_scalar_params={"beta": 0.0, "psi": 0.3},
+        )
+        self.assertEqual(names, ["xi", "eta", "zeta"])
+        parts = unpack_theta(
+            theta,
+            artifacts,
+            fit_intervention_model=True,
+            fixed_scalar_params={"beta": 0.0, "psi": 0.3},
+        )
+        self.assertEqual(parts["beta"], 0.0)
+        self.assertEqual(parts["psi"], 0.3)
+        self.assertAlmostEqual(parts["xi"], 0.1)
+        self.assertAlmostEqual(parts["eta"], 0.25)
+        self.assertAlmostEqual(parts["zeta"], 0.4)
+        self.assertEqual(parts["node_factors"].shape, (2, 0))
+        self.assertEqual(parts["time_factors"].shape, (1, 0))
+
+    def test_build_fit_model_artifacts_uses_latent_rank_only(self) -> None:
+        config = base_config()
+        config.global_params.N = 5
+        config.global_params.T = 7
+        config.global_params.latent_rank = 3
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ],
+            dtype=float,
+        )
+        artifacts = build_fit_model_artifacts(config, gamma)
+        self.assertEqual(artifacts.latent_rank, 3)
+        self.assertEqual(artifacts.t_steps, 7)
+        self.assertIsNone(artifacts.field_matrix)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Fit the active conditional MPLE model for synthetic and real-data experiments."""
+"""Fit the latent-only conditional MPLE model for synthetic and real-data experiments."""
 
 from __future__ import annotations
 
@@ -14,60 +14,67 @@ from scipy.optimize import minimize
 
 from model_utils import (
     ModelArtifacts,
+    build_fit_model_artifacts,
     compose_field_matrix_from_theta,
     compose_interaction_matrix,
-    infer_t_steps_from_theta,
-    interaction_matrix_infinity_norm,
+    free_scalar_parameter_names,
     interaction_effect,
+    interaction_matrix_infinity_norm,
     intervention_model_enabled,
     load_model_artifacts,
-    load_true_parameters,
     pack_theta,
     parameter_names,
     project_latent_field,
     save_field_artifacts,
-    summary_metrics,
+    scalar_parameter_names,
     summarize_theta_for_logging,
     unpack_theta,
+    validate_fixed_scalar_params,
     with_theta_field,
 )
 
 
-def _center_tau(tau: np.ndarray) -> np.ndarray:
-    tau = np.asarray(tau, dtype=float)
-    return tau - tau.mean() if tau.size else tau
+def load_yaml_config(path: str | Path):
+    return OmegaConf.load(Path(path))
 
 
-def _smoothness_penalty_and_grad(
-    tau: np.ndarray, penalty_lambda: float
-) -> tuple[float, np.ndarray]:
-    tau = np.asarray(tau, dtype=float)
-    grad = np.zeros_like(tau)
-    if tau.size <= 1 or penalty_lambda <= 0.0:
-        return 0.0, grad
-    diffs = np.diff(tau)
-    penalty = float(penalty_lambda * np.sum(diffs**2))
-    grad[0] = -2.0 * penalty_lambda * diffs[0]
-    grad[-1] = 2.0 * penalty_lambda * diffs[-1]
-    if tau.size > 2:
-        grad[1:-1] = 2.0 * penalty_lambda * (diffs[:-1] - diffs[1:])
-    return penalty, grad
+def first_existing_path(*paths: str | Path) -> Path:
+    for path in paths:
+        candidate = Path(path)
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        "Could not find any of the expected paths: "
+        + ", ".join(str(Path(path)) for path in paths)
+    )
+
+
+def load_gamma_matrix(data_folder: str | Path):
+    data_path = Path(data_folder)
+    gamma_sparse = data_path / "gamma_matrix_sparse.npz"
+    gamma_dense = data_path / "gamma_matrix.npy"
+    if gamma_sparse.exists():
+        return sparse.load_npz(gamma_sparse).tocsr()
+    if gamma_dense.exists():
+        return np.load(gamma_dense, allow_pickle=False)
+    raise FileNotFoundError(f"Missing gamma matrix artifact in {data_path}.")
 
 
 def _canonicalize_theta(
     theta: np.ndarray,
     artifacts: ModelArtifacts,
-    t_steps: int,
     fit_intervention_model: bool,
-    tau_zero_mean: bool,
     bound_B: float | None,
+    fixed_scalar_params: dict[str, float] | None = None,
 ) -> np.ndarray:
-    theta_parts = unpack_theta(theta, artifacts, t_steps, fit_intervention_model)
+    theta_parts = unpack_theta(
+        theta,
+        artifacts,
+        fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    )
     if bound_B is not None:
-        scalar_keys = ["beta", "xi", "eta"]
-        if fit_intervention_model:
-            scalar_keys.extend(["zeta", "psi"])
-        for key in scalar_keys:
+        for key in scalar_parameter_names(fit_intervention_model):
             value = theta_parts.get(key, None)
             if value is None:
                 continue
@@ -79,20 +86,19 @@ def _canonicalize_theta(
             theta_parts["xi"] = float(
                 np.clip(float(theta_parts["xi"]), -effective_xi_bound, effective_xi_bound)
             )
-
-    if artifacts.field_mode == "latent_feature_matrix":
-        if bound_B is not None:
-            node_factors, time_factors = project_latent_field(
-                theta_parts["node_factors"],
-                theta_parts["time_factors"],
-                bound_B,
-            )
-            theta_parts["node_factors"] = node_factors
-            theta_parts["time_factors"] = time_factors
-        return pack_theta(theta_parts, artifacts, fit_intervention_model)
-    if tau_zero_mean and theta_parts["tau"] is not None:
-        theta_parts["tau"] = _center_tau(theta_parts["tau"])
-    return pack_theta(theta_parts, artifacts, fit_intervention_model)
+        node_factors, time_factors = project_latent_field(
+            theta_parts["node_factors"],
+            theta_parts["time_factors"],
+            bound_B,
+        )
+        theta_parts["node_factors"] = node_factors
+        theta_parts["time_factors"] = time_factors
+    return pack_theta(
+        theta_parts,
+        artifacts,
+        fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    )
 
 
 def setup_logger(log_file: str) -> logging.Logger:
@@ -129,19 +135,18 @@ def pseudo_nll(
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
     fit_intervention_model: bool = True,
-    tau_zero_mean: bool = False,
-    tau_smoothness_lambda: float = 0.0,
     beta_mask_pre_intervention: bool = False,
     beta_mask_rescale: bool = False,
+    fixed_scalar_params: dict[str, float] | None = None,
 ) -> tuple[float, np.ndarray]:
-    t_steps = x.shape[0]
-    theta_parts = unpack_theta(theta, artifacts, t_steps, fit_intervention_model)
-    if (
-        artifacts.field_mode != "latent_feature_matrix"
-        and tau_zero_mean
-        and theta_parts["tau"] is not None
-    ):
-        theta_parts["tau"] = _center_tau(theta_parts["tau"])
+    if x.shape[0] != artifacts.t_steps:
+        raise ValueError("Panel length does not match artifact t_steps.")
+    theta_parts = unpack_theta(
+        theta,
+        artifacts,
+        fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    )
 
     prev_x = np.vstack([x_0, x[:-1, :]])
     prev_z = np.vstack([z_0, z[:-1, :]])
@@ -181,36 +186,26 @@ def pseudo_nll(
     else:
         outcome_size = x.size
         total_loss = loss_x.sum() / outcome_size
-        intervention_size = 0
         zeta_grad = 0.0
         psi_grad = 0.0
 
-    if artifacts.field_mode == "latent_feature_matrix":
-        node_grad = res_x.T @ theta_parts["time_factors"]
-        time_grad = res_x @ theta_parts["node_factors"]
-        field_grad = np.concatenate([node_grad.reshape(-1), time_grad.reshape(-1)])
-    else:
-        tau_penalty, tau_penalty_grad = _smoothness_penalty_and_grad(
-            theta_parts["tau"], float(tau_smoothness_lambda)
-        )
-        total_loss += tau_penalty / outcome_size
-        tau_grad = res_x.sum(axis=1) + tau_penalty_grad
-        if tau_zero_mean and tau_grad.size:
-            tau_grad = tau_grad - tau_grad.mean()
-        field_grad = np.concatenate(
-            [artifacts.field_basis @ res_x.sum(axis=0), tau_grad]
-        )
+    node_grad = res_x.T @ theta_parts["time_factors"]
+    time_grad = res_x @ theta_parts["node_factors"]
+    field_grad = np.concatenate([node_grad.reshape(-1), time_grad.reshape(-1)])
 
-    grad_parts = [
-        field_grad / outcome_size,
-        np.array([float((res_x * beta_feature).sum()) / outcome_size], dtype=float),
-        np.array(
-            [float((res_x * interaction_effect_x).sum()) / outcome_size], dtype=float
-        ),
-        np.array([float((res_x * prev_x).sum()) / outcome_size], dtype=float),
-    ]
-    if fit_intervention_model:
-        grad_parts.append(np.array([zeta_grad, psi_grad], dtype=float))
+    scalar_grad_lookup = {
+        "beta": float((res_x * beta_feature).sum()) / outcome_size,
+        "xi": float((res_x * interaction_effect_x).sum()) / outcome_size,
+        "eta": float((res_x * prev_x).sum()) / outcome_size,
+        "zeta": float(zeta_grad),
+        "psi": float(psi_grad),
+    }
+    grad_parts = [field_grad / outcome_size]
+    for name in free_scalar_parameter_names(
+        fit_intervention_model=fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    ):
+        grad_parts.append(np.array([scalar_grad_lookup[name]], dtype=float))
     return float(total_loss), np.concatenate(grad_parts)
 
 
@@ -230,16 +225,17 @@ def fit_mple(
     logger=None,
     theta_init=None,
     fit_intervention_model: bool = True,
-    tau_zero_mean: bool = False,
-    tau_smoothness_lambda: float = 0.0,
     bound_B: float | None = None,
     beta_mask_pre_intervention: bool = False,
     beta_mask_rescale: bool = False,
+    fixed_scalar_params: dict[str, float] | None = None,
 ):
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
 
     t_steps = x.shape[0]
+    if t_steps != artifacts.t_steps:
+        raise ValueError("Panel length does not match artifact t_steps.")
     rng = np.random.default_rng(seed)
     theta_init = (
         rng.normal(0, 0.1, size=len(param_names))
@@ -249,10 +245,9 @@ def fit_mple(
     theta_init = _canonicalize_theta(
         theta_init,
         artifacts,
-        t_steps,
         fit_intervention_model,
-        tau_zero_mean,
         bound_B,
+        fixed_scalar_params=fixed_scalar_params,
     )
     history: list[float] = []
     eval_count = [0]
@@ -261,10 +256,9 @@ def fit_mple(
         constrained_theta = _canonicalize_theta(
             theta,
             artifacts,
-            t_steps,
             fit_intervention_model,
-            tau_zero_mean,
             bound_B,
+            fixed_scalar_params=fixed_scalar_params,
         )
         loss, grad = pseudo_nll(
             x,
@@ -276,10 +270,9 @@ def fit_mple(
             artifacts=artifacts,
             interaction_effect_x=interaction_effect_x,
             fit_intervention_model=fit_intervention_model,
-            tau_zero_mean=tau_zero_mean,
-            tau_smoothness_lambda=tau_smoothness_lambda,
             beta_mask_pre_intervention=beta_mask_pre_intervention,
             beta_mask_rescale=beta_mask_rescale,
+            fixed_scalar_params=fixed_scalar_params,
         )
         history.append(loss)
         if verbose_every and eval_count[0] % verbose_every == 0:
@@ -303,10 +296,9 @@ def fit_mple(
     theta_hat = _canonicalize_theta(
         result.x,
         artifacts,
-        t_steps,
         fit_intervention_model,
-        tau_zero_mean,
         bound_B,
+        fixed_scalar_params=fixed_scalar_params,
     )
     return theta_hat, history, result
 
@@ -318,20 +310,27 @@ def _fmt(value):
 
 
 def scalar_summary_rows(
-    param_names: list[str],
     est_theta: np.ndarray,
-    true_theta,
+    artifacts: ModelArtifacts,
+    fit_intervention_model: bool,
+    scalar_truths: dict[str, float] | None,
+    fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[dict[str, object]]:
-    scalar_names = {"beta", "xi", "eta", "zeta", "psi"}
+    est_parts = unpack_theta(
+        est_theta,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    )
     rows: list[dict[str, object]] = []
-    for name, est, true in zip(param_names, est_theta, true_theta):
-        if name not in scalar_names:
-            continue
+    for name in scalar_parameter_names(fit_intervention_model):
+        est = float(est_parts[name])
+        true = None if scalar_truths is None else scalar_truths.get(name)
         rows.append(
             {
                 "category": "scalar",
                 "name": name,
-                "estimate": float(est),
+                "estimate": est,
                 "true": None if true is None else float(true),
                 "squared_error": None if true is None else float((est - true) ** 2),
             }
@@ -339,18 +338,98 @@ def scalar_summary_rows(
     return rows
 
 
+def load_truth_context(
+    truth_artifact_dir: str | Path,
+    fit_intervention_model: bool,
+) -> dict[str, object] | None:
+    truth_root = Path(truth_artifact_dir)
+    metadata_path = truth_root / "experiment_metadata.yaml"
+    metadata = (
+        OmegaConf.load(metadata_path)
+        if metadata_path.exists()
+        else OmegaConf.create({})
+    )
+    if not bool(metadata.get("has_truth", True)):
+        return None
+    config_path = first_existing_path(
+        truth_root / "generation_realized_config.yaml",
+        truth_root / "realized_config.yaml",
+    )
+    truth_config = load_yaml_config(config_path)
+    truth_artifacts = load_model_artifacts(truth_root)
+    scalar_truths = {
+        "beta": float(truth_config.estimation_params.beta),
+        "xi": float(truth_config.estimation_params.xi),
+        "eta": float(truth_config.estimation_params.eta),
+    }
+    if fit_intervention_model:
+        scalar_truths["zeta"] = float(truth_config.estimation_params.zeta)
+        scalar_truths["psi"] = float(truth_config.estimation_params.psi)
+    truth_interaction = compose_interaction_matrix(
+        scalar_truths["xi"], truth_artifacts.gamma_matrix
+    )
+    return {
+        "scalar_truths": scalar_truths,
+        "field_artifacts": truth_artifacts,
+        "field_matrix": truth_artifacts.field_matrix,
+        "interaction_matrix": truth_interaction,
+    }
+
+
+def compute_truth_metrics(
+    est_theta: np.ndarray,
+    artifacts: ModelArtifacts,
+    fit_intervention_model: bool,
+    truth_context: dict[str, object] | None,
+    fixed_scalar_params: dict[str, float] | None = None,
+) -> dict[str, float]:
+    if truth_context is None or truth_context.get("field_matrix") is None:
+        return {}
+    est_parts = unpack_theta(
+        est_theta,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    )
+    est_artifacts = with_theta_field(artifacts, est_parts)
+    true_field = np.asarray(truth_context["field_matrix"], dtype=float)
+    est_interaction = compose_interaction_matrix(est_parts["xi"], artifacts.gamma_matrix)
+    true_interaction = truth_context.get("interaction_matrix")
+    if true_interaction is None:
+        interaction_fro_error = None
+    elif sparse.issparse(est_interaction):
+        interaction_error = est_interaction - true_interaction
+        interaction_fro_error = float(
+            np.sqrt(interaction_error.multiply(interaction_error).sum())
+        )
+    else:
+        interaction_fro_error = float(
+            np.linalg.norm(est_interaction - true_interaction, ord="fro")
+        )
+    metrics: dict[str, float] = {
+        "field_rmse": float(
+            np.sqrt(np.mean((np.asarray(est_artifacts.field_matrix) - true_field) ** 2))
+        )
+    }
+    if interaction_fro_error is not None:
+        metrics["interaction_fro_error"] = interaction_fro_error
+    return metrics
+
+
 def latent_diagnostic_rows(
     est_theta: np.ndarray,
-    true_theta,
     artifacts: ModelArtifacts,
     fit_intervention_model: bool,
     bound_B: float | None,
+    truth_context: dict[str, object] | None,
+    fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[dict[str, object]]:
-    if artifacts.field_mode != "latent_feature_matrix":
-        return []
-
-    t_steps = infer_t_steps_from_theta(est_theta, artifacts, fit_intervention_model)
-    est_parts = unpack_theta(est_theta, artifacts, t_steps, fit_intervention_model)
+    est_parts = unpack_theta(
+        est_theta,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    )
     est_artifacts = with_theta_field(artifacts, est_parts)
     est_field = np.asarray(est_artifacts.field_matrix, dtype=float)
     rows: list[dict[str, object]] = [
@@ -379,15 +458,8 @@ def latent_diagnostic_rows(
                 "squared_error": None,
             }
         )
-    if not all(true is None for true in true_theta):
-        true_parts = unpack_theta(
-            np.asarray(true_theta, dtype=float),
-            artifacts,
-            t_steps,
-            fit_intervention_model,
-        )
-        true_artifacts = with_theta_field(artifacts, true_parts)
-        true_field = np.asarray(true_artifacts.field_matrix, dtype=float)
+    if truth_context is not None and truth_context.get("field_matrix") is not None:
+        true_field = np.asarray(truth_context["field_matrix"], dtype=float)
         rows.extend(
             [
                 {
@@ -401,7 +473,7 @@ def latent_diagnostic_rows(
                     "category": "latent_diagnostic",
                     "name": "true_field_rank",
                     "estimate": float(np.linalg.matrix_rank(true_field)),
-                    "true": float(artifacts.latent_rank),
+                    "true": None,
                     "squared_error": None,
                 },
             ]
@@ -411,18 +483,26 @@ def latent_diagnostic_rows(
 
 def write_summary_table(
     summary_stem,
-    param_names,
     est_theta,
-    true_theta,
     metrics,
     loss,
     artifacts: ModelArtifacts,
     fit_intervention_model: bool,
     bound_B: float | None,
+    truth_context: dict[str, object] | None,
+    fixed_scalar_params: dict[str, float] | None = None,
 ):
     csv_path = Path(f"{summary_stem}.csv")
     md_path = Path(f"{summary_stem}.md")
-    rows = scalar_summary_rows(param_names, est_theta, true_theta)
+    rows = scalar_summary_rows(
+        est_theta,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        scalar_truths=(
+            None if truth_context is None else truth_context.get("scalar_truths")
+        ),
+        fixed_scalar_params=fixed_scalar_params,
+    )
     rows.extend(
         {
             "category": "metric",
@@ -436,10 +516,11 @@ def write_summary_table(
     rows.extend(
         latent_diagnostic_rows(
             est_theta,
-            true_theta,
             artifacts,
             fit_intervention_model=fit_intervention_model,
             bound_B=bound_B,
+            truth_context=truth_context,
+            fixed_scalar_params=fixed_scalar_params,
         )
     )
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
@@ -457,9 +538,9 @@ def write_summary_table(
             )
 
 
-def log_estimates(logger, title, param_names, est_theta, true_theta):
+def log_estimates(logger, title, scalar_rows):
     logger.info(title)
-    for row in scalar_summary_rows(param_names, est_theta, true_theta):
+    for row in scalar_rows:
         if row["true"] is None:
             logger.info("  %s: %.4f", row["name"], row["estimate"])
         else:
@@ -476,26 +557,23 @@ def log_field_diagnostics(
     logger,
     metrics: dict[str, float],
     est_theta: np.ndarray,
-    true_theta,
     artifacts: ModelArtifacts,
     fit_intervention_model: bool,
     bound_B: float | None,
+    truth_context: dict[str, object] | None,
+    fixed_scalar_params: dict[str, float] | None = None,
 ) -> None:
     logger.info("Field and interaction diagnostics:")
-    for name in [
-        "field_rmse",
-        "static_field_rmse",
-        "interaction_fro_error",
-        "tau_rmse",
-    ]:
+    for name in ["field_rmse", "interaction_fro_error"]:
         if name in metrics:
             logger.info("  %s: %.6f", name, metrics[name])
     for row in latent_diagnostic_rows(
         est_theta,
-        true_theta,
         artifacts,
         fit_intervention_model=fit_intervention_model,
         bound_B=bound_B,
+        truth_context=truth_context,
+        fixed_scalar_params=fixed_scalar_params,
     ):
         logger.info("  %s: %s", row["name"], _fmt(row["estimate"]))
 
@@ -503,19 +581,30 @@ def log_field_diagnostics(
 def save_estimated_artifacts(
     data_folder: str | Path,
     est_theta: np.ndarray,
-    true_theta,
     artifacts: ModelArtifacts,
+    truth_context: dict[str, object] | None,
     fit_intervention_model: bool = True,
+    fixed_scalar_params: dict[str, float] | None = None,
 ) -> None:
-    t_steps = infer_t_steps_from_theta(est_theta, artifacts, fit_intervention_model)
     est_artifacts = with_theta_field(
-        artifacts, unpack_theta(est_theta, artifacts, t_steps, fit_intervention_model)
+        artifacts,
+        unpack_theta(
+            est_theta,
+            artifacts,
+            fit_intervention_model,
+            fixed_scalar_params=fixed_scalar_params,
+        ),
     )
     save_field_artifacts(
         Path(data_folder) / "estimated_field_artifacts.npz", est_artifacts
     )
     estimated_interaction = compose_interaction_matrix(
-        unpack_theta(est_theta, artifacts, t_steps, fit_intervention_model)["xi"],
+        unpack_theta(
+            est_theta,
+            artifacts,
+            fit_intervention_model,
+            fixed_scalar_params=fixed_scalar_params,
+        )["xi"],
         artifacts.gamma_matrix,
     )
     if sparse.issparse(estimated_interaction):
@@ -528,27 +617,15 @@ def save_estimated_artifacts(
             Path(data_folder) / "estimated_interaction_matrix.npy",
             estimated_interaction,
         )
-    if all(true is None for true in true_theta):
+    if truth_context is None or truth_context.get("field_artifacts") is None:
         return
-    true_artifacts = with_theta_field(
-        artifacts,
-        unpack_theta(
-            np.asarray(true_theta, dtype=float),
-            artifacts,
-            t_steps,
-            fit_intervention_model,
-        ),
+    save_field_artifacts(
+        Path(data_folder) / "true_field_artifacts.npz",
+        truth_context["field_artifacts"],
     )
-    save_field_artifacts(Path(data_folder) / "true_field_artifacts.npz", true_artifacts)
-    true_interaction = compose_interaction_matrix(
-        unpack_theta(
-            np.asarray(true_theta, dtype=float),
-            artifacts,
-            t_steps,
-            fit_intervention_model,
-        )["xi"],
-        artifacts.gamma_matrix,
-    )
+    true_interaction = truth_context.get("interaction_matrix")
+    if true_interaction is None:
+        return
     if sparse.issparse(true_interaction):
         sparse.save_npz(
             Path(data_folder) / "true_interaction_matrix_sparse.npz", true_interaction
@@ -557,34 +634,20 @@ def save_estimated_artifacts(
         np.save(Path(data_folder) / "true_interaction_matrix.npy", true_interaction)
 
 
-def maybe_load_true_parameters(
-    config, artifacts: ModelArtifacts, has_truth: bool, fit_intervention_model: bool
-):
-    if not has_truth:
-        return None
-    if artifacts.field_mode == "latent_feature_matrix":
-        if artifacts.node_factors is None or artifacts.time_factors is None:
-            return None
-    else:
-        if artifacts.field_coeffs is None or artifacts.tau is None:
-            return None
-    try:
-        return load_true_parameters(config, artifacts, fit_intervention_model)
-    except Exception:
-        return None
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Fit active conditional-model parameters with MPLE."
     )
     parser.add_argument("--data_folder", required=True, type=str)
+    parser.add_argument("--config_path", type=str, default=None)
+    parser.add_argument("--model_artifact_dir", type=str, default=None)
+    parser.add_argument("--truth_artifact_dir", type=str, default=None)
     parser.add_argument("--panel_path", type=str, default=None)
     parser.add_argument("--x0_path", type=str, default=None)
     parser.add_argument("--z0_path", type=str, default=None)
-    parser.add_argument("--steps", type=int, default=10000)
-    parser.add_argument("--tol", type=float, default=1e-9)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--steps", type=int, default=None)
+    parser.add_argument("--tol", type=float, default=None)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--outcome_only", action="store_true")
     parser.add_argument("--log_file", type=str, default=None)
     args = parser.parse_args()
@@ -594,19 +657,29 @@ def main() -> None:
     logger = setup_logger(log_file)
 
     logger.info("Loading data...")
-    config = OmegaConf.load(f"{args.data_folder}/realized_config.yaml")
+    config_path = (
+        Path(args.config_path)
+        if args.config_path
+        else first_existing_path(
+            Path(args.data_folder) / "fit_realized_config.yaml",
+            Path(args.data_folder) / "generation_realized_config.yaml",
+            Path(args.data_folder) / "realized_config.yaml",
+        )
+    )
+    config = load_yaml_config(config_path)
     fit_intervention_model = (
         intervention_model_enabled(config) and not args.outcome_only
     )
-    tau_zero_mean = (
-        bool(config.estimation_params.get("tau_zero_mean", False))
-        if "estimation_params" in config
-        else False
-    )
-    tau_smoothness_lambda = (
-        float(config.estimation_params.get("tau_smoothness_lambda", 0.0))
-        if "estimation_params" in config
-        else 0.0
+    fixed_scalar_params = validate_fixed_scalar_params(
+        (
+            OmegaConf.to_container(
+                config.estimation_params.get("fixed_scalar_params", {}),
+                resolve=True,
+            )
+            if "estimation_params" in config
+            else {}
+        ),
+        fit_intervention_model=fit_intervention_model,
     )
     beta_mask_pre_intervention = (
         bool(config.estimation_params.get("beta_mask_pre_intervention", False))
@@ -621,50 +694,79 @@ def main() -> None:
     bound_B = (
         float(config.global_params.B) if "B" in config.global_params else None
     )
-    metadata_path = Path(args.data_folder) / "experiment_metadata.yaml"
-    metadata = (
-        OmegaConf.load(metadata_path)
-        if metadata_path.exists()
+    optimizer_params = (
+        config.optimizer_params
+        if "optimizer_params" in config
         else OmegaConf.create({})
     )
-    has_truth = bool(metadata.get("has_truth", True))
+    steps = int(args.steps if args.steps is not None else optimizer_params.get("steps", 10000))
+    tol = float(args.tol if args.tol is not None else optimizer_params.get("tol", 1e-9))
+    seed = int(args.seed if args.seed is not None else optimizer_params.get("seed", 0))
+    model_artifact_dir = (
+        Path(args.model_artifact_dir) if args.model_artifact_dir else Path(args.data_folder)
+    )
+    truth_artifact_dir = (
+        Path(args.truth_artifact_dir) if args.truth_artifact_dir else model_artifact_dir
+    )
 
     panel_path = (
         Path(args.panel_path)
         if args.panel_path
-        else Path(args.data_folder) / "panel_data.npz"
+        else truth_artifact_dir / "panel_data.npz"
     )
-    x0_path = Path(args.x0_path) if args.x0_path else Path(args.data_folder) / "x_0.npy"
-    z0_path = Path(args.z0_path) if args.z0_path else Path(args.data_folder) / "z_0.npy"
+    x0_path = Path(args.x0_path) if args.x0_path else truth_artifact_dir / "x_0.npy"
+    z0_path = Path(args.z0_path) if args.z0_path else truth_artifact_dir / "z_0.npy"
     logger.info("Using panel artifact: %s", panel_path)
     logger.info("Using x_0 artifact: %s", x0_path)
     logger.info("Using z_0 artifact: %s", z0_path)
+    logger.info("Using fit config: %s", config_path)
+    logger.info("Using model artifact directory: %s", model_artifact_dir)
+    logger.info("Using truth artifact directory: %s", truth_artifact_dir)
     x_0 = np.load(x0_path)
     z_0 = np.load(z0_path) if z0_path.exists() else np.zeros_like(x_0)
     panel = load_panel_artifact(panel_path)
     x = panel["x"]
     z = panel["z"]
 
-    artifacts = load_model_artifacts(args.data_folder)
+    gamma_matrix = load_gamma_matrix(model_artifact_dir)
+    artifacts = build_fit_model_artifacts(config, gamma_matrix)
+    if bound_B is not None and fixed_scalar_params:
+        for name in list(fixed_scalar_params):
+            fixed_scalar_params[name] = float(
+                np.clip(float(fixed_scalar_params[name]), -bound_B, bound_B)
+            )
+        gamma_inf = interaction_matrix_infinity_norm(artifacts.gamma_matrix)
+        if "xi" in fixed_scalar_params and gamma_inf > 1e-12:
+            fixed_scalar_params["xi"] = float(
+                np.clip(
+                    float(fixed_scalar_params["xi"]),
+                    -min(bound_B, bound_B / gamma_inf),
+                    min(bound_B, bound_B / gamma_inf),
+                )
+            )
     param_keys = parameter_names(
-        artifacts, x.shape[0], fit_intervention_model=fit_intervention_model
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
     )
-    params_true = maybe_load_true_parameters(
-        config, artifacts, has_truth, fit_intervention_model
-    )
+    truth_context = load_truth_context(truth_artifact_dir, fit_intervention_model)
     interaction_effect_x = interaction_effect(x, artifacts.gamma_matrix)
-    logger.info("Loaded field mode: %s", artifacts.field_mode)
+    logger.info("Configured latent rank: %s", artifacts.latent_rank)
     logger.info("Using a fixed known graph with scalar xi.")
     logger.info("Intervention-process model enabled: %s", fit_intervention_model)
     logger.info("Global temperature bound B active: %s", bound_B is not None)
     if bound_B is not None:
         gamma_inf = interaction_matrix_infinity_norm(artifacts.gamma_matrix)
         if gamma_inf > 1e-12:
-            logger.info("Effective xi bound from interaction constraint: %.6f", min(bound_B, bound_B / gamma_inf))
+            logger.info(
+                "Effective xi bound from interaction constraint: %.6f",
+                min(bound_B, bound_B / gamma_inf),
+            )
         else:
             logger.info("Effective xi bound from interaction constraint: %.6f", bound_B)
     logger.info("Beta mask pre-intervention enabled: %s", beta_mask_pre_intervention)
     logger.info("Beta mask rescale enabled: %s", beta_mask_rescale)
+    logger.info("Fixed scalar parameters: %s", fixed_scalar_params or {})
 
     params_hat, loss_history, result = fit_mple(
         x,
@@ -675,65 +777,71 @@ def main() -> None:
         param_names=param_keys,
         artifacts=artifacts,
         interaction_effect_x=interaction_effect_x,
-        steps=args.steps,
-        tol=args.tol,
-        seed=args.seed,
+        steps=steps,
+        tol=tol,
+        seed=seed,
         logger=logger,
         fit_intervention_model=fit_intervention_model,
-        tau_zero_mean=tau_zero_mean,
-        tau_smoothness_lambda=tau_smoothness_lambda,
         bound_B=bound_B,
         beta_mask_pre_intervention=beta_mask_pre_intervention,
         beta_mask_rescale=beta_mask_rescale,
+        fixed_scalar_params=fixed_scalar_params,
     )
 
     logger.info("Done fitting.")
     logger.info("Optimizer status: %s", result.message)
     logger.info("Final Loss: %.6f", loss_history[-1])
-    truth_vector = params_true if params_true is not None else [None] * len(param_keys)
+    scalar_rows = scalar_summary_rows(
+        params_hat,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        scalar_truths=(
+            None if truth_context is None else truth_context.get("scalar_truths")
+        ),
+        fixed_scalar_params=fixed_scalar_params,
+    )
     log_estimates(
         logger,
-        "Estimated vs True Parameters:" if has_truth else "Estimated Parameters:",
-        param_keys,
-        params_hat,
-        truth_vector,
+        "Estimated vs True Parameters:"
+        if truth_context is not None
+        else "Estimated Parameters:",
+        scalar_rows,
     )
-    metrics = (
-        summary_metrics(
-            params_hat,
-            params_true,
-            artifacts,
-            fit_intervention_model=fit_intervention_model,
-        )
-        if params_true is not None
-        else {}
+    metrics = compute_truth_metrics(
+        params_hat,
+        artifacts,
+        fit_intervention_model=fit_intervention_model,
+        truth_context=truth_context,
+        fixed_scalar_params=fixed_scalar_params,
     )
     log_field_diagnostics(
         logger,
         metrics,
         params_hat,
-        truth_vector,
         artifacts,
         fit_intervention_model=fit_intervention_model,
         bound_B=bound_B,
+        truth_context=truth_context,
+        fixed_scalar_params=fixed_scalar_params,
     )
     write_summary_table(
         Path(args.data_folder) / "mple_summary",
-        param_keys,
         params_hat,
-        truth_vector,
         metrics,
         loss_history[-1],
         artifacts,
         fit_intervention_model,
         bound_B,
+        truth_context=truth_context,
+        fixed_scalar_params=fixed_scalar_params,
     )
     save_estimated_artifacts(
         args.data_folder,
         params_hat,
-        truth_vector,
         artifacts,
+        truth_context=truth_context,
         fit_intervention_model=fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
     )
     logger.info(
         "Saved summary tables to %s and %s",

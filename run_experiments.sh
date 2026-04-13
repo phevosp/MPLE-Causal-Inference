@@ -5,112 +5,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-SKIP_GENERATION=0
-HYBRID_MODE=0
-GENERATE_DATA_SCRIPT="$SCRIPT_DIR/generate_data.sh"
-MPLE_ARGS=()
-
-while [ "$#" -gt 0 ]; do
-	case "$1" in
-		--skip-generation)
-			SKIP_GENERATION=1
-			shift
-			;;
-		--hybrid-uscounty)
-			HYBRID_MODE=1
-			GENERATE_DATA_SCRIPT="$SCRIPT_DIR/generate_data_hybrid.sh"
-			shift
-			;;
-		--fixed-z)
-			echo "Error: --fixed-z has been removed; use --hybrid-uscounty instead." >&2
-			exit 1
-			;;
-		--help|-h)
-			echo "Usage: bash run_experiments.sh [--skip-generation] [--hybrid-uscounty] [mple.py args...]"
-			echo
-			echo "  --skip-generation   Reuse the existing manifest instead of rerunning generation."
-			echo "  --hybrid-uscounty   Run the hybrid workflow with USCounty and generated components."
-			echo "  Remaining arguments are passed through to mple.py for every experiment."
-			exit 0
-			;;
-		*)
-			MPLE_ARGS+=("$1")
-			shift
-			;;
-	esac
-done
-
-if [ "$HYBRID_MODE" -eq 1 ]; then
-	DEFAULT_MANIFEST="$SCRIPT_DIR/experiments/SyntheticHybridExperiments/latest_manifest.txt"
-	DEFAULT_COMPLETED="$SCRIPT_DIR/experiments/SyntheticHybridExperiments/completed_manifest.txt"
-	DEFAULT_REPORT="$SCRIPT_DIR/experiments/SyntheticHybridExperiments/reports/hybrid_experiment_report"
-else
-	DEFAULT_MANIFEST="$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/latest_manifest.txt"
-	DEFAULT_COMPLETED="$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/completed_manifest.txt"
-	DEFAULT_REPORT="$SCRIPT_DIR/experiments/SyntheticExperimentsGrid/reports/conditional_experiment_report"
-fi
-
-MANIFEST_PATH="${EXPERIMENT_MANIFEST:-$DEFAULT_MANIFEST}"
-COMPLETED_MANIFEST_PATH="${EXPERIMENT_COMPLETED_MANIFEST:-$DEFAULT_COMPLETED}"
-REPORT_STEM="${EXPERIMENT_REPORT_STEM:-$DEFAULT_REPORT}"
+MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-$SCRIPT_DIR/experiments/SyntheticHybridExperiments/generation_manifest.csv}"
+FITS_SPEC_PATH="${FITS_SPEC_PATH:-$SCRIPT_DIR/data/configs/fits_spec.yaml}"
+OVERWRITE_FLAG="${FIT_OVERWRITE:-0}"
 
 if command -v pixi >/dev/null 2>&1; then
 	RUNNER=(pixi run python -u)
-elif command -v python >/dev/null 2>&1; then
+else
 	RUNNER=(python -u)
-else
-	echo "Error: neither 'pixi' nor 'python' is available in PATH." >&2
-	exit 1
 fi
 
-mkdir -p "$(dirname "$REPORT_STEM")"
-mkdir -p "$(dirname "$COMPLETED_MANIFEST_PATH")"
-
-if [ "$SKIP_GENERATION" -eq 0 ]; then
-	EXPERIMENT_MANIFEST="$MANIFEST_PATH" bash "$GENERATE_DATA_SCRIPT"
-else
-	echo "Skipping data generation and reusing manifest: $MANIFEST_PATH"
+ARGS=(
+	--manifest_path "$MANIFEST_PATH"
+	--fits_spec_path "$FITS_SPEC_PATH"
+)
+if [[ "$OVERWRITE_FLAG" == "1" ]]; then
+	ARGS+=(--overwrite)
 fi
 
-if [ ! -f "$MANIFEST_PATH" ]; then
-	echo "Manifest not found: $MANIFEST_PATH" >&2
-	exit 1
-fi
-
-: >"$COMPLETED_MANIFEST_PATH"
-
-while IFS= read -r data_folder; do
-	data_folder="${data_folder%$'\r'}"
-
-	if [ -z "$data_folder" ]; then
-		continue
-	fi
-
-	if [ ! -d "$data_folder" ]; then
-		echo "Skipping missing experiment folder: $data_folder"
-		continue
-	fi
-
-	echo "Running conditional MPLE for ${data_folder}..."
-	if "${RUNNER[@]}" mple.py --data_folder "$data_folder" "${MPLE_ARGS[@]}"; then
-		if [ -f "$data_folder/mple_summary.csv" ] && [ -f "$data_folder/mple_summary.md" ]; then
-			printf '%s\n' "$data_folder" >>"$COMPLETED_MANIFEST_PATH"
-		else
-			echo "Skipping report manifest append; summary outputs missing for $data_folder" >&2
-		fi
-	else
-		echo "MPLE failed for $data_folder; not adding to completed manifest." >&2
-	fi
-done <"$MANIFEST_PATH"
-
-if [ ! -s "$COMPLETED_MANIFEST_PATH" ]; then
-	echo "No completed experiments were available for reporting." >&2
-	exit 1
-fi
-
-echo "Building report..."
-"${RUNNER[@]}" report_parameter_recovery_detailed.py --manifest "$COMPLETED_MANIFEST_PATH" --report_stem "$REPORT_STEM"
-
-echo "Finished running MPLE across manifest experiments."
-echo "Report: ${REPORT_STEM}.md"
-echo "Completed manifest: ${COMPLETED_MANIFEST_PATH}"
+"${RUNNER[@]}" run_fit_pipeline.py "${ARGS[@]}"

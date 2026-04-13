@@ -1,0 +1,38 @@
+global_params:
+  'N': 500
+  T: 50
+  s: 10
+  B: 6.0
+  gamma_matrix_generator: erdos_renyi
+  fixed_gamma_source:
+    gamma_path: null
+    node_index_path: null
+    artifact_dir: null
+    network_name: null
+    trim_scope: null
+  x_0_generator: bernoulli
+  latent_rank: 40
+  gamma_matrix_params:
+    p: 0.05
+  x_0_params:
+    p: 0.5
+    fixed_val: null
+estimation_params:
+  beta: 0.35
+  xi: 0.75
+  eta: 0.48
+  zeta: -0.55
+  psi: 0.8
+generation_params:
+  seed: 720
+  gibbs_sweeps: 5
+  intervention_mode: generated_z
+  fixed_z_source:
+    panel_path: null
+    z0_path: null
+    artifact_dir: null
+    shared_panel_dir: null
+    outcome_code: null
+    intervention_code: null
+    lag_code: null
+    trim_scope: null

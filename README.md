@@ -6,7 +6,7 @@ Minimal conditional MPLE pipeline for binary outcome/intervention panel data.
 
 The active repository is built around two workflows:
 
-- synthetic conditional experiments
+- synthetic and hybrid generation experiments
 - USCountyVaccination materialization plus MPLE fitting
 
 Both workflows use the same core artifact contract:
@@ -17,10 +17,15 @@ Both workflows use the same core artifact contract:
 - `field_artifacts.npz`
 - `gamma_matrix.npy` or `gamma_matrix_sparse.npz`
 
-`field_artifacts.npz` is the single field bundle. It stores the active field mode and the mode-relevant field objects:
+`field_artifacts.npz` stores only:
 
-- additive runs store `field_basis`, `field_names`, and synthetic truth such as `field_coeffs`, `tau`, and `field_matrix`
-- latent runs store `latent_rank`, `node_factors`, `time_factors`, and `field_matrix`
+- `latent_rank`
+- `t_steps`
+- `node_factors`
+- `time_factors`
+- `field_matrix`
+
+`latent_rank=0` means there is no external field. In that case the latent factors are empty and `field_matrix` is identically zero.
 
 The interaction side is hardcoded:
 
@@ -29,76 +34,66 @@ The interaction side is hardcoded:
 
 ## Core Files
 
-- [data/synthetic_data_generation.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/synthetic_data_generation.py)
-- [mple.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/mple.py)
-- [model_utils.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py)
-- [data/configs/base_config.yaml](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/configs/base_config.yaml)
-- [data/USCountyVaccination/run_us_county_vaccination_experiments.py](c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/USCountyVaccination/run_us_county_vaccination_experiments.py)
+- [data/synthetic_data_generation.py](</c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/synthetic_data_generation.py>)
+- [run_generation_pipeline.py](</c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/run_generation_pipeline.py>)
+- [run_fit_pipeline.py](</c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/run_fit_pipeline.py>)
+- [mple.py](</c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/mple.py>)
+- [model_utils.py](</c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/model_utils.py>)
+- [data/configs/generation_spec.yaml](</c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/configs/generation_spec.yaml>)
+- [data/configs/fits_spec.yaml](</c:/Users/phevo/Documents/MIT/Code/MPLE-Causal-Inference/data/configs/fits_spec.yaml>)
 
-## Field Modes
+## Generation And Fits
 
-- `uniform`
-- `shared_feature_field`
-- `latent_feature_matrix`
+The synthetic/hybrid pipeline is split into two stages:
+
+1. `run_generation_pipeline.py` expands `generation_spec.yaml` into generated experiment folders and a generation manifest.
+2. `run_fit_pipeline.py` expands `fits_spec.yaml` into MPLE variants over that manifest.
+
+The generation spec is split into `base` plus `experiments`, and the fit spec is split into `base` plus `variants`. Generation artifacts live at the experiment root, while each MPLE variant writes to `fits/<variant_slug>/`.
+
+All generation defaults live in `generation_spec.yaml`, and all fit defaults live in `fits_spec.yaml`. `data/synthetic_data_generation.py` is an internal helper used by `run_generation_pipeline.py`.
 
 ## Commands
 
-Generate one synthetic experiment:
+Materialize the spec-driven synthetic/hybrid generation manifest:
 
 ```bash
-pixi run python -u data/synthetic_data_generation.py --config_name base_config.yaml
+pixi run python -u run_generation_pipeline.py --spec_path data/configs/generation_spec.yaml
 ```
 
-Generate one synthetic fixed-`z` experiment:
+Run MPLE variants over the generated experiment manifest:
 
 ```bash
-pixi run python -u data/synthetic_data_generation.py \
-  --config_name base_config.yaml \
-  --config_override generation_params.intervention_mode=fixed_z \
-  --config_override generation_params.fixed_z_source.panel_path=<panel_dir>/panel_data.npz \
-  --config_override generation_params.fixed_z_source.z0_path=<panel_dir>/z_0.npy
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --fits_spec_path data/configs/fits_spec.yaml
 ```
 
-Fit MPLE:
+Shell wrappers:
 
 ```bash
-pixi run python -u mple.py --data_folder experiments/<folder>
+bash generate_data.sh
+bash run_experiments.sh
 ```
 
-Fit MPLE with shared panel artifacts:
+Fit one experiment manually with an explicit fit config:
 
 ```bash
 pixi run python -u mple.py \
-  --data_folder experiments/<folder> \
-  --panel_path <panel_dir>/panel_data.npz \
-  --x0_path <panel_dir>/x_0.npy \
-  --z0_path <panel_dir>/z_0.npy
+  --data_folder experiments/<folder>/fits/<variant> \
+  --config_path experiments/<folder>/fits/<variant>/fit_realized_config.yaml \
+  --model_artifact_dir experiments/<folder> \
+  --truth_artifact_dir experiments/<folder> \
+  --panel_path experiments/<folder>/panel_data.npz \
+  --x0_path experiments/<folder>/x_0.npy \
+  --z0_path experiments/<folder>/z_0.npy
 ```
 
-Materialize USCountyVaccination experiments:
+In `fits_spec.yaml`, `B` is a fit-time parameter. It controls:
 
-```bash
-pixi run python -u data/USCountyVaccination/run_us_county_vaccination_experiments.py --trim
-```
-
-Materialize and fit one USCounty latent-field experiment with explicit rank and `B`:
-
-```bash
-pixi run python -u data/USCountyVaccination/run_us_county_vaccination_experiments.py \
-  --trim \
-  --outcomes death_rate_100k_ge_2 \
-  --interventions complete_cov_ge_20 \
-  --lags 2w \
-  --max_experiments 1 \
-  --field_mode latent_feature_matrix \
-  --latent_rank 6 \
-  --latent_B 1.5 \
-  --beta_mask_pre_intervention \
-  --beta_mask_rescale \
-  --run_mple
-```
-
-`B` is a global MPLE bound: scalar temperature parameters are clipped to `[-B, B]`, the interaction block satisfies `||xi*Gamma||_inf <= B`, and latent field runs also enforce `||field||_inf <= B`.
+- scalar clipping to `[-B, B]`
+- the interaction constraint `||xi * Gamma||_inf <= B`
+- the latent-field constraint `||H||_inf <= B` with `H = U @ V.T`
 
 Run the minimal regression tests:
 

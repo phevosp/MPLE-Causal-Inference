@@ -1,0 +1,179 @@
+base:
+  experiment_root: experiments/SyntheticHybridExperiments
+  manifest_path: experiments/SyntheticHybridExperiments/generation_manifest.csv
+  dimensions:
+    N: 500
+    T: 50
+    s: 10
+  generation:
+    gibbs_sweeps: 5
+    seed: 42
+  x0:
+    generator: bernoulli
+    params:
+      p: 0.5
+      fixed_val: null
+  graph:
+    source: generated
+    generator: erdos_renyi
+    params:
+      p: 0.05
+    artifact:
+      gamma_path: null
+      node_index_path: null
+      artifact_dir: null
+      network_name: null
+      trim_scope: null
+  intervention:
+    source: generated
+    artifact:
+      panel_path: null
+      z0_path: null
+      artifact_dir: null
+      shared_panel_dir: null
+      outcome_code: null
+      intervention_code: null
+      lag_code: null
+      trim_scope: null
+  truth:
+    B: 1.0
+    latent_rank: 0
+    scalars:
+      beta: 0.35
+      xi: 0.75
+      eta: 0.48
+      zeta: -0.55
+      psi: 0.8
+
+experiments:
+  - name: synthetic_rank_0
+    generation:
+      seed: 42
+
+  - name: synthetic_rank_6_B1
+    generation:
+      seed: 720
+    truth:
+      B: 1.0
+      latent_rank: 6
+
+  - name: synthetic_rank_40_B1
+    generation:
+      seed: 720
+    truth:
+      B: 1.0
+      latent_rank: 40
+
+  - name: synthetic_rank_40_B6
+    generation:
+      seed: 720
+    truth:
+      B: 6.0
+      latent_rank: 40
+
+  - name: hybrid_uscounty_intervention_generated_graph_rank_0
+    generation:
+      seed: 910
+    intervention:
+      source: fixed_artifact
+      artifact:
+        panel_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/panel_data.npz
+        z0_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/z_0.npy
+        artifact_dir: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed
+        intervention_code: complete_cov_ge_20
+        lag_code: 2w
+        trim_scope: trimmed
+
+  - name: hybrid_uscounty_intervention_generated_graph_rank_40
+    generation:
+      seed: 910
+    intervention:
+      source: fixed_artifact
+      artifact:
+        panel_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/panel_data.npz
+        z0_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/z_0.npy
+        artifact_dir: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed
+        intervention_code: complete_cov_ge_20
+        lag_code: 2w
+        trim_scope: trimmed
+    truth:
+      B: 5.0
+      latent_rank: 40
+
+  - name: hybrid_generated_intervention_uscounty_graph_rank_0
+    generation:
+      seed: 920
+    dimensions:
+      T: 120
+      s: 0
+    graph:
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+        artifact_dir: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed
+        network_name: contiguity
+        trim_scope: trimmed
+
+  - name: hybrid_generated_intervention_uscounty_graph_rank_40
+    generation:
+      seed: 920
+    dimensions:
+      T: 120
+      s: 0
+    graph:
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+        artifact_dir: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed
+        network_name: contiguity
+        trim_scope: trimmed
+    truth:
+      B: 5.0
+      latent_rank: 40
+
+  - name: hybrid_uscounty_intervention_uscounty_graph_rank_0
+    generation:
+      seed: 930
+    graph:
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+        artifact_dir: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed
+        network_name: contiguity
+        trim_scope: trimmed
+    intervention:
+      source: fixed_artifact
+      artifact:
+        panel_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/panel_data.npz
+        z0_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/z_0.npy
+        artifact_dir: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed
+        intervention_code: complete_cov_ge_20
+        lag_code: 2w
+        trim_scope: trimmed
+
+  - name: hybrid_uscounty_intervention_uscounty_graph_rank_40
+    generation:
+      seed: 930
+    graph:
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+        artifact_dir: experiments/USCountyVaccination_US/realized_networks/network_contiguity__scope_trimmed
+        network_name: contiguity
+        trim_scope: trimmed
+    intervention:
+      source: fixed_artifact
+      artifact:
+        panel_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/panel_data.npz
+        z0_path: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/z_0.npy
+        artifact_dir: experiments/USCountyVaccination_US/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed
+        intervention_code: complete_cov_ge_20
+        lag_code: 2w
+        trim_scope: trimmed
+    truth:
+      B: 5.0
+      latent_rank: 40

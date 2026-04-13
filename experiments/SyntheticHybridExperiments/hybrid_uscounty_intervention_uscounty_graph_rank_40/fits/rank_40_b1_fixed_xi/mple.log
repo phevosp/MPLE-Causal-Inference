@@ -1,0 +1,36 @@
+2026-04-12 13:33:46 | INFO | Loading data...
+2026-04-12 13:33:46 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\panel_data.npz
+2026-04-12 13:33:46 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\x_0.npy
+2026-04-12 13:33:46 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\z_0.npy
+2026-04-12 13:33:46 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_40_b1_fixed_xi\fit_realized_config.yaml
+2026-04-12 13:33:46 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-12 13:33:46 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-12 13:33:46 | INFO | Configured latent rank: 40
+2026-04-12 13:33:46 | INFO | Using a fixed known graph with scalar xi.
+2026-04-12 13:33:46 | INFO | Intervention-process model enabled: True
+2026-04-12 13:33:46 | INFO | Global temperature bound B active: True
+2026-04-12 13:33:46 | INFO | Effective xi bound from interaction constraint: 1.000000
+2026-04-12 13:33:46 | INFO | Beta mask pre-intervention enabled: False
+2026-04-12 13:33:46 | INFO | Beta mask rescale enabled: False
+2026-04-12 13:33:46 | INFO | Fixed scalar parameters: {'xi': 0.0}
+2026-04-12 13:33:46 | INFO | Eval 0  |  Loss: 0.829763
+2026-04-12 13:33:46 | INFO |   beta: +0.0793,  eta: -0.2085,  zeta: +0.0135,  psi: -0.2117
+2026-04-12 13:33:55 | INFO | Done fitting.
+2026-04-12 13:33:55 | INFO | Optimizer status: ABNORMAL: 
+2026-04-12 13:33:55 | INFO | Final Loss: 0.325491
+2026-04-12 13:33:55 | INFO | Estimated vs True Parameters:
+2026-04-12 13:33:55 | INFO |   beta: 0.5216 (True: 0.3500) | SQE: 0.029434
+2026-04-12 13:33:55 | INFO |   xi: 0.0000 (True: 0.7500) | SQE: 0.562500
+2026-04-12 13:33:55 | INFO |   eta: 0.4926 (True: 0.4800) | SQE: 0.000160
+2026-04-12 13:33:55 | INFO |   zeta: 0.3517 (True: -0.5500) | SQE: 0.812993
+2026-04-12 13:33:55 | INFO |   psi: 1.0000 (True: 0.8000) | SQE: 0.040000
+2026-04-12 13:33:55 | INFO | Field and interaction diagnostics:
+2026-04-12 13:33:55 | INFO |   field_rmse: 0.001683
+2026-04-12 13:33:55 | INFO |   interaction_fro_error: 7.082783
+2026-04-12 13:33:55 | INFO |   estimated_field_inf_norm: 1.000000
+2026-04-12 13:33:55 | INFO |   estimated_field_rank: 40.000000
+2026-04-12 13:33:55 | INFO |   bound_B: 1.000000
+2026-04-12 13:33:55 | INFO |   true_field_inf_norm: 5.000000
+2026-04-12 13:33:55 | INFO |   true_field_rank: 40.000000
+2026-04-12 13:33:55 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_40_b1_fixed_xi\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_40_b1_fixed_xi\mple_summary.md
+2026-04-12 13:33:55 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_40_b1_fixed_xi\mple.log

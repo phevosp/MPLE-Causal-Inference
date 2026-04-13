@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import argparse
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import networkx as nx
@@ -30,32 +28,12 @@ def slugify(text: str) -> str:
     return slug or "experiment"
 
 
-def load_config(config_name: str, config_overrides: list[str] | None = None):
-    config = OmegaConf.load(f"data/configs/{config_name}")
-    if config_overrides:
-        config = OmegaConf.merge(config, OmegaConf.from_dotlist(config_overrides))
-    return config
-
-
-def parse_metadata_entries(entries: list[str] | None) -> dict[str, str]:
-    metadata: dict[str, str] = {}
-    for entry in entries or []:
-        if "=" not in entry:
-            raise ValueError(f"Metadata entry '{entry}' must be in KEY=VALUE format.")
-        key, value = entry.split("=", 1)
-        metadata[key] = value
-    return metadata
-
-
 def spin_sample_from_field(h, rng):
     p = 1.0 / (1.0 + np.exp(-2.0 * h))
     return 2.0 * (rng.random(np.shape(p)) < p).astype(float) - 1.0
 
 
-def read_and_realize_config(
-    config_name: str, config_overrides: list[str] | None = None
-):
-    config = load_config(config_name, config_overrides)
+def realize_generation_inputs(config):
     rng = np.random.default_rng(int(config.generation_params.seed))
 
     generator = str(config.global_params.gamma_matrix_generator)
@@ -274,9 +252,10 @@ def save_artifacts(
     z_0: np.ndarray,
     x: np.ndarray,
     z: np.ndarray,
+    config_filename: str = "realized_config.yaml",
 ) -> None:
     data_folder.mkdir(parents=True, exist_ok=False)
-    OmegaConf.save(config, data_folder / "realized_config.yaml")
+    OmegaConf.save(config, data_folder / config_filename)
     OmegaConf.save(OmegaConf.create(metadata), data_folder / "experiment_metadata.yaml")
     np.savez(data_folder / "panel_data.npz", x=x, z=z)
     np.save(data_folder / "x_0.npy", x_0)
@@ -284,33 +263,17 @@ def save_artifacts(
     save_model_artifacts(data_folder, artifacts)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate synthetic data for conditional-model MPLE experiments."
-    )
-    parser.add_argument("--config_name", type=str, default="base_config.yaml")
-    parser.add_argument(
-        "--config_override", action="append", default=[], metavar="KEY=VALUE"
-    )
-    parser.add_argument("--descriptor", type=str, default=None)
-    parser.add_argument("--manifest_path", type=str, default=None)
-    parser.add_argument("--metadata", action="append", default=[], metavar="KEY=VALUE")
-    parser.add_argument("--experiment_root", type=str, default=None)
-    args = parser.parse_args()
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    descriptor = slugify(args.descriptor) if args.descriptor else "synthetic_data"
-    experiment_root = (
-        Path(args.experiment_root)
-        if args.experiment_root
-        else Path("experiments") / "SyntheticExperimentsGrid"
-    )
-    data_folder = experiment_root / f"{descriptor}_{timestamp}"
-    extra_metadata = parse_metadata_entries(args.metadata)
-
-    print("Starting synthetic data generation...")
-    config, gamma_matrix, x_0, rng, fixed_gamma_metadata = read_and_realize_config(
-        args.config_name, args.config_override
+def materialize_generation_experiment(
+    config,
+    data_folder: Path,
+    descriptor: str,
+    config_label: str = "inline_generation_config",
+    extra_metadata: dict[str, object] | None = None,
+    config_filename: str = "generation_realized_config.yaml",
+) -> dict[str, object]:
+    extra_metadata = dict(extra_metadata or {})
+    config, gamma_matrix, x_0, rng, fixed_gamma_metadata = realize_generation_inputs(
+        config
     )
     artifacts = build_synthetic_field(config, gamma_matrix)
 
@@ -322,61 +285,37 @@ def main() -> None:
         fixed_z = None
         z_0 = np.zeros(int(config.global_params.N), dtype=float)
 
-    print("Generating data with the conditional process...")
     x, z, generated_z_0 = generate_data(config, artifacts, x_0, rng, fixed_z=fixed_z)
     if intervention_mode(config) != "fixed_z":
         z_0 = generated_z_0
 
     metadata = {
-        "descriptor": args.descriptor or descriptor,
-        "slug": descriptor,
-        "timestamp": timestamp,
-        "config_name": args.config_name,
-        "config_overrides": list(args.config_override),
+        "descriptor": descriptor,
+        "slug": slugify(descriptor),
+        "config_name": config_label,
         "gamma_inf_norm": interaction_matrix_infinity_norm(artifacts.gamma_matrix),
         "gamma_fro_norm": (
             float(np.sqrt(artifacts.gamma_matrix.multiply(artifacts.gamma_matrix).sum()))
             if sparse.issparse(artifacts.gamma_matrix)
             else float(np.linalg.norm(artifacts.gamma_matrix, ord="fro"))
         ),
-        "field_mode": artifacts.field_mode,
-        "experiment_root": str(experiment_root),
         "intervention_mode": intervention_mode(config),
         "has_truth": True,
         **extra_metadata,
         **fixed_z_metadata,
         **fixed_gamma_metadata,
     }
-    if artifacts.field_basis is not None:
-        metadata["field_basis_inf_norms"] = [
-            float(np.linalg.norm(vector, ord=np.inf))
-            for vector in artifacts.field_basis
-        ]
-    if artifacts.tau is not None:
-        metadata["tau_l2_norm"] = float(np.linalg.norm(artifacts.tau, ord=2))
-    if artifacts.field_mode == "latent_feature_matrix":
-        metadata["latent_rank"] = int(artifacts.latent_rank)
+    metadata["latent_rank"] = int(artifacts.latent_rank)
 
-    save_artifacts(data_folder, config, metadata, artifacts, x_0, z_0, x, z)
-    print("Done!")
-    print(
-        "Infinity Norm of Gamma Matrix:",
-        interaction_matrix_infinity_norm(artifacts.gamma_matrix),
+    save_artifacts(
+        data_folder,
+        config,
+        metadata,
+        artifacts,
+        x_0,
+        z_0,
+        x,
+        z,
+        config_filename=config_filename,
     )
-    print(
-        "Infinity Norm of Interaction Matrix:",
-        interaction_matrix_infinity_norm(
-            compose_interaction_matrix(get_xi(config), artifacts.gamma_matrix)
-        ),
-    )
-    print(f"Experiment Folder: {data_folder}")
-
-    if args.manifest_path is not None:
-        manifest_path = Path(args.manifest_path)
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        with manifest_path.open("a", encoding="utf-8") as handle:
-            handle.write(f"{Path(data_folder).resolve()}\n")
-
-
-if __name__ == "__main__":
-    main()
+    return metadata
