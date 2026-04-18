@@ -38,10 +38,12 @@ from model_utils import (
     unpack_theta,
 )
 from posterior_predictive_utils import (
+    COUNTERFACTUAL_MANIFEST_NAME,
     OutcomeParameterBundle,
     compute_panel_statistics,
     load_fit_parameter_bundle,
     load_truth_parameter_bundle,
+    load_saved_intervention_context,
     simulate_outcomes_for_bundle,
     summarize_predictive_statistics,
 )
@@ -56,6 +58,7 @@ from report_parameter_recovery_detailed import (
 )
 from run_fit_pipeline import run_fits
 from run_generation_pipeline import run_generation
+from run_intervention_library import run_intervention_library
 from run_posterior_predictive_pipeline import (
     _index_generation_rows,
     _resolve_fit_lookup,
@@ -712,7 +715,13 @@ class PosteriorPredictiveTests(unittest.TestCase):
         with target_pairs_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
                 handle,
-                fieldnames=["experiment_name", "source_type", "variant_name"],
+                fieldnames=[
+                    "experiment_name",
+                    "source_type",
+                    "variant_name",
+                    "intervention_source",
+                    "intervention_name",
+                ],
             )
             writer.writeheader()
             writer.writerows(rows)
@@ -917,6 +926,8 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertEqual(len(resolved), 2)
         self.assertEqual(resolved[0]["source_slug"], "truth")
         self.assertEqual(resolved[1]["source_slug"], "fit_rank_0")
+        self.assertEqual(resolved[0]["intervention_source"], "observed_experiment")
+        self.assertEqual(resolved[0]["intervention_slug"], "observed_experiment")
 
     def test_target_pair_resolution_rejects_missing_experiment(self) -> None:
         target_pairs_path = self._write_target_pairs(
@@ -960,6 +971,280 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertIn("mean_abs_zscore", summary)
         self.assertIn("coverage_rate", summary)
         self.assertGreaterEqual(summary["num_statistics"], 1)
+
+    def test_run_intervention_library_writes_saved_artifacts(self) -> None:
+        generation_spec_path = self.root / "generation_spec.yaml"
+        intervention_spec_path = self.root / "intervention_library_spec.yaml"
+        generation_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    f"  experiment_root: {self.root.as_posix()}/generated",
+                    f"  manifest_path: {self.root.as_posix()}/generated/generation_manifest.csv",
+                    "  dimensions:",
+                    "    N: 6",
+                    "    T: 4",
+                    "    s: 1",
+                    "  generation:",
+                    "    gibbs_sweeps: 1",
+                    "    seed: 7",
+                    "  x0:",
+                    "    generator: bernoulli",
+                    "    params:",
+                    "      p: 0.5",
+                    "      fixed_val: null",
+                    "  graph:",
+                    "    source: generated",
+                    "    generator: erdos_renyi",
+                    "    params:",
+                    "      p: 0.5",
+                    "    artifact:",
+                    "      gamma_path: null",
+                    "      node_index_path: null",
+                    "      artifact_dir: null",
+                    "      network_name: null",
+                    "      trim_scope: null",
+                    "  intervention:",
+                    "    source: generated",
+                    "    artifact:",
+                    "      panel_path: null",
+                    "      z0_path: null",
+                    "      artifact_dir: null",
+                    "      shared_panel_dir: null",
+                    "      outcome_code: null",
+                    "      intervention_code: null",
+                    "      lag_code: null",
+                    "      trim_scope: null",
+                    "  truth:",
+                    "    B: 1.0",
+                    "    latent_rank: 0",
+                    "    scalars:",
+                    "      beta: 0.2",
+                    "      xi: 0.1",
+                    "      eta: 0.05",
+                    "      zeta: -0.1",
+                    "      psi: 0.2",
+                    "experiments:",
+                    "  - name: smoke_rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        intervention_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  experiment_name: smoke_rank_0",
+                    "interventions:",
+                    "  - name: observed_copy",
+                    "    source_kind: observed_experiment",
+                    "  - name: full_on_from_s",
+                    "    source_kind: full_on",
+                    "    activation_scope: from_s",
+                    "  - name: single_unit_2_from_step_2",
+                    "    source_kind: single_unit_on",
+                    "    unit_index: 2",
+                    "    activation_scope: from_step",
+                    "    start_step: 2",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        library_manifest = run_intervention_library(
+            generation_manifest,
+            intervention_spec_path,
+            overwrite=True,
+        )
+
+        experiment_root = self.root / "generated" / "smoke_rank_0"
+        observed_copy = load_saved_intervention_context(experiment_root, "observed_copy")
+        full_on = load_saved_intervention_context(experiment_root, "full_on_from_s")
+        single_unit = load_saved_intervention_context(
+            experiment_root, "single_unit_2_from_step_2"
+        )
+
+        self.assertEqual(Path(library_manifest), self.root / "generated" / "intervention_library_manifest.csv")
+        self.assertTrue(np.array_equal(observed_copy.z_0, np.zeros(6, dtype=float)))
+        self.assertTrue(np.array_equal(full_on.z[:1, :], -np.ones((1, 6), dtype=float)))
+        self.assertTrue(np.array_equal(full_on.z[1:, :], np.ones((3, 6), dtype=float)))
+        self.assertEqual(full_on.s, 1)
+        self.assertTrue(np.array_equal(single_unit.z[:2, 2], -np.ones(2, dtype=float)))
+        self.assertTrue(np.array_equal(single_unit.z[2:, 2], np.ones(2, dtype=float)))
+        self.assertTrue(np.array_equal(single_unit.z[:, :2], -np.ones((4, 2), dtype=float)))
+
+    def test_run_posterior_predictive_writes_counterfactual_outputs(self) -> None:
+        generation_spec_path = self.root / "generation_spec.yaml"
+        fits_spec_path = self.root / "fits_spec.yaml"
+        predictive_spec_path = self.root / "posterior_predictive_spec.yaml"
+        target_pairs_path = self.root / "target_pairs.csv"
+        intervention_spec_path = self.root / "intervention_library_spec.yaml"
+        generation_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    f"  experiment_root: {self.root.as_posix()}/generated",
+                    f"  manifest_path: {self.root.as_posix()}/generated/generation_manifest.csv",
+                    "  dimensions:",
+                    "    N: 6",
+                    "    T: 4",
+                    "    s: 1",
+                    "  generation:",
+                    "    gibbs_sweeps: 1",
+                    "    seed: 7",
+                    "  x0:",
+                    "    generator: bernoulli",
+                    "    params:",
+                    "      p: 0.5",
+                    "      fixed_val: null",
+                    "  graph:",
+                    "    source: generated",
+                    "    generator: erdos_renyi",
+                    "    params:",
+                    "      p: 0.5",
+                    "    artifact:",
+                    "      gamma_path: null",
+                    "      node_index_path: null",
+                    "      artifact_dir: null",
+                    "      network_name: null",
+                    "      trim_scope: null",
+                    "  intervention:",
+                    "    source: generated",
+                    "    artifact:",
+                    "      panel_path: null",
+                    "      z0_path: null",
+                    "      artifact_dir: null",
+                    "      shared_panel_dir: null",
+                    "      outcome_code: null",
+                    "      intervention_code: null",
+                    "      lag_code: null",
+                    "      trim_scope: null",
+                    "  truth:",
+                    "    B: 1.0",
+                    "    latent_rank: 0",
+                    "    scalars:",
+                    "      beta: 0.2",
+                    "      xi: 0.1",
+                    "      eta: 0.05",
+                    "      zeta: -0.1",
+                    "      psi: 0.2",
+                    "experiments:",
+                    "  - name: smoke_rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fits_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  fit_root_name: fits",
+                    f"  fit_manifest_path: {self.root.as_posix()}/generated/fit_manifest.csv",
+                    "  optimizer:",
+                    "    steps: 5",
+                    "    tol: 1.0e-6",
+                    "    seed: 0",
+                    "  B: 1.0",
+                    "  latent_rank: 0",
+                    "  estimation:",
+                    "    fit_intervention_model: true",
+                    "    beta_mask_pre_intervention: false",
+                    "    beta_mask_rescale: false",
+                    "    fixed_scalar_params: {}",
+                    "variants:",
+                    "  - name: rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        predictive_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  num_samples: 4",
+                    "  gibbs_sweeps: 1",
+                    "  seed: 0",
+                    "runs:",
+                    "  - name: default",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        intervention_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  experiment_name: smoke_rank_0",
+                    "interventions:",
+                    "  - name: full_on_from_s",
+                    "    source_kind: full_on",
+                    "    activation_scope: from_s",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        target_pairs_path.write_text(
+            "\n".join(
+                [
+                    "experiment_name,source_type,variant_name,intervention_source,intervention_name",
+                    "smoke_rank_0,truth,,observed_experiment,",
+                    "smoke_rank_0,fit,rank_0,saved_intervention,full_on_from_s",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        run_intervention_library(
+            generation_manifest,
+            intervention_spec_path,
+            overwrite=True,
+        )
+
+        manifest_path = run_posterior_predictive(
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            overwrite=True,
+        )
+
+        experiment_root = self.root / "generated" / "smoke_rank_0"
+        observed_output = (
+            experiment_root
+            / "posterior_predictive"
+            / "truth"
+            / "default"
+            / "posterior_predictive_stats.csv"
+        )
+        counterfactual_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_rank_0"
+            / "full_on_from_s"
+            / "default"
+        )
+        counterfactual_manifest = self.root / "generated" / COUNTERFACTUAL_MANIFEST_NAME
+
+        self.assertEqual(
+            Path(manifest_path),
+            self.root / "generated" / "posterior_predictive_manifest.csv",
+        )
+        self.assertTrue(observed_output.exists())
+        self.assertTrue(counterfactual_manifest.exists())
+        self.assertTrue((counterfactual_root / "counterfactual_metadata.yaml").exists())
+        self.assertTrue((counterfactual_root / "counterfactual_sample_summaries.npz").exists())
+        self.assertTrue((counterfactual_root / "counterfactual_summary.csv").exists())
+        self.assertTrue((counterfactual_root / "counterfactual_unit_summary.csv").exists())
+        self.assertFalse((counterfactual_root / "posterior_predictive_stats.csv").exists())
+
+        with counterfactual_manifest.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["intervention_name"], "full_on_from_s")
+        self.assertEqual(rows[0]["intervention_source"], "saved_intervention")
 
     def test_run_posterior_predictive_pipeline_writes_grouped_reports(self) -> None:
         generation_spec_path = self.root / "generation_spec.yaml"
@@ -1063,9 +1348,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
         target_pairs_path.write_text(
             "\n".join(
                 [
-                    "experiment_name,source_type,variant_name",
-                    "smoke_rank_0,truth,",
-                    "smoke_rank_0,fit,rank_0",
+                    "experiment_name,source_type,variant_name,intervention_source,intervention_name",
+                    "smoke_rank_0,truth,,observed_experiment,",
+                    "smoke_rank_0,fit,rank_0,observed_experiment,",
                 ]
             ),
             encoding="utf-8",

@@ -20,12 +20,16 @@ from model_utils import (
     interaction_effect,
     load_model_artifacts,
 )
+from pipeline_specs import slugify
 
 
 GENERATION_CONFIG_FILENAMES = (
     "generation_realized_config.yaml",
     "realized_config.yaml",
 )
+INTERVENTION_LIBRARY_ROOT_NAME = "intervention_library"
+COUNTERFACTUAL_ROOT_NAME = "counterfactual"
+COUNTERFACTUAL_MANIFEST_NAME = "counterfactual_manifest.csv"
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,17 @@ class OutcomeParameterBundle:
     t_steps: int
     field_matrix: np.ndarray
     gamma_matrix: object
+
+
+@dataclass(frozen=True)
+class InterventionContext:
+    source_kind: str
+    intervention_name: str
+    intervention_slug: str
+    z: np.ndarray
+    z_0: np.ndarray
+    s: int
+    metadata: dict[str, object]
 
 
 def first_existing_path(*paths: str | Path) -> Path:
@@ -70,16 +85,16 @@ def load_gamma_matrix(data_folder: str | Path):
     raise FileNotFoundError(f"Missing gamma matrix artifact in {data_path}.")
 
 
-def load_experiment_panel_context(experiment_root: str | Path) -> dict[str, object]:
-    experiment_path = Path(experiment_root)
-    panel_path = experiment_path / "panel_data.npz"
-    x0_path = experiment_path / "x_0.npy"
-    z0_path = experiment_path / "z_0.npy"
-    with np.load(panel_path, allow_pickle=False) as data:
+def load_panel_context_from_artifacts(
+    panel_path: str | Path,
+    x0_path: str | Path,
+    z0_path: str | Path,
+) -> dict[str, object]:
+    with np.load(Path(panel_path), allow_pickle=False) as data:
         x = np.asarray(data["x"], dtype=float)
         z = np.asarray(data["z"], dtype=float)
-    x_0 = np.asarray(np.load(x0_path), dtype=float)
-    z_0 = np.asarray(np.load(z0_path), dtype=float)
+    x_0 = np.asarray(np.load(Path(x0_path)), dtype=float)
+    z_0 = np.asarray(np.load(Path(z0_path)), dtype=float)
     return {
         "x": x,
         "z": z,
@@ -89,6 +104,202 @@ def load_experiment_panel_context(experiment_root: str | Path) -> dict[str, obje
         "T": int(x.shape[0]),
         "s": derive_pre_intervention_steps(z),
     }
+
+
+def load_experiment_panel_context(experiment_root: str | Path) -> dict[str, object]:
+    experiment_path = Path(experiment_root)
+    return load_panel_context_from_artifacts(
+        experiment_path / "panel_data.npz",
+        experiment_path / "x_0.npy",
+        experiment_path / "z_0.npy",
+    )
+
+
+def _validate_intervention_panel(z: np.ndarray, z_0: np.ndarray) -> None:
+    if z.ndim != 2:
+        raise ValueError("Intervention panel z must be 2D.")
+    if z_0.shape != (z.shape[1],):
+        raise ValueError(
+            f"Intervention z_0 shape {z_0.shape} does not match panel width {z.shape[1]}."
+        )
+    if not np.all(np.isin(z, (-1.0, 1.0))):
+        raise ValueError("Intervention panel z must use -1/+1 coding only.")
+    if not np.all(np.isin(z_0, (-1.0, 0.0, 1.0))):
+        raise ValueError("Intervention z_0 must use legacy 0 or -1/+1 coding only.")
+
+
+def save_intervention_artifact(
+    output_root: str | Path,
+    *,
+    intervention_name: str,
+    experiment_name: str,
+    z: np.ndarray,
+    z_0: np.ndarray,
+    s: int,
+    source_kind: str,
+    extra_metadata: dict[str, object] | None = None,
+) -> Path:
+    artifact_root = Path(output_root)
+    z = np.asarray(z, dtype=float)
+    z_0 = np.asarray(z_0, dtype=float)
+    _validate_intervention_panel(z, z_0)
+    artifact_root.mkdir(parents=True, exist_ok=False)
+    np.savez(artifact_root / "intervention_panel.npz", z=z)
+    np.save(artifact_root / "z_0.npy", z_0)
+    metadata = {
+        "intervention_name": intervention_name,
+        "intervention_slug": slugify(intervention_name),
+        "experiment_name": experiment_name,
+        "N": int(z.shape[1]),
+        "T": int(z.shape[0]),
+        "s": int(s),
+        "source_kind": source_kind,
+        **dict(extra_metadata or {}),
+    }
+    OmegaConf.save(OmegaConf.create(metadata), artifact_root / "intervention_metadata.yaml")
+    return artifact_root
+
+
+def build_full_on_intervention(
+    n_nodes: int,
+    t_steps: int,
+    s: int,
+    *,
+    activation_scope: str,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    z = -np.ones((int(t_steps), int(n_nodes)), dtype=float)
+    z_0 = -np.ones(int(n_nodes), dtype=float)
+    scope = str(activation_scope)
+    if scope == "all_time":
+        z[:, :] = 1.0
+        z_0[:] = 1.0
+    elif scope == "no_time":
+        pass
+    elif scope == "from_s":
+        z[int(s) :, :] = 1.0
+    else:
+        raise ValueError(f"Unsupported full_on activation_scope '{activation_scope}'.")
+    return z, z_0, derive_pre_intervention_steps(z)
+
+
+def build_single_unit_on_intervention(
+    n_nodes: int,
+    t_steps: int,
+    s: int,
+    *,
+    unit_index: int,
+    activation_scope: str,
+    start_step: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    if int(unit_index) < 0 or int(unit_index) >= int(n_nodes):
+        raise ValueError(
+            f"unit_index={unit_index} is out of bounds for N={n_nodes}."
+        )
+    z = -np.ones((int(t_steps), int(n_nodes)), dtype=float)
+    z_0 = -np.ones(int(n_nodes), dtype=float)
+    scope = str(activation_scope)
+    if scope == "all_time":
+        z[:, int(unit_index)] = 1.0
+        z_0[int(unit_index)] = 1.0
+    elif scope == "no_time":
+        pass
+    elif scope == "from_s":
+        z[int(s) :, int(unit_index)] = 1.0
+    elif scope == "from_step":
+        if start_step is None:
+            raise ValueError("start_step is required when activation_scope='from_step'.")
+        if int(start_step) < 0 or int(start_step) > int(t_steps):
+            raise ValueError(
+                f"start_step={start_step} must lie in [0, {t_steps}]."
+            )
+        z[int(start_step) :, int(unit_index)] = 1.0
+    else:
+        raise ValueError(
+            f"Unsupported single_unit_on activation_scope '{activation_scope}'."
+        )
+    return z, z_0, derive_pre_intervention_steps(z)
+
+
+def load_saved_intervention_context(
+    experiment_root: str | Path,
+    intervention_name: str,
+) -> InterventionContext:
+    experiment_path = Path(experiment_root)
+    intervention_slug = slugify(intervention_name)
+    artifact_root = (
+        experiment_path / INTERVENTION_LIBRARY_ROOT_NAME / intervention_slug
+    )
+    panel_path = artifact_root / "intervention_panel.npz"
+    z0_path = artifact_root / "z_0.npy"
+    metadata_path = artifact_root / "intervention_metadata.yaml"
+    if not panel_path.exists() or not z0_path.exists():
+        raise FileNotFoundError(
+            f"Saved intervention artifact '{intervention_name}' not found under {artifact_root}."
+        )
+    with np.load(panel_path, allow_pickle=False) as data:
+        if "z" not in data:
+            raise KeyError(f"Intervention artifact {panel_path} does not contain 'z'.")
+        z = np.asarray(data["z"], dtype=float)
+    z_0 = np.asarray(np.load(z0_path), dtype=float)
+    _validate_intervention_panel(z, z_0)
+    metadata = (
+        OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
+        if metadata_path.exists()
+        else {}
+    )
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return InterventionContext(
+        source_kind="saved_intervention",
+        intervention_name=str(metadata.get("intervention_name", intervention_name)),
+        intervention_slug=str(metadata.get("intervention_slug", intervention_slug)),
+        z=z,
+        z_0=z_0,
+        s=int(metadata.get("s", derive_pre_intervention_steps(z))),
+        metadata=metadata,
+    )
+
+
+def resolve_intervention_context(
+    experiment_root: str | Path,
+    *,
+    intervention_source: str,
+    intervention_name: str | None = None,
+    panel_context: dict[str, object] | None = None,
+) -> InterventionContext:
+    source = str(intervention_source).strip().lower()
+    if source == "observed_experiment":
+        resolved_panel_context = (
+            panel_context
+            if panel_context is not None
+            else load_experiment_panel_context(experiment_root)
+        )
+        return InterventionContext(
+            source_kind="observed_experiment",
+            intervention_name="observed_experiment",
+            intervention_slug="observed_experiment",
+            z=np.asarray(resolved_panel_context["z"], dtype=float),
+            z_0=np.asarray(resolved_panel_context["z_0"], dtype=float),
+            s=int(resolved_panel_context["s"]),
+            metadata={"source_kind": "observed_experiment"},
+        )
+    if source == "saved_intervention":
+        if not intervention_name or not str(intervention_name).strip():
+            raise ValueError(
+                "saved_intervention targets must provide intervention_name."
+            )
+        context = load_saved_intervention_context(experiment_root, intervention_name)
+        if panel_context is not None:
+            if context.z.shape != (
+                int(panel_context["T"]),
+                int(panel_context["N"]),
+            ):
+                raise ValueError(
+                    f"Saved intervention '{intervention_name}' has shape {context.z.shape},"
+                    f" expected {(int(panel_context['T']), int(panel_context['N']))}."
+                )
+        return context
+    raise ValueError(f"Unsupported intervention_source '{intervention_source}'.")
 
 
 def save_estimated_parameter_bundle(
@@ -218,7 +429,7 @@ def simulate_outcomes_for_bundle(
     z: np.ndarray,
     gibbs_sweeps: int,
     seed: int,
-) -> np.ndarray:
+    ) -> np.ndarray:
     rng = np.random.default_rng(seed)
     interaction_matrix = compose_interaction_matrix(bundle.xi, bundle.gamma_matrix)
     return simulate_outcomes_given_fixed_interventions(
@@ -278,6 +489,20 @@ def compute_panel_statistics(
         "post_graph_interaction_energy": _mean_or_none(graph_energy[post_mask]),
     }
     return stats
+
+
+def compute_counterfactual_sample_summary(
+    x: np.ndarray,
+    *,
+    s: int,
+) -> dict[str, np.ndarray | float]:
+    x = np.asarray(x, dtype=float)
+    post_value = float(np.mean(x[int(s) :, :])) if int(s) < x.shape[0] else math.nan
+    return {
+        "overall_mean_magnetization": float(np.mean(x)),
+        "post_intervention_mean_magnetization": post_value,
+        "unit_mean_magnetization": np.mean(x, axis=0),
+    }
 
 
 def summarize_predictive_statistics(
@@ -374,3 +599,86 @@ def write_predictive_stats_tables(
                     formatted.append(str(value))
             handle.write("| " + " | ".join(formatted) + " |\n")
     return csv_path, md_path
+
+
+def _finite_summary(values: np.ndarray) -> dict[str, object]:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return {
+            "sample_mean": "",
+            "sample_std": "",
+            "q025": "",
+            "q500": "",
+            "q975": "",
+            "num_finite_samples": 0,
+        }
+    q025, q500, q975 = np.quantile(finite, [0.025, 0.5, 0.975])
+    return {
+        "sample_mean": float(np.mean(finite)),
+        "sample_std": float(np.std(finite, ddof=0)),
+        "q025": float(q025),
+        "q500": float(q500),
+        "q975": float(q975),
+        "num_finite_samples": int(finite.size),
+    }
+
+
+def write_counterfactual_summary_tables(
+    output_root: str | Path,
+    *,
+    sample_summaries: dict[str, np.ndarray],
+) -> tuple[Path, Path, Path]:
+    output_path = Path(output_root)
+    output_path.mkdir(parents=True, exist_ok=True)
+    sample_npz_path = output_path / "counterfactual_sample_summaries.npz"
+    summary_csv_path = output_path / "counterfactual_summary.csv"
+    unit_csv_path = output_path / "counterfactual_unit_summary.csv"
+    np.savez(sample_npz_path, **sample_summaries)
+
+    summary_rows = []
+    for key in [
+        "overall_mean_magnetization",
+        "post_intervention_mean_magnetization",
+    ]:
+        row = {"statistic": key}
+        row.update(_finite_summary(np.asarray(sample_summaries[key], dtype=float)))
+        summary_rows.append(row)
+    with summary_csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "statistic",
+                "sample_mean",
+                "sample_std",
+                "q025",
+                "q500",
+                "q975",
+                "num_finite_samples",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(summary_rows)
+
+    unit_values = np.asarray(sample_summaries["unit_mean_magnetization"], dtype=float)
+    unit_rows = []
+    for unit_index in range(unit_values.shape[1]):
+        row = {"unit_index": int(unit_index)}
+        row.update(_finite_summary(unit_values[:, unit_index]))
+        unit_rows.append(row)
+    with unit_csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "unit_index",
+                "sample_mean",
+                "sample_std",
+                "q025",
+                "q500",
+                "q975",
+                "num_finite_samples",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(unit_rows)
+    return sample_npz_path, summary_csv_path, unit_csv_path
