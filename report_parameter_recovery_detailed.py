@@ -1,17 +1,104 @@
-"""Summarize synthetic MPLE runs with concise experiment-level diagnostics."""
+"""Aggregate MPLE fit results into per-experiment and cross-experiment summaries."""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 from omegaconf import OmegaConf
 
+from pipeline_specs import read_csv_manifest
+
 
 SCALAR_NAMES = ("beta", "xi", "eta", "zeta", "psi")
 METRIC_NAMES = ("final_loss", "field_rmse", "interaction_fro_error")
+PER_EXPERIMENT_COLUMNS = [
+    "experiment_name",
+    "descriptor",
+    "variant_name",
+    "variant_slug",
+    "latent_rank",
+    "B",
+    "fit_intervention_model",
+    "fixed_scalar_params",
+    "ranking_mode",
+    "rank_in_experiment",
+    "is_best",
+    "total_recovery_rmse",
+    "final_loss",
+    "field_rmse",
+    "interaction_fro_error",
+    "optimizer_status",
+    "beta_abs_error",
+    "xi_abs_error",
+    "eta_abs_error",
+    "zeta_abs_error",
+    "psi_abs_error",
+    "estimated_field_inf_norm",
+    "estimated_field_rank",
+    "true_field_inf_norm",
+    "true_field_rank",
+]
+WINNER_COLUMNS = [
+    "experiment_name",
+    "descriptor",
+    "intervention_source",
+    "graph_source",
+    "N",
+    "T",
+    "s",
+    "variant_name",
+    "variant_slug",
+    "latent_rank",
+    "B",
+    "fit_intervention_model",
+    "fixed_scalar_params",
+    "ranking_mode",
+    "total_recovery_rmse",
+    "final_loss",
+    "field_rmse",
+    "interaction_fro_error",
+    "optimizer_status",
+]
+
+
+def _as_float(value: object) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def _metric_or_inf(value: object) -> float:
+    parsed = _as_float(value)
+    return math.inf if parsed is None else parsed
+
+
+def total_recovery_rmse(row: dict[str, object]) -> float | None:
+    field_rmse = _as_float(row.get("field_rmse"))
+    if field_rmse is None:
+        return None
+    total = field_rmse
+    for scalar_name in SCALAR_NAMES:
+        scalar_error = _as_float(row.get(f"{scalar_name}_abs_error"))
+        if scalar_error is not None:
+            total += scalar_error
+    return total
+
+
+def _as_bool_string(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    text = str(value).strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    if lowered in {"true", "false"}:
+        return lowered
+    return text
 
 
 def read_summary_entries(summary_path: Path) -> dict[str, dict[str, float | None]]:
@@ -19,11 +106,9 @@ def read_summary_entries(summary_path: Path) -> dict[str, dict[str, float | None
     with summary_path.open("r", encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             entries[row["name"]] = {
-                "estimate": float(row["estimate"]) if row["estimate"] else None,
-                "true": float(row["true"]) if row["true"] else None,
-                "squared_error": (
-                    float(row["squared_error"]) if row["squared_error"] else None
-                ),
+                "estimate": _as_float(row["estimate"]),
+                "true": _as_float(row["true"]),
+                "squared_error": _as_float(row["squared_error"]),
             }
     return entries
 
@@ -55,9 +140,7 @@ def scalar_value(
     return summary_entries.get(name, {}).get(key)
 
 
-def latent_diagnostics(
-    folder: Path, bound: float | None, latent_rank: int | None
-) -> dict[str, object]:
+def latent_diagnostics(folder: Path) -> dict[str, object]:
     estimated_field = load_field_matrix(folder / "estimated_field_artifacts.npz")
     true_field = load_field_matrix(folder / "true_field_artifacts.npz")
     if estimated_field is None:
@@ -65,76 +148,64 @@ def latent_diagnostics(
     row: dict[str, object] = {
         "estimated_field_inf_norm": float(np.linalg.norm(estimated_field, ord=np.inf)),
         "estimated_field_rank": int(np.linalg.matrix_rank(estimated_field)),
-        "latent_rank": latent_rank if latent_rank is not None else "",
     }
-    if bound is not None:
-        row["bound_B"] = bound
     if true_field is not None:
         row["true_field_inf_norm"] = float(np.linalg.norm(true_field, ord=np.inf))
         row["true_field_rank"] = int(np.linalg.matrix_rank(true_field))
     return row
 
 
-def collect_rows(manifest_path: Path) -> list[dict[str, object]]:
+def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | None:
+    fit_root = Path(manifest_row["fit_path"])
+    summary_path = fit_root / "mple_summary.csv"
+    if not summary_path.exists():
+        return None
+
+    summary_entries = read_summary_entries(summary_path)
+    row: dict[str, object] = {
+        "experiment_name": manifest_row.get("experiment_name", ""),
+        "experiment_path": manifest_row.get("experiment_path", ""),
+        "descriptor": manifest_row.get("descriptor", ""),
+        "intervention_source": manifest_row.get("intervention_source", ""),
+        "graph_source": manifest_row.get("graph_source", ""),
+        "variant_name": manifest_row.get("variant_name", ""),
+        "variant_slug": manifest_row.get("variant_slug", ""),
+        "fit_path": str(fit_root.resolve()),
+        "N": manifest_row.get("N", ""),
+        "T": manifest_row.get("T", ""),
+        "s": manifest_row.get("s", ""),
+        "B": _as_float(manifest_row.get("B")),
+        "latent_rank": (
+            int(manifest_row["latent_rank"])
+            if manifest_row.get("latent_rank") not in (None, "")
+            else ""
+        ),
+        "fit_intervention_model": _as_bool_string(
+            manifest_row.get("fit_intervention_model", "")
+        ),
+        "fixed_scalar_params": manifest_row.get("fixed_scalar_params", ""),
+        "optimizer_status": parse_optimizer_status(fit_root / "mple.log"),
+    }
+    for metric_name in METRIC_NAMES:
+        row[metric_name] = scalar_value(summary_entries, metric_name, "estimate")
+    for scalar_name in SCALAR_NAMES:
+        est = scalar_value(summary_entries, scalar_name, "estimate")
+        true = scalar_value(summary_entries, scalar_name, "true")
+        row[f"{scalar_name}_abs_error"] = (
+            abs(est - true) if est is not None and true is not None else None
+        )
+    row.update(latent_diagnostics(fit_root))
+    return row
+
+
+def collect_fit_rows(manifest_path: str | Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    with manifest_path.open("r", encoding="utf-8", newline="") as handle:
-        for manifest_row in csv.DictReader(handle):
-            folder = Path(manifest_row["fit_path"])
-            summary_path = folder / "mple_summary.csv"
-            if not summary_path.exists():
-                continue
-
-            summary_entries = read_summary_entries(summary_path)
-            metadata = (
-                OmegaConf.load(folder / "fit_metadata.yaml")
-                if (folder / "fit_metadata.yaml").exists()
-                else OmegaConf.create({})
-            )
-            config = (
-                OmegaConf.load(folder / "fit_realized_config.yaml")
-                if (folder / "fit_realized_config.yaml").exists()
-                else OmegaConf.create({})
-            )
-
-            latent_rank = (
-                int(metadata.get("latent_rank"))
-                if metadata.get("latent_rank") not in (None, "")
-                else (
-                    int(config.global_params.latent_rank)
-                    if "global_params" in config and "latent_rank" in config.global_params
-                    else None
-                )
-            )
-            bound = (
-                float(config.global_params.B)
-                if "global_params" in config and "B" in config.global_params
-                else None
-            )
-            row: dict[str, object] = {
-                "experiment_name": str(manifest_row.get("experiment_name", "")),
-                "variant_name": str(manifest_row.get("variant_name", "")),
-                "N": manifest_row.get("N", ""),
-                "T": manifest_row.get("T", ""),
-                "s": manifest_row.get("s", ""),
-                "latent_rank": latent_rank if latent_rank is not None else "",
-                "optimizer_status": parse_optimizer_status(folder / "mple.log"),
-            }
-            for metric_name in METRIC_NAMES:
-                row[metric_name] = scalar_value(summary_entries, metric_name, "estimate")
-            for scalar_name in SCALAR_NAMES:
-                est = scalar_value(summary_entries, scalar_name, "estimate")
-                true = scalar_value(summary_entries, scalar_name, "true")
-                row[f"{scalar_name}_abs_error"] = (
-                    abs(est - true) if est is not None and true is not None else None
-                )
-            row.update(latent_diagnostics(folder, bound, latent_rank))
-            rows.append(row)
-
+    for manifest_row in read_csv_manifest(manifest_path):
+        fit_row = _fit_row_from_manifest(manifest_row)
+        if fit_row is not None:
+            rows.append(fit_row)
     rows.sort(
         key=lambda row: (
-            int(row.get("latent_rank") or 0),
-            int(row.get("N") or 0),
-            int(row.get("T") or 0),
             str(row.get("experiment_name", "")),
             str(row.get("variant_name", "")),
         )
@@ -142,168 +213,165 @@ def collect_rows(manifest_path: Path) -> list[dict[str, object]]:
     return rows
 
 
-def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
-    if not rows:
-        raise ValueError("No finished experiments were found in the manifest.")
-    fieldnames: list[str] = []
-    seen: set[str] = set()
+def _group_has_truth(rows: list[dict[str, object]]) -> bool:
+    return any(row.get("field_rmse") is not None for row in rows)
+
+
+def ranking_key(row: dict[str, object], use_truth_metrics: bool) -> tuple[float, ...]:
+    if use_truth_metrics:
+        return (
+            _metric_or_inf(total_recovery_rmse(row)),
+            _metric_or_inf(row.get("field_rmse")),
+            _metric_or_inf(row.get("interaction_fro_error")),
+            _metric_or_inf(row.get("final_loss")),
+        )
+    return (_metric_or_inf(row.get("final_loss")),)
+
+
+def rank_rows_within_experiment(
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    use_truth_metrics = _group_has_truth(rows)
+    ranking_mode = "total_recovery_rmse" if use_truth_metrics else "final_loss_only"
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            ranking_key(row, use_truth_metrics),
+            str(row.get("variant_name", "")),
+        ),
+    )
+    ranked_rows: list[dict[str, object]] = []
+    for index, row in enumerate(ordered, start=1):
+        ranked = dict(row)
+        ranked["ranking_mode"] = ranking_mode
+        ranked["rank_in_experiment"] = index
+        ranked["is_best"] = index == 1
+        ranked["total_recovery_rmse"] = total_recovery_rmse(ranked)
+        ranked_rows.append(ranked)
+    return ranked_rows
+
+
+def group_and_rank_fit_rows(
+    rows: list[dict[str, object]],
+) -> tuple[dict[str, list[dict[str, object]]], list[dict[str, object]]]:
+    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
-        for key in row:
-            if key not in seen:
-                seen.add(key)
-                fieldnames.append(key)
+        grouped[str(row["experiment_path"])].append(row)
+
+    ranked_groups: dict[str, list[dict[str, object]]] = {}
+    winners: list[dict[str, object]] = []
+    for experiment_path, group_rows in grouped.items():
+        ranked = rank_rows_within_experiment(group_rows)
+        ranked_groups[experiment_path] = ranked
+        winners.append(dict(ranked[0]))
+    winners.sort(
+        key=lambda row: (
+            str(row.get("experiment_name", "")),
+            str(row.get("variant_name", "")),
+        )
+    )
+    return ranked_groups, winners
+
+
+def write_csv(path: Path, rows: list[dict[str, object]], columns: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(
+            [{column: row.get(column, "") for column in columns} for row in rows]
+        )
 
 
-def fmt(value: object) -> str:
+def _fmt(value: object) -> str:
     if value is None:
         return ""
     if isinstance(value, bool):
-        return "yes" if value else "no"
+        return "true" if value else "false"
     if isinstance(value, float):
         return f"{value:.6f}"
     return str(value)
 
 
-def median(values: list[float]) -> float | None:
-    if not values:
-        return None
-    return float(np.median(np.asarray(values, dtype=float)))
-
-
-def aggregate_by_rank(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    by_rank: dict[str, list[dict[str, object]]] = {}
+def write_markdown_table(
+    handle, rows: list[dict[str, object]], columns: list[str]
+) -> None:
+    handle.write("| " + " | ".join(columns) + " |\n")
+    handle.write("| " + " | ".join(["---"] * len(columns)) + " |\n")
     for row in rows:
-        by_rank.setdefault(str(row.get("latent_rank", "")), []).append(row)
-
-    aggregates: list[dict[str, object]] = []
-    for latent_rank, rank_rows in sorted(by_rank.items(), key=lambda item: int(item[0] or 0)):
-        field_rmses = [
-            float(row["field_rmse"])
-            for row in rank_rows
-            if isinstance(row.get("field_rmse"), float)
-        ]
-        interaction_errors = [
-            float(row["interaction_fro_error"])
-            for row in rank_rows
-            if isinstance(row.get("interaction_fro_error"), float)
-        ]
-        xi_errors = [
-            float(row["xi_abs_error"])
-            for row in rank_rows
-            if isinstance(row.get("xi_abs_error"), float)
-        ]
-        beta_errors = [
-            float(row["beta_abs_error"])
-            for row in rank_rows
-            if isinstance(row.get("beta_abs_error"), float)
-        ]
-        aggregates.append(
-            {
-                "latent_rank": latent_rank,
-                "count": len(rank_rows),
-                "median_field_rmse": median(field_rmses),
-                "median_interaction_fro_error": median(interaction_errors),
-                "median_beta_abs_error": median(beta_errors),
-                "median_xi_abs_error": median(xi_errors),
-            }
+        handle.write(
+            "| " + " | ".join(_fmt(row.get(column, "")) for column in columns) + " |\n"
         )
-    return aggregates
-
-
-def write_table(handle, rows: list[dict[str, object]], headers: list[str]) -> None:
-    handle.write("| " + " | ".join(headers) + " |\n")
-    handle.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
-    for row in rows:
-        handle.write("| " + " | ".join(fmt(row.get(key, "")) for key in headers) + " |\n")
     handle.write("\n")
 
 
-def select_columns(rows: list[dict[str, object]], headers: list[str]) -> list[dict[str, object]]:
-    return [{key: row.get(key, "") for key in headers} for row in rows]
-
-
-def write_markdown(path: Path, rows: list[dict[str, object]]) -> None:
-    if not rows:
-        raise ValueError("No finished experiments were found in the manifest.")
-
-    overview = aggregate_by_rank(rows)
-    scalar_headers = [
-        "experiment_name",
-        "variant_name",
-        "latent_rank",
-        "N",
-        "T",
-        "final_loss",
-        "beta_abs_error",
-        "xi_abs_error",
-        "eta_abs_error",
-        "zeta_abs_error",
-        "psi_abs_error",
-        "optimizer_status",
-    ]
-    recovery_headers = [
-        "experiment_name",
-        "variant_name",
-        "latent_rank",
-        "N",
-        "T",
-        "field_rmse",
-        "interaction_fro_error",
-    ]
-    latent_headers = [
-        "experiment_name",
-        "variant_name",
-        "latent_rank",
-        "N",
-        "T",
-        "estimated_field_inf_norm",
-        "bound_B",
-        "estimated_field_rank",
-        "true_field_rank",
-    ]
-    overview_headers = [
-        "latent_rank",
-        "count",
-        "median_field_rmse",
-        "median_interaction_fro_error",
-        "median_beta_abs_error",
-        "median_xi_abs_error",
-    ]
-
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write("# Synthetic Experiment Summary\n\n")
+def write_per_experiment_summary(
+    experiment_path: str | Path,
+    rows: list[dict[str, object]],
+) -> tuple[Path, Path]:
+    experiment_root = Path(experiment_path)
+    csv_path = experiment_root / "fit_summary.csv"
+    md_path = experiment_root / "fit_summary.md"
+    write_csv(csv_path, rows, PER_EXPERIMENT_COLUMNS)
+    best_row = next(row for row in rows if row.get("is_best"))
+    with md_path.open("w", encoding="utf-8") as handle:
         handle.write(
-            "This report is intentionally experiment-level: it focuses on scalar recovery, field reconstruction quality, "
-            "interaction recovery, and latent diagnostics instead of dumping raw factor coordinates.\n\n"
+            f"# Fit Summary: {best_row.get('experiment_name', experiment_root.name)}\n\n"
         )
-        handle.write(f"- Completed fits: {len(rows)}\n\n")
-        handle.write("## By Latent Rank\n\n")
-        write_table(handle, overview, overview_headers)
-        handle.write("## Scalar Recovery\n\n")
-        write_table(handle, select_columns(rows, scalar_headers), scalar_headers)
-        handle.write("## Field And Interaction Recovery\n\n")
-        write_table(handle, select_columns(rows, recovery_headers), recovery_headers)
-        handle.write("## Latent Diagnostics\n\n")
-        write_table(handle, select_columns(rows, latent_headers), latent_headers)
+        handle.write(
+            f"- Best variant: `{best_row.get('variant_name', '')}`\n"
+            f"- Ranking mode: `{best_row.get('ranking_mode', '')}`\n\n"
+        )
+        write_markdown_table(handle, rows, PER_EXPERIMENT_COLUMNS)
+    return csv_path, md_path
+
+
+def write_cross_experiment_summary(
+    manifest_path: str | Path,
+    winner_rows: list[dict[str, object]],
+) -> tuple[Path, Path]:
+    manifest_root = Path(manifest_path).resolve().parent
+    csv_path = manifest_root / "best_fit_by_experiment.csv"
+    md_path = manifest_root / "best_fit_by_experiment.md"
+    write_csv(csv_path, winner_rows, WINNER_COLUMNS)
+    with md_path.open("w", encoding="utf-8") as handle:
+        handle.write("# Best Fit By Experiment\n\n")
+        handle.write(
+            "Each row is the top-ranked MPLE variant within one generated experiment.\n\n"
+        )
+        write_markdown_table(handle, winner_rows, WINNER_COLUMNS)
+    return csv_path, md_path
+
+
+def write_fit_reports(manifest_path: str | Path) -> dict[str, object]:
+    rows = collect_fit_rows(manifest_path)
+    if not rows:
+        raise ValueError(f"No finished fits were found in manifest {manifest_path}.")
+
+    ranked_groups, winners = group_and_rank_fit_rows(rows)
+    per_experiment_outputs: dict[str, dict[str, str]] = {}
+    for experiment_path, ranked_rows in ranked_groups.items():
+        csv_path, md_path = write_per_experiment_summary(experiment_path, ranked_rows)
+        per_experiment_outputs[experiment_path] = {
+            "csv": str(csv_path),
+            "md": str(md_path),
+        }
+    winners_csv, winners_md = write_cross_experiment_summary(manifest_path, winners)
+    return {
+        "per_experiment": per_experiment_outputs,
+        "winners_csv": str(winners_csv),
+        "winners_md": str(winners_md),
+    }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Summarize synthetic MPLE runs from a fit manifest."
+        description="Write grouped MPLE fit summaries from a fit manifest."
     )
     parser.add_argument("--manifest", required=True, type=str)
-    parser.add_argument("--report_stem", required=True, type=str)
     args = parser.parse_args()
-
-    rows = collect_rows(Path(args.manifest))
-    report_stem = Path(args.report_stem)
-    report_stem.parent.mkdir(parents=True, exist_ok=True)
-    write_csv(Path(f"{args.report_stem}.csv"), rows)
-    write_markdown(Path(f"{args.report_stem}.md"), rows)
+    outputs = write_fit_reports(args.manifest)
+    print(f"Wrote winners summary: {outputs['winners_csv']}")
 
 
 if __name__ == "__main__":

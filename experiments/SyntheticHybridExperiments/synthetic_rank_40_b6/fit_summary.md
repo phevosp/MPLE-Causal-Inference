@@ -1,0 +1,17 @@
+# Fit Summary: synthetic_rank_40_B6
+
+- Best variant: `rank_6_B1`
+- Ranking mode: `total_recovery_rmse`
+
+| experiment_name | descriptor | variant_name | variant_slug | latent_rank | B | fit_intervention_model | fixed_scalar_params | ranking_mode | rank_in_experiment | is_best | total_recovery_rmse | final_loss | field_rmse | interaction_fro_error | optimizer_status | beta_abs_error | xi_abs_error | eta_abs_error | zeta_abs_error | psi_abs_error | estimated_field_inf_norm | estimated_field_rank | true_field_inf_norm | true_field_rank |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| synthetic_rank_40_B6 |  | rank_6_B1 | rank_6_b1 | 6 | 1.000000 | true | {} | total_recovery_rmse | 1 | true | 0.037587 | 0.515947 | 0.011659 | 0.013319 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.008680 | 0.005006 | 0.009236 | 0.002511 | 0.000496 | 1.000000 | 6 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_40_B6 | rank_40_b6 | 40 | 6.000000 | true | {} | total_recovery_rmse | 2 | false | 0.071670 | 0.513170 | 0.014934 | 0.044002 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.009085 | 0.016538 | 0.010054 | 0.005150 | 0.015909 | 6.000000 | 40 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_6_B6 | rank_6_b6 | 6 | 6.000000 | true | {} | total_recovery_rmse | 3 | false | 0.096352 | 0.514782 | 0.015126 | 0.140262 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.009242 | 0.052716 | 0.007944 | 0.007077 | 0.004247 | 6.000000 | 6 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_40_B1 | rank_40_b1 | 40 | 1.000000 | true | {} | total_recovery_rmse | 4 | false | 0.117746 | 0.515868 | 0.011668 | 0.184225 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.013995 | 0.069239 | 0.010911 | 0.008104 | 0.003829 | 1.000000 | 40 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_0 | rank_0 | 0 | 1.000000 | true | {} | total_recovery_rmse | 5 | false | 0.117925 | 0.516089 | 0.011559 | 0.174028 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.012688 | 0.065407 | 0.010915 | 0.009767 | 0.007590 | 0.000000 | 0 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_6_B1_fixed_xi | rank_6_b1_fixed_xi | 6 | 1.000000 | true | {'xi': 0.0} | total_recovery_rmse | 6 | false | 0.883090 | 0.519257 | 0.011662 | 1.995531 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.063639 | 0.750000 | 0.047811 | 0.006261 | 0.003718 | 1.000000 | 6 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_40_B1_fixed_xi | rank_40_b1_fixed_xi | 40 | 1.000000 | true | {'xi': 0.0} | total_recovery_rmse | 7 | false | 0.896611 | 0.518993 | 0.011651 | 1.995531 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.065016 | 0.750000 | 0.051347 | 0.010593 | 0.008003 | 1.000000 | 40 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_6_B6_fixed_xi | rank_6_b6_fixed_xi | 6 | 6.000000 | true | {'xi': 0.0} | total_recovery_rmse | 8 | false | 0.898610 | 0.518039 | 0.014841 | 1.995531 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.067507 | 0.750000 | 0.050161 | 0.008727 | 0.007373 | 6.000000 | 6 | 6.000000 | 40 |
+| synthetic_rank_40_B6 |  | rank_40_B6_fixed_xi | rank_40_b6_fixed_xi | 40 | 6.000000 | true | {'xi': 0.0} | total_recovery_rmse | 9 | false | 0.901191 | 0.516388 | 0.015052 | 1.995531 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | 0.066135 | 0.750000 | 0.052273 | 0.009343 | 0.008389 | 6.000000 | 40 | 6.000000 | 40 |
+

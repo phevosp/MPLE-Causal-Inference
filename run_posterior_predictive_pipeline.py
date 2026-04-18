@@ -1,0 +1,326 @@
+from __future__ import annotations
+
+import argparse
+import shutil
+from pathlib import Path
+
+from omegaconf import OmegaConf
+
+from pipeline_specs import expand_named_entries, read_csv_manifest, write_csv_manifest
+from posterior_predictive_utils import (
+    compute_panel_statistics,
+    load_experiment_panel_context,
+    load_fit_parameter_bundle,
+    load_truth_parameter_bundle,
+    load_yaml_config,
+    simulate_outcomes_for_bundle,
+    summarize_predictive_statistics,
+    write_predictive_stats_tables,
+)
+from report_posterior_predictive import write_posterior_predictive_reports
+
+
+POSTERIOR_PREDICTIVE_ROOT_NAME = "posterior_predictive"
+POSTERIOR_PREDICTIVE_MANIFEST_NAME = "posterior_predictive_manifest.csv"
+
+
+def _index_generation_rows(
+    generation_manifest_path: str | Path,
+) -> dict[str, dict[str, str]]:
+    index: dict[str, dict[str, str]] = {}
+    for row in read_csv_manifest(generation_manifest_path):
+        experiment_name = str(row.get("experiment_name", "")).strip()
+        if not experiment_name:
+            raise ValueError(
+                f"Generation manifest {generation_manifest_path} contains a row without experiment_name."
+            )
+        if experiment_name in index:
+            raise ValueError(
+                f"Generation manifest {generation_manifest_path} contains duplicate experiment_name '{experiment_name}'."
+            )
+        index[experiment_name] = row
+    return index
+
+
+def _resolve_fit_lookup(
+    fit_manifest_path: str | Path,
+) -> dict[tuple[str, str], dict[str, str]]:
+    lookup: dict[tuple[str, str], dict[str, str]] = {}
+    for row in read_csv_manifest(fit_manifest_path):
+        experiment_name = str(row.get("experiment_name", "")).strip()
+        variant_name = str(row.get("variant_name", "")).strip()
+        if not experiment_name or not variant_name:
+            raise ValueError(
+                f"Fit manifest {fit_manifest_path} must provide experiment_name and variant_name on every row."
+            )
+        key = (experiment_name, variant_name)
+        if key in lookup:
+            raise ValueError(
+                f"Fit manifest {fit_manifest_path} contains duplicate fit row for experiment '{experiment_name}' and variant '{variant_name}'."
+            )
+        lookup[key] = row
+    return lookup
+
+
+def _load_truth_bound(experiment_root: str | Path) -> float | None:
+    config_path = Path(experiment_root) / "generation_realized_config.yaml"
+    if not config_path.exists():
+        return None
+    config = load_yaml_config(config_path)
+    if "global_params" not in config or "B" not in config.global_params:
+        return None
+    return float(config.global_params.B)
+
+
+def _resolve_target_pairs(
+    target_pairs_path: str | Path,
+    generation_lookup: dict[str, dict[str, str]],
+    fit_lookup: dict[tuple[str, str], dict[str, str]],
+) -> list[dict[str, object]]:
+    resolved_targets: list[dict[str, object]] = []
+    seen_keys: set[tuple[str, str]] = set()
+    for row in read_csv_manifest(target_pairs_path):
+        experiment_name = str(row.get("experiment_name", "")).strip()
+        source_type = str(row.get("source_type", "")).strip().lower()
+        variant_name = str(row.get("variant_name", "")).strip()
+        if not experiment_name:
+            raise ValueError(
+                f"Target-pairs manifest {target_pairs_path} contains a row without experiment_name."
+            )
+        if experiment_name not in generation_lookup:
+            raise ValueError(
+                f"Target-pairs manifest {target_pairs_path} references unknown experiment '{experiment_name}'."
+            )
+        experiment_row = generation_lookup[experiment_name]
+        if source_type == "truth":
+            if variant_name:
+                raise ValueError(
+                    f"Truth target for experiment '{experiment_name}' must leave variant_name blank."
+                )
+            source_name = "truth"
+            source_slug = "truth"
+            fit_row = None
+        elif source_type == "fit":
+            if not variant_name:
+                raise ValueError(
+                    f"Fit target for experiment '{experiment_name}' must specify variant_name."
+                )
+            fit_row = fit_lookup.get((experiment_name, variant_name))
+            if fit_row is None:
+                raise ValueError(
+                    f"Target-pairs manifest {target_pairs_path} references missing fit variant '{variant_name}' for experiment '{experiment_name}'."
+                )
+            source_name = str(fit_row["variant_name"])
+            source_slug = f"fit_{str(fit_row['variant_slug']).strip()}"
+        else:
+            raise ValueError(
+                f"Target-pairs manifest {target_pairs_path} has invalid source_type '{source_type}' for experiment '{experiment_name}'."
+            )
+
+        dedupe_key = (experiment_name, source_slug)
+        if dedupe_key in seen_keys:
+            raise ValueError(
+                f"Target-pairs manifest {target_pairs_path} contains duplicate target for experiment '{experiment_name}' and source '{source_slug}'."
+            )
+        seen_keys.add(dedupe_key)
+        resolved_targets.append(
+            {
+                "experiment_row": experiment_row,
+                "source_type": source_type,
+                "source_name": source_name,
+                "source_slug": source_slug,
+                "fit_row": fit_row,
+            }
+        )
+    if not resolved_targets:
+        raise ValueError(f"No target pairs found in {target_pairs_path}.")
+    return resolved_targets
+
+
+def _simulate_target(
+    target: dict[str, object],
+    run_spec: dict[str, object],
+    overwrite: bool,
+) -> dict[str, object]:
+    experiment_row = target["experiment_row"]
+    experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
+    run_slug = str(run_spec["slug"])
+    source_slug = str(target["source_slug"])
+    output_root = (
+        experiment_root / POSTERIOR_PREDICTIVE_ROOT_NAME / source_slug / run_slug
+    )
+    if output_root.exists():
+        if overwrite:
+            shutil.rmtree(output_root)
+        else:
+            raise FileExistsError(
+                f"{output_root} already exists. Re-run with --overwrite to rebuild it."
+            )
+    output_root.mkdir(parents=True, exist_ok=False)
+
+    panel_context = load_experiment_panel_context(experiment_root)
+    if target["source_type"] == "truth":
+        bundle = load_truth_parameter_bundle(experiment_root)
+        bound_B = _load_truth_bound(experiment_root)
+        fit_intervention_model = True
+    else:
+        fit_row = target["fit_row"]
+        fit_root = Path(str(fit_row["fit_path"]))
+        bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+        bound_B = float(fit_row["B"]) if str(fit_row.get("B", "")).strip() else None
+        fit_intervention_model = (
+            str(fit_row.get("fit_intervention_model", "")).lower() == "true"
+        )
+    if int(bundle.t_steps) != int(panel_context["T"]):
+        raise ValueError(
+            f"Posterior-predictive source '{target['source_name']}' has t_steps={bundle.t_steps},"
+            f" but experiment '{experiment_row.get('experiment_name', experiment_root.name)}' has T={panel_context['T']}."
+        )
+
+    observed_stats = compute_panel_statistics(
+        panel_context["x"],
+        z=panel_context["z"],
+        x_0=panel_context["x_0"],
+        s=int(panel_context["s"]),
+        field_matrix=bundle.field_matrix,
+        gamma_matrix=bundle.gamma_matrix,
+    )
+    num_samples = int(run_spec["num_samples"])
+    gibbs_sweeps = int(run_spec["gibbs_sweeps"])
+    seed = int(run_spec["seed"])
+    simulated_stats: list[dict[str, float | None]] = []
+    for sample_index in range(num_samples):
+        print(
+            f"Simulating posterior-predictive sample {sample_index + 1} / {num_samples} for target '{target['source_name']}' and run '{run_spec['name']}'..."
+        )
+        sample_x = simulate_outcomes_for_bundle(
+            bundle,
+            x_0=panel_context["x_0"],
+            z=panel_context["z"],
+            gibbs_sweeps=gibbs_sweeps,
+            seed=seed + sample_index,
+        )
+        simulated_stats.append(
+            compute_panel_statistics(
+                sample_x,
+                z=panel_context["z"],
+                x_0=panel_context["x_0"],
+                s=int(panel_context["s"]),
+                field_matrix=bundle.field_matrix,
+                gamma_matrix=bundle.gamma_matrix,
+            )
+        )
+    stat_rows, summary = summarize_predictive_statistics(
+        observed_stats, simulated_stats
+    )
+    write_predictive_stats_tables(output_root, stat_rows)
+    metadata = {
+        "experiment_name": experiment_row.get("experiment_name", ""),
+        "experiment_path": str(experiment_root),
+        "run_name": run_spec["name"],
+        "run_slug": run_slug,
+        "source_type": target["source_type"],
+        "source_name": target["source_name"],
+        "source_slug": source_slug,
+        "latent_rank": int(bundle.latent_rank),
+        "B": bound_B,
+        "fit_intervention_model": bool(fit_intervention_model),
+        "num_samples": num_samples,
+        "gibbs_sweeps": gibbs_sweeps,
+        "seed": seed,
+        "summary": summary,
+    }
+    OmegaConf.save(
+        OmegaConf.create(metadata),
+        output_root / "posterior_predictive_metadata.yaml",
+    )
+    return {
+        "experiment_name": experiment_row.get("experiment_name", ""),
+        "experiment_slug": experiment_row.get("experiment_slug", ""),
+        "descriptor": experiment_row.get("descriptor", ""),
+        "experiment_path": str(experiment_root),
+        "intervention_source": experiment_row.get("intervention_source", ""),
+        "graph_source": experiment_row.get("graph_source", ""),
+        "N": panel_context["N"],
+        "T": panel_context["T"],
+        "s": panel_context["s"],
+        "run_name": run_spec["name"],
+        "run_slug": run_slug,
+        "source_type": target["source_type"],
+        "source_name": target["source_name"],
+        "source_slug": source_slug,
+        "latent_rank": int(bundle.latent_rank),
+        "B": bound_B if bound_B is not None else "",
+        "fit_intervention_model": bool(fit_intervention_model),
+        "num_samples": num_samples,
+        "gibbs_sweeps": gibbs_sweeps,
+        "seed": seed,
+        "mean_abs_zscore": float(summary["mean_abs_zscore"]),
+        "max_abs_zscore": float(summary["max_abs_zscore"]),
+        "coverage_rate": float(summary["coverage_rate"]),
+        "num_statistics": int(summary["num_statistics"]),
+        "output_path": str(output_root),
+    }
+
+
+def run_posterior_predictive(
+    generation_manifest_path: str | Path,
+    fit_manifest_path: str | Path,
+    target_pairs_path: str | Path,
+    spec_path: str | Path,
+    overwrite: bool = False,
+) -> Path:
+    generation_lookup = _index_generation_rows(generation_manifest_path)
+    fit_lookup = _resolve_fit_lookup(fit_manifest_path)
+    targets = _resolve_target_pairs(target_pairs_path, generation_lookup, fit_lookup)
+    runs = expand_named_entries(spec_path, "runs")
+    if not runs:
+        raise ValueError(f"No runs found in posterior predictive spec {spec_path}.")
+
+    predictive_rows: list[dict[str, object]] = []
+    for target in targets:
+        for run_spec in runs:
+            predictive_rows.append(
+                _simulate_target(
+                    target,
+                    run_spec,
+                    overwrite=overwrite,
+                )
+            )
+
+    manifest_path = (
+        Path(generation_manifest_path).resolve().parent
+        / POSTERIOR_PREDICTIVE_MANIFEST_NAME
+    )
+    write_csv_manifest(manifest_path, predictive_rows)
+    write_posterior_predictive_reports(manifest_path)
+    return manifest_path
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run posterior-predictive outcome simulations over explicit experiment/source targets."
+    )
+    parser.add_argument("--generation_manifest_path", required=True, type=str)
+    parser.add_argument("--fit_manifest_path", required=True, type=str)
+    parser.add_argument("--target_pairs_path", required=True, type=str)
+    parser.add_argument(
+        "--spec_path",
+        type=str,
+        default="data/configs/posterior_predictive_spec.yaml",
+    )
+    parser.add_argument("--overwrite", action="store_true")
+    args = parser.parse_args()
+
+    manifest_path = run_posterior_predictive(
+        args.generation_manifest_path,
+        args.fit_manifest_path,
+        args.target_pairs_path,
+        args.spec_path,
+        overwrite=args.overwrite,
+    )
+    print(f"Posterior predictive manifest: {manifest_path}")
+
+
+if __name__ == "__main__":
+    main()

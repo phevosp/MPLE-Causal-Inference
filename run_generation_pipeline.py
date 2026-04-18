@@ -212,12 +212,17 @@ def run_generation(spec_path: str | Path, overwrite: bool = False) -> Path:
     experiment_root = Path(str(experiments[0]["experiment_root"]))
     manifest_path = Path(str(experiments[0]["manifest_path"]))
     manifest_rows: list[dict[str, object]] = []
+    print(f"Loaded {len(experiments)} generation experiment(s) from {Path(spec_path)}.")
+    print(f"Experiment root: {experiment_root}")
 
     for experiment_spec in experiments:
+        print(f"Preparing experiment '{experiment_spec['name']}'...")
         config, dims = translate_generation_spec(experiment_spec)
+        print("Resolved dimensions:" f" N={dims['N']}, T={dims['T']}, s={dims['s']}")
         data_folder = experiment_root / slugify(experiment_spec["name"])
         if data_folder.exists():
             if overwrite:
+                print(f"Overwriting existing experiment folder {data_folder}.")
                 shutil.rmtree(data_folder)
             else:
                 raise FileExistsError(
@@ -244,8 +249,10 @@ def run_generation(spec_path: str | Path, overwrite: bool = False) -> Path:
         manifest_rows.append(
             manifest_row_for_experiment(experiment_spec, data_folder, dims)
         )
+        print(f"Recorded manifest entry for '{experiment_spec['name']}'.")
 
     write_csv_manifest(manifest_path, manifest_rows)
+    print(f"Wrote generation manifest to {manifest_path}.")
     return manifest_path
 
 

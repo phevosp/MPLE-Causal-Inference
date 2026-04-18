@@ -37,6 +37,12 @@ def realize_generation_inputs(config):
     rng = np.random.default_rng(int(config.generation_params.seed))
 
     generator = str(config.global_params.gamma_matrix_generator)
+    print(
+        "Resolving generation inputs:"
+        f" gamma_source={generator},"
+        f" x0_mode={config.global_params.x_0_generator},"
+        f" seed={int(config.generation_params.seed)}"
+    )
     fixed_gamma_metadata: dict[str, str] = {}
     if generator == "fixed_artifact":
         source = getattr(config.global_params, "fixed_gamma_source", None)
@@ -53,6 +59,7 @@ def realize_generation_inputs(config):
             gamma_matrix = sparse.load_npz(gamma_path).tocsr()
         else:
             gamma_matrix = np.asarray(np.load(gamma_path), dtype=float)
+        print(f"Loaded fixed graph artifact from {gamma_path}.")
         expected_n = int(config.global_params.N)
         if gamma_matrix.shape != (expected_n, expected_n):
             raise ValueError(
@@ -84,15 +91,24 @@ def realize_generation_inputs(config):
         )
         gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2.0
         np.fill_diagonal(gamma_matrix, 0.0)
+        print(
+            "Generated graph artifact with shape"
+            f" {gamma_matrix.shape} using {generator}."
+        )
 
     x0_mode = str(config.global_params.x_0_generator)
     if x0_mode == "bernoulli":
         p = float(config.global_params.x_0_params.p)
         x_0 = (rng.random(int(config.global_params.N)) < p).astype(float) * 2.0 - 1.0
+        print(f"Sampled x_0 from Bernoulli(p={p:.4f}).")
     elif x0_mode == "fixed":
         x_0 = np.full(
             int(config.global_params.N),
             float(config.global_params.x_0_params.fixed_val),
+        )
+        print(
+            "Initialized x_0 to a fixed value of"
+            f" {float(config.global_params.x_0_params.fixed_val):.4f}."
         )
     else:
         raise ValueError(f"Invalid x_0_generator: {x0_mode}")
@@ -127,6 +143,10 @@ def load_fixed_intervention_artifacts(
             )
         z = np.asarray(data["z"], dtype=float)
     z_0 = np.asarray(np.load(z0_path), dtype=float)
+    print(
+        "Loaded fixed intervention artifacts from"
+        f" panel={panel_path} and z0={z0_path}."
+    )
 
     expected_shape = (int(config.global_params.T), int(config.global_params.N))
     if z.shape != expected_shape:
@@ -166,27 +186,81 @@ def sample_z_t(x_prev, z_prev, config, rng):
     return spin_sample_from_field(h_z, rng)
 
 
-def sample_x_t(x_prev, z_curr, config, field_t, interaction_matrix, rng):
+def sample_x_t_with_parameters(
+    x_prev,
+    z_curr,
+    beta: float,
+    eta: float,
+    field_t,
+    interaction_matrix,
+    rng,
+    gibbs_sweeps: int,
+):
     x_t = x_prev.copy()
     interaction_x_t = np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
-    for _ in range(int(config.generation_params.gibbs_sweeps)):
-        for i in rng.permutation(int(config.global_params.N)):
+    for _ in range(int(gibbs_sweeps)):
+        for i in rng.permutation(int(x_t.shape[0])):
             old_x_i = x_t[i]
             h_x = (
                 field_t[i]
-                + config.estimation_params.beta * z_curr[i]
-                + config.estimation_params.eta * x_prev[i]
+                + float(beta) * z_curr[i]
+                + float(eta) * x_prev[i]
                 + interaction_x_t[i]
             )
             x_t[i] = spin_sample_from_field(h_x, rng)
             delta = x_t[i] - old_x_i
             if sparse.issparse(interaction_matrix):
-                interaction_x_t += (
-                    delta * interaction_matrix[:, i].toarray().ravel()
-                )
+                interaction_x_t += delta * interaction_matrix[:, i].toarray().ravel()
             else:
                 interaction_x_t += delta * interaction_matrix[:, i]
     return x_t
+
+
+def sample_x_t(x_prev, z_curr, config, field_t, interaction_matrix, rng):
+    return sample_x_t_with_parameters(
+        x_prev=x_prev,
+        z_curr=z_curr,
+        beta=float(config.estimation_params.beta),
+        eta=float(config.estimation_params.eta),
+        field_t=field_t,
+        interaction_matrix=interaction_matrix,
+        rng=rng,
+        gibbs_sweeps=int(config.generation_params.gibbs_sweeps),
+    )
+
+
+def simulate_outcomes_given_fixed_interventions(
+    x_0: np.ndarray,
+    z: np.ndarray,
+    field_matrix: np.ndarray,
+    interaction_matrix,
+    beta: float,
+    eta: float,
+    rng,
+    gibbs_sweeps: int,
+) -> np.ndarray:
+    z = np.asarray(z, dtype=float)
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    if z.ndim != 2 or field_matrix.shape != z.shape:
+        raise ValueError("z and field_matrix must both have shape (T, N).")
+    if x_0.shape != (z.shape[1],):
+        raise ValueError("x_0 shape must match the panel width.")
+    x = np.zeros_like(z, dtype=float)
+    x_prev = np.asarray(x_0, dtype=float)
+    for t in range(z.shape[0]):
+        x_curr = sample_x_t_with_parameters(
+            x_prev=x_prev,
+            z_curr=z[t, :],
+            beta=float(beta),
+            eta=float(eta),
+            field_t=field_matrix[t, :],
+            interaction_matrix=interaction_matrix,
+            rng=rng,
+            gibbs_sweeps=int(gibbs_sweeps),
+        )
+        x[t, :] = x_curr
+        x_prev = x_curr
+    return x
 
 
 def generate_data(
@@ -198,6 +272,12 @@ def generate_data(
 ):
     t_steps = int(config.global_params.T)
     n_nodes = int(config.global_params.N)
+    print(
+        "Generating panel data with"
+        f" T={t_steps}, N={n_nodes}, s={int(config.global_params.s)},"
+        f" intervention_mode={intervention_mode(config)},"
+        f" gibbs_sweeps={int(config.generation_params.gibbs_sweeps)}"
+    )
     interaction_matrix = compose_interaction_matrix(
         get_xi(config), artifacts.gamma_matrix
     )
@@ -212,13 +292,16 @@ def generate_data(
                 "fixed_z must be provided when intervention_mode='fixed_z'."
             )
         z[:, :] = np.asarray(fixed_z, dtype=float)
+        print("Using saved intervention panel z.")
 
     if mode == "generated_z":
+        print("Sampling intervention process z.")
         z[0, :] = (
             sample_z_t(x_0, z_0, config, rng)
             if int(config.global_params.s) == 0
             else -np.ones_like(x_0)
         )
+    print("Sampling outcomes x.")
     x[0, :] = sample_x_t(
         x_0, z[0, :], config, artifacts.field_matrix[0, :], interaction_matrix, rng
     )
@@ -254,6 +337,7 @@ def save_artifacts(
     z: np.ndarray,
     config_filename: str = "realized_config.yaml",
 ) -> None:
+    print(f"Saving experiment artifacts to {data_folder}...")
     data_folder.mkdir(parents=True, exist_ok=False)
     OmegaConf.save(config, data_folder / config_filename)
     OmegaConf.save(OmegaConf.create(metadata), data_folder / "experiment_metadata.yaml")
@@ -261,6 +345,7 @@ def save_artifacts(
     np.save(data_folder / "x_0.npy", x_0)
     np.save(data_folder / "z_0.npy", z_0)
     save_model_artifacts(data_folder, artifacts)
+    print("Finished saving generation artifacts.")
 
 
 def materialize_generation_experiment(
@@ -272,8 +357,14 @@ def materialize_generation_experiment(
     config_filename: str = "generation_realized_config.yaml",
 ) -> dict[str, object]:
     extra_metadata = dict(extra_metadata or {})
+    print(f"Materializing generation experiment '{descriptor}'...")
     config, gamma_matrix, x_0, rng, fixed_gamma_metadata = realize_generation_inputs(
         config
+    )
+    print(
+        "Building latent field artifacts with"
+        f" latent_rank={int(config.global_params.latent_rank)} and"
+        f" B={float(config.global_params.B):.4f}."
     )
     artifacts = build_synthetic_field(config, gamma_matrix)
 
@@ -281,9 +372,14 @@ def materialize_generation_experiment(
     if intervention_mode(config) == "fixed_z":
         fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
         config.global_params.s = derive_pre_intervention_steps(fixed_z)
+        print(
+            "Derived pre-intervention length from fixed z:"
+            f" s={int(config.global_params.s)}."
+        )
     else:
         fixed_z = None
         z_0 = np.zeros(int(config.global_params.N), dtype=float)
+        print("Using generated intervention path with z_0 initialized to zeros.")
 
     x, z, generated_z_0 = generate_data(config, artifacts, x_0, rng, fixed_z=fixed_z)
     if intervention_mode(config) != "fixed_z":
@@ -295,7 +391,9 @@ def materialize_generation_experiment(
         "config_name": config_label,
         "gamma_inf_norm": interaction_matrix_infinity_norm(artifacts.gamma_matrix),
         "gamma_fro_norm": (
-            float(np.sqrt(artifacts.gamma_matrix.multiply(artifacts.gamma_matrix).sum()))
+            float(
+                np.sqrt(artifacts.gamma_matrix.multiply(artifacts.gamma_matrix).sum())
+            )
             if sparse.issparse(artifacts.gamma_matrix)
             else float(np.linalg.norm(artifacts.gamma_matrix, ord="fro"))
         ),
@@ -318,4 +416,5 @@ def materialize_generation_experiment(
         z,
         config_filename=config_filename,
     )
+    print(f"Finished experiment '{descriptor}'.")
     return metadata

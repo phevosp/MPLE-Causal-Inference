@@ -32,6 +32,7 @@ from model_utils import (
     validate_fixed_scalar_params,
     with_theta_field,
 )
+from posterior_predictive_utils import save_estimated_parameter_bundle
 
 
 def load_yaml_config(path: str | Path):
@@ -84,7 +85,9 @@ def _canonicalize_theta(
             xi_interaction_bound = float(bound_B) / float(gamma_inf)
             effective_xi_bound = min(float(bound_B), xi_interaction_bound)
             theta_parts["xi"] = float(
-                np.clip(float(theta_parts["xi"]), -effective_xi_bound, effective_xi_bound)
+                np.clip(
+                    float(theta_parts["xi"]), -effective_xi_bound, effective_xi_bound
+                )
             )
         node_factors, time_factors = project_latent_field(
             theta_parts["node_factors"],
@@ -393,7 +396,9 @@ def compute_truth_metrics(
     )
     est_artifacts = with_theta_field(artifacts, est_parts)
     true_field = np.asarray(truth_context["field_matrix"], dtype=float)
-    est_interaction = compose_interaction_matrix(est_parts["xi"], artifacts.gamma_matrix)
+    est_interaction = compose_interaction_matrix(
+        est_parts["xi"], artifacts.gamma_matrix
+    )
     true_interaction = truth_context.get("interaction_matrix")
     if true_interaction is None:
         interaction_fro_error = None
@@ -586,25 +591,21 @@ def save_estimated_artifacts(
     fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> None:
+    est_parts = unpack_theta(
+        est_theta,
+        artifacts,
+        fit_intervention_model,
+        fixed_scalar_params=fixed_scalar_params,
+    )
     est_artifacts = with_theta_field(
         artifacts,
-        unpack_theta(
-            est_theta,
-            artifacts,
-            fit_intervention_model,
-            fixed_scalar_params=fixed_scalar_params,
-        ),
+        est_parts,
     )
     save_field_artifacts(
         Path(data_folder) / "estimated_field_artifacts.npz", est_artifacts
     )
     estimated_interaction = compose_interaction_matrix(
-        unpack_theta(
-            est_theta,
-            artifacts,
-            fit_intervention_model,
-            fixed_scalar_params=fixed_scalar_params,
-        )["xi"],
+        est_parts["xi"],
         artifacts.gamma_matrix,
     )
     if sparse.issparse(estimated_interaction):
@@ -617,6 +618,18 @@ def save_estimated_artifacts(
             Path(data_folder) / "estimated_interaction_matrix.npy",
             estimated_interaction,
         )
+    save_estimated_parameter_bundle(
+        Path(data_folder) / "estimated_parameter_bundle.npz",
+        beta=float(est_parts["beta"]),
+        xi=float(est_parts["xi"]),
+        eta=float(est_parts["eta"]),
+        zeta=float(est_parts["zeta"]),
+        psi=float(est_parts["psi"]),
+        fit_intervention_model=fit_intervention_model,
+        latent_rank=int(est_artifacts.latent_rank),
+        t_steps=int(est_artifacts.t_steps),
+        field_matrix=np.asarray(est_artifacts.field_matrix, dtype=float),
+    )
     if truth_context is None or truth_context.get("field_artifacts") is None:
         return
     save_field_artifacts(
@@ -691,19 +704,21 @@ def main() -> None:
         if "estimation_params" in config
         else False
     )
-    bound_B = (
-        float(config.global_params.B) if "B" in config.global_params else None
-    )
+    bound_B = float(config.global_params.B) if "B" in config.global_params else None
     optimizer_params = (
         config.optimizer_params
         if "optimizer_params" in config
         else OmegaConf.create({})
     )
-    steps = int(args.steps if args.steps is not None else optimizer_params.get("steps", 10000))
+    steps = int(
+        args.steps if args.steps is not None else optimizer_params.get("steps", 10000)
+    )
     tol = float(args.tol if args.tol is not None else optimizer_params.get("tol", 1e-9))
     seed = int(args.seed if args.seed is not None else optimizer_params.get("seed", 0))
     model_artifact_dir = (
-        Path(args.model_artifact_dir) if args.model_artifact_dir else Path(args.data_folder)
+        Path(args.model_artifact_dir)
+        if args.model_artifact_dir
+        else Path(args.data_folder)
     )
     truth_artifact_dir = (
         Path(args.truth_artifact_dir) if args.truth_artifact_dir else model_artifact_dir
@@ -802,9 +817,11 @@ def main() -> None:
     )
     log_estimates(
         logger,
-        "Estimated vs True Parameters:"
-        if truth_context is not None
-        else "Estimated Parameters:",
+        (
+            "Estimated vs True Parameters:"
+            if truth_context is not None
+            else "Estimated Parameters:"
+        ),
         scalar_rows,
     )
     metrics = compute_truth_metrics(

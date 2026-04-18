@@ -12,6 +12,7 @@ from omegaconf import OmegaConf
 
 from data.synthetic_data_generation import derive_pre_intervention_steps
 from pipeline_specs import expand_named_entries, read_csv_manifest, write_csv_manifest
+from report_parameter_recovery_detailed import write_fit_reports
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -26,10 +27,19 @@ def infer_panel_dimensions(experiment_path: str | Path) -> dict[str, int]:
         z = np.asarray(panel["z"], dtype=float)
     x_0 = np.asarray(np.load(x0_path), dtype=float)
     if x.ndim != 2 or z.shape != x.shape:
-        raise ValueError(f"Experiment panel must contain matching 2D x/z arrays: {panel_path}")
+        raise ValueError(
+            f"Experiment panel must contain matching 2D x/z arrays: {panel_path}"
+        )
     if x_0.shape != (x.shape[1],):
-        raise ValueError(f"x_0 shape {x_0.shape} does not match panel width {x.shape[1]}.")
-    return {"N": int(x.shape[1]), "T": int(x.shape[0]), "s": derive_pre_intervention_steps(z)}
+        raise ValueError(
+            f"x_0 shape {x_0.shape} does not match panel width {x.shape[1]}."
+        )
+    return {
+        "N": int(x.shape[1]),
+        "T": int(x.shape[0]),
+        "s": derive_pre_intervention_steps(z),
+    }
+
 
 def build_fit_config(
     variant: dict[str, Any],
@@ -52,9 +62,13 @@ def build_fit_config(
         },
         "estimation_params": {
             "fit_intervention_model": bool(estimation["fit_intervention_model"]),
-            "beta_mask_pre_intervention": bool(estimation["beta_mask_pre_intervention"]),
+            "beta_mask_pre_intervention": bool(
+                estimation["beta_mask_pre_intervention"]
+            ),
             "beta_mask_rescale": bool(estimation["beta_mask_rescale"]),
-            "fixed_scalar_params": dict(estimation.get("fixed_scalar_params", {}) or {}),
+            "fixed_scalar_params": dict(
+                estimation.get("fixed_scalar_params", {}) or {}
+            ),
         },
         "optimizer_params": {
             "steps": int(optimizer["steps"]),
@@ -124,7 +138,11 @@ def run_fit_variant(
     subprocess.run(command, check=True, cwd=REPO_ROOT)
     return {
         "experiment_name": experiment_row.get("experiment_name", ""),
+        "experiment_slug": experiment_row.get("experiment_slug", ""),
+        "descriptor": experiment_row.get("descriptor", ""),
         "experiment_path": str(experiment_root.resolve()),
+        "intervention_source": experiment_row.get("intervention_source", ""),
+        "graph_source": experiment_row.get("graph_source", ""),
         "variant_name": variant["name"],
         "variant_slug": variant["slug"],
         "fit_path": str(fit_root.resolve()),
@@ -133,7 +151,9 @@ def run_fit_variant(
         "s": dims["s"],
         "B": float(resolved_B),
         "latent_rank": int(fit_config.global_params.latent_rank),
-        "fit_intervention_model": bool(fit_config.estimation_params.fit_intervention_model),
+        "fit_intervention_model": bool(
+            fit_config.estimation_params.fit_intervention_model
+        ),
         "fixed_scalar_params": str(
             OmegaConf.to_container(
                 fit_config.estimation_params.fixed_scalar_params, resolve=True
@@ -151,7 +171,9 @@ def run_fits(
     generation_rows = read_csv_manifest(manifest_path)
     variants = expand_named_entries(fits_spec_path, "variants")
     if not generation_rows:
-        raise ValueError(f"No experiments found in generation manifest {manifest_path}.")
+        raise ValueError(
+            f"No experiments found in generation manifest {manifest_path}."
+        )
     if not variants:
         raise ValueError(f"No variants found in fit spec {fits_spec_path}.")
     for variant in variants:
@@ -161,9 +183,12 @@ def run_fits(
     fit_manifest_path = Path(str(variants[0]["fit_manifest_path"]))
     for experiment_row in generation_rows:
         for variant in variants:
-            fit_rows.append(run_fit_variant(experiment_row, variant, overwrite=overwrite))
+            fit_rows.append(
+                run_fit_variant(experiment_row, variant, overwrite=overwrite)
+            )
 
     write_csv_manifest(fit_manifest_path, fit_rows)
+    write_fit_reports(fit_manifest_path)
     return fit_manifest_path
 
 
