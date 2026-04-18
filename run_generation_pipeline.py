@@ -17,6 +17,7 @@ from pipeline_specs import expand_named_entries, slugify, write_csv_manifest
 
 
 def _maybe_load_fixed_graph_shape(spec: dict[str, Any]) -> int | None:
+    """Load shape of fixed graph, if source is fixed artifact"""
     graph = spec.get("graph", {})
     if graph.get("source", "generated") != "fixed_artifact":
         return None
@@ -35,6 +36,7 @@ def _maybe_load_fixed_graph_shape(spec: dict[str, Any]) -> int | None:
 def _maybe_load_fixed_intervention_shape(
     spec: dict[str, Any],
 ) -> tuple[int | None, int | None, int | None]:
+    """Load shape of fixed intervention panel, if source is fixed artifact"""
     intervention = spec.get("intervention", {})
     if intervention.get("source", "generated") != "fixed_artifact":
         return None, None, None
@@ -60,6 +62,7 @@ def _maybe_load_fixed_intervention_shape(
 
 
 def resolve_dimensions(spec: dict[str, Any]) -> dict[str, int]:
+    """Resolve dimensions N, T, s for an experiment spec, checking for consistency across sources."""
     dims = dict(spec.get("dimensions", {}) or {})
     graph_n = _maybe_load_fixed_graph_shape(spec)
     z_n, z_t, z_s = _maybe_load_fixed_intervention_shape(spec)
@@ -102,6 +105,7 @@ def resolve_dimensions(spec: dict[str, Any]) -> dict[str, int]:
 
 
 def translate_generation_spec(spec: dict[str, Any]):
+    """Translate an experiment spec into a config dict for generation."""
     dims = resolve_dimensions(spec)
     truth = dict(spec.get("truth", {}) or {})
     scalars = dict(truth.get("scalars", {}) or {})

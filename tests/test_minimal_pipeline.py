@@ -16,7 +16,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from data.synthetic_data_generation import load_fixed_intervention_artifacts
+from data.synthetic_data_generation import (
+    generate_data,
+    load_fixed_intervention_artifacts,
+    simulate_outcomes_given_fixed_interventions,
+)
 from mple import _canonicalize_theta
 from model_utils import (
     ModelArtifacts,
@@ -34,9 +38,11 @@ from model_utils import (
     unpack_theta,
 )
 from posterior_predictive_utils import (
+    OutcomeParameterBundle,
     compute_panel_statistics,
     load_fit_parameter_bundle,
     load_truth_parameter_bundle,
+    simulate_outcomes_for_bundle,
     summarize_predictive_statistics,
 )
 from report_posterior_predictive import (
@@ -64,6 +70,7 @@ def base_config() -> object:
             "global_params": {
                 "N": 4,
                 "T": 3,
+                "s": 1,
                 "B": 1.0,
                 "latent_rank": 0,
             },
@@ -76,6 +83,7 @@ def base_config() -> object:
             },
             "generation_params": {
                 "seed": 0,
+                "gibbs_sweeps": 1,
                 "intervention_mode": "generated_z",
             },
         }
@@ -136,6 +144,136 @@ class MinimalPipelineTests(unittest.TestCase):
             self.assertIn("fixed_z_panel_path", metadata)
         finally:
             shutil.rmtree(root, ignore_errors=True)
+
+    def test_generate_data_fixed_z_returns_supplied_panel_and_z0(self) -> None:
+        config = base_config()
+        config.generation_params.intervention_mode = "fixed_z"
+        config.generation_params.gibbs_sweeps = 2
+        x_0 = np.array([1.0, -1.0, 1.0, -1.0], dtype=float)
+        z_0 = np.array([-1.0, -1.0, -1.0, -1.0], dtype=float)
+        fixed_z = np.array(
+            [
+                [-1.0, -1.0, -1.0, -1.0],
+                [1.0, -1.0, 1.0, -1.0],
+                [1.0, 1.0, -1.0, -1.0],
+            ],
+            dtype=float,
+        )
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        artifacts = build_synthetic_field(config, gamma)
+        seed = 123
+
+        generated_x, generated_z, returned_z_0 = generate_data(
+            config,
+            artifacts,
+            x_0,
+            np.random.default_rng(seed),
+            fixed_z=fixed_z,
+            z_0=z_0,
+        )
+        expected_x = simulate_outcomes_given_fixed_interventions(
+            x_0=x_0,
+            z=fixed_z,
+            field_matrix=artifacts.field_matrix,
+            interaction_matrix=compose_interaction_matrix(
+                get_xi(config), artifacts.gamma_matrix
+            ),
+            beta=float(config.estimation_params.beta),
+            eta=float(config.estimation_params.eta),
+            rng=np.random.default_rng(seed),
+            gibbs_sweeps=int(config.generation_params.gibbs_sweeps),
+        )
+
+        self.assertTrue(np.array_equal(generated_z, fixed_z))
+        self.assertTrue(np.array_equal(returned_z_0, z_0))
+        self.assertTrue(np.array_equal(generated_x, expected_x))
+
+    def test_generate_data_generated_z_respects_pre_intervention_steps(self) -> None:
+        config = base_config()
+        config.global_params.T = 5
+        config.global_params.s = 2
+        x_0 = np.array([1.0, -1.0, 1.0, -1.0], dtype=float)
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        artifacts = build_synthetic_field(config, gamma)
+
+        _, z, z_0 = generate_data(
+            config,
+            artifacts,
+            x_0,
+            np.random.default_rng(321),
+        )
+
+        self.assertTrue(np.array_equal(z[:2, :], -np.ones((2, 4), dtype=float)))
+        self.assertTrue(np.array_equal(z_0, np.zeros(4, dtype=float)))
+
+    def test_posterior_predictive_matches_fixed_z_generation(self) -> None:
+        config = base_config()
+        config.generation_params.intervention_mode = "fixed_z"
+        config.generation_params.gibbs_sweeps = 2
+        x_0 = np.array([1.0, -1.0, 1.0, -1.0], dtype=float)
+        fixed_z = np.array(
+            [
+                [-1.0, -1.0, -1.0, -1.0],
+                [1.0, -1.0, 1.0, -1.0],
+                [1.0, 1.0, -1.0, -1.0],
+            ],
+            dtype=float,
+        )
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        artifacts = build_synthetic_field(config, gamma)
+        bundle = OutcomeParameterBundle(
+            source_type="truth",
+            source_name="truth",
+            beta=float(config.estimation_params.beta),
+            xi=float(config.estimation_params.xi),
+            eta=float(config.estimation_params.eta),
+            zeta=float(config.estimation_params.zeta),
+            psi=float(config.estimation_params.psi),
+            fit_intervention_model=True,
+            latent_rank=int(artifacts.latent_rank),
+            t_steps=int(config.global_params.T),
+            field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
+            gamma_matrix=artifacts.gamma_matrix,
+        )
+        seed = 777
+
+        generated_x, _, _ = generate_data(
+            config,
+            artifacts,
+            x_0,
+            np.random.default_rng(seed),
+            fixed_z=fixed_z,
+        )
+        predictive_x = simulate_outcomes_for_bundle(
+            bundle,
+            x_0=x_0,
+            z=fixed_z,
+            gibbs_sweeps=int(config.generation_params.gibbs_sweeps),
+            seed=seed,
+        )
+
+        self.assertTrue(np.array_equal(generated_x, predictive_x))
 
     def test_positive_rank_latent_field_is_realized(self) -> None:
         config = base_config()

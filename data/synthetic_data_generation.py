@@ -216,17 +216,52 @@ def sample_x_t_with_parameters(
     return x_t
 
 
-def sample_x_t(x_prev, z_curr, config, field_t, interaction_matrix, rng):
-    return sample_x_t_with_parameters(
-        x_prev=x_prev,
-        z_curr=z_curr,
-        beta=float(config.estimation_params.beta),
-        eta=float(config.estimation_params.eta),
-        field_t=field_t,
-        interaction_matrix=interaction_matrix,
-        rng=rng,
-        gibbs_sweeps=int(config.generation_params.gibbs_sweeps),
-    )
+def _simulate_panel(
+    x_0: np.ndarray,
+    z_0: np.ndarray,
+    field_matrix: np.ndarray,
+    interaction_matrix,
+    beta: float,
+    eta: float,
+    rng,
+    gibbs_sweeps: int,
+    z_sampler,
+) -> tuple[np.ndarray, np.ndarray]:
+    x_0 = np.asarray(x_0, dtype=float)
+    z_0 = np.asarray(z_0, dtype=float)
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    if field_matrix.ndim != 2:
+        raise ValueError("field_matrix must have shape (T, N).")
+
+    t_steps, n_nodes = field_matrix.shape
+    if x_0.shape != (n_nodes,):
+        raise ValueError("x_0 shape must match the panel width.")
+    if z_0.shape != (n_nodes,):
+        raise ValueError("z_0 shape must match the panel width.")
+
+    x = np.zeros((t_steps, n_nodes), dtype=float)
+    z = np.zeros((t_steps, n_nodes), dtype=float)
+    x_prev = x_0
+    z_prev = z_0
+    for t in range(t_steps):
+        z_curr = np.asarray(z_sampler(t, x_prev, z_prev), dtype=float)
+        if z_curr.shape != (n_nodes,):
+            raise ValueError("Each sampled z_t must have shape (N,).")
+        x_curr = sample_x_t_with_parameters(
+            x_prev=x_prev,
+            z_curr=z_curr,
+            beta=float(beta),
+            eta=float(eta),
+            field_t=field_matrix[t, :],
+            interaction_matrix=interaction_matrix,
+            rng=rng,
+            gibbs_sweeps=int(gibbs_sweeps),
+        )
+        z[t, :] = z_curr
+        x[t, :] = x_curr
+        x_prev = x_curr
+        z_prev = z_curr
+    return x, z
 
 
 def simulate_outcomes_given_fixed_interventions(
@@ -243,23 +278,17 @@ def simulate_outcomes_given_fixed_interventions(
     field_matrix = np.asarray(field_matrix, dtype=float)
     if z.ndim != 2 or field_matrix.shape != z.shape:
         raise ValueError("z and field_matrix must both have shape (T, N).")
-    if x_0.shape != (z.shape[1],):
-        raise ValueError("x_0 shape must match the panel width.")
-    x = np.zeros_like(z, dtype=float)
-    x_prev = np.asarray(x_0, dtype=float)
-    for t in range(z.shape[0]):
-        x_curr = sample_x_t_with_parameters(
-            x_prev=x_prev,
-            z_curr=z[t, :],
-            beta=float(beta),
-            eta=float(eta),
-            field_t=field_matrix[t, :],
-            interaction_matrix=interaction_matrix,
-            rng=rng,
-            gibbs_sweeps=int(gibbs_sweeps),
-        )
-        x[t, :] = x_curr
-        x_prev = x_curr
+    x, _ = _simulate_panel(
+        x_0=np.asarray(x_0, dtype=float),
+        z_0=np.zeros(z.shape[1], dtype=float),
+        field_matrix=field_matrix,
+        interaction_matrix=interaction_matrix,
+        beta=float(beta),
+        eta=float(eta),
+        rng=rng,
+        gibbs_sweeps=int(gibbs_sweeps),
+        z_sampler=lambda t, _x_prev, _z_prev: z[t, :],
+    )
     return x
 
 
@@ -269,21 +298,41 @@ def generate_data(
     x_0: np.ndarray,
     rng,
     fixed_z: np.ndarray | None = None,
+    z_0: np.ndarray | None = None,
 ):
     t_steps = int(config.global_params.T)
     n_nodes = int(config.global_params.N)
+    resolved_z_0 = (
+        np.zeros(n_nodes, dtype=float) if z_0 is None else np.asarray(z_0, dtype=float)
+    )
+    if resolved_z_0.shape != (n_nodes,):
+        raise ValueError(f"z_0 shape {resolved_z_0.shape} does not match N={n_nodes}.")
     print(
         "Generating panel data with"
         f" T={t_steps}, N={n_nodes}, s={int(config.global_params.s)},"
         f" intervention_mode={intervention_mode(config)},"
         f" gibbs_sweeps={int(config.generation_params.gibbs_sweeps)}"
     )
+    field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
     interaction_matrix = compose_interaction_matrix(
         get_xi(config), artifacts.gamma_matrix
     )
-    x = np.zeros((t_steps, n_nodes))
-    z = np.zeros((t_steps, n_nodes))
-    z_0 = np.zeros(n_nodes, dtype=float)
+    beta = float(config.estimation_params.beta)
+    eta = float(config.estimation_params.eta)
+    gibbs_sweeps = int(config.generation_params.gibbs_sweeps)
+
+    def simulate(z_sampler):
+        return _simulate_panel(
+            x_0=np.asarray(x_0, dtype=float),
+            z_0=resolved_z_0,
+            field_matrix=field_matrix,
+            interaction_matrix=interaction_matrix,
+            beta=beta,
+            eta=eta,
+            rng=rng,
+            gibbs_sweeps=gibbs_sweeps,
+            z_sampler=z_sampler,
+        )
 
     mode = intervention_mode(config)
     if mode == "fixed_z":
@@ -291,39 +340,27 @@ def generate_data(
             raise ValueError(
                 "fixed_z must be provided when intervention_mode='fixed_z'."
             )
-        z[:, :] = np.asarray(fixed_z, dtype=float)
-        print("Using saved intervention panel z.")
-
-    if mode == "generated_z":
-        print("Sampling intervention process z.")
-        z[0, :] = (
-            sample_z_t(x_0, z_0, config, rng)
-            if int(config.global_params.s) == 0
-            else -np.ones_like(x_0)
-        )
-    print("Sampling outcomes x.")
-    x[0, :] = sample_x_t(
-        x_0, z[0, :], config, artifacts.field_matrix[0, :], interaction_matrix, rng
-    )
-
-    for t in range(1, t_steps):
-        print(f"Sampling time step {t}...")
-        if mode == "generated_z":
-            z[t, :] = (
-                sample_z_t(x[t - 1, :], z[t - 1, :], config, rng)
-                if t >= int(config.global_params.s)
-                else -np.ones_like(x_0)
+        z = np.asarray(fixed_z, dtype=float)
+        if z.shape != (t_steps, n_nodes):
+            raise ValueError(
+                f"fixed_z shape {z.shape} does not match configured (T, N)=({t_steps}, {n_nodes})."
             )
-        x[t, :] = sample_x_t(
-            x[t - 1, :],
-            z[t, :],
-            config,
-            artifacts.field_matrix[t, :],
-            interaction_matrix,
-            rng,
-        )
+        print("Using saved intervention panel z.")
+        x, z = simulate(lambda t, _x_prev, _z_prev: z[t, :])
+        return x, z, resolved_z_0
 
-    return x, z, z_0
+    if mode != "generated_z":
+        raise ValueError(f"Invalid intervention_mode: {mode}")
+
+    print("Sampling intervention process z and outcomes x.")
+    x, z = simulate(
+        z_sampler=lambda t, x_prev, z_prev: (
+            sample_z_t(x_prev, z_prev, config, rng)
+            if t >= int(config.global_params.s)
+            else -np.ones_like(x_prev)
+        )
+    )
+    return x, z, resolved_z_0
 
 
 def save_artifacts(
@@ -381,9 +418,14 @@ def materialize_generation_experiment(
         z_0 = np.zeros(int(config.global_params.N), dtype=float)
         print("Using generated intervention path with z_0 initialized to zeros.")
 
-    x, z, generated_z_0 = generate_data(config, artifacts, x_0, rng, fixed_z=fixed_z)
-    if intervention_mode(config) != "fixed_z":
-        z_0 = generated_z_0
+    x, z, z_0 = generate_data(
+        config,
+        artifacts,
+        x_0,
+        rng,
+        fixed_z=fixed_z,
+        z_0=z_0,
+    )
 
     metadata = {
         "descriptor": descriptor,
