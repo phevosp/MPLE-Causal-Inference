@@ -86,7 +86,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tau_zero_mean", action="store_true")
     parser.add_argument("--tau_smoothness_lambda", type=float, default=0.0)
     parser.add_argument("--beta_mask_pre_intervention", action="store_true")
-    parser.add_argument("--beta_mask_rescale", action="store_true")
     return parser.parse_args()
 
 
@@ -214,7 +213,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
             tau_zero_mean=args.tau_zero_mean,
             tau_smoothness_lambda=args.tau_smoothness_lambda,
             beta_mask_pre_intervention=bool(args.beta_mask_pre_intervention),
-            beta_mask_rescale=bool(args.beta_mask_rescale),
         )
         metadata = {
             "source": SOURCE_LABEL,
@@ -241,7 +239,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
             "tau_zero_mean": bool(args.tau_zero_mean),
             "tau_smoothness_lambda": float(args.tau_smoothness_lambda),
             "beta_mask_pre_intervention": bool(args.beta_mask_pre_intervention),
-            "beta_mask_rescale": bool(args.beta_mask_rescale),
             "shared_panel_dir": str(shared_panel_dir),
             "shared_panel_path": str(shared_panel_dir / "panel_data.npz"),
             "shared_x0_path": str(shared_panel_dir / "x_0.npy"),

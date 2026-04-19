@@ -281,6 +281,10 @@ Useful experiment-runner flags:
 - `--steps`
 - `--tol`
 - `--seed`
+- `--n_starts`
+- `--adam_steps`
+- `--adam_lr`
+- `--adam_device`
 - `--max_experiments`
 - `--lags`
 - `--outcomes`
@@ -292,7 +296,6 @@ Useful experiment-runner flags:
 - `--latent_rank`
 - `--latent_B`
 - `--beta_mask_pre_intervention`
-- `--beta_mask_rescale`
 
 Two additional flags are currently passed through into saved configs and metadata:
 
@@ -359,6 +362,55 @@ The included intervention-library template materializes:
 - `single_unit_0_all_ones`
 
 Saved interventions use the model's internal `-1/+1` coding. Posterior predictive targets for USCountyVaccination should use `source_type=fit`; `source_type=truth` is rejected because real-data experiments set `has_truth: false`.
+
+## Start-Week, Rank, And B Sensitivity
+
+Use `run_uscounty_sensitivity_analysis.py` to sweep:
+
+- start week, by slicing existing USCounty experiment panels into derived experiment folders
+- latent field rank, through generated fit variants
+- global parameter bound `B`, through generated fit variants
+
+Materialize derived experiments and write the generated fit spec without launching MPLE:
+
+```bash
+pixi run python run_uscounty_sensitivity_analysis.py \
+  --source_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --output_root experiments/USCountyVaccination_US_sensitivity \
+  --experiment_names outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity \
+  --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
+  --latent_ranks 0 10 20 40 \
+  --B_values 0.5 1 2 5 \
+  --overwrite
+```
+
+Run the same sweep and fit every derived experiment/variant pair:
+
+```bash
+pixi run python run_uscounty_sensitivity_analysis.py \
+  --source_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --output_root experiments/USCountyVaccination_US_sensitivity \
+  --experiment_names outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity \
+  --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
+  --latent_ranks 0 10 20 40 \
+  --B_values 0.5 1 2 5 \
+  --n_starts 5 \
+  --adam_steps 1000 \
+  --overwrite \
+  --run_fits
+```
+
+Outputs are written under the chosen sensitivity root:
+
+- `generation_manifest.csv`
+- `fits_sensitivity_spec.yaml`
+- `fit_manifest.csv` after `--run_fits`
+- `sensitivity_summary.csv`
+- `sensitivity_summary.md`
+
+Because these are real-data experiments without known truth, `sensitivity_summary.csv` ranks rows by lowest MPLE `final_loss`. For additional model-checking, use the winning sensitivity fits as inputs to the existing posterior-predictive or counterfactual workflow.
+
+For non-convex latent fits, the sensitivity runner defaults to multi-start plus a two-stage optimizer: PyTorch Adam first, then L-BFGS-B. Each fit writes `optimizer_start_summary.csv`, which is useful for checking whether several starts found similar beta estimates or whether one basin dominated.
 
 ## Processed Outputs
 
@@ -511,7 +563,6 @@ pixi run python data/USCountyVaccination/create_us_county_vaccination_experiment
   --latent_rank 6 \
   --latent_B 1.5 \
   --beta_mask_pre_intervention \
-  --beta_mask_rescale \
   --overwrite
 ```
 

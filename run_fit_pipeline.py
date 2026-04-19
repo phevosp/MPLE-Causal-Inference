@@ -52,6 +52,16 @@ def build_fit_config(
     if latent_rank < 0:
         raise ValueError("latent_rank must be nonnegative.")
 
+    optimizer_config: dict[str, Any] = {
+        "steps": int(optimizer["steps"]),
+        "tol": float(optimizer["tol"]),
+        "seed": int(optimizer["seed"]),
+        "n_starts": int(optimizer.get("n_starts", 1)),
+        "adam_steps": int(optimizer.get("adam_steps", 0)),
+        "adam_lr": float(optimizer.get("adam_lr", 1.0e-2)),
+        "adam_device": str(optimizer.get("adam_device", "cpu")),
+    }
+
     config_dict: dict[str, Any] = {
         "global_params": {
             "N": dims["N"],
@@ -65,16 +75,11 @@ def build_fit_config(
             "beta_mask_pre_intervention": bool(
                 estimation["beta_mask_pre_intervention"]
             ),
-            "beta_mask_rescale": bool(estimation["beta_mask_rescale"]),
             "fixed_scalar_params": dict(
                 estimation.get("fixed_scalar_params", {}) or {}
             ),
         },
-        "optimizer_params": {
-            "steps": int(optimizer["steps"]),
-            "tol": float(optimizer["tol"]),
-            "seed": int(optimizer["seed"]),
-        },
+        "optimizer_params": optimizer_config,
     }
     return OmegaConf.create(config_dict), bound_B
 

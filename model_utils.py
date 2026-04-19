@@ -144,6 +144,14 @@ def compose_latent_field_matrix(
     )
 
 
+def latent_field_bound_norm(field_matrix: np.ndarray) -> float:
+    """Entrywise infinity norm used for the latent-field B constraint."""
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    if field_matrix.size == 0:
+        return 0.0
+    return float(np.max(np.abs(field_matrix)))
+
+
 def zero_latent_factors(
     n_nodes: int, t_steps: int
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -159,7 +167,7 @@ def project_latent_field(
     node_factors = np.asarray(node_factors, dtype=float).copy()
     time_factors = np.asarray(time_factors, dtype=float).copy()
     field_matrix = compose_latent_field_matrix(node_factors, time_factors)
-    norm = float(np.linalg.norm(field_matrix, ord=np.inf))
+    norm = latent_field_bound_norm(field_matrix)
     if norm <= bound or norm < 1e-12:
         return node_factors, time_factors
     scale = np.sqrt(bound / norm)

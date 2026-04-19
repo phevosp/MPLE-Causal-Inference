@@ -324,7 +324,7 @@ def save_estimated_parameter_bundle(
     field_matrix: np.ndarray,
 ) -> None:
     np.savez(
-        Path(path),
+        _io_path(path),
         beta=np.asarray(float(beta)),
         xi=np.asarray(float(xi)),
         eta=np.asarray(float(eta)),

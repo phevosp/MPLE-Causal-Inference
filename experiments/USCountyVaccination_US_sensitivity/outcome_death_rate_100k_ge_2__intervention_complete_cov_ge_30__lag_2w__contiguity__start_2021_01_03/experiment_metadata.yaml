@@ -1,0 +1,79 @@
+source: USCountyVaccination
+state: Mainland US counties with total_population >= 2000
+has_truth: false
+x_sign_convention: +1_above_threshold_-1_below_threshold
+z_sign_convention: +1_above_threshold_-1_below_threshold
+lag_application: intervention_only
+outcome_code: death_rate_100k_ge_2
+outcome_label: death_rate_100k >= 2
+outcome_notes: +1 when weekly death rate per 100k is at least 2.
+intervention_code: complete_cov_ge_30
+intervention_label: complete_cov >= 30
+intervention_notes: +1 when complete vaccination coverage is at least 30 percentage
+  points.
+intervention_family: core
+lag_code: 2w
+lag_steps: 2
+network_name: contiguity
+field_basis_mode: acs_2021
+field_basis_names:
+- population_density
+- senior_population
+- college_education
+- poverty_rate
+- log_population
+- median_household_income
+- cdc_svi_2022_overall
+- usda_ers_rucc_2023
+model_field_mode: shared_feature_field
+latent_rank: null
+latent_B: null
+tau_zero_mean: false
+tau_smoothness_lambda: 0.0
+beta_mask_pre_intervention: false
+beta_mask_rescale: false
+shared_panel_dir: ''
+shared_panel_path: ''
+shared_x0_path: ''
+shared_z0_path: ''
+shared_node_index_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\shared_panels\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__scope_trimmed\node_index.csv
+shared_time_index_path: ''
+realized_outcome_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\realized_outcomes\outcome_death_rate_100k_ge_2__scope_trimmed
+realized_intervention_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\realized_interventions\intervention_complete_cov_ge_30__lag_2w__scope_trimmed
+realized_network_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\realized_networks\network_contiguity__scope_trimmed
+trim_applied: true
+trim_rule: mainland_us_and_total_population_ge_2000
+trim_scope_label: Mainland US counties with total_population >= 2000
+pre_trim_node_count: 3213
+trimmed_node_count: 3009
+trim_excluded_node_count: 204
+trim_excluded_non_mainland_count: 110
+trim_excluded_population_below_2000_count: 94
+trim_excluded_missing_population_count: 0
+trim_population_min: 2000
+requested_node_count: 3009
+requested_calendar_weeks: 121
+requested_start_date: '2020-01-26'
+requested_end_date: '2022-05-15'
+support_selection_rule: sensitivity_start_week_slice_from_existing_panel
+realized_node_count: 3009
+realized_calendar_weeks: 121
+weeks_dropped_due_to_missing_or_lag: 0
+dropped_node_count: 0
+node_count: 3009
+time_steps: 71
+pre_intervention_steps: 6
+realized_week_start_date: '2020-12-28'
+realized_week_end_date: '2022-05-15'
+nnz: 17480
+undirected_edges: 8740
+avg_degree: 0.41494563927265815
+max_degree: 0.9999999999999998
+gamma_inf_norm: 0.9999999999999998
+gamma_fro_norm: 9.443710789164804
+sensitivity_parent_experiment_name: outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity
+sensitivity_parent_experiment_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity
+sensitivity_requested_start_date: '2021-01-03'
+sensitivity_start_week_end_date: '2021-01-03'
+sensitivity_start_index: 49
+sensitivity_dropped_transition_weeks_for_start: 49

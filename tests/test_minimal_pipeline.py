@@ -27,7 +27,7 @@ from data.USCountyVaccination.experiment_artifacts import (
     create_config as create_us_county_config,
     save_experiment as save_us_county_experiment,
 )
-from mple import _canonicalize_theta
+from mple import _canonicalize_theta, fit_mple
 from model_utils import (
     ModelArtifacts,
     build_fit_model_artifacts,
@@ -37,9 +37,11 @@ from model_utils import (
     get_xi,
     interaction_effect,
     interaction_matrix_infinity_norm,
+    latent_field_bound_norm,
     load_model_artifacts,
     load_true_parameters,
     parameter_names,
+    project_latent_field,
     save_model_artifacts,
     unpack_theta,
 )
@@ -72,6 +74,10 @@ from run_posterior_predictive_pipeline import (
     _resolve_fit_lookup,
     _resolve_target_pairs,
     run_posterior_predictive,
+)
+from run_uscounty_sensitivity_analysis import (
+    materialize_sensitivity_experiments,
+    write_sensitivity_fit_spec,
 )
 
 
@@ -306,8 +312,22 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(artifacts.time_factors.shape, (3, 2))
         self.assertEqual(field_matrix.shape, (3, 4))
         self.assertLessEqual(
-            float(np.linalg.norm(field_matrix, ord=np.inf)), 1.0 + 1e-8
+            latent_field_bound_norm(field_matrix), 1.0 + 1e-8
         )
+
+    def test_latent_field_projection_bounds_max_entry_not_row_sum(self) -> None:
+        node_factors = np.array([[2.0], [2.0]])
+        time_factors = np.array([[2.0], [2.0]])
+
+        projected_nodes, projected_times = project_latent_field(
+            node_factors,
+            time_factors,
+            bound=1.0,
+        )
+        field_matrix = compose_latent_field_matrix(projected_nodes, projected_times)
+
+        self.assertLessEqual(latent_field_bound_norm(field_matrix), 1.0 + 1e-12)
+        self.assertGreater(float(np.linalg.norm(field_matrix, ord=np.inf)), 1.0)
 
     def test_model_artifact_roundtrip_and_true_parameter_loading(self) -> None:
         config = base_config()
@@ -355,6 +375,44 @@ class MinimalPipelineTests(unittest.TestCase):
             interaction_matrix_infinity_norm(interaction),
             1.0 + 1e-12,
         )
+
+    def test_fit_mple_supports_adam_multistart(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        z_0 = np.array([-1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+        )
+        param_keys = parameter_names(artifacts, fit_intervention_model=False)
+        theta_hat, loss_history, result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            z_0=z_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=2,
+            tol=1.0e-6,
+            seed=11,
+            verbose_every=0,
+            fit_intervention_model=False,
+            bound_B=1.0,
+            n_starts=2,
+            adam_steps=2,
+            adam_lr=1.0e-2,
+        )
+
+        self.assertEqual(theta_hat.shape, (len(param_keys),))
+        self.assertTrue(np.isfinite(loss_history[-1]))
+        self.assertEqual(result["n_starts"], 2)
+        self.assertEqual(result["adam_steps"], 2)
+        self.assertEqual(len(result["start_summaries"]), 2)
 
     def test_parameter_names_and_unpack_respect_fixed_scalars(self) -> None:
         artifacts = ModelArtifacts(
@@ -661,7 +719,6 @@ class FitReportingTests(unittest.TestCase):
                     "  estimation:",
                     "    fit_intervention_model: true",
                     "    beta_mask_pre_intervention: false",
-                    "    beta_mask_rescale: false",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",
@@ -763,19 +820,21 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         )
         time_index = pd.DataFrame(
             {
-                "WeekStartDate": pd.date_range("2021-01-03", periods=4, freq="W-SUN"),
-                "WeekEndDate": pd.date_range("2021-01-09", periods=4, freq="W-SAT"),
-                "iso_year": [2021] * 4,
-                "iso_week": [1, 2, 3, 4],
-                "model_index": [0, 1, 2, 3],
+                "WeekStartDate": pd.date_range("2021-01-03", periods=5, freq="W-SUN"),
+                "WeekEndDate": pd.date_range("2021-01-09", periods=5, freq="W-SAT"),
+                "iso_year": [2021] * 5,
+                "iso_week": [1, 2, 3, 4, 5],
+                "model_index": [0, 1, 2, 3, 4],
             }
         )
+        x_all = np.vstack([x_0[None, :], x])
+        z_all = np.vstack([z_0[None, :], z])
         panel = pd.DataFrame(
             {
                 "WeekEndDate": np.repeat(time_index["WeekEndDate"].to_numpy(), 4),
-                "fips": np.tile(node_table["fips"].to_numpy(), 4),
-                "Outcome_pm1": x.reshape(-1),
-                "Intervention_pm1": z.reshape(-1),
+                "fips": np.tile(node_table["fips"].to_numpy(), 5),
+                "Outcome_pm1": x_all.reshape(-1),
+                "Intervention_pm1": z_all.reshape(-1),
             }
         )
         gamma = sparse.csr_matrix(
@@ -807,7 +866,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             tau_zero_mean=False,
             tau_smoothness_lambda=0.0,
             beta_mask_pre_intervention=True,
-            beta_mask_rescale=True,
         )
         metadata = {
             "source": "USCountyVaccination",
@@ -875,6 +933,48 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         for key in ["experiment_name", "experiment_path", "intervention_source", "graph_source", "N", "T", "s", "has_truth"]:
             self.assertIn(key, manifest_row)
 
+    def test_us_county_sensitivity_materializes_start_week_slices(self) -> None:
+        _, manifest_path = self._write_us_county_experiment()
+        output_root = self.root / "sensitivity"
+
+        sensitivity_manifest = materialize_sensitivity_experiments(
+            source_manifest_path=manifest_path,
+            output_root=output_root,
+            start_dates=["2021-01-23"],
+            overwrite=True,
+        )
+        fit_spec_path = write_sensitivity_fit_spec(
+            output_root=output_root,
+            latent_ranks=[0, 2],
+            b_values=[1.0, 5.0],
+            steps=3,
+            tol=1.0e-6,
+            seed=9,
+            fit_intervention_model=False,
+            beta_mask_pre_intervention=True,
+        )
+
+        with sensitivity_manifest.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["T"], "2")
+        self.assertEqual(rows[0]["s"], "0")
+        self.assertEqual(rows[0]["sensitivity_start_index"], "2")
+        self.assertEqual(rows[0]["sensitivity_start_week_end_date"], "2021-01-23")
+
+        derived_root = Path(rows[0]["experiment_path"])
+        self.assertTrue((derived_root / "panel_data.npz").exists())
+        self.assertTrue(np.array_equal(np.load(derived_root / "x_0.npy"), np.array([1, 1, -1, -1], dtype=np.int8)))
+        derived_dims = infer_panel_dimensions(derived_root)
+        self.assertEqual(derived_dims, {"N": 4, "T": 2, "s": 0})
+
+        fit_spec = OmegaConf.load(fit_spec_path)
+        self.assertEqual(len(fit_spec.variants), 4)
+        self.assertEqual(fit_spec.base.optimizer.steps, 3)
+        self.assertEqual(fit_spec.base.optimizer.n_starts, 1)
+        self.assertEqual(fit_spec.base.optimizer.adam_steps, 0)
+        self.assertFalse(bool(fit_spec.base.estimation.fit_intervention_model))
+
     def test_us_county_truth_targets_are_rejected(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
         target_pairs_path = self._write_target_pairs(
@@ -919,7 +1019,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
                     "  estimation:",
                     "    fit_intervention_model: true",
                     "    beta_mask_pre_intervention: true",
-                    "    beta_mask_rescale: true",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",
@@ -1446,7 +1545,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "  estimation:",
                     "    fit_intervention_model: true",
                     "    beta_mask_pre_intervention: false",
-                    "    beta_mask_rescale: false",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",
@@ -1617,7 +1715,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "  estimation:",
                     "    fit_intervention_model: true",
                     "    beta_mask_pre_intervention: false",
-                    "    beta_mask_rescale: false",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",

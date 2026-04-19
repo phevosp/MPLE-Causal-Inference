@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
+from model_utils import latent_field_bound_norm
 from pipeline_specs import read_csv_manifest
 
 
@@ -146,11 +147,11 @@ def latent_diagnostics(folder: Path) -> dict[str, object]:
     if estimated_field is None:
         return {}
     row: dict[str, object] = {
-        "estimated_field_inf_norm": float(np.linalg.norm(estimated_field, ord=np.inf)),
+        "estimated_field_inf_norm": latent_field_bound_norm(estimated_field),
         "estimated_field_rank": int(np.linalg.matrix_rank(estimated_field)),
     }
     if true_field is not None:
-        row["true_field_inf_norm"] = float(np.linalg.norm(true_field, ord=np.inf))
+        row["true_field_inf_norm"] = latent_field_bound_norm(true_field)
         row["true_field_rank"] = int(np.linalg.matrix_rank(true_field))
     return row
 

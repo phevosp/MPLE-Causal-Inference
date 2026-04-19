@@ -5,12 +5,15 @@ base:
     steps: 3000
     tol: 1.0e-9
     seed: 0
+    n_starts: 1
+    adam_steps: 0
+    adam_lr: 1.0e-2
+    adam_device: cpu
   B: 1.0
   latent_rank: 0
   estimation:
     fit_intervention_model: true
     beta_mask_pre_intervention: false
-    beta_mask_rescale: false
     fixed_scalar_params: {}
 
 variants:

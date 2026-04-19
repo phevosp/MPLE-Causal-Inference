@@ -46,6 +46,7 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census, CDC SVI, USDA ERS sources | cached raw inputs |
 | Real-data preprocessing and realization | `data/USCountyVaccination/preprocess_us_county_vaccination_data.py` | cached raw inputs | processed panels, `realized_*`, `shared_panels` |
 | Real-data experiment materialization | `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | `realized_*`, `shared_panels` | shared-compatible experiment folders, `generation_manifest.csv` |
+| Real-data sensitivity sweep | `run_uscounty_sensitivity_analysis.py` | USCounty generation manifest, start dates, latent ranks, `B` values | sliced experiment folders, sensitivity fit spec, fit manifest, sensitivity summary |
 
 ## Synthetic And Hybrid Pipeline
 
@@ -109,9 +110,8 @@ Each fit variant controls:
 - `latent_rank`
 - `estimation.fit_intervention_model`
 - `estimation.beta_mask_pre_intervention`
-- `estimation.beta_mask_rescale`
 - `estimation.fixed_scalar_params`
-- optimizer `steps`, `tol`, and `seed`
+- optimizer `steps`, `tol`, `seed`, `n_starts`, `adam_steps`, `adam_lr`, and `adam_device`
 
 Outputs:
 
@@ -363,15 +363,17 @@ pixi run python -u mple.py \
 
 Useful flags:
 
-- `--steps`, `--tol`, `--seed` override optimizer settings
+- `--steps`, `--tol`, `--seed`, `--n_starts`, `--adam_steps`, `--adam_lr`, and `--adam_device` override optimizer settings
 - `--outcome_only` disables fitting the intervention process
 - `--log_file` redirects the MPLE log
+
+When `n_starts > 1`, MPLE runs independent random starts and keeps the fit with the lowest final pseudo-negative log likelihood. When `adam_steps > 0`, each start first runs a PyTorch Adam basin-search stage and then uses L-BFGS-B for the final polish. Per-start diagnostics are saved to `optimizer_start_summary.csv`.
 
 `global_params.B` is the active fit-time bound:
 
 - scalar parameters are clipped to `[-B, B]`
 - `xi` is also constrained so that `||xi * Gamma||_inf <= B`
-- the latent field is projected so its realized infinity norm respects the same bound
+- the latent field is projected so its maximum absolute entry respects the same bound
 
 ## Shell Wrappers
 
@@ -442,3 +444,21 @@ pixi run python run_posterior_predictive_pipeline.py \
 ```
 
 The full US county workflow is documented in [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md).
+
+Start-week, latent-rank, and `B` sensitivity for USCountyVaccination is handled by:
+
+```bash
+pixi run python run_uscounty_sensitivity_analysis.py \
+  --source_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --output_root experiments/USCountyVaccination_US_sensitivity \
+  --experiment_names outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity \
+  --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
+  --latent_ranks 0 10 20 40 \
+  --B_values 0.5 1 2 5 \
+  --n_starts 5 \
+  --adam_steps 1000 \
+  --overwrite \
+  --run_fits
+```
+
+This writes `sensitivity_summary.csv` and `sensitivity_summary.md` ranked by MPLE final loss.

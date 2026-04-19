@@ -6,11 +6,12 @@ import argparse
 import csv
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from omegaconf import OmegaConf
 from scipy import sparse
-from scipy.optimize import minimize
+from scipy.optimize import OptimizeResult, minimize
 
 from model_utils import (
     ModelArtifacts,
@@ -21,6 +22,7 @@ from model_utils import (
     interaction_effect,
     interaction_matrix_infinity_norm,
     intervention_model_enabled,
+    latent_field_bound_norm,
     load_model_artifacts,
     pack_theta,
     parameter_names,
@@ -32,7 +34,7 @@ from model_utils import (
     validate_fixed_scalar_params,
     with_theta_field,
 )
-from posterior_predictive_utils import save_estimated_parameter_bundle
+from posterior_predictive_utils import _io_path, save_estimated_parameter_bundle
 
 
 def load_yaml_config(path: str | Path):
@@ -139,7 +141,6 @@ def pseudo_nll(
     interaction_effect_x: np.ndarray,
     fit_intervention_model: bool = True,
     beta_mask_pre_intervention: bool = False,
-    beta_mask_rescale: bool = False,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> tuple[float, np.ndarray]:
     if x.shape[0] != artifacts.t_steps:
@@ -154,16 +155,10 @@ def pseudo_nll(
     prev_x = np.vstack([x_0, x[:-1, :]])
     prev_z = np.vstack([z_0, z[:-1, :]])
     beta_feature = np.asarray(z, dtype=float)
-    beta_scale = 1.0
     if beta_mask_pre_intervention:
         beta_mask = np.ones_like(beta_feature)
         beta_mask[:s, :] = 0.0
         beta_feature = beta_feature * beta_mask
-        if beta_mask_rescale:
-            active = float(beta_mask.sum())
-            if active > 0.0:
-                beta_scale = float(beta_mask.size / active)
-    beta_feature *= beta_scale
     field_matrix = compose_field_matrix_from_theta(theta_parts, artifacts)
     h_x = (
         field_matrix
@@ -212,46 +207,228 @@ def pseudo_nll(
     return float(total_loss), np.concatenate(grad_parts)
 
 
-def fit_mple(
+def _pseudo_loss(
     x: np.ndarray,
     z: np.ndarray,
+    theta: np.ndarray,
+    x_0: np.ndarray,
+    z_0: np.ndarray,
+    s: int,
+    artifacts: ModelArtifacts,
+    interaction_effect_x: np.ndarray,
+    fit_intervention_model: bool,
+    beta_mask_pre_intervention: bool,
+    fixed_scalar_params: dict[str, float] | None,
+) -> float:
+    loss, _ = pseudo_nll(
+        x,
+        z,
+        theta,
+        x_0,
+        z_0,
+        s,
+        artifacts=artifacts,
+        interaction_effect_x=interaction_effect_x,
+        fit_intervention_model=fit_intervention_model,
+        beta_mask_pre_intervention=beta_mask_pre_intervention,
+        fixed_scalar_params=fixed_scalar_params,
+    )
+    return float(loss)
+
+
+def _torch_adam_stage(
+    x: np.ndarray,
+    z: np.ndarray,
+    theta_init: np.ndarray,
+    x_0: np.ndarray,
+    z_0: np.ndarray,
+    s: int,
+    artifacts: ModelArtifacts,
+    interaction_effect_x: np.ndarray,
+    fit_intervention_model: bool,
+    bound_B: float | None,
+    beta_mask_pre_intervention: bool,
+    fixed_scalar_params: dict[str, float] | None,
+    steps: int,
+    lr: float,
+    device: str,
+    logger=None,
+    verbose_every: int = 100,
+    start_index: int = 0,
+) -> tuple[np.ndarray, list[float]]:
+    try:
+        import torch
+    except ImportError as exc:
+        raise ImportError(
+            "PyTorch is required for optimizer_params.adam_steps > 0."
+        ) from exc
+
+    if steps <= 0:
+        return theta_init, []
+    if lr <= 0.0:
+        raise ValueError("adam_lr must be positive when adam_steps > 0.")
+
+    fixed = validate_fixed_scalar_params(
+        fixed_scalar_params, fit_intervention_model=fit_intervention_model
+    )
+    scalar_names = scalar_parameter_names(fit_intervention_model)
+    n_nodes = int(artifacts.gamma_matrix.shape[0])
+    t_steps = int(artifacts.t_steps)
+    latent_rank = int(artifacts.latent_rank)
+    n_u = n_nodes * latent_rank
+    n_v = t_steps * latent_rank
+    outcome_size = float(np.asarray(x).size)
+    prev_x_np = np.vstack([x_0, x[:-1, :]])
+    prev_z_np = np.vstack([z_0, z[:-1, :]])
+    beta_feature_np = np.asarray(z, dtype=float).copy()
+    if beta_mask_pre_intervention:
+        beta_feature_np[:s, :] = 0.0
+    intervention_mask_np = np.ones_like(z, dtype=float)
+    intervention_mask_np[:s, :] = 0.0
+    intervention_size = float(intervention_mask_np.sum())
+
+    dtype = torch.float64
+    x_t = torch.as_tensor(np.asarray(x, dtype=float), dtype=dtype, device=device)
+    z_t = torch.as_tensor(np.asarray(z, dtype=float), dtype=dtype, device=device)
+    prev_x_t = torch.as_tensor(prev_x_np, dtype=dtype, device=device)
+    prev_z_t = torch.as_tensor(prev_z_np, dtype=dtype, device=device)
+    beta_feature_t = torch.as_tensor(beta_feature_np, dtype=dtype, device=device)
+    interaction_t = torch.as_tensor(
+        np.asarray(interaction_effect_x, dtype=float), dtype=dtype, device=device
+    )
+    intervention_mask_t = torch.as_tensor(
+        intervention_mask_np, dtype=dtype, device=device
+    )
+    theta = torch.nn.Parameter(
+        torch.as_tensor(np.asarray(theta_init, dtype=float), dtype=dtype, device=device)
+    )
+    optimizer = torch.optim.Adam([theta], lr=float(lr))
+    gamma_inf = interaction_matrix_infinity_norm(artifacts.gamma_matrix)
+    xi_bound = None
+    if bound_B is not None:
+        xi_bound = float(bound_B)
+        if gamma_inf > 1e-12:
+            xi_bound = min(float(bound_B), float(bound_B) / float(gamma_inf))
+
+    def constrained_parts(raw_theta):
+        node_factors = raw_theta[:n_u].reshape(n_nodes, latent_rank)
+        time_factors = raw_theta[n_u : n_u + n_v].reshape(t_steps, latent_rank)
+        cursor = n_u + n_v
+        scalars: dict[str, Any] = {}
+        for name in scalar_names:
+            if name in fixed:
+                scalars[name] = torch.as_tensor(
+                    float(fixed[name]), dtype=dtype, device=device
+                )
+            else:
+                scalars[name] = raw_theta[cursor]
+                cursor += 1
+        if bound_B is not None:
+            scalar_bound = float(bound_B)
+            for name in scalar_names:
+                scalars[name] = torch.clamp(
+                    scalars[name], -scalar_bound, scalar_bound
+                )
+            if xi_bound is not None:
+                scalars["xi"] = torch.clamp(scalars["xi"], -xi_bound, xi_bound)
+            if latent_rank > 0:
+                field = time_factors @ node_factors.T
+                field_norm = torch.max(torch.abs(field))
+                bound = torch.as_tensor(float(bound_B), dtype=dtype, device=device)
+                scale = torch.where(
+                    field_norm > bound,
+                    torch.sqrt(bound / torch.clamp(field_norm, min=1.0e-12)),
+                    torch.ones((), dtype=dtype, device=device),
+                )
+                node_factors = node_factors * scale
+                time_factors = time_factors * scale
+        return node_factors, time_factors, scalars
+
+    def forward_loss(raw_theta):
+        node_factors, time_factors, scalars = constrained_parts(raw_theta)
+        if latent_rank > 0:
+            field_matrix = time_factors @ node_factors.T
+        else:
+            field_matrix = torch.zeros(
+                (t_steps, n_nodes), dtype=dtype, device=device
+            )
+        h_x = (
+            field_matrix
+            + scalars["beta"] * beta_feature_t
+            + scalars["eta"] * prev_x_t
+            + scalars["xi"] * interaction_t
+        )
+        loss_x = torch.logaddexp(h_x, -h_x) - x_t * h_x
+        if fit_intervention_model and intervention_size > 0.0:
+            h_z = scalars["zeta"] * prev_x_t + scalars["psi"] * prev_z_t
+            loss_z = (
+                torch.logaddexp(h_z, -h_z) - z_t * h_z
+            ) * intervention_mask_t
+            return (loss_x.sum() + loss_z.sum()) / (
+                outcome_size + intervention_size
+            )
+        return loss_x.sum() / outcome_size
+
+    history: list[float] = []
+    for step_index in range(int(steps)):
+        optimizer.zero_grad(set_to_none=True)
+        loss = forward_loss(theta)
+        loss.backward()
+        optimizer.step()
+        with torch.no_grad():
+            projected = _canonicalize_theta(
+                theta.detach().cpu().numpy(),
+                artifacts,
+                fit_intervention_model,
+                bound_B,
+                fixed_scalar_params=fixed,
+            )
+            theta.copy_(torch.as_tensor(projected, dtype=dtype, device=device))
+        loss_value = float(loss.detach().cpu().item())
+        history.append(loss_value)
+        if verbose_every and step_index % verbose_every == 0:
+            if logger is None:
+                print(
+                    f"Start {start_index + 1} Adam step {step_index} "
+                    f"| Loss: {loss_value:.6f}"
+                )
+            else:
+                logger.info(
+                    "Start %s Adam step %s | Loss: %.6f",
+                    start_index + 1,
+                    step_index,
+                    loss_value,
+                )
+    theta_hat = _canonicalize_theta(
+        theta.detach().cpu().numpy(),
+        artifacts,
+        fit_intervention_model,
+        bound_B,
+        fixed_scalar_params=fixed,
+    )
+    return theta_hat, history
+
+
+def _run_lbfgs_stage(
+    x: np.ndarray,
+    z: np.ndarray,
+    theta_init: np.ndarray,
     x_0: np.ndarray,
     z_0: np.ndarray,
     s: int,
     param_names: list[str],
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
-    steps: int = 2000,
-    seed: int = 0,
-    verbose_every: int = 100,
-    tol: float = 1e-9,
-    logger=None,
-    theta_init=None,
-    fit_intervention_model: bool = True,
-    bound_B: float | None = None,
-    beta_mask_pre_intervention: bool = False,
-    beta_mask_rescale: bool = False,
-    fixed_scalar_params: dict[str, float] | None = None,
-):
-    if x.ndim != 2 or z.shape != x.shape:
-        raise ValueError("x and z must both have shape (T, N).")
-
-    t_steps = x.shape[0]
-    if t_steps != artifacts.t_steps:
-        raise ValueError("Panel length does not match artifact t_steps.")
-    rng = np.random.default_rng(seed)
-    theta_init = (
-        rng.normal(0, 0.1, size=len(param_names))
-        if theta_init is None
-        else np.asarray(theta_init, dtype=float)
-    )
-    theta_init = _canonicalize_theta(
-        theta_init,
-        artifacts,
-        fit_intervention_model,
-        bound_B,
-        fixed_scalar_params=fixed_scalar_params,
-    )
+    steps: int,
+    tol: float,
+    logger,
+    verbose_every: int,
+    fit_intervention_model: bool,
+    bound_B: float | None,
+    beta_mask_pre_intervention: bool,
+    fixed_scalar_params: dict[str, float] | None,
+    start_index: int,
+) -> tuple[np.ndarray, list[float], OptimizeResult]:
     history: list[float] = []
     eval_count = [0]
 
@@ -274,17 +451,24 @@ def fit_mple(
             interaction_effect_x=interaction_effect_x,
             fit_intervention_model=fit_intervention_model,
             beta_mask_pre_intervention=beta_mask_pre_intervention,
-            beta_mask_rescale=beta_mask_rescale,
             fixed_scalar_params=fixed_scalar_params,
         )
         history.append(loss)
         if verbose_every and eval_count[0] % verbose_every == 0:
             message = summarize_theta_for_logging(param_names, constrained_theta)
             if logger is None:
-                print(f"Eval {eval_count[0]}  |  Loss: {loss:.6f}")
+                print(
+                    f"Start {start_index + 1} L-BFGS eval {eval_count[0]} "
+                    f"| Loss: {loss:.6f}"
+                )
                 print(message)
             else:
-                logger.info("Eval %s  |  Loss: %.6f", eval_count[0], loss)
+                logger.info(
+                    "Start %s L-BFGS eval %s | Loss: %.6f",
+                    start_index + 1,
+                    eval_count[0],
+                    loss,
+                )
                 logger.info(message)
         eval_count[0] += 1
         return loss, grad
@@ -304,6 +488,199 @@ def fit_mple(
         fixed_scalar_params=fixed_scalar_params,
     )
     return theta_hat, history, result
+
+
+def fit_mple(
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    z_0: np.ndarray,
+    s: int,
+    param_names: list[str],
+    artifacts: ModelArtifacts,
+    interaction_effect_x: np.ndarray,
+    steps: int = 2000,
+    seed: int = 0,
+    verbose_every: int = 100,
+    tol: float = 1e-9,
+    logger=None,
+    theta_init=None,
+    fit_intervention_model: bool = True,
+    bound_B: float | None = None,
+    beta_mask_pre_intervention: bool = False,
+    fixed_scalar_params: dict[str, float] | None = None,
+    n_starts: int = 1,
+    adam_steps: int = 0,
+    adam_lr: float = 1.0e-2,
+    adam_device: str = "cpu",
+):
+    if x.ndim != 2 or z.shape != x.shape:
+        raise ValueError("x and z must both have shape (T, N).")
+
+    t_steps = x.shape[0]
+    if t_steps != artifacts.t_steps:
+        raise ValueError("Panel length does not match artifact t_steps.")
+    n_starts = max(1, int(n_starts))
+    adam_steps = max(0, int(adam_steps))
+    adam_lr = float(adam_lr)
+    base_theta_init = None if theta_init is None else np.asarray(theta_init, dtype=float)
+
+    best_theta: np.ndarray | None = None
+    best_history: list[float] = []
+    best_result: OptimizeResult | None = None
+    best_loss = np.inf
+    start_summaries: list[dict[str, object]] = []
+
+    for start_index in range(n_starts):
+        start_seed = int(seed) + start_index
+        rng = np.random.default_rng(start_seed)
+        raw_init = (
+            base_theta_init.copy()
+            if base_theta_init is not None and start_index == 0
+            else rng.normal(0, 0.1, size=len(param_names))
+        )
+        start_theta = _canonicalize_theta(
+            raw_init,
+            artifacts,
+            fit_intervention_model,
+            bound_B,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        initial_loss = _pseudo_loss(
+            x,
+            z,
+            start_theta,
+            x_0,
+            z_0,
+            s,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            fit_intervention_model=fit_intervention_model,
+            beta_mask_pre_intervention=beta_mask_pre_intervention,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        if logger is not None:
+            logger.info(
+                "Optimizer start %s/%s | seed=%s | initial_loss=%.6f",
+                start_index + 1,
+                n_starts,
+                start_seed,
+                initial_loss,
+            )
+
+        adam_history: list[float] = []
+        adam_final_loss = initial_loss
+        if adam_steps > 0:
+            start_theta, adam_history = _torch_adam_stage(
+                x,
+                z,
+                start_theta,
+                x_0,
+                z_0,
+                s,
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect_x,
+                fit_intervention_model=fit_intervention_model,
+                bound_B=bound_B,
+                beta_mask_pre_intervention=beta_mask_pre_intervention,
+                fixed_scalar_params=fixed_scalar_params,
+                steps=adam_steps,
+                lr=adam_lr,
+                device=str(adam_device),
+                logger=logger,
+                verbose_every=verbose_every,
+                start_index=start_index,
+            )
+            adam_final_loss = _pseudo_loss(
+                x,
+                z,
+                start_theta,
+                x_0,
+                z_0,
+                s,
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect_x,
+                fit_intervention_model=fit_intervention_model,
+                beta_mask_pre_intervention=beta_mask_pre_intervention,
+                fixed_scalar_params=fixed_scalar_params,
+            )
+
+        theta_hat, lbfgs_history, result = _run_lbfgs_stage(
+            x,
+            z,
+            start_theta,
+            x_0,
+            z_0,
+            s,
+            param_names=param_names,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            steps=steps,
+            tol=tol,
+            logger=logger,
+            verbose_every=verbose_every,
+            fit_intervention_model=fit_intervention_model,
+            bound_B=bound_B,
+            beta_mask_pre_intervention=beta_mask_pre_intervention,
+            fixed_scalar_params=fixed_scalar_params,
+            start_index=start_index,
+        )
+        final_loss = _pseudo_loss(
+            x,
+            z,
+            theta_hat,
+            x_0,
+            z_0,
+            s,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            fit_intervention_model=fit_intervention_model,
+            beta_mask_pre_intervention=beta_mask_pre_intervention,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        run_history = [initial_loss, *adam_history, *lbfgs_history, final_loss]
+        start_summary = {
+            "start_index": start_index,
+            "seed": start_seed,
+            "initial_loss": initial_loss,
+            "adam_steps": adam_steps,
+            "adam_final_loss": adam_final_loss,
+            "lbfgs_final_loss": final_loss,
+            "lbfgs_nit": int(getattr(result, "nit", 0)),
+            "lbfgs_nfev": int(getattr(result, "nfev", 0)),
+            "success": bool(getattr(result, "success", False)),
+            "message": str(getattr(result, "message", "")),
+        }
+        start_summaries.append(start_summary)
+        if logger is not None:
+            logger.info(
+                "Optimizer start %s/%s complete | final_loss=%.6f | status=%s",
+                start_index + 1,
+                n_starts,
+                final_loss,
+                result.message,
+            )
+        if final_loss < best_loss:
+            best_loss = final_loss
+            best_theta = theta_hat
+            best_history = run_history
+            best_result = result
+
+    if best_theta is None or best_result is None:
+        raise RuntimeError("MPLE optimizer did not produce a candidate solution.")
+    best_start = min(
+        range(len(start_summaries)),
+        key=lambda index: float(start_summaries[index]["lbfgs_final_loss"]),
+    )
+    best_result["best_start"] = int(best_start)
+    best_result["n_starts"] = int(n_starts)
+    best_result["adam_steps"] = int(adam_steps)
+    best_result["adam_lr"] = float(adam_lr)
+    best_result["start_summaries"] = start_summaries
+    best_result["message"] = (
+        f"{best_result.message} | best_start={best_start + 1}/{n_starts}"
+    )
+    return best_theta, best_history, best_result
 
 
 def _fmt(value):
@@ -441,7 +818,7 @@ def latent_diagnostic_rows(
         {
             "category": "latent_diagnostic",
             "name": "estimated_field_inf_norm",
-            "estimate": float(np.linalg.norm(est_field, ord=np.inf)),
+            "estimate": latent_field_bound_norm(est_field),
             "true": None,
             "squared_error": None,
         },
@@ -470,7 +847,7 @@ def latent_diagnostic_rows(
                 {
                     "category": "latent_diagnostic",
                     "name": "true_field_inf_norm",
-                    "estimate": float(np.linalg.norm(true_field, ord=np.inf)),
+                    "estimate": latent_field_bound_norm(true_field),
                     "true": None,
                     "squared_error": None,
                 },
@@ -543,6 +920,37 @@ def write_summary_table(
             )
 
 
+def write_optimizer_start_summary(path: str | Path, result: OptimizeResult) -> None:
+    start_summaries = result.get("start_summaries", [])
+    if not start_summaries:
+        return
+    fieldnames = [
+        "start_index",
+        "seed",
+        "initial_loss",
+        "adam_steps",
+        "adam_final_loss",
+        "lbfgs_final_loss",
+        "lbfgs_nit",
+        "lbfgs_nfev",
+        "success",
+        "message",
+        "is_best",
+    ]
+    best_start = int(result.get("best_start", 0))
+    with Path(path).open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in start_summaries:
+            start_index = int(row["start_index"])
+            writer.writerow(
+                {
+                    **row,
+                    "is_best": start_index == best_start,
+                }
+            )
+
+
 def log_estimates(logger, title, scalar_rows):
     logger.info(title)
     for row in scalar_rows:
@@ -610,12 +1018,12 @@ def save_estimated_artifacts(
     )
     if sparse.issparse(estimated_interaction):
         sparse.save_npz(
-            Path(data_folder) / "estimated_interaction_matrix_sparse.npz",
+            _io_path(Path(data_folder) / "estimated_interaction_matrix_sparse.npz"),
             estimated_interaction,
         )
     else:
         np.save(
-            Path(data_folder) / "estimated_interaction_matrix.npy",
+            _io_path(Path(data_folder) / "estimated_interaction_matrix.npy"),
             estimated_interaction,
         )
     save_estimated_parameter_bundle(
@@ -641,10 +1049,11 @@ def save_estimated_artifacts(
         return
     if sparse.issparse(true_interaction):
         sparse.save_npz(
-            Path(data_folder) / "true_interaction_matrix_sparse.npz", true_interaction
+            _io_path(Path(data_folder) / "true_interaction_matrix_sparse.npz"),
+            true_interaction,
         )
     else:
-        np.save(Path(data_folder) / "true_interaction_matrix.npy", true_interaction)
+        np.save(_io_path(Path(data_folder) / "true_interaction_matrix.npy"), true_interaction)
 
 
 def main() -> None:
@@ -661,6 +1070,10 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--tol", type=float, default=None)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--n_starts", type=int, default=None)
+    parser.add_argument("--adam_steps", type=int, default=None)
+    parser.add_argument("--adam_lr", type=float, default=None)
+    parser.add_argument("--adam_device", type=str, default=None)
     parser.add_argument("--outcome_only", action="store_true")
     parser.add_argument("--log_file", type=str, default=None)
     args = parser.parse_args()
@@ -699,11 +1112,6 @@ def main() -> None:
         if "estimation_params" in config
         else False
     )
-    beta_mask_rescale = (
-        bool(config.estimation_params.get("beta_mask_rescale", False))
-        if "estimation_params" in config
-        else False
-    )
     bound_B = float(config.global_params.B) if "B" in config.global_params else None
     optimizer_params = (
         config.optimizer_params
@@ -715,6 +1123,26 @@ def main() -> None:
     )
     tol = float(args.tol if args.tol is not None else optimizer_params.get("tol", 1e-9))
     seed = int(args.seed if args.seed is not None else optimizer_params.get("seed", 0))
+    n_starts = int(
+        args.n_starts
+        if args.n_starts is not None
+        else optimizer_params.get("n_starts", 1)
+    )
+    adam_steps = int(
+        args.adam_steps
+        if args.adam_steps is not None
+        else optimizer_params.get("adam_steps", 0)
+    )
+    adam_lr = float(
+        args.adam_lr
+        if args.adam_lr is not None
+        else optimizer_params.get("adam_lr", 1.0e-2)
+    )
+    adam_device = str(
+        args.adam_device
+        if args.adam_device is not None
+        else optimizer_params.get("adam_device", "cpu")
+    )
     model_artifact_dir = (
         Path(args.model_artifact_dir)
         if args.model_artifact_dir
@@ -780,8 +1208,18 @@ def main() -> None:
         else:
             logger.info("Effective xi bound from interaction constraint: %.6f", bound_B)
     logger.info("Beta mask pre-intervention enabled: %s", beta_mask_pre_intervention)
-    logger.info("Beta mask rescale enabled: %s", beta_mask_rescale)
     logger.info("Fixed scalar parameters: %s", fixed_scalar_params or {})
+    logger.info(
+        "Optimizer settings: n_starts=%s, lbfgs_steps=%s, tol=%s, "
+        "adam_steps=%s, adam_lr=%s, adam_device=%s, seed=%s",
+        n_starts,
+        steps,
+        tol,
+        adam_steps,
+        adam_lr,
+        adam_device,
+        seed,
+    )
 
     params_hat, loss_history, result = fit_mple(
         x,
@@ -799,12 +1237,20 @@ def main() -> None:
         fit_intervention_model=fit_intervention_model,
         bound_B=bound_B,
         beta_mask_pre_intervention=beta_mask_pre_intervention,
-        beta_mask_rescale=beta_mask_rescale,
         fixed_scalar_params=fixed_scalar_params,
+        n_starts=n_starts,
+        adam_steps=adam_steps,
+        adam_lr=adam_lr,
+        adam_device=adam_device,
     )
 
     logger.info("Done fitting.")
     logger.info("Optimizer status: %s", result.message)
+    logger.info(
+        "Best optimizer start: %s / %s",
+        int(result.get("best_start", 0)) + 1,
+        int(result.get("n_starts", 1)),
+    )
     logger.info("Final Loss: %.6f", loss_history[-1])
     scalar_rows = scalar_summary_rows(
         params_hat,
@@ -851,6 +1297,10 @@ def main() -> None:
         bound_B,
         truth_context=truth_context,
         fixed_scalar_params=fixed_scalar_params,
+    )
+    write_optimizer_start_summary(
+        Path(args.data_folder) / "optimizer_start_summary.csv",
+        result,
     )
     save_estimated_artifacts(
         args.data_folder,
