@@ -1,0 +1,25 @@
+base:
+  fit_root_name: fits
+  fit_manifest_path: experiments/USCountyVaccination_US_trimmed/fit_manifest.csv
+  optimizer:
+    steps: 50000
+    tol: 1.0e-9
+    seed: 0
+  B: 1.0
+  latent_rank: 0
+  estimation:
+    fit_intervention_model: false
+    beta_mask_pre_intervention: true
+    beta_mask_rescale: true
+    fixed_scalar_params: {}
+
+variants:
+  - name: rank_10_B1
+    latent_rank: 10
+
+  - name: rank_40_B1
+    latent_rank: 40
+
+  - name: rank_40_B5
+    latent_rank: 40
+    B: 5.0

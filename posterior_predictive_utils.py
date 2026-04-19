@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,6 +58,13 @@ class InterventionContext:
     z_0: np.ndarray
     s: int
     metadata: dict[str, object]
+
+
+def _io_path(path: str | Path) -> str:
+    resolved = str(Path(path).resolve())
+    if os.name == "nt" and not resolved.startswith("\\\\?\\"):
+        return "\\\\?\\" + resolved
+    return resolved
 
 
 def first_existing_path(*paths: str | Path) -> Path:
@@ -156,7 +164,8 @@ def save_intervention_artifact(
         "source_kind": source_kind,
         **dict(extra_metadata or {}),
     }
-    OmegaConf.save(OmegaConf.create(metadata), artifact_root / "intervention_metadata.yaml")
+    with open(_io_path(artifact_root / "intervention_metadata.yaml"), "w", encoding="utf-8") as handle:
+        OmegaConf.save(OmegaConf.create(metadata), handle)
     return artifact_root
 
 
@@ -242,11 +251,10 @@ def load_saved_intervention_context(
         z = np.asarray(data["z"], dtype=float)
     z_0 = np.asarray(np.load(z0_path), dtype=float)
     _validate_intervention_panel(z, z_0)
-    metadata = (
-        OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
-        if metadata_path.exists()
-        else {}
-    )
+    metadata = {}
+    if metadata_path.exists():
+        with open(_io_path(metadata_path), "r", encoding="utf-8") as handle:
+            metadata = OmegaConf.to_container(OmegaConf.load(handle), resolve=True)
     if not isinstance(metadata, dict):
         metadata = {}
     return InterventionContext(
@@ -634,7 +642,7 @@ def write_counterfactual_summary_tables(
     sample_npz_path = output_path / "counterfactual_sample_summaries.npz"
     summary_csv_path = output_path / "counterfactual_summary.csv"
     unit_csv_path = output_path / "counterfactual_unit_summary.csv"
-    np.savez(sample_npz_path, **sample_summaries)
+    np.savez(_io_path(sample_npz_path), **sample_summaries)
 
     summary_rows = []
     for key in [
@@ -644,7 +652,7 @@ def write_counterfactual_summary_tables(
         row = {"statistic": key}
         row.update(_finite_summary(np.asarray(sample_summaries[key], dtype=float)))
         summary_rows.append(row)
-    with summary_csv_path.open("w", encoding="utf-8", newline="") as handle:
+    with open(_io_path(summary_csv_path), "w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=[
@@ -666,7 +674,7 @@ def write_counterfactual_summary_tables(
         row = {"unit_index": int(unit_index)}
         row.update(_finite_summary(unit_values[:, unit_index]))
         unit_rows.append(row)
-    with unit_csv_path.open("w", encoding="utf-8", newline="") as handle:
+    with open(_io_path(unit_csv_path), "w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=[

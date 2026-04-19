@@ -1,0 +1,30 @@
+2026-04-18 22:07:53 | INFO | Loading data...
+2026-04-18 22:07:53 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity\panel_data.npz
+2026-04-18 22:07:53 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity\x_0.npy
+2026-04-18 22:07:53 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity\z_0.npy
+2026-04-18 22:07:53 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity\fits\rank_40_b5\fit_realized_config.yaml
+2026-04-18 22:07:53 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity
+2026-04-18 22:07:53 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity
+2026-04-18 22:07:53 | INFO | Configured latent rank: 40
+2026-04-18 22:07:53 | INFO | Using a fixed known graph with scalar xi.
+2026-04-18 22:07:53 | INFO | Intervention-process model enabled: False
+2026-04-18 22:07:53 | INFO | Global temperature bound B active: True
+2026-04-18 22:07:53 | INFO | Effective xi bound from interaction constraint: 5.000000
+2026-04-18 22:07:53 | INFO | Beta mask pre-intervention enabled: True
+2026-04-18 22:07:53 | INFO | Beta mask rescale enabled: True
+2026-04-18 22:07:53 | INFO | Fixed scalar parameters: {}
+2026-04-18 22:07:53 | INFO | Eval 0  |  Loss: 0.722591
+2026-04-18 22:07:53 | INFO |   beta: +0.0793,  xi: -0.2085,  eta: +0.0135
+2026-04-18 22:07:57 | INFO | Done fitting.
+2026-04-18 22:07:57 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-18 22:07:57 | INFO | Final Loss: 0.475171
+2026-04-18 22:07:57 | INFO | Estimated Parameters:
+2026-04-18 22:07:57 | INFO |   beta: 0.0087
+2026-04-18 22:07:57 | INFO |   xi: 1.9822
+2026-04-18 22:07:57 | INFO |   eta: 0.3380
+2026-04-18 22:07:57 | INFO | Field and interaction diagnostics:
+2026-04-18 22:07:57 | INFO |   estimated_field_inf_norm: 5.000000
+2026-04-18 22:07:57 | INFO |   estimated_field_rank: 40.000000
+2026-04-18 22:07:57 | INFO |   bound_B: 5.000000
+2026-04-18 22:07:58 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity\fits\rank_40_b5\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity\fits\rank_40_b5\mple_summary.md
+2026-04-18 22:07:58 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_trimmed\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity\fits\rank_40_b5\mple.log

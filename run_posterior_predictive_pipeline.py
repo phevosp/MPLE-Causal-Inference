@@ -11,6 +11,7 @@ from pipeline_specs import expand_named_entries, read_csv_manifest, slugify, wri
 from posterior_predictive_utils import (
     COUNTERFACTUAL_MANIFEST_NAME,
     COUNTERFACTUAL_ROOT_NAME,
+    _io_path,
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
     load_experiment_panel_context,
@@ -78,6 +79,32 @@ def _load_truth_bound(experiment_root: str | Path) -> float | None:
     return float(config.global_params.B)
 
 
+def _as_bool(value: object, default: bool = True) -> bool:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return default
+
+
+def _experiment_has_truth(experiment_row: dict[str, str]) -> bool:
+    if "has_truth" in experiment_row:
+        return _as_bool(experiment_row.get("has_truth"), default=True)
+    metadata_path = Path(str(experiment_row.get("experiment_path", ""))) / "experiment_metadata.yaml"
+    if not metadata_path.exists():
+        return True
+    with open(_io_path(metadata_path), "r", encoding="utf-8") as handle:
+        metadata = OmegaConf.to_container(OmegaConf.load(handle), resolve=True)
+    if not isinstance(metadata, dict):
+        return True
+    return _as_bool(metadata.get("has_truth"), default=True)
+
+
 def _resolve_target_pairs(
     target_pairs_path: str | Path,
     generation_lookup: dict[str, dict[str, str]],
@@ -104,6 +131,10 @@ def _resolve_target_pairs(
             )
         experiment_row = generation_lookup[experiment_name]
         if source_type == "truth":
+            if not _experiment_has_truth(experiment_row):
+                raise ValueError(
+                    f"Truth posterior-predictive targets are not available for experiment '{experiment_name}' because has_truth=false. Use source_type='fit' instead."
+                )
             if variant_name:
                 raise ValueError(
                     f"Truth target for experiment '{experiment_name}' must leave variant_name blank."
@@ -328,15 +359,13 @@ def _simulate_target(
         "s": int(intervention_context.s),
         "summary": summary,
     }
-    OmegaConf.save(
-        OmegaConf.create(metadata),
-        output_root
-        / (
-            "posterior_predictive_metadata.yaml"
-            if intervention_source == "observed_experiment"
-            else "counterfactual_metadata.yaml"
-        ),
+    metadata_path = output_root / (
+        "posterior_predictive_metadata.yaml"
+        if intervention_source == "observed_experiment"
+        else "counterfactual_metadata.yaml"
     )
+    with open(_io_path(metadata_path), "w", encoding="utf-8") as handle:
+        OmegaConf.save(OmegaConf.create(metadata), handle)
     base_row = {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),

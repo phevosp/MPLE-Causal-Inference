@@ -7,8 +7,10 @@ This workflow turns public US county COVID and vaccination sources into:
 - processed weekly county tables
 - binary threshold panels
 - reusable realized outcome, intervention, and network artifacts
-- experiment folders under `experiments/USCountyVaccination_US/`
-- optional MPLE fits and summary reports
+- shared-pipeline experiment folders under `experiments/USCountyVaccination_US_trimmed/`
+- a shared-compatible `generation_manifest.csv`
+- reusable counterfactual intervention libraries
+- MPLE fits and posterior-predictive counterfactual summaries through the same top-level runners used by synthetic and hybrid experiments
 
 ## Current Scope
 
@@ -18,11 +20,15 @@ Core window:
 
 - `WeekEndDate` from `2020-01-26` through `2022-05-15`
 
-Default outcome definitions:
+Available outcome definitions:
 
 - `case_rate_100k >= 100`
 - `case_rate_100k >= 200`
 - `death_rate_100k >= 2`
+
+Default v1 experiment outcome:
+
+- `death_rate_100k_ge_2`
 
 Default intervention definitions:
 
@@ -46,12 +52,14 @@ Default network materialized by the experiment runner:
 
 Default experiment root:
 
-- `experiments/USCountyVaccination_US`
+- `experiments/USCountyVaccination_US_trimmed`
 
-Optional trim mode:
+Default county scope:
 
 - mainland US counties only
 - `total_population >= 2000`
+
+Use `--no-trim` to materialize the full county support instead.
 
 ## Data Sources
 
@@ -67,28 +75,53 @@ The concrete URLs live in `data/USCountyVaccination/common.py`.
 
 ## Workflow
 
-### 1. Prepare Processed County-Week Tables
+The USCountyVaccination path is now explicitly staged. Each stage writes artifacts consumed by the next stage; MPLE fitting and counterfactual simulation use the same top-level shared runners as the synthetic/hybrid workflow.
+
+Implementation helpers are intentionally not runnable pipeline stages:
+
+- `common.py` stores USCounty constants, paths, specs, naming helpers, and small shared utilities.
+- `processed_data.py` builds processed county-week tables, network source tables, and binary `-1/+1` threshold panels.
+- `experiment_artifacts.py` builds/loads realized artifacts, shared panels, and final shared-pipeline experiment folders.
+
+### 1. Load Raw Data
 
 Entry point:
 
-- `data/USCountyVaccination/prepare_us_county_vaccination_data.py`
+- `data/USCountyVaccination/load_raw_data.py`
 
 Default command:
 
 ```bash
-pixi run python data/USCountyVaccination/prepare_us_county_vaccination_data.py
+pixi run python data/USCountyVaccination/load_raw_data.py
 ```
 
-Default behavior:
+This downloads or reuses raw NYT, CDC, Bansal, Census TIGER, CDC SVI, and USDA ERS files under `data/USCountyVaccination/raw/`.
 
-- downloads or reuses raw source files
-- builds a county master table from the overlap of geometry, NYT outcomes, and vaccination support
-- aggregates NYT daily data to county-week outcomes
-- normalizes CDC and Bansal vaccination data to county-week format
-- uses CDC as the primary vaccination source and fills remaining gaps from Bansal
-- builds county feature tables
-- builds geometry-derived networks and centroids
-- writes processed outputs under `data/USCountyVaccination/processed/`
+### 2. Preprocess And Realize Artifacts
+
+Entry point:
+
+- `data/USCountyVaccination/preprocess_us_county_vaccination_data.py`
+
+Default command:
+
+```bash
+pixi run python data/USCountyVaccination/preprocess_us_county_vaccination_data.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
+```
+
+This step:
+
+- builds processed county-week tables under `data/USCountyVaccination/processed/`
+- builds binary threshold columns with `+1` above threshold and `-1` below threshold
+- writes threshold diagnostics as CSV and Markdown
+- writes `realized_outcomes/`
+- writes `realized_interventions/`
+- writes `realized_networks/`
+- writes `shared_panels/`
 
 Important flags:
 
@@ -96,83 +129,81 @@ Important flags:
 - `--reuse_processed_tables`
 - `--reuse_processed_networks`
 - `--reuse_processed_features`
+- `--outcomes`
+- `--interventions`
+- `--lags`
+- `--networks`
+- `--trim | --no-trim`
 
-Notes:
-
-- `--vaccination_source cdc` is the default and produces a CDC-first table with Bansal fill
-- `--vaccination_source bansal` uses raw Bansal weekly data as the canonical vaccination source instead
-
-### 2. Build Binary Threshold Columns
-
-Entry point:
-
-- `data/USCountyVaccination/build_binary_outcomes.py`
-
-Command:
-
-```bash
-pixi run python data/USCountyVaccination/build_binary_outcomes.py
-```
-
-This step:
-
-- reads `processed/us_county_weekly_panel.csv.gz`
-- writes `processed/us_county_binary_panel.csv.gz`
-- writes threshold diagnostics as CSV and Markdown
-
-Binary semantics:
-
-- `+1` means above threshold
-- `-1` means below threshold
-- intervention columns are filled with `-1` before first observed reporting for that county
-
-### 3. Optional Descriptive Analysis
-
-Descriptive summary for the currently highlighted threshold variables:
-
-```bash
-pixi run python data/USCountyVaccination/create_data_analysis_summary.py
-```
-
-Pre-vaccination low-rank diagnostics:
-
-```bash
-pixi run python data/USCountyVaccination/analyze_pre_vaccination_low_rank.py
-```
-
-The analysis outputs are written under:
-
-- `data/USCountyVaccination/data_analysis/`
-
-### 4. Materialize Experiment Folders
+### 3. Create Experiment Folders
 
 Entry point:
 
-- `data/USCountyVaccination/run_us_county_vaccination_experiments.py`
+- `data/USCountyVaccination/create_us_county_vaccination_experiments.py`
 
 Default command:
 
 ```bash
-pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
 ```
 
-This runner:
+This step loads saved realized artifacts and shared panels, then writes one experiment folder per `(outcome, intervention, lag, network)` combination. It records the shared pipeline manifest:
 
-- reads the processed binary panel, feature basis, centroid table, and cached edge lists
-- writes reusable realized artifacts for outcomes, interventions, and networks
-- selects a dense county-by-week suffix after lagging so saved experiment panels contain no missing `x` or `z`
-- writes reusable shared panels
-- writes one experiment folder per `(outcome, intervention, lag, network)` combination
-- optionally runs `mple.py` for each experiment
-- records a manifest at `experiments/USCountyVaccination_US/manifest.csv`
+- `experiments/USCountyVaccination_US_trimmed/generation_manifest.csv`
 
 The support-selection rule recorded in metadata is:
 
 - `max_complete_suffix_by_node_week_area`
 
+### 4. Run MPLE Fits
+
+Use the shared fit runner:
+
+```bash
+pixi run python run_fit_pipeline.py \
+  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+  --overwrite
+```
+
+### 5. Counterfactual Pipeline
+
+Build intervention scenarios:
+
+```bash
+pixi run python run_intervention_library.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
+  --overwrite
+```
+
+Run counterfactual posterior predictive simulation:
+
+```bash
+pixi run python run_posterior_predictive_pipeline.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+  --overwrite
+```
+
+### Optional Descriptive Analysis
+
+Analysis entrypoints now live under `data/USCountyVaccination/data_analysis/`:
+
+```bash
+pixi run python data/USCountyVaccination/data_analysis/create_data_analysis_summary.py
+pixi run python data/USCountyVaccination/data_analysis/analyze_pre_vaccination_low_rank.py
+```
+
 ## Experiment Layout
 
-The runner writes these reusable artifact roots beneath the output root:
+The preprocessing/realization stage writes these reusable artifact roots beneath the output root:
 
 - `realized_outcomes/`
 - `realized_interventions/`
@@ -183,11 +214,19 @@ Each experiment folder contains:
 
 - `realized_config.yaml`
 - `experiment_metadata.yaml`
+- `panel_data.npz`
+- `x_0.npy`
+- `z_0.npy`
+- `node_index.csv`
+- `time_index.csv`
 - `field_artifacts.npz`
 - `gamma_matrix_sparse.npz`
 - `adjacency_edge_list.csv.gz`
+- `panel_data.csv.gz`
 - `binary_definition_summary.csv`
 - `binary_definition_summary.md`
+
+USCountyVaccination experiment metadata records `has_truth: false`. The root-level `field_artifacts.npz` is a concrete zero field placeholder with the correct `(T, N)` shape so the shared loaders can treat real-data and synthetic experiment roots uniformly. Fit-time latent rank and bounds are controlled by the fit spec, not by synthetic truth artifacts.
 
 When a shared panel exists, metadata points to:
 
@@ -207,17 +246,22 @@ Shared panel folders contain:
 - `time_index.csv`
 - `panel_metadata.yaml`
 
+The duplicated root-level artifacts are the inputs consumed by:
+
+- `run_fit_pipeline.py`
+- `run_intervention_library.py`
+- `run_posterior_predictive_pipeline.py`
+
 ## Field Modes
 
-`run_us_county_vaccination_experiments.py` supports two field parameterizations:
+`create_us_county_vaccination_experiments.py` supports two field parameterizations:
 
 - `--field_mode additive`
 - `--field_mode latent_feature_matrix`
 
 `additive`:
 
-- uses the processed county feature basis
-- writes a standard `field_artifacts.npz` backed by the feature basis
+- records a shared-feature-field configuration for downstream MPLE fits
 
 `latent_feature_matrix`:
 
@@ -225,6 +269,8 @@ Shared panel folders contain:
 - fits a low-rank latent field instead
 - uses `--latent_rank`
 - uses `--latent_B` as the global bound `B`
+
+For the shared manifest workflow, prefer editing `data/USCountyVaccination/experiment_configs/fits_spec.yaml`. That is the source of truth for MPLE variants run by `run_fit_pipeline.py`.
 
 ## Runner Flags
 
@@ -271,6 +317,49 @@ The manifest records:
 
 `fallback_run = true` means the full fit failed and the experiment was rerun outcome-only.
 
+## Shared MPLE And Counterfactual Workflow
+
+The preferred real-data workflow is now the same as the synthetic/hybrid workflow, using the generated `generation_manifest.csv`.
+
+Fit MPLE variants:
+
+```bash
+pixi run python run_fit_pipeline.py \
+  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+  --overwrite
+```
+
+Build reusable intervention scenarios:
+
+```bash
+pixi run python run_intervention_library.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
+  --overwrite
+```
+
+Run fit-based counterfactual posterior predictive simulation:
+
+```bash
+pixi run python run_posterior_predictive_pipeline.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+  --overwrite
+```
+
+The included intervention-library template materializes:
+
+- `observed_experiment`
+- `all_minus_ones`
+- `all_ones`
+- `all_ones_from_s`
+- `single_unit_0_all_ones`
+
+Saved interventions use the model's internal `-1/+1` coding. Posterior predictive targets for USCountyVaccination should use `source_type=fit`; `source_type=truth` is rejected because real-data experiments set `has_truth: false`.
+
 ## Processed Outputs
 
 Key processed files under `data/USCountyVaccination/processed/`:
@@ -300,69 +389,119 @@ For the current snapshot, the most reliable machine-readable summaries are:
 
 ## Common Commands
 
-Prepare processed data:
+Load raw data:
 
 ```bash
-pixi run python data/USCountyVaccination/prepare_us_county_vaccination_data.py
+pixi run python data/USCountyVaccination/load_raw_data.py
 ```
 
-Build binary threshold columns:
+Preprocess and materialize realized artifacts/shared panels:
 
 ```bash
-pixi run python data/USCountyVaccination/build_binary_outcomes.py
+pixi run python data/USCountyVaccination/preprocess_us_county_vaccination_data.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
 ```
 
 Create the descriptive analysis summary:
 
 ```bash
-pixi run python data/USCountyVaccination/create_data_analysis_summary.py
+pixi run python data/USCountyVaccination/data_analysis/create_data_analysis_summary.py
 ```
 
 Run the pre-vaccination low-rank analysis on the full county set:
 
 ```bash
-pixi run python data/USCountyVaccination/analyze_pre_vaccination_low_rank.py
+pixi run python data/USCountyVaccination/data_analysis/analyze_pre_vaccination_low_rank.py
 ```
 
 Run the same low-rank analysis on the trimmed county set:
 
 ```bash
-pixi run python data/USCountyVaccination/analyze_pre_vaccination_low_rank.py \
-  --node_index_path experiments/USCountyVaccination_US/realized_outcomes/outcome_death_rate_100k_ge_2__scope_trimmed/node_index.csv \
+pixi run python data/USCountyVaccination/data_analysis/analyze_pre_vaccination_low_rank.py \
+  --node_index_path experiments/USCountyVaccination_US_trimmed/realized_outcomes/outcome_death_rate_100k_ge_2__scope_trimmed/node_index.csv \
   --scope_label trimmed \
   --output_dir data/USCountyVaccination/data_analysis/pre_vaccination_low_rank_trimmed
 ```
 
-Materialize the default experiment grid:
+Create the default trimmed death-rate/vaccine-rate experiment folders:
 
 ```bash
-pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py
-```
-
-Materialize the trimmed grid:
-
-```bash
-pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py \
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
   --trim \
-  --output_root experiments/USCountyVaccination_US_trimmed
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
 ```
 
-Run a small subset with MPLE:
+Create the full county-support experiment folders:
 
 ```bash
-pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py \
-  --run_mple \
+pixi run python data/USCountyVaccination/preprocess_us_county_vaccination_data.py \
+  --no-trim \
+  --output_root experiments/USCountyVaccination_US_full \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
+
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
+  --no-trim \
+  --output_root experiments/USCountyVaccination_US_full \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
+```
+
+Create a small subset and fit it through the shared MPLE runner:
+
+```bash
+pixi run python data/USCountyVaccination/preprocess_us_county_vaccination_data.py \
+  --trim \
   --outcomes death_rate_100k_ge_2 \
   --interventions complete_cov_ge_20 \
   --lags 2w \
   --max_experiments 1 \
   --overwrite
+
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
+  --trim \
+  --outcomes death_rate_100k_ge_2 \
+  --interventions complete_cov_ge_20 \
+  --lags 2w \
+  --max_experiments 1 \
+  --overwrite
+
+pixi run python run_fit_pipeline.py \
+  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+  --overwrite
 ```
 
-Run a latent-field fit:
+Run the shared fit, intervention-library, and counterfactual workflow:
 
 ```bash
-pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py \
+pixi run python run_fit_pipeline.py \
+  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+  --overwrite
+
+pixi run python run_intervention_library.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
+  --overwrite
+
+pixi run python run_posterior_predictive_pipeline.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+  --overwrite
+```
+
+Create latent-field experiment configs:
+
+```bash
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
   --trim \
   --outcomes death_rate_100k_ge_2 \
   --interventions complete_cov_ge_20 \
@@ -373,29 +512,44 @@ pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.p
   --latent_B 1.5 \
   --beta_mask_pre_intervention \
   --beta_mask_rescale \
-  --run_mple \
   --overwrite
 ```
 
-Materialize multiple network variants:
+Materialize multiple network variants into realized artifacts and experiment folders:
 
 ```bash
-pixi run python data/USCountyVaccination/run_us_county_vaccination_experiments.py \
+pixi run python data/USCountyVaccination/preprocess_us_county_vaccination_data.py \
+  --networks contiguity knn_8 distance_kernel_8 \
+  --max_experiments 3
+
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
   --networks contiguity knn_8 distance_kernel_8 \
   --max_experiments 3
 ```
 
-Write combined MPLE reports for an experiment root:
+Shared MPLE fitting writes per-experiment fit artifacts and updates the root-level `fit_manifest.csv`:
 
 ```bash
-pixi run python data/USCountyVaccination/summarize_mple_experiments.py
+pixi run python run_fit_pipeline.py \
+  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+  --overwrite
 ```
 
-Or point the summarizer at a different experiment root:
+For counterfactual summaries, build intervention-library entries and run the shared posterior-predictive runner:
 
 ```bash
-pixi run python data/USCountyVaccination/summarize_mple_experiments.py \
-  --experiments_root experiments/USCountyVaccination_US_trimmed
+pixi run python run_intervention_library.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
+  --overwrite
+
+pixi run python run_posterior_predictive_pipeline.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+  --overwrite
 ```
 
 ## Interpretation Notes

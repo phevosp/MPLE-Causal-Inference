@@ -88,12 +88,79 @@ Important run keys:
 - `experiment_name`
 - `source_type`
 - `variant_name`
+- `intervention_source`, optional
+- `intervention_name`, optional
 
 Rules:
 
 - `source_type` must be `truth` or `fit`
 - truth rows must leave `variant_name` blank
 - fit rows must match a `(experiment_name, variant_name)` pair in the fit manifest
+- `source_type=truth` requires experiment metadata or manifest `has_truth=true`
+- if `intervention_source` is omitted or blank, it defaults to `observed_experiment`
+- `intervention_source` may be `observed_experiment` or `saved_intervention`
+- `saved_intervention` rows must provide `intervention_name`
+- `saved_intervention` rows are routed to the counterfactual output tree rather than the posterior-predictive goodness-of-fit reports
+
+Example observed-intervention target rows:
+
+```csv
+experiment_name,source_type,variant_name
+synthetic_rank_40_B1,truth,
+synthetic_rank_40_B1,fit,rank_40_B1
+```
+
+Example saved-intervention counterfactual target rows:
+
+```csv
+experiment_name,source_type,variant_name,intervention_source,intervention_name
+synthetic_rank_40_B1,truth,,saved_intervention,all_minus_ones
+synthetic_rank_40_B1,fit,rank_40_B1,saved_intervention,all_minus_ones
+```
+
+The run `seed` is a starting seed. Sample `k` uses `seed + k`, so repeated runs are reproducible while samples within a run are distinct.
+
+### Intervention Library Spec
+
+File:
+
+- `data/configs/intervention_library_spec.yaml`
+
+Shape:
+
+- `base`: defaults shared by every saved intervention
+- `interventions`: list of named intervention entries
+
+Important keys:
+
+- `experiment_name`
+- `manifest_path`, optional
+- `source_kind`
+- `activation_scope`
+- `unit_index`
+- `start_step`
+
+Supported source kinds:
+
+- `observed_experiment`
+- `full_on`
+- `single_unit_on`
+
+`observed_experiment` copies the realized intervention panel and initial intervention state from the generated experiment.
+
+`full_on` supports:
+
+- `activation_scope: all_time`
+- `activation_scope: no_time`
+- `activation_scope: from_s`
+
+`single_unit_on` supports:
+
+- `unit_index`
+- `activation_scope: all_time | no_time | from_s | from_step`
+- `start_step` when `activation_scope: from_step`
+
+Saved intervention panels use `-1/+1` coding for `z`. The saved `z_0` vector may use either `-1/+1` coding or the repo's legacy `0` initial-state convention.
 
 ## Manifests
 
@@ -102,10 +169,12 @@ Rules:
 Written by:
 
 - `run_generation_pipeline.py`
+- `data/USCountyVaccination/create_us_county_vaccination_experiments.py` for real-data US county experiments
 
 Default path:
 
 - `experiments/SyntheticHybridExperiments/generation_manifest.csv`
+- `experiments/USCountyVaccination_US_trimmed/generation_manifest.csv`
 
 Typical columns:
 
@@ -120,6 +189,16 @@ Typical columns:
 - `s`
 - `has_truth`
 - `latent_rank`
+
+USCountyVaccination rows also include real-data metadata such as:
+
+- `outcome_code`
+- `intervention_code`
+- `lag_code`
+- `network_name`
+- date range and support counts
+
+USCountyVaccination rows set `has_truth=false`.
 
 ### Fit Manifest
 
@@ -177,6 +256,9 @@ Typical columns:
 - `source_type`
 - `source_name`
 - `source_slug`
+- `target_intervention_source`
+- `target_intervention_name`
+- `target_intervention_slug`
 - `latent_rank`
 - `B`
 - `fit_intervention_model`
@@ -188,6 +270,74 @@ Typical columns:
 - `coverage_rate`
 - `num_statistics`
 - `output_path`
+
+This manifest is written only for observed-intervention posterior-predictive targets.
+
+### Intervention Library Manifest
+
+Written by:
+
+- `run_intervention_library.py`
+
+Default path:
+
+- `experiments/SyntheticHybridExperiments/intervention_library_manifest.csv`
+
+Typical columns:
+
+- `experiment_name`
+- `experiment_path`
+- `intervention_name`
+- `intervention_slug`
+- `source_kind`
+- `N`
+- `T`
+- `s`
+- `output_path`
+- `activation_scope`
+- `unit_index`
+- `start_step`
+
+### Counterfactual Manifest
+
+Written by:
+
+- `run_posterior_predictive_pipeline.py`
+
+Default path:
+
+- `experiments/SyntheticHybridExperiments/counterfactual_manifest.csv`
+
+Typical columns:
+
+- `experiment_name`
+- `experiment_slug`
+- `descriptor`
+- `experiment_path`
+- `intervention_source`
+- `intervention_name`
+- `intervention_slug`
+- `graph_source`
+- `N`
+- `T`
+- `s`
+- `run_name`
+- `run_slug`
+- `source_type`
+- `source_name`
+- `source_slug`
+- `target_intervention_source`
+- `target_intervention_name`
+- `target_intervention_slug`
+- `latent_rank`
+- `B`
+- `fit_intervention_model`
+- `num_samples`
+- `gibbs_sweeps`
+- `seed`
+- `output_path`
+
+This manifest is written only for saved-intervention counterfactual targets.
 
 ## Directory Layout
 
@@ -207,8 +357,34 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/
   posterior_predictive_summary.csv
   posterior_predictive_summary.md
   fits/
+  intervention_library/
   posterior_predictive/
+  counterfactual/
 ```
+
+USCountyVaccination experiment roots follow the same shared contract:
+
+```
+experiments/USCountyVaccination_US_trimmed/<experiment_slug>/
+  experiment_metadata.yaml
+  realized_config.yaml
+  panel_data.npz
+  x_0.npy
+  z_0.npy
+  node_index.csv
+  time_index.csv
+  panel_data.csv.gz
+  field_artifacts.npz
+  gamma_matrix_sparse.npz
+  adjacency_edge_list.csv.gz
+  binary_definition_summary.csv
+  binary_definition_summary.md
+  fits/
+  intervention_library/
+  counterfactual/
+```
+
+For USCountyVaccination, `field_artifacts.npz` is a zero-field compatibility artifact and `has_truth=false`; fit variants provide the estimated latent field used downstream.
 
 ### Fit Variant Root
 
@@ -240,6 +416,37 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/posterior_predictive/<s
 - `truth`
 - `fit_<variant_slug>`
 
+### Intervention Library Artifact Root
+
+```
+experiments/SyntheticHybridExperiments/<experiment_slug>/intervention_library/<intervention_slug>/
+  intervention_metadata.yaml
+  intervention_panel.npz
+  z_0.npy
+```
+
+`intervention_panel.npz` contains:
+
+- `z`
+
+### Counterfactual Output Root
+
+```
+experiments/SyntheticHybridExperiments/<experiment_slug>/counterfactual/<source_slug>/<intervention_slug>/<run_slug>/
+  counterfactual_metadata.yaml
+  counterfactual_sample_summaries.npz
+  counterfactual_summary.csv
+  counterfactual_unit_summary.csv
+```
+
+`counterfactual_sample_summaries.npz` contains:
+
+- `overall_mean_magnetization`
+- `post_intervention_mean_magnetization`
+- `unit_mean_magnetization`
+
+Full simulated `x` panels are not saved for counterfactual runs.
+
 ## Report Outputs
 
 Fit reports:
@@ -251,6 +458,8 @@ Posterior-predictive reports:
 
 - per experiment: `posterior_predictive_summary.csv`, `posterior_predictive_summary.md`
 - cross experiment: `best_posterior_predictive_by_experiment.csv`, `best_posterior_predictive_by_experiment.md`
+
+Counterfactual runs write scenario-specific summary CSVs under each counterfactual output root. They do not participate in posterior-predictive ranking reports.
 
 ## Ranking Rules
 
@@ -264,6 +473,8 @@ Posterior-predictive ranking:
 
 - lower `mean_abs_zscore` wins
 - ties break on lower `max_abs_zscore`
+
+Counterfactual runs are not ranked by the posterior-predictive report generator because they are not compared to observed outcomes.
 
 ## Parameter Bundles
 
@@ -301,4 +512,57 @@ Regenerate posterior-predictive summaries from an existing predictive manifest:
 ```bash
 pixi run python -u report_posterior_predictive.py \
   --manifest experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv
+```
+
+Build saved interventions:
+
+```bash
+pixi run python -u run_intervention_library.py \
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --spec_path data/configs/intervention_library_spec.yaml \
+  --overwrite
+```
+
+Run posterior predictive or counterfactual simulations:
+
+```bash
+pixi run python -u run_posterior_predictive_pipeline.py \
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --fit_manifest_path experiments/SyntheticHybridExperiments/fit_manifest.csv \
+  --target_pairs_path data/configs/posterior_predictive_target_pairs.csv \
+  --spec_path data/configs/posterior_predictive_spec.yaml \
+  --overwrite
+```
+
+Materialize USCountyVaccination experiments and run the same shared fit/counterfactual path:
+
+```bash
+pixi run python -u data/USCountyVaccination/load_raw_data.py
+pixi run python -u data/USCountyVaccination/preprocess_us_county_vaccination_data.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
+pixi run python -u data/USCountyVaccination/create_us_county_vaccination_experiments.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --overwrite
+
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+  --overwrite
+
+pixi run python -u run_intervention_library.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
+  --overwrite
+
+pixi run python -u run_posterior_predictive_pipeline.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+  --overwrite
 ```

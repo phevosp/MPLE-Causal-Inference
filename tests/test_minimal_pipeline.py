@@ -10,7 +10,9 @@ import csv
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from omegaconf import OmegaConf
+from scipy import sparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -20,6 +22,10 @@ from data.synthetic_data_generation import (
     generate_data,
     load_fixed_intervention_artifacts,
     simulate_outcomes_given_fixed_interventions,
+)
+from data.USCountyVaccination.experiment_artifacts import (
+    create_config as create_us_county_config,
+    save_experiment as save_us_county_experiment,
 )
 from mple import _canonicalize_theta
 from model_utils import (
@@ -40,7 +46,9 @@ from model_utils import (
 from posterior_predictive_utils import (
     COUNTERFACTUAL_MANIFEST_NAME,
     OutcomeParameterBundle,
+    _io_path,
     compute_panel_statistics,
+    load_experiment_panel_context,
     load_fit_parameter_bundle,
     load_truth_parameter_bundle,
     load_saved_intervention_context,
@@ -56,7 +64,7 @@ from report_parameter_recovery_detailed import (
     group_and_rank_fit_rows,
     write_fit_reports,
 )
-from run_fit_pipeline import run_fits
+from run_fit_pipeline import infer_panel_dimensions, run_fits
 from run_generation_pipeline import run_generation
 from run_intervention_library import run_intervention_library
 from run_posterior_predictive_pipeline import (
@@ -692,6 +700,294 @@ class FitReportingTests(unittest.TestCase):
         self.assertEqual(winner_rows[0]["experiment_name"], "smoke_rank_0")
         self.assertIn("total_recovery_rmse", winner_rows[0])
         self.assertEqual(Path(fit_manifest), self.root / "generated" / "fit_manifest.csv")
+
+
+class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = REPO_ROOT / "experiments" / f".tmp_uscounty_{uuid.uuid4().hex}"
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(_io_path(self.root), ignore_errors=True)
+
+    def _write_target_pairs(self, rows: list[dict[str, object]]) -> Path:
+        target_pairs_path = self.root / "target_pairs.csv"
+        with target_pairs_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "experiment_name",
+                    "source_type",
+                    "variant_name",
+                    "intervention_source",
+                    "intervention_name",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+        return target_pairs_path
+
+    def _write_us_county_experiment(self) -> tuple[Path, Path]:
+        experiment_name = (
+            "outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20"
+            "__lag_2w__contiguity"
+        )
+        experiment_root = self.root / experiment_name
+        x = np.array(
+            [
+                [-1, 1, -1, 1],
+                [1, 1, -1, -1],
+                [1, -1, 1, -1],
+                [-1, -1, 1, 1],
+            ],
+            dtype=np.int8,
+        )
+        z = np.array(
+            [
+                [-1, -1, -1, -1],
+                [1, -1, 1, -1],
+                [1, 1, 1, -1],
+                [1, 1, 1, 1],
+            ],
+            dtype=np.int8,
+        )
+        x_0 = np.array([-1, -1, 1, 1], dtype=np.int8)
+        z_0 = np.array([-1, -1, -1, -1], dtype=np.int8)
+        node_table = pd.DataFrame(
+            {
+                "fips": ["01001", "01003", "01005", "01007"],
+                "node_index": [0, 1, 2, 3],
+                "county": ["a", "b", "c", "d"],
+                "state_name": ["Alabama"] * 4,
+            }
+        )
+        time_index = pd.DataFrame(
+            {
+                "WeekStartDate": pd.date_range("2021-01-03", periods=4, freq="W-SUN"),
+                "WeekEndDate": pd.date_range("2021-01-09", periods=4, freq="W-SAT"),
+                "iso_year": [2021] * 4,
+                "iso_week": [1, 2, 3, 4],
+                "model_index": [0, 1, 2, 3],
+            }
+        )
+        panel = pd.DataFrame(
+            {
+                "WeekEndDate": np.repeat(time_index["WeekEndDate"].to_numpy(), 4),
+                "fips": np.tile(node_table["fips"].to_numpy(), 4),
+                "Outcome_pm1": x.reshape(-1),
+                "Intervention_pm1": z.reshape(-1),
+            }
+        )
+        gamma = sparse.csr_matrix(
+            np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ],
+                dtype=float,
+            )
+            / 2.0
+        )
+        config = create_us_county_config(
+            n_nodes=4,
+            t_steps=4,
+            s=1,
+            outcome_code="death_rate_100k_ge_2",
+            intervention_code="complete_cov_ge_20",
+            lag_code="2w",
+            network_name="contiguity",
+            field_basis_mode="zero",
+            field_basis_names=(),
+            model_field_mode="uniform",
+            latent_rank=0,
+            latent_B=1.0,
+            state_scope_label="Mainland US counties with total_population >= 2000",
+            tau_zero_mean=False,
+            tau_smoothness_lambda=0.0,
+            beta_mask_pre_intervention=True,
+            beta_mask_rescale=True,
+        )
+        metadata = {
+            "source": "USCountyVaccination",
+            "has_truth": False,
+            "outcome_code": "death_rate_100k_ge_2",
+            "intervention_code": "complete_cov_ge_20",
+            "lag_code": "2w",
+            "network_name": "contiguity",
+            "trim_applied": True,
+            "node_count": 4,
+            "time_steps": 4,
+            "pre_intervention_steps": 1,
+        }
+        save_us_county_experiment(
+            experiment_root,
+            config,
+            metadata,
+            gamma,
+            pd.DataFrame({"fips": ["01001", "01003"], "neighbor_fips": ["01003", "01005"]}),
+            panel,
+            node_table,
+            time_index,
+            x,
+            z,
+            x_0,
+            z_0,
+        )
+        manifest_path = self.root / "generation_manifest.csv"
+        row = {
+            "experiment_name": experiment_name,
+            "experiment_slug": experiment_name,
+            "descriptor": experiment_name,
+            "experiment_path": str(experiment_root.resolve()),
+            "intervention_source": "real_data",
+            "graph_source": "contiguity",
+            "N": 4,
+            "T": 4,
+            "s": 1,
+            "has_truth": False,
+            "outcome_code": "death_rate_100k_ge_2",
+            "intervention_code": "complete_cov_ge_20",
+            "lag_code": "2w",
+            "network_name": "contiguity",
+        }
+        with manifest_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
+            writer.writeheader()
+            writer.writerow(row)
+        return experiment_root, manifest_path
+
+    def test_us_county_experiment_root_matches_shared_artifact_contract(self) -> None:
+        experiment_root, manifest_path = self._write_us_county_experiment()
+
+        dims = infer_panel_dimensions(experiment_root)
+        panel_context = load_experiment_panel_context(experiment_root)
+        artifacts = load_model_artifacts(experiment_root)
+        with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+            manifest_row = next(csv.DictReader(handle))
+
+        self.assertEqual(dims, {"N": 4, "T": 4, "s": 1})
+        self.assertEqual(panel_context["x"].shape, (4, 4))
+        self.assertEqual(artifacts.field_matrix.shape, (4, 4))
+        self.assertTrue((experiment_root / "node_index.csv").exists())
+        self.assertTrue((experiment_root / "time_index.csv").exists())
+        for key in ["experiment_name", "experiment_path", "intervention_source", "graph_source", "N", "T", "s", "has_truth"]:
+            self.assertIn(key, manifest_row)
+
+    def test_us_county_truth_targets_are_rejected(self) -> None:
+        experiment_root, _ = self._write_us_county_experiment()
+        target_pairs_path = self._write_target_pairs(
+            [
+                {
+                    "experiment_name": experiment_root.name,
+                    "source_type": "truth",
+                    "variant_name": "",
+                }
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "has_truth=false"):
+            _resolve_target_pairs(
+                target_pairs_path,
+                {
+                    experiment_root.name: {
+                        "experiment_name": experiment_root.name,
+                        "experiment_path": str(experiment_root),
+                    }
+                },
+                {},
+            )
+
+    def test_us_county_fit_and_counterfactual_pipeline_smoke(self) -> None:
+        experiment_root, generation_manifest = self._write_us_county_experiment()
+        fits_spec_path = self.root / "fits_spec.yaml"
+        intervention_spec_path = self.root / "intervention_library_spec.yaml"
+        predictive_spec_path = self.root / "posterior_predictive_spec.yaml"
+        target_pairs_path = self.root / "target_pairs.csv"
+        fits_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  fit_root_name: fits",
+                    f"  fit_manifest_path: {self.root.as_posix()}/fit_manifest.csv",
+                    "  optimizer:",
+                    "    steps: 5",
+                    "    tol: 1.0e-6",
+                    "    seed: 0",
+                    "  B: 1.0",
+                    "  latent_rank: 0",
+                    "  estimation:",
+                    "    fit_intervention_model: true",
+                    "    beta_mask_pre_intervention: true",
+                    "    beta_mask_rescale: true",
+                    "    fixed_scalar_params: {}",
+                    "variants:",
+                    "  - name: rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        intervention_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    f"  experiment_name: {experiment_root.name}",
+                    "interventions:",
+                    "  - name: all_ones_from_s",
+                    "    source_kind: full_on",
+                    "    activation_scope: from_s",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        predictive_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  num_samples: 2",
+                    "  gibbs_sweeps: 1",
+                    "  seed: 0",
+                    "runs:",
+                    "  - name: default",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        target_pairs_path.write_text(
+            "\n".join(
+                [
+                    "experiment_name,source_type,variant_name,intervention_source,intervention_name",
+                    f"{experiment_root.name},fit,rank_0,saved_intervention,all_ones_from_s",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        run_intervention_library(
+            generation_manifest,
+            intervention_spec_path,
+            overwrite=True,
+        )
+        manifest_path = run_posterior_predictive(
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            overwrite=True,
+        )
+
+        counterfactual_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_rank_0"
+            / "all_ones_from_s"
+            / "default"
+        )
+        self.assertEqual(Path(manifest_path), self.root / COUNTERFACTUAL_MANIFEST_NAME)
+        self.assertTrue((self.root / COUNTERFACTUAL_MANIFEST_NAME).exists())
+        self.assertTrue(Path(_io_path(counterfactual_root / "counterfactual_summary.csv")).exists())
+        self.assertTrue(Path(_io_path(counterfactual_root / "counterfactual_unit_summary.csv")).exists())
 
 
 class PosteriorPredictiveTests(unittest.TestCase):
