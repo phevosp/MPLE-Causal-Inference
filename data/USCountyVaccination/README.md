@@ -285,6 +285,7 @@ Useful experiment-runner flags:
 - `--adam_steps`
 - `--adam_lr`
 - `--adam_device`
+- `--lambda_nuclear_values`
 - `--max_experiments`
 - `--lags`
 - `--outcomes`
@@ -394,6 +395,7 @@ pixi run python run_uscounty_sensitivity_analysis.py \
   --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
   --latent_ranks 0 10 20 40 \
   --B_values 0.5 1 2 5 \
+  --lambda_nuclear_values 0.0001 0.0003 0.001 0.003 0.01 \
   --n_starts 5 \
   --adam_steps 1000 \
   --overwrite \
@@ -411,6 +413,8 @@ Outputs are written under the chosen sensitivity root:
 Because these are real-data experiments without known truth, `sensitivity_summary.csv` ranks rows by lowest MPLE `final_loss`. For additional model-checking, use the winning sensitivity fits as inputs to the existing posterior-predictive or counterfactual workflow.
 
 For non-convex latent fits, the sensitivity runner defaults to multi-start plus a two-stage optimizer: PyTorch Adam first, then L-BFGS-B. Each fit writes `optimizer_start_summary.csv`, which is useful for checking whether several starts found similar beta estimates or whether one basin dominated.
+
+When `--lambda_nuclear_values` is supplied, the sensitivity runner also creates convex-relaxation variants with `field_mode: nuclear_norm`. These optimize the full latent field with a nuclear-norm penalty and report the penalized objective, nuclear norm, and effective rank in `mple_summary.csv`.
 
 ## Processed Outputs
 

@@ -1,0 +1,62 @@
+2026-04-20 00:31:03 | INFO | Loading data...
+2026-04-20 00:31:03 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\panel_data.npz
+2026-04-20 00:31:03 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\x_0.npy
+2026-04-20 00:31:03 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\z_0.npy
+2026-04-20 00:31:03 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_5e_4_b1_fixed_xi\fit_realized_config.yaml
+2026-04-20 00:31:03 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-20 00:31:03 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-20 00:31:03 | INFO | Configured field mode: nuclear_norm
+2026-04-20 00:31:03 | INFO | Configured latent rank: 0
+2026-04-20 00:31:03 | INFO | Using a fixed known graph with scalar xi.
+2026-04-20 00:31:03 | INFO | Intervention-process model enabled: True
+2026-04-20 00:31:03 | INFO | Global temperature bound B active: True
+2026-04-20 00:31:03 | INFO | Effective xi bound from interaction constraint: 1.000000
+2026-04-20 00:31:03 | INFO | Beta mask pre-intervention enabled: False
+2026-04-20 00:31:03 | INFO | Fixed scalar parameters: {'xi': 0.0}
+2026-04-20 00:31:03 | INFO | Optimizer settings: n_starts=3, lbfgs_steps=5000, tol=1e-09, adam_steps=1000, adam_lr=0.01, adam_device=cpu, seed=0, lambda_nuclear=0.0005, proximal_lr=1.0
+2026-04-20 00:31:03 | INFO | Nuclear prox iter 0 | Loss: 0.529379 | Penalized: 0.857044 | nuclear_norm: 655.328928
+2026-04-20 00:31:03 | INFO |   beta: +0.3126,  eta: +0.0009,  zeta: +0.1982,  psi: +0.3180
+2026-04-20 00:31:20 | INFO | Nuclear prox iter 100 | Loss: 0.417917 | Penalized: 0.704052 | nuclear_norm: 572.270277
+2026-04-20 00:31:20 | INFO |   beta: +0.6592,  eta: -0.2937,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:31:36 | INFO | Nuclear prox iter 200 | Loss: 0.414147 | Penalized: 0.583881 | nuclear_norm: 339.467986
+2026-04-20 00:31:36 | INFO |   beta: +0.6566,  eta: -0.2928,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:31:53 | INFO | Nuclear prox iter 300 | Loss: 0.414492 | Penalized: 0.444638 | nuclear_norm: 60.292507
+2026-04-20 00:31:53 | INFO |   beta: +0.6551,  eta: -0.2923,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:32:08 | INFO | Nuclear prox iter 400 | Loss: 0.417723 | Penalized: 0.440023 | nuclear_norm: 44.600156
+2026-04-20 00:32:08 | INFO |   beta: +0.6551,  eta: -0.2924,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:32:23 | INFO | Nuclear prox iter 500 | Loss: 0.416176 | Penalized: 0.433186 | nuclear_norm: 34.020182
+2026-04-20 00:32:23 | INFO |   beta: +0.6551,  eta: -0.2923,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:32:37 | INFO | Nuclear prox iter 600 | Loss: 0.416612 | Penalized: 0.425924 | nuclear_norm: 18.623851
+2026-04-20 00:32:37 | INFO |   beta: +0.6551,  eta: -0.2923,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:32:58 | INFO | Nuclear prox iter 700 | Loss: 0.417197 | Penalized: 0.422243 | nuclear_norm: 10.090922
+2026-04-20 00:32:58 | INFO |   beta: +0.6551,  eta: -0.2923,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:33:15 | INFO | Nuclear prox iter 800 | Loss: 0.417181 | Penalized: 0.419316 | nuclear_norm: 4.270820
+2026-04-20 00:33:15 | INFO |   beta: +0.6551,  eta: -0.2923,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:33:32 | INFO | Nuclear prox iter 900 | Loss: 0.417205 | Penalized: 0.417618 | nuclear_norm: 0.826770
+2026-04-20 00:33:32 | INFO |   beta: +0.6551,  eta: -0.2923,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:33:47 | INFO | Done fitting.
+2026-04-20 00:33:47 | INFO | Optimizer status: CONVERGED: proximal objective tolerance reached
+2026-04-20 00:33:47 | INFO | Best optimizer start: 1 / 1
+2026-04-20 00:33:47 | INFO | Final Loss: 0.417212
+2026-04-20 00:33:47 | INFO | Estimated vs True Parameters:
+2026-04-20 00:33:47 | INFO |   beta: 0.6551 (True: 0.5500) | SQE: 0.011043
+2026-04-20 00:33:47 | INFO |   xi: 0.0000 (True: 0.7500) | SQE: 0.562500
+2026-04-20 00:33:47 | INFO |   eta: -0.2923 (True: -0.3000) | SQE: 0.000059
+2026-04-20 00:33:47 | INFO |   zeta: 0.2423 (True: -0.5500) | SQE: 0.627724
+2026-04-20 00:33:47 | INFO |   psi: 1.0000 (True: 0.8000) | SQE: 0.040000
+2026-04-20 00:33:47 | INFO | Nuclear-norm optimizer diagnostics:
+2026-04-20 00:33:47 | INFO |   penalized_objective: 0.417212
+2026-04-20 00:33:47 | INFO |   mple_loss_without_penalty: 0.417212
+2026-04-20 00:33:47 | INFO |   nuclear_norm: 0.000000
+2026-04-20 00:33:47 | INFO |   effective_rank: 0.000000
+2026-04-20 00:33:47 | INFO |   proximal_iterations: 995
+2026-04-20 00:33:47 | INFO | Field and interaction diagnostics:
+2026-04-20 00:33:47 | INFO |   field_rmse: 0.166828
+2026-04-20 00:33:47 | INFO |   interaction_fro_error: 7.082783
+2026-04-20 00:33:47 | INFO |   estimated_field_inf_norm: 0.000000
+2026-04-20 00:33:47 | INFO |   estimated_field_rank: 0.000000
+2026-04-20 00:33:47 | INFO |   bound_B: 1.000000
+2026-04-20 00:33:47 | INFO |   true_field_inf_norm: 0.900000
+2026-04-20 00:33:47 | INFO |   true_field_rank: 40.000000
+2026-04-20 00:33:47 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_5e_4_b1_fixed_xi\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_5e_4_b1_fixed_xi\mple_summary.md
+2026-04-20 00:33:47 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_5e_4_b1_fixed_xi\mple.log

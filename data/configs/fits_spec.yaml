@@ -9,19 +9,34 @@ base:
     adam_steps: 1000
     adam_lr: 1.0e-2
     adam_device: cpu
+    proximal_lr: 1.0
   B: 1.0
   latent_rank: 0
+  field_mode: low_rank
+  lambda_nuclear: 0.0
   estimation:
     fit_intervention_model: true
     beta_mask_pre_intervention: false
     fixed_scalar_params: {}
 
 variants:
-  - name: rank_40_B1
-    latent_rank: 40
-
   - name: rank_40_B1_fixed_xi
     latent_rank: 40
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+    
+
+  - name: nuclear_lambda_1e_3_B1_fixed_xi
+    field_mode: nuclear_norm
+    lambda_nuclear: 0.001
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: nuclear_lambda_5e_4_B1_fixed_xi
+    field_mode: nuclear_norm
+    lambda_nuclear: 0.0005
     estimation:
       fixed_scalar_params:
         xi: 0.0

@@ -58,9 +58,11 @@ Important keys:
 - `fit_root_name`
 - `fit_manifest_path`
 - `optimizer.steps`, `optimizer.tol`, `optimizer.seed`
-- `optimizer.n_starts`, `optimizer.adam_steps`, `optimizer.adam_lr`, `optimizer.adam_device`
+- `optimizer.n_starts`, `optimizer.adam_steps`, `optimizer.adam_lr`, `optimizer.adam_device`, `optimizer.proximal_lr`
 - `B`
+- `field_mode`
 - `latent_rank`
+- `lambda_nuclear`
 - `estimation.fit_intervention_model`
 - `estimation.beta_mask_pre_intervention`
 - `estimation.fixed_scalar_params`

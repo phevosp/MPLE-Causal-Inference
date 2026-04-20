@@ -48,9 +48,15 @@ def build_fit_config(
     estimation = dict(variant.get("estimation", {}) or {})
     optimizer = dict(variant.get("optimizer", {}) or {})
     bound_B = float(variant["B"])
-    latent_rank = int(variant.get("latent_rank", 0))
-    if latent_rank < 0:
+    field_mode = str(variant.get("field_mode", "low_rank"))
+    if field_mode not in {"low_rank", "nuclear_norm"}:
+        raise ValueError("field_mode must be either 'low_rank' or 'nuclear_norm'.")
+    latent_rank = 0 if field_mode == "nuclear_norm" else int(variant.get("latent_rank", 0))
+    if field_mode == "low_rank" and latent_rank < 0:
         raise ValueError("latent_rank must be nonnegative.")
+    lambda_nuclear = float(variant.get("lambda_nuclear", 0.0))
+    if lambda_nuclear < 0.0:
+        raise ValueError("lambda_nuclear must be nonnegative.")
 
     optimizer_config: dict[str, Any] = {
         "steps": int(optimizer["steps"]),
@@ -60,6 +66,7 @@ def build_fit_config(
         "adam_steps": int(optimizer.get("adam_steps", 0)),
         "adam_lr": float(optimizer.get("adam_lr", 1.0e-2)),
         "adam_device": str(optimizer.get("adam_device", "cpu")),
+        "proximal_lr": float(optimizer.get("proximal_lr", 1.0)),
     }
 
     config_dict: dict[str, Any] = {
@@ -69,6 +76,8 @@ def build_fit_config(
             "s": dims["s"],
             "B": bound_B,
             "latent_rank": latent_rank,
+            "field_mode": field_mode,
+            "lambda_nuclear": lambda_nuclear,
         },
         "estimation_params": {
             "fit_intervention_model": bool(estimation["fit_intervention_model"]),
@@ -117,6 +126,8 @@ def run_fit_variant(
         "requested_B": variant.get("B"),
         "resolved_B": float(resolved_B),
         "latent_rank": int(fit_config.global_params.latent_rank),
+        "field_mode": str(fit_config.global_params.field_mode),
+        "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
         **dims,
     }
     OmegaConf.save(fit_config, config_path)
@@ -156,6 +167,8 @@ def run_fit_variant(
         "s": dims["s"],
         "B": float(resolved_B),
         "latent_rank": int(fit_config.global_params.latent_rank),
+        "field_mode": str(fit_config.global_params.field_mode),
+        "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
         "fit_intervention_model": bool(
             fit_config.estimation_params.fit_intervention_model
         ),

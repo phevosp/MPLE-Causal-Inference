@@ -22,7 +22,9 @@ PER_EXPERIMENT_COLUMNS = [
     "descriptor",
     "variant_name",
     "variant_slug",
+    "field_mode",
     "latent_rank",
+    "lambda_nuclear",
     "B",
     "fit_intervention_model",
     "fixed_scalar_params",
@@ -54,7 +56,9 @@ WINNER_COLUMNS = [
     "s",
     "variant_name",
     "variant_slug",
+    "field_mode",
     "latent_rank",
+    "lambda_nuclear",
     "B",
     "fit_intervention_model",
     "fixed_scalar_params",
@@ -176,11 +180,13 @@ def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | 
         "T": manifest_row.get("T", ""),
         "s": manifest_row.get("s", ""),
         "B": _as_float(manifest_row.get("B")),
+        "field_mode": manifest_row.get("field_mode", "low_rank"),
         "latent_rank": (
             int(manifest_row["latent_rank"])
             if manifest_row.get("latent_rank") not in (None, "")
             else ""
         ),
+        "lambda_nuclear": _as_float(manifest_row.get("lambda_nuclear")),
         "fit_intervention_model": _as_bool_string(
             manifest_row.get("fit_intervention_model", "")
         ),

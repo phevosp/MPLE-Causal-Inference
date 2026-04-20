@@ -107,11 +107,13 @@ pixi run python -u run_fit_pipeline.py \
 Each fit variant controls:
 
 - `B`
+- `field_mode`: `low_rank` or `nuclear_norm`
 - `latent_rank`
+- `lambda_nuclear` for `field_mode: nuclear_norm`
 - `estimation.fit_intervention_model`
 - `estimation.beta_mask_pre_intervention`
 - `estimation.fixed_scalar_params`
-- optimizer `steps`, `tol`, `seed`, `n_starts`, `adam_steps`, `adam_lr`, and `adam_device`
+- optimizer `steps`, `tol`, `seed`, `n_starts`, `adam_steps`, `adam_lr`, `adam_device`, and `proximal_lr`
 
 Outputs:
 
@@ -363,11 +365,13 @@ pixi run python -u mple.py \
 
 Useful flags:
 
-- `--steps`, `--tol`, `--seed`, `--n_starts`, `--adam_steps`, `--adam_lr`, and `--adam_device` override optimizer settings
+- `--steps`, `--tol`, `--seed`, `--n_starts`, `--adam_steps`, `--adam_lr`, `--adam_device`, `--lambda_nuclear`, and `--proximal_lr` override optimizer settings
 - `--outcome_only` disables fitting the intervention process
 - `--log_file` redirects the MPLE log
 
 When `n_starts > 1`, MPLE runs independent random starts and keeps the fit with the lowest final pseudo-negative log likelihood. When `adam_steps > 0`, each start first runs a PyTorch Adam basin-search stage and then uses L-BFGS-B for the final polish. Per-start diagnostics are saved to `optimizer_start_summary.csv`.
+
+For `field_mode: nuclear_norm`, MPLE optimizes the full latent field directly with a nuclear-norm penalty, using proximal singular-value thresholding instead of the low-rank factorization. The usual `mple_summary.csv` includes the unpenalized MPLE loss, penalized objective, nuclear norm, and effective rank.
 
 `global_params.B` is the active fit-time bound:
 
@@ -455,6 +459,7 @@ pixi run python run_uscounty_sensitivity_analysis.py \
   --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
   --latent_ranks 0 10 20 40 \
   --B_values 0.5 1 2 5 \
+  --lambda_nuclear_values 0.0001 0.0003 0.001 0.003 0.01 \
   --n_starts 5 \
   --adam_steps 1000 \
   --overwrite \

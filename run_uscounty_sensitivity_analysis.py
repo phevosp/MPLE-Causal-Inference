@@ -36,6 +36,7 @@ DEFAULT_START_DATES = (
 )
 DEFAULT_LATENT_RANKS = (0, 10, 20, 40)
 DEFAULT_B_VALUES = (0.5, 1.0, 2.0, 5.0)
+DEFAULT_LAMBDA_NUCLEAR_VALUES: tuple[float, ...] = ()
 SUMMARY_COLUMNS = [
     "rank_in_sensitivity",
     "experiment_name",
@@ -44,7 +45,9 @@ SUMMARY_COLUMNS = [
     "sensitivity_start_week_end_date",
     "sensitivity_start_index",
     "variant_name",
+    "field_mode",
     "latent_rank",
+    "lambda_nuclear",
     "B",
     "T",
     "s",
@@ -314,6 +317,7 @@ def write_sensitivity_fit_spec(
     adam_steps: int = 0,
     adam_lr: float = 1.0e-2,
     adam_device: str = "cpu",
+    lambda_nuclear_values: list[float] | None = None,
 ) -> Path:
     output_root_path = _repo_path(output_root)
     if not latent_ranks:
@@ -324,6 +328,9 @@ def write_sensitivity_fit_spec(
         raise ValueError("Latent ranks must be nonnegative.")
     if any(value <= 0.0 for value in b_values):
         raise ValueError("B values must be positive.")
+    lambda_nuclear_values = list(lambda_nuclear_values or [])
+    if any(value < 0.0 for value in lambda_nuclear_values):
+        raise ValueError("lambda_nuclear values must be nonnegative.")
     variants: list[dict[str, Any]] = []
     for latent_rank in latent_ranks:
         for b_value in b_values:
@@ -331,7 +338,22 @@ def write_sensitivity_fit_spec(
             variants.append(
                 {
                     "name": f"rank_{int(latent_rank)}_B{b_label}",
+                    "field_mode": "low_rank",
                     "latent_rank": int(latent_rank),
+                    "lambda_nuclear": 0.0,
+                    "B": float(b_value),
+                }
+            )
+    for lambda_value in lambda_nuclear_values:
+        lambda_label = ("%g" % float(lambda_value)).replace(".", "p").replace("-", "m")
+        for b_value in b_values:
+            b_label = ("%g" % float(b_value)).replace(".", "p")
+            variants.append(
+                {
+                    "name": f"nuclear_lambda_{lambda_label}_B{b_label}",
+                    "field_mode": "nuclear_norm",
+                    "latent_rank": 0,
+                    "lambda_nuclear": float(lambda_value),
                     "B": float(b_value),
                 }
             )
@@ -351,6 +373,8 @@ def write_sensitivity_fit_spec(
                 },
                 "B": float(b_values[0]),
                 "latent_rank": int(latent_ranks[0]),
+                "field_mode": "low_rank",
+                "lambda_nuclear": 0.0,
                 "estimation": {
                     "fit_intervention_model": bool(fit_intervention_model),
                     "beta_mask_pre_intervention": bool(beta_mask_pre_intervention),
@@ -421,7 +445,9 @@ def write_sensitivity_summary(fit_manifest_path: str | Path) -> Path:
             ),
             "sensitivity_start_index": metadata.get("sensitivity_start_index", ""),
             "variant_name": fit_row.get("variant_name", ""),
+            "field_mode": fit_row.get("field_mode", "low_rank"),
             "latent_rank": fit_row.get("latent_rank", ""),
+            "lambda_nuclear": fit_row.get("lambda_nuclear", ""),
             "B": fit_row.get("B", ""),
             "T": fit_row.get("T", ""),
             "s": fit_row.get("s", ""),
@@ -443,7 +469,9 @@ def write_sensitivity_summary(fit_manifest_path: str | Path) -> Path:
         key=lambda row: (
             math.inf if row.get("final_loss") is None else float(row["final_loss"]),
             str(row.get("sensitivity_start_week_end_date", "")),
+            str(row.get("field_mode", "low_rank")),
             int(row.get("latent_rank") or 0),
+            float(row.get("lambda_nuclear") or 0.0),
             float(row.get("B") or 0.0),
         )
     )
@@ -499,6 +527,13 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         type=float,
         default=list(DEFAULT_B_VALUES),
+    )
+    parser.add_argument(
+        "--lambda_nuclear_values",
+        nargs="*",
+        type=float,
+        default=list(DEFAULT_LAMBDA_NUCLEAR_VALUES),
+        help="Optional nuclear-norm penalty values to add as convex-relaxation fit variants.",
     )
     parser.add_argument("--steps", type=int, default=50000)
     parser.add_argument("--tol", type=float, default=1.0e-9)
@@ -565,6 +600,7 @@ def main() -> None:
         adam_steps=int(args.adam_steps),
         adam_lr=float(args.adam_lr),
         adam_device=str(args.adam_device),
+        lambda_nuclear_values=list(args.lambda_nuclear_values),
     )
     print(f"Sensitivity generation manifest: {manifest_path}")
     print(f"Sensitivity fit spec: {spec_path}")

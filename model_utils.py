@@ -11,6 +11,9 @@ from scipy import sparse
 
 DEFAULT_LATENT_RANK = 0
 SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta", "zeta", "psi")
+FIELD_MODE_LOW_RANK = "low_rank"
+FIELD_MODE_NUCLEAR_NORM = "nuclear_norm"
+VALID_FIELD_MODES = {FIELD_MODE_LOW_RANK, FIELD_MODE_NUCLEAR_NORM}
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,7 @@ class ModelArtifacts:
     gamma_matrix: object
     t_steps: int
     latent_rank: int = 0
+    field_mode: str = FIELD_MODE_LOW_RANK
     field_matrix: np.ndarray | None = None
     node_factors: np.ndarray | None = None
     time_factors: np.ndarray | None = None
@@ -89,6 +93,19 @@ def get_latent_rank(config) -> int:
     return rank
 
 
+def get_field_mode(config) -> str:
+    global_params = getattr(config, "global_params", None)
+    if global_params is None or "field_mode" not in global_params:
+        return FIELD_MODE_LOW_RANK
+    field_mode = str(global_params.field_mode)
+    if field_mode not in VALID_FIELD_MODES:
+        raise ValueError(
+            "global_params.field_mode must be one of: "
+            + ", ".join(sorted(VALID_FIELD_MODES))
+        )
+    return field_mode
+
+
 def get_B(config) -> float:
     if "B" not in config.global_params:
         raise KeyError("global_params.B is required.")
@@ -145,7 +162,7 @@ def compose_latent_field_matrix(
 
 
 def latent_field_bound_norm(field_matrix: np.ndarray) -> float:
-    """Entrywise infinity norm used for the latent-field B constraint."""
+    """Maximum absolute entry used for the latent-field B constraint."""
     field_matrix = np.asarray(field_matrix, dtype=float)
     if field_matrix.size == 0:
         return 0.0
@@ -180,16 +197,9 @@ def _sample_latent_factors(
     rank = get_latent_rank(config)
     if rank == 0:
         return zero_latent_factors(n_nodes, t_steps)
-    factor_bound = float(np.sqrt(get_B(config)))
     rng = np.random.default_rng(int(config.generation_params.seed) + 101)
     node_factors = rng.normal(size=(n_nodes, rank))
     time_factors = rng.normal(size=(t_steps, rank))
-    node_norm = float(np.linalg.norm(node_factors, ord=np.inf))
-    time_norm = float(np.linalg.norm(time_factors, ord=np.inf))
-    if node_norm > factor_bound and node_norm > 1e-12:
-        node_factors *= factor_bound / node_norm
-    if time_norm > factor_bound and time_norm > 1e-12:
-        time_factors *= factor_bound / time_norm
     return project_latent_field(node_factors, time_factors, get_B(config))
 
 
@@ -203,6 +213,7 @@ def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
         gamma_matrix=gamma_matrix,
         t_steps=t_steps,
         latent_rank=get_latent_rank(config),
+        field_mode=FIELD_MODE_LOW_RANK,
         field_matrix=compose_latent_field_matrix(node_factors, time_factors),
         node_factors=node_factors,
         time_factors=time_factors,
@@ -212,10 +223,13 @@ def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
 def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
+    field_mode = get_field_mode(config)
+    latent_rank = 0 if field_mode == FIELD_MODE_NUCLEAR_NORM else get_latent_rank(config)
     return ModelArtifacts(
         gamma_matrix=gamma_matrix,
         t_steps=int(config.global_params.T),
-        latent_rank=get_latent_rank(config),
+        latent_rank=latent_rank,
+        field_mode=field_mode,
     )
 
 
@@ -223,6 +237,7 @@ def save_field_artifacts(path: str | Path, artifacts: ModelArtifacts) -> None:
     payload: dict[str, np.ndarray] = {
         "latent_rank": np.asarray(int(artifacts.latent_rank), dtype=int),
         "t_steps": np.asarray(int(artifacts.t_steps), dtype=int),
+        "field_mode": np.asarray(str(artifacts.field_mode)),
     }
     if artifacts.field_matrix is not None:
         payload["field_matrix"] = np.asarray(artifacts.field_matrix, dtype=float)
@@ -238,6 +253,11 @@ def load_field_artifacts(path: str | Path) -> dict[str, object]:
         result: dict[str, object] = {
             "latent_rank": int(data["latent_rank"]),
             "t_steps": int(data["t_steps"]),
+            "field_mode": (
+                str(data["field_mode"].item())
+                if "field_mode" in data
+                else FIELD_MODE_LOW_RANK
+            ),
         }
         for key in ["field_matrix", "node_factors", "time_factors"]:
             if key in data:
@@ -279,6 +299,7 @@ def load_model_artifacts(data_folder: str | Path) -> ModelArtifacts:
         gamma_matrix=gamma_matrix,
         t_steps=int(payload["t_steps"]),
         latent_rank=int(payload.get("latent_rank", 0)),
+        field_mode=str(payload.get("field_mode", FIELD_MODE_LOW_RANK)),
         field_matrix=payload.get("field_matrix"),
         node_factors=payload.get("node_factors"),
         time_factors=payload.get("time_factors"),
@@ -313,16 +334,23 @@ def parameter_names(
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[str]:
     n_nodes = artifacts.gamma_matrix.shape[0]
-    field_keys = [
-        f"U::node_{node_idx}::r_{rank_idx}"
-        for node_idx in range(n_nodes)
-        for rank_idx in range(artifacts.latent_rank)
-    ]
-    field_keys.extend(
-        f"V::time_{time_idx}::r_{rank_idx}"
-        for time_idx in range(artifacts.t_steps)
-        for rank_idx in range(artifacts.latent_rank)
-    )
+    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+        field_keys = [
+            f"F::time_{time_idx}::node_{node_idx}"
+            for time_idx in range(artifacts.t_steps)
+            for node_idx in range(n_nodes)
+        ]
+    else:
+        field_keys = [
+            f"U::node_{node_idx}::r_{rank_idx}"
+            for node_idx in range(n_nodes)
+            for rank_idx in range(artifacts.latent_rank)
+        ]
+        field_keys.extend(
+            f"V::time_{time_idx}::r_{rank_idx}"
+            for time_idx in range(artifacts.t_steps)
+            for rank_idx in range(artifacts.latent_rank)
+        )
     return field_keys + free_scalar_parameter_names(
         fit_intervention_model=fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
@@ -350,22 +378,35 @@ def unpack_theta(
     theta = np.asarray(theta, dtype=float)
     n_nodes = artifacts.gamma_matrix.shape[0]
     t_steps = artifacts.t_steps
-    n_u = n_nodes * artifacts.latent_rank
-    n_v = t_steps * artifacts.latent_rank
+    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+        n_field = t_steps * n_nodes
+        n_u = 0
+        n_v = 0
+    else:
+        n_field = 0
+        n_u = n_nodes * artifacts.latent_rank
+        n_v = t_steps * artifacts.latent_rank
     tail = len(
         free_scalar_parameter_names(
             fit_intervention_model=fit_intervention_model,
             fixed_scalar_params=fixed_scalar_params,
         )
     )
-    expected_length = n_u + n_v + tail
+    expected_length = n_field + n_u + n_v + tail
     if len(theta) != expected_length:
         raise ValueError(
             f"Theta length {len(theta)} does not match expected length {expected_length}."
         )
-    node_factors = theta[:n_u].reshape(n_nodes, artifacts.latent_rank)
-    time_factors = theta[n_u : n_u + n_v].reshape(t_steps, artifacts.latent_rank)
-    cursor = n_u + n_v
+    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+        field_matrix = theta[:n_field].reshape(t_steps, n_nodes)
+        node_factors = np.zeros((n_nodes, 0), dtype=float)
+        time_factors = np.zeros((t_steps, 0), dtype=float)
+        cursor = n_field
+    else:
+        field_matrix = None
+        node_factors = theta[:n_u].reshape(n_nodes, artifacts.latent_rank)
+        time_factors = theta[n_u : n_u + n_v].reshape(t_steps, artifacts.latent_rank)
+        cursor = n_u + n_v
     fixed = validate_fixed_scalar_params(
         fixed_scalar_params, fit_intervention_model=fit_intervention_model
     )
@@ -379,6 +420,7 @@ def unpack_theta(
     return {
         "node_factors": node_factors,
         "time_factors": time_factors,
+        "field_matrix": field_matrix,
         "beta": scalar_values["beta"],
         "xi": scalar_values["xi"],
         "eta": scalar_values["eta"],
@@ -393,14 +435,19 @@ def pack_theta(
     fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> np.ndarray:
-    if theta_parts["node_factors"] is None or theta_parts["time_factors"] is None:
-        raise ValueError("Latent mode requires node_factors and time_factors.")
-    field_block = np.concatenate(
-        [
-            np.asarray(theta_parts["node_factors"], dtype=float).reshape(-1),
-            np.asarray(theta_parts["time_factors"], dtype=float).reshape(-1),
-        ]
-    )
+    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+        if theta_parts.get("field_matrix") is None:
+            raise ValueError("nuclear_norm field mode requires field_matrix.")
+        field_block = np.asarray(theta_parts["field_matrix"], dtype=float).reshape(-1)
+    else:
+        if theta_parts["node_factors"] is None or theta_parts["time_factors"] is None:
+            raise ValueError("low_rank field mode requires node_factors and time_factors.")
+        field_block = np.concatenate(
+            [
+                np.asarray(theta_parts["node_factors"], dtype=float).reshape(-1),
+                np.asarray(theta_parts["time_factors"], dtype=float).reshape(-1),
+            ]
+        )
     fixed = validate_fixed_scalar_params(
         fixed_scalar_params, fit_intervention_model=fit_intervention_model
     )
@@ -415,6 +462,8 @@ def pack_theta(
 def compose_field_matrix_from_theta(
     theta_parts: dict[str, object], artifacts: ModelArtifacts
 ) -> np.ndarray:
+    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+        return np.asarray(theta_parts["field_matrix"], dtype=float)
     return compose_latent_field_matrix(
         theta_parts["node_factors"], theta_parts["time_factors"]
     )
@@ -423,15 +472,23 @@ def compose_field_matrix_from_theta(
 def with_theta_field(
     artifacts: ModelArtifacts, theta_parts: dict[str, object]
 ) -> ModelArtifacts:
+    field_matrix = compose_field_matrix_from_theta(theta_parts, artifacts)
     return ModelArtifacts(
         gamma_matrix=artifacts.gamma_matrix,
         t_steps=artifacts.t_steps,
         latent_rank=artifacts.latent_rank,
-        field_matrix=compose_latent_field_matrix(
-            theta_parts["node_factors"], theta_parts["time_factors"]
+        field_mode=artifacts.field_mode,
+        field_matrix=field_matrix,
+        node_factors=(
+            None
+            if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM
+            else np.asarray(theta_parts["node_factors"], dtype=float)
         ),
-        node_factors=np.asarray(theta_parts["node_factors"], dtype=float),
-        time_factors=np.asarray(theta_parts["time_factors"], dtype=float),
+        time_factors=(
+            None
+            if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM
+            else np.asarray(theta_parts["time_factors"], dtype=float)
+        ),
     )
 
 

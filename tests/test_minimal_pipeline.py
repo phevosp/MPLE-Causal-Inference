@@ -27,7 +27,7 @@ from data.USCountyVaccination.experiment_artifacts import (
     create_config as create_us_county_config,
     save_experiment as save_us_county_experiment,
 )
-from mple import _canonicalize_theta, fit_mple
+from mple import _canonicalize_theta, fit_mple, pseudo_nll
 from model_utils import (
     ModelArtifacts,
     build_fit_model_artifacts,
@@ -315,6 +315,36 @@ class MinimalPipelineTests(unittest.TestCase):
             latent_field_bound_norm(field_matrix), 1.0 + 1e-8
         )
 
+    def test_generated_latent_field_only_projects_composed_field(self) -> None:
+        config = base_config()
+        config.global_params.latent_rank = 2
+        config.global_params.B = 0.5
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+
+        artifacts = build_synthetic_field(config, gamma)
+        rng = np.random.default_rng(int(config.generation_params.seed) + 101)
+        raw_nodes = rng.normal(size=(4, 2))
+        raw_times = rng.normal(size=(3, 2))
+        expected_nodes, expected_times = project_latent_field(
+            raw_nodes,
+            raw_times,
+            float(config.global_params.B),
+        )
+
+        self.assertTrue(np.allclose(artifacts.node_factors, expected_nodes))
+        self.assertTrue(np.allclose(artifacts.time_factors, expected_times))
+        self.assertLessEqual(
+            latent_field_bound_norm(artifacts.field_matrix),
+            float(config.global_params.B) + 1e-12,
+        )
+
     def test_latent_field_projection_bounds_max_entry_not_row_sum(self) -> None:
         node_factors = np.array([[2.0], [2.0]])
         time_factors = np.array([[2.0], [2.0]])
@@ -374,6 +404,92 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertLessEqual(
             interaction_matrix_infinity_norm(interaction),
             1.0 + 1e-12,
+        )
+
+    def test_pseudo_nll_gradient_matches_combined_loss_scaling(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        z_0 = np.array([-1.0, 1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            field_mode="nuclear_norm",
+        )
+        theta = np.array(
+            [0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2, -0.1, 0.4],
+            dtype=float,
+        )
+        direction = np.array(
+            [0.2, -0.1, 0.3, -0.4, 0.5, 0.1, -0.2, 0.25, -0.35],
+            dtype=float,
+        )
+        direction /= np.linalg.norm(direction)
+        kwargs = dict(
+            x=x,
+            z=z,
+            x_0=x_0,
+            z_0=z_0,
+            s=1,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fit_intervention_model=True,
+            beta_mask_pre_intervention=False,
+            fixed_scalar_params={},
+        )
+
+        _, grad = pseudo_nll(theta=theta, **kwargs)
+        eps = 1.0e-6
+        loss_plus, _ = pseudo_nll(theta=theta + eps * direction, **kwargs)
+        loss_minus, _ = pseudo_nll(theta=theta - eps * direction, **kwargs)
+        finite_difference = (loss_plus - loss_minus) / (2.0 * eps)
+
+        self.assertAlmostEqual(
+            float(grad @ direction),
+            float(finite_difference),
+            places=8,
+        )
+
+    def test_pseudo_nll_gradient_matches_outcome_only_loss_scaling(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        z_0 = np.array([-1.0, 1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            field_mode="nuclear_norm",
+        )
+        theta = np.array([0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2], dtype=float)
+        direction = np.array([0.2, -0.1, 0.3, -0.4, 0.5, 0.1, -0.2], dtype=float)
+        direction /= np.linalg.norm(direction)
+        kwargs = dict(
+            x=x,
+            z=z,
+            x_0=x_0,
+            z_0=z_0,
+            s=1,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fit_intervention_model=False,
+            beta_mask_pre_intervention=False,
+            fixed_scalar_params={},
+        )
+
+        _, grad = pseudo_nll(theta=theta, **kwargs)
+        eps = 1.0e-6
+        loss_plus, _ = pseudo_nll(theta=theta + eps * direction, **kwargs)
+        loss_minus, _ = pseudo_nll(theta=theta - eps * direction, **kwargs)
+        finite_difference = (loss_plus - loss_minus) / (2.0 * eps)
+
+        self.assertAlmostEqual(
+            float(grad @ direction),
+            float(finite_difference),
+            places=8,
         )
 
     def test_fit_mple_supports_adam_multistart(self) -> None:
@@ -460,6 +576,88 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(artifacts.latent_rank, 3)
         self.assertEqual(artifacts.t_steps, 7)
         self.assertIsNone(artifacts.field_matrix)
+
+    def test_nuclear_norm_fit_mode_uses_full_field_parameterization(self) -> None:
+        config = base_config()
+        config.global_params.field_mode = "nuclear_norm"
+        config.global_params.latent_rank = 99
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+
+        artifacts = build_fit_model_artifacts(config, gamma)
+        names = parameter_names(artifacts, fit_intervention_model=False)
+
+        self.assertEqual(artifacts.field_mode, "nuclear_norm")
+        self.assertEqual(artifacts.latent_rank, 0)
+        self.assertEqual(len([name for name in names if name.startswith("F::")]), 6)
+        self.assertEqual(names[-3:], ["beta", "xi", "eta"])
+
+    def test_nuclear_norm_fit_enforces_B_and_shrinks_singular_values(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        z_0 = np.array([-1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            field_mode="nuclear_norm",
+        )
+        param_keys = parameter_names(artifacts, fit_intervention_model=False)
+
+        low_penalty_theta, _, low_penalty_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            z_0=z_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=10,
+            tol=0.0,
+            seed=11,
+            verbose_every=0,
+            fit_intervention_model=False,
+            bound_B=0.25,
+            lambda_nuclear=0.0,
+        )
+        high_penalty_theta, _, high_penalty_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            z_0=z_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=10,
+            tol=0.0,
+            seed=11,
+            verbose_every=0,
+            fit_intervention_model=False,
+            bound_B=0.25,
+            lambda_nuclear=0.5,
+        )
+
+        low_field = unpack_theta(
+            low_penalty_theta,
+            artifacts,
+            fit_intervention_model=False,
+        )["field_matrix"]
+        high_field = unpack_theta(
+            high_penalty_theta,
+            artifacts,
+            fit_intervention_model=False,
+        )["field_matrix"]
+        self.assertLessEqual(latent_field_bound_norm(low_field), 0.25 + 1e-12)
+        self.assertLessEqual(latent_field_bound_norm(high_field), 0.25 + 1e-12)
+        self.assertLessEqual(
+            float(np.linalg.svd(high_field, compute_uv=False).sum()),
+            float(np.linalg.svd(low_field, compute_uv=False).sum()) + 1e-12,
+        )
+        self.assertEqual(low_penalty_result["field_mode"], "nuclear_norm")
+        self.assertEqual(high_penalty_result["field_mode"], "nuclear_norm")
 
 
 class FitReportingTests(unittest.TestCase):
@@ -726,6 +924,10 @@ class FitReportingTests(unittest.TestCase):
                     "    estimation:",
                     "      fixed_scalar_params:",
                     "        xi: 0.0",
+                    "  - name: nuclear_lambda_1e_2_B1",
+                    "    field_mode: nuclear_norm",
+                    "    lambda_nuclear: 0.01",
+                    "    B: 1.0",
                 ]
             ),
             encoding="utf-8",
@@ -748,8 +950,12 @@ class FitReportingTests(unittest.TestCase):
         with fit_summary_csv.open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual(sum(row["is_best"] == "True" for row in rows), 1)
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)
         self.assertIn("total_recovery_rmse", rows[0])
+        nuclear_root = experiment_root / "fits" / "nuclear_lambda_1e_2_b1"
+        self.assertTrue((nuclear_root / "mple_summary.csv").exists())
+        self.assertTrue((nuclear_root / "estimated_field_artifacts.npz").exists())
+        self.assertTrue((nuclear_root / "estimated_parameter_bundle.npz").exists())
 
         with winners_csv.open("r", encoding="utf-8", newline="") as handle:
             winner_rows = list(csv.DictReader(handle))
@@ -952,6 +1158,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             seed=9,
             fit_intervention_model=False,
             beta_mask_pre_intervention=True,
+            lambda_nuclear_values=[0.01],
         )
 
         with sensitivity_manifest.open("r", encoding="utf-8", newline="") as handle:
@@ -969,10 +1176,12 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         self.assertEqual(derived_dims, {"N": 4, "T": 2, "s": 0})
 
         fit_spec = OmegaConf.load(fit_spec_path)
-        self.assertEqual(len(fit_spec.variants), 4)
+        self.assertEqual(len(fit_spec.variants), 6)
         self.assertEqual(fit_spec.base.optimizer.steps, 3)
         self.assertEqual(fit_spec.base.optimizer.n_starts, 1)
         self.assertEqual(fit_spec.base.optimizer.adam_steps, 0)
+        self.assertEqual(fit_spec.variants[-1].field_mode, "nuclear_norm")
+        self.assertAlmostEqual(float(fit_spec.variants[-1].lambda_nuclear), 0.01)
         self.assertFalse(bool(fit_spec.base.estimation.fit_intervention_model))
 
     def test_us_county_truth_targets_are_rejected(self) -> None:

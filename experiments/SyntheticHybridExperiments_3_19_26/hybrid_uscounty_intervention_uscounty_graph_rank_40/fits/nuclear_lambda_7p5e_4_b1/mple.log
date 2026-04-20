@@ -1,0 +1,58 @@
+2026-04-20 00:08:15 | INFO | Loading data...
+2026-04-20 00:08:15 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\panel_data.npz
+2026-04-20 00:08:15 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\x_0.npy
+2026-04-20 00:08:15 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\z_0.npy
+2026-04-20 00:08:15 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_7p5e_4_b1\fit_realized_config.yaml
+2026-04-20 00:08:15 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-20 00:08:15 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-20 00:08:15 | INFO | Configured field mode: nuclear_norm
+2026-04-20 00:08:15 | INFO | Configured latent rank: 0
+2026-04-20 00:08:15 | INFO | Using a fixed known graph with scalar xi.
+2026-04-20 00:08:15 | INFO | Intervention-process model enabled: True
+2026-04-20 00:08:15 | INFO | Global temperature bound B active: True
+2026-04-20 00:08:15 | INFO | Effective xi bound from interaction constraint: 1.000000
+2026-04-20 00:08:15 | INFO | Beta mask pre-intervention enabled: False
+2026-04-20 00:08:15 | INFO | Fixed scalar parameters: {}
+2026-04-20 00:08:15 | INFO | Optimizer settings: n_starts=3, lbfgs_steps=5000, tol=1e-09, adam_steps=1000, adam_lr=0.01, adam_device=cpu, seed=0, lambda_nuclear=0.00075, proximal_lr=1.0
+2026-04-20 00:08:15 | INFO | Nuclear prox iter 0 | Loss: 0.534272 | Penalized: 1.025746 | nuclear_norm: 655.298915
+2026-04-20 00:08:15 | INFO |   beta: +0.2742,  xi: -0.0462,  eta: +0.0719,  zeta: +0.1364,  psi: +0.3610
+2026-04-20 00:08:32 | INFO | Nuclear prox iter 100 | Loss: 0.413470 | Penalized: 0.811911 | nuclear_norm: 531.253448
+2026-04-20 00:08:32 | INFO |   beta: +0.5382,  xi: +0.7410,  eta: -0.2938,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:08:49 | INFO | Nuclear prox iter 200 | Loss: 0.410199 | Penalized: 0.547831 | nuclear_norm: 183.508927
+2026-04-20 00:08:49 | INFO |   beta: +0.5366,  xi: +0.7321,  eta: -0.2927,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:09:05 | INFO | Nuclear prox iter 300 | Loss: 0.414378 | Penalized: 0.473155 | nuclear_norm: 78.368733
+2026-04-20 00:09:05 | INFO |   beta: +0.5364,  xi: +0.7312,  eta: -0.2927,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:09:24 | INFO | Nuclear prox iter 400 | Loss: 0.412214 | Penalized: 0.437936 | nuclear_norm: 34.295881
+2026-04-20 00:09:24 | INFO |   beta: +0.5364,  xi: +0.7305,  eta: -0.2926,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:09:45 | INFO | Nuclear prox iter 500 | Loss: 0.412508 | Penalized: 0.424045 | nuclear_norm: 15.382076
+2026-04-20 00:09:45 | INFO |   beta: +0.5364,  xi: +0.7305,  eta: -0.2926,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:10:05 | INFO | Nuclear prox iter 600 | Loss: 0.412793 | Penalized: 0.417128 | nuclear_norm: 5.780434
+2026-04-20 00:10:05 | INFO |   beta: +0.5364,  xi: +0.7305,  eta: -0.2926,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:10:25 | INFO | Nuclear prox iter 700 | Loss: 0.412988 | Penalized: 0.413460 | nuclear_norm: 0.629304
+2026-04-20 00:10:25 | INFO |   beta: +0.5364,  xi: +0.7305,  eta: -0.2926,  zeta: +0.2423,  psi: +1.0000
+2026-04-20 00:10:39 | INFO | Done fitting.
+2026-04-20 00:10:39 | INFO | Optimizer status: CONVERGED: proximal objective tolerance reached
+2026-04-20 00:10:39 | INFO | Best optimizer start: 1 / 1
+2026-04-20 00:10:39 | INFO | Final Loss: 0.412989
+2026-04-20 00:10:39 | INFO | Estimated vs True Parameters:
+2026-04-20 00:10:39 | INFO |   beta: 0.5364 (True: 0.5500) | SQE: 0.000185
+2026-04-20 00:10:39 | INFO |   xi: 0.7305 (True: 0.7500) | SQE: 0.000381
+2026-04-20 00:10:39 | INFO |   eta: -0.2926 (True: -0.3000) | SQE: 0.000054
+2026-04-20 00:10:39 | INFO |   zeta: 0.2423 (True: -0.5500) | SQE: 0.627724
+2026-04-20 00:10:39 | INFO |   psi: 1.0000 (True: 0.8000) | SQE: 0.040000
+2026-04-20 00:10:39 | INFO | Nuclear-norm optimizer diagnostics:
+2026-04-20 00:10:39 | INFO |   penalized_objective: 0.412989
+2026-04-20 00:10:39 | INFO |   mple_loss_without_penalty: 0.412989
+2026-04-20 00:10:39 | INFO |   nuclear_norm: 0.000000
+2026-04-20 00:10:39 | INFO |   effective_rank: 0.000000
+2026-04-20 00:10:39 | INFO |   proximal_iterations: 772
+2026-04-20 00:10:39 | INFO | Field and interaction diagnostics:
+2026-04-20 00:10:39 | INFO |   field_rmse: 0.166828
+2026-04-20 00:10:39 | INFO |   interaction_fro_error: 0.184328
+2026-04-20 00:10:39 | INFO |   estimated_field_inf_norm: 0.000000
+2026-04-20 00:10:39 | INFO |   estimated_field_rank: 0.000000
+2026-04-20 00:10:39 | INFO |   bound_B: 1.000000
+2026-04-20 00:10:39 | INFO |   true_field_inf_norm: 0.900000
+2026-04-20 00:10:39 | INFO |   true_field_rank: 40.000000
+2026-04-20 00:10:39 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_7p5e_4_b1\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_7p5e_4_b1\mple_summary.md
+2026-04-20 00:10:39 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\nuclear_lambda_7p5e_4_b1\mple.log
