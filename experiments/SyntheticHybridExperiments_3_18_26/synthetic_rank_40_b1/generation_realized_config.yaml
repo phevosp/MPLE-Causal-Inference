@@ -2,7 +2,7 @@ global_params:
   'N': 500
   T: 50
   s: 10
-  B: 0.9
+  B: 1.0
   gamma_matrix_generator: erdos_renyi
   fixed_gamma_source:
     gamma_path: null
@@ -18,14 +18,14 @@ global_params:
     p: 0.5
     fixed_val: null
 estimation_params:
-  beta: 0.55
+  beta: 0.35
   xi: 0.75
-  eta: -0.3
+  eta: 0.48
   zeta: -0.55
   psi: 0.8
 generation_params:
   seed: 720
-  gibbs_sweeps: 20
+  gibbs_sweeps: 5
   intervention_mode: generated_z
   fixed_z_source:
     panel_path: null

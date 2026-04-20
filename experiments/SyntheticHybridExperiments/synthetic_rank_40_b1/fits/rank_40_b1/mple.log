@@ -1,50 +1,125 @@
-2026-04-12 13:14:20 | INFO | Loading data...
-2026-04-12 13:14:20 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\panel_data.npz
-2026-04-12 13:14:20 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\x_0.npy
-2026-04-12 13:14:20 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\z_0.npy
-2026-04-12 13:14:20 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\fit_realized_config.yaml
-2026-04-12 13:14:20 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1
-2026-04-12 13:14:20 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1
-2026-04-12 13:14:20 | INFO | Configured latent rank: 40
-2026-04-12 13:14:20 | INFO | Using a fixed known graph with scalar xi.
-2026-04-12 13:14:20 | INFO | Intervention-process model enabled: True
-2026-04-12 13:14:20 | INFO | Global temperature bound B active: True
-2026-04-12 13:14:20 | INFO | Effective xi bound from interaction constraint: 1.000000
-2026-04-12 13:14:20 | INFO | Beta mask pre-intervention enabled: False
-2026-04-12 13:14:20 | INFO | Beta mask rescale enabled: False
-2026-04-12 13:14:20 | INFO | Fixed scalar parameters: {}
-2026-04-12 13:14:20 | INFO | Eval 0  |  Loss: 0.711788
-2026-04-12 13:14:20 | INFO |   beta: +0.0567,  xi: -0.0042,  eta: -0.0514,  zeta: -0.1078,  psi: -0.0864
-2026-04-12 13:14:21 | INFO | Eval 100  |  Loss: 0.516549
-2026-04-12 13:14:21 | INFO |   beta: +0.3577,  xi: +0.6723,  eta: +0.4857,  zeta: -0.5640,  psi: +0.8116
-2026-04-12 13:14:21 | INFO | Eval 200  |  Loss: 0.516548
-2026-04-12 13:14:21 | INFO |   beta: +0.3553,  xi: +0.6978,  eta: +0.4834,  zeta: -0.5653,  psi: +0.8143
-2026-04-12 13:14:22 | INFO | Eval 300  |  Loss: 0.516534
-2026-04-12 13:14:22 | INFO |   beta: +0.3655,  xi: +0.6544,  eta: +0.4932,  zeta: -0.5518,  psi: +0.7957
-2026-04-12 13:14:22 | INFO | Eval 400  |  Loss: 0.517161
-2026-04-12 13:14:22 | INFO |   beta: +0.3364,  xi: +0.9118,  eta: +0.4753,  zeta: -0.6260,  psi: +0.8397
-2026-04-12 13:14:23 | INFO | Eval 500  |  Loss: 0.516510
-2026-04-12 13:14:23 | INFO |   beta: +0.3623,  xi: +0.6754,  eta: +0.4899,  zeta: -0.5567,  psi: +0.8035
-2026-04-12 13:14:23 | INFO | Eval 600  |  Loss: 0.522782
-2026-04-12 13:14:23 | INFO |   beta: +0.3971,  xi: +0.2171,  eta: +0.5053,  zeta: -0.3195,  psi: +0.6322
-2026-04-12 13:14:24 | INFO | Eval 700  |  Loss: 0.519047
-2026-04-12 13:14:24 | INFO |   beta: +0.4140,  xi: +0.1445,  eta: +0.5197,  zeta: -0.5110,  psi: +0.8361
-2026-04-12 13:14:24 | INFO | Done fitting.
-2026-04-12 13:14:24 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
-2026-04-12 13:14:24 | INFO | Final Loss: 0.516317
-2026-04-12 13:14:24 | INFO | Estimated vs True Parameters:
-2026-04-12 13:14:24 | INFO |   beta: 0.3609 (True: 0.3500) | SQE: 0.000118
-2026-04-12 13:14:24 | INFO |   xi: 0.6844 (True: 0.7500) | SQE: 0.004299
-2026-04-12 13:14:24 | INFO |   eta: 0.4887 (True: 0.4800) | SQE: 0.000076
-2026-04-12 13:14:24 | INFO |   zeta: -0.5614 (True: -0.5500) | SQE: 0.000130
-2026-04-12 13:14:24 | INFO |   psi: 0.8097 (True: 0.8000) | SQE: 0.000094
-2026-04-12 13:14:24 | INFO | Field and interaction diagnostics:
-2026-04-12 13:14:24 | INFO |   field_rmse: 0.002532
-2026-04-12 13:14:24 | INFO |   interaction_fro_error: 0.174455
-2026-04-12 13:14:24 | INFO |   estimated_field_inf_norm: 1.000000
-2026-04-12 13:14:24 | INFO |   estimated_field_rank: 40.000000
-2026-04-12 13:14:24 | INFO |   bound_B: 1.000000
-2026-04-12 13:14:24 | INFO |   true_field_inf_norm: 1.000000
-2026-04-12 13:14:24 | INFO |   true_field_rank: 40.000000
-2026-04-12 13:14:24 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\mple_summary.md
-2026-04-12 13:14:24 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\mple.log
+2026-04-19 22:21:29 | INFO | Loading data...
+2026-04-19 22:21:29 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\panel_data.npz
+2026-04-19 22:21:29 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\x_0.npy
+2026-04-19 22:21:29 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\z_0.npy
+2026-04-19 22:21:29 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\fit_realized_config.yaml
+2026-04-19 22:21:29 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1
+2026-04-19 22:21:29 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1
+2026-04-19 22:21:29 | INFO | Configured latent rank: 40
+2026-04-19 22:21:29 | INFO | Using a fixed known graph with scalar xi.
+2026-04-19 22:21:29 | INFO | Intervention-process model enabled: True
+2026-04-19 22:21:29 | INFO | Global temperature bound B active: True
+2026-04-19 22:21:29 | INFO | Effective xi bound from interaction constraint: 1.000000
+2026-04-19 22:21:29 | INFO | Beta mask pre-intervention enabled: False
+2026-04-19 22:21:29 | INFO | Fixed scalar parameters: {}
+2026-04-19 22:21:29 | INFO | Optimizer settings: n_starts=3, lbfgs_steps=5000, tol=1e-09, adam_steps=1000, adam_lr=0.01, adam_device=cpu, seed=0
+2026-04-19 22:21:29 | INFO | Optimizer start 1/3 | seed=0 | initial_loss=0.694423
+2026-04-19 22:21:33 | INFO | Start 1 Adam step 0 | Loss: 0.694423
+2026-04-19 22:21:33 | INFO | Start 1 Adam step 100 | Loss: 0.483819
+2026-04-19 22:21:34 | INFO | Start 1 Adam step 200 | Loss: 0.466916
+2026-04-19 22:21:34 | INFO | Start 1 Adam step 300 | Loss: 0.469950
+2026-04-19 22:21:35 | INFO | Start 1 Adam step 400 | Loss: 0.471889
+2026-04-19 22:21:35 | INFO | Start 1 Adam step 500 | Loss: 0.472289
+2026-04-19 22:21:36 | INFO | Start 1 Adam step 600 | Loss: 0.472469
+2026-04-19 22:21:36 | INFO | Start 1 Adam step 700 | Loss: 0.478759
+2026-04-19 22:21:37 | INFO | Start 1 Adam step 800 | Loss: 0.481849
+2026-04-19 22:21:37 | INFO | Start 1 Adam step 900 | Loss: 0.482034
+2026-04-19 22:21:38 | INFO | Start 1 L-BFGS eval 0 | Loss: 0.483977
+2026-04-19 22:21:38 | INFO |   beta: +0.5643,  xi: +0.7660,  eta: -0.2990,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:38 | INFO | Start 1 L-BFGS eval 100 | Loss: 0.453078
+2026-04-19 22:21:38 | INFO |   beta: +0.5600,  xi: +0.8838,  eta: -0.3120,  zeta: -0.5707,  psi: +0.8168
+2026-04-19 22:21:38 | INFO | Start 1 L-BFGS eval 200 | Loss: 0.456684
+2026-04-19 22:21:38 | INFO |   beta: +0.6653,  xi: +0.3069,  eta: -0.2029,  zeta: -0.5816,  psi: +0.8059
+2026-04-19 22:21:39 | INFO | Start 1 L-BFGS eval 300 | Loss: 0.453015
+2026-04-19 22:21:39 | INFO |   beta: +0.5944,  xi: +0.7294,  eta: -0.2823,  zeta: -0.5727,  psi: +0.8149
+2026-04-19 22:21:39 | INFO | Start 1 L-BFGS eval 400 | Loss: 0.452873
+2026-04-19 22:21:39 | INFO |   beta: +0.5872,  xi: +0.7476,  eta: -0.2964,  zeta: -0.5730,  psi: +0.8145
+2026-04-19 22:21:40 | INFO | Start 1 L-BFGS eval 500 | Loss: 0.452859
+2026-04-19 22:21:40 | INFO |   beta: +0.5934,  xi: +0.8072,  eta: -0.2940,  zeta: -0.5745,  psi: +0.8130
+2026-04-19 22:21:40 | INFO | Start 1 L-BFGS eval 600 | Loss: 0.444297
+2026-04-19 22:21:40 | INFO |   beta: +0.5731,  xi: +1.0000,  eta: -0.3145,  zeta: -0.5715,  psi: +0.8160
+2026-04-19 22:21:40 | INFO | Start 1 L-BFGS eval 700 | Loss: 0.444292
+2026-04-19 22:21:40 | INFO |   beta: +0.5755,  xi: +1.0000,  eta: -0.3111,  zeta: -0.5710,  psi: +0.8165
+2026-04-19 22:21:40 | INFO | Optimizer start 1/3 complete | final_loss=0.444292 | status=CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-19 22:21:40 | INFO | Optimizer start 2/3 | seed=1 | initial_loss=0.684824
+2026-04-19 22:21:40 | INFO | Start 2 Adam step 0 | Loss: 0.684824
+2026-04-19 22:21:41 | INFO | Start 2 Adam step 100 | Loss: 0.471826
+2026-04-19 22:21:41 | INFO | Start 2 Adam step 200 | Loss: 0.473510
+2026-04-19 22:21:42 | INFO | Start 2 Adam step 300 | Loss: 0.470867
+2026-04-19 22:21:42 | INFO | Start 2 Adam step 400 | Loss: 0.470338
+2026-04-19 22:21:43 | INFO | Start 2 Adam step 500 | Loss: 0.474439
+2026-04-19 22:21:43 | INFO | Start 2 Adam step 600 | Loss: 0.481265
+2026-04-19 22:21:44 | INFO | Start 2 Adam step 700 | Loss: 0.479903
+2026-04-19 22:21:44 | INFO | Start 2 Adam step 800 | Loss: 0.480229
+2026-04-19 22:21:44 | INFO | Start 2 Adam step 900 | Loss: 0.481911
+2026-04-19 22:21:45 | INFO | Start 2 L-BFGS eval 0 | Loss: 0.488880
+2026-04-19 22:21:45 | INFO |   beta: +0.5637,  xi: +0.7681,  eta: -0.3001,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:45 | INFO | Start 2 L-BFGS eval 100 | Loss: 0.488455
+2026-04-19 22:21:45 | INFO |   beta: +0.5477,  xi: +1.0000,  eta: -0.6874,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:46 | INFO | Start 2 L-BFGS eval 200 | Loss: 0.463592
+2026-04-19 22:21:46 | INFO |   beta: +0.5568,  xi: +0.8937,  eta: -0.3573,  zeta: -0.5721,  psi: +0.8154
+2026-04-19 22:21:46 | INFO | Start 2 L-BFGS eval 300 | Loss: 0.470987
+2026-04-19 22:21:46 | INFO |   beta: +0.4486,  xi: +0.5752,  eta: -0.4211,  zeta: -0.5677,  psi: +0.8198
+2026-04-19 22:21:46 | INFO | Start 2 L-BFGS eval 400 | Loss: 0.462877
+2026-04-19 22:21:46 | INFO |   beta: +0.5442,  xi: +0.6944,  eta: -0.3282,  zeta: -0.5721,  psi: +0.8154
+2026-04-19 22:21:47 | INFO | Start 2 L-BFGS eval 500 | Loss: 0.462154
+2026-04-19 22:21:47 | INFO |   beta: +0.6069,  xi: +0.6088,  eta: -0.2727,  zeta: -0.5699,  psi: +0.8176
+2026-04-19 22:21:47 | INFO | Start 2 L-BFGS eval 600 | Loss: 0.460361
+2026-04-19 22:21:47 | INFO |   beta: +0.4430,  xi: +1.0000,  eta: -0.3644,  zeta: -0.6366,  psi: +0.7510
+2026-04-19 22:21:48 | INFO | Optimizer start 2/3 complete | final_loss=0.450603 | status=CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-19 22:21:48 | INFO | Optimizer start 3/3 | seed=2 | initial_loss=0.689615
+2026-04-19 22:21:48 | INFO | Start 3 Adam step 0 | Loss: 0.689615
+2026-04-19 22:21:48 | INFO | Start 3 Adam step 100 | Loss: 0.465302
+2026-04-19 22:21:49 | INFO | Start 3 Adam step 200 | Loss: 0.488303
+2026-04-19 22:21:49 | INFO | Start 3 Adam step 300 | Loss: 0.471668
+2026-04-19 22:21:50 | INFO | Start 3 Adam step 400 | Loss: 0.467387
+2026-04-19 22:21:50 | INFO | Start 3 Adam step 500 | Loss: 0.468446
+2026-04-19 22:21:51 | INFO | Start 3 Adam step 600 | Loss: 0.478842
+2026-04-19 22:21:51 | INFO | Start 3 Adam step 700 | Loss: 0.476370
+2026-04-19 22:21:52 | INFO | Start 3 Adam step 800 | Loss: 0.478957
+2026-04-19 22:21:52 | INFO | Start 3 Adam step 900 | Loss: 0.482660
+2026-04-19 22:21:52 | INFO | Start 3 L-BFGS eval 0 | Loss: 0.482701
+2026-04-19 22:21:52 | INFO |   beta: +0.5654,  xi: +0.7752,  eta: -0.2975,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:53 | INFO | Start 3 L-BFGS eval 100 | Loss: 0.466786
+2026-04-19 22:21:53 | INFO |   beta: +0.6029,  xi: +1.0000,  eta: -0.3013,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:53 | INFO | Start 3 L-BFGS eval 200 | Loss: 0.466511
+2026-04-19 22:21:53 | INFO |   beta: +0.5729,  xi: +1.0000,  eta: -0.3002,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:54 | INFO | Start 3 L-BFGS eval 300 | Loss: 0.466769
+2026-04-19 22:21:54 | INFO |   beta: +0.6314,  xi: +1.0000,  eta: -0.3159,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:54 | INFO | Start 3 L-BFGS eval 400 | Loss: 0.533941
+2026-04-19 22:21:54 | INFO |   beta: +1.0000,  xi: -1.0000,  eta: -0.9563,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:55 | INFO | Start 3 L-BFGS eval 500 | Loss: 0.466453
+2026-04-19 22:21:55 | INFO |   beta: +0.6305,  xi: +1.0000,  eta: -0.3198,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:55 | INFO | Start 3 L-BFGS eval 600 | Loss: 0.463431
+2026-04-19 22:21:55 | INFO |   beta: +0.5500,  xi: +0.6815,  eta: -0.2579,  zeta: -0.5711,  psi: +0.8164
+2026-04-19 22:21:55 | INFO | Start 3 L-BFGS eval 700 | Loss: 0.462994
+2026-04-19 22:21:55 | INFO |   beta: +0.5632,  xi: +0.7953,  eta: -0.2927,  zeta: -0.5716,  psi: +0.8159
+2026-04-19 22:21:56 | INFO | Start 3 L-BFGS eval 800 | Loss: 0.462968
+2026-04-19 22:21:56 | INFO |   beta: +0.5651,  xi: +0.7940,  eta: -0.2952,  zeta: -0.5757,  psi: +0.8119
+2026-04-19 22:21:56 | INFO | Start 3 L-BFGS eval 900 | Loss: 0.462952
+2026-04-19 22:21:56 | INFO |   beta: +0.5482,  xi: +0.7881,  eta: -0.2792,  zeta: -0.5807,  psi: +0.8068
+2026-04-19 22:21:57 | INFO | Start 3 L-BFGS eval 1000 | Loss: 0.456443
+2026-04-19 22:21:57 | INFO |   beta: +0.5114,  xi: +1.0000,  eta: -0.3741,  zeta: -0.5626,  psi: +0.8249
+2026-04-19 22:21:57 | INFO | Start 3 L-BFGS eval 1100 | Loss: 0.454557
+2026-04-19 22:21:57 | INFO |   beta: +0.5677,  xi: +1.0000,  eta: -0.3082,  zeta: -0.5716,  psi: +0.8159
+2026-04-19 22:21:57 | INFO | Optimizer start 3/3 complete | final_loss=0.454556 | status=CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-19 22:21:57 | INFO | Done fitting.
+2026-04-19 22:21:57 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | best_start=1/3
+2026-04-19 22:21:57 | INFO | Best optimizer start: 1 / 3
+2026-04-19 22:21:57 | INFO | Final Loss: 0.444292
+2026-04-19 22:21:57 | INFO | Estimated vs True Parameters:
+2026-04-19 22:21:57 | INFO |   beta: 0.5755 (True: 0.5500) | SQE: 0.000652
+2026-04-19 22:21:57 | INFO |   xi: 1.0000 (True: 0.7500) | SQE: 0.062500
+2026-04-19 22:21:57 | INFO |   eta: -0.3111 (True: -0.3000) | SQE: 0.000122
+2026-04-19 22:21:57 | INFO |   zeta: -0.5710 (True: -0.5500) | SQE: 0.000441
+2026-04-19 22:21:57 | INFO |   psi: 0.8165 (True: 0.8000) | SQE: 0.000273
+2026-04-19 22:21:57 | INFO | Field and interaction diagnostics:
+2026-04-19 22:21:57 | INFO |   field_rmse: 0.300045
+2026-04-19 22:21:57 | INFO |   interaction_fro_error: 0.665177
+2026-04-19 22:21:57 | INFO |   estimated_field_inf_norm: 1.000000
+2026-04-19 22:21:57 | INFO |   estimated_field_rank: 40.000000
+2026-04-19 22:21:57 | INFO |   bound_B: 1.000000
+2026-04-19 22:21:57 | INFO |   true_field_inf_norm: 0.015835
+2026-04-19 22:21:57 | INFO |   true_field_rank: 40.000000
+2026-04-19 22:21:57 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\mple_summary.md
+2026-04-19 22:21:57 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_40_b1\fits\rank_40_b1\mple.log

@@ -44,8 +44,14 @@ def _maybe_load_fixed_intervention_shape(
     panel_path = Path(str(artifact.get("panel_path", "")))
     z0_path = Path(str(artifact.get("z0_path", "")))
     if not panel_path.exists() or not z0_path.exists():
+        missing = [
+            f"{label}={path}"
+            for label, path in [("panel_path", panel_path), ("z0_path", z0_path)]
+            if not path.exists()
+        ]
         raise FileNotFoundError(
-            "Fixed intervention artifacts require both panel_path and z0_path."
+            "Fixed intervention artifacts require both panel_path and z0_path; "
+            f"missing {', '.join(missing)}."
         )
     with np.load(panel_path, allow_pickle=False) as data:
         if "z" not in data:
