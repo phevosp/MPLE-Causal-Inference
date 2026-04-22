@@ -51,9 +51,7 @@ def validate_fixed_scalar_params(
     }
     invalid = sorted(set(fixed_scalar_params) - set(SCALAR_PARAMETER_ORDER))
     if invalid:
-        raise ValueError(
-            f"Unknown fixed scalar parameter(s): {', '.join(invalid)}."
-        )
+        raise ValueError(f"Unknown fixed scalar parameter(s): {', '.join(invalid)}.")
     if not fit_intervention_model:
         blocked = [name for name in ["zeta", "psi"] if name in fixed_scalar_params]
         if blocked:
@@ -169,9 +167,7 @@ def latent_field_bound_norm(field_matrix: np.ndarray) -> float:
     return float(np.max(np.abs(field_matrix)))
 
 
-def zero_latent_factors(
-    n_nodes: int, t_steps: int
-) -> tuple[np.ndarray, np.ndarray]:
+def zero_latent_factors(n_nodes: int, t_steps: int) -> tuple[np.ndarray, np.ndarray]:
     return (
         np.zeros((n_nodes, 0), dtype=float),
         np.zeros((t_steps, 0), dtype=float),
@@ -224,7 +220,9 @@ def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
     field_mode = get_field_mode(config)
-    latent_rank = 0 if field_mode == FIELD_MODE_NUCLEAR_NORM else get_latent_rank(config)
+    latent_rank = (
+        0 if field_mode == FIELD_MODE_NUCLEAR_NORM else get_latent_rank(config)
+    )
     return ModelArtifacts(
         gamma_matrix=gamma_matrix,
         t_steps=int(config.global_params.T),
@@ -441,7 +439,9 @@ def pack_theta(
         field_block = np.asarray(theta_parts["field_matrix"], dtype=float).reshape(-1)
     else:
         if theta_parts["node_factors"] is None or theta_parts["time_factors"] is None:
-            raise ValueError("low_rank field mode requires node_factors and time_factors.")
+            raise ValueError(
+                "low_rank field mode requires node_factors and time_factors."
+            )
         field_block = np.concatenate(
             [
                 np.asarray(theta_parts["node_factors"], dtype=float).reshape(-1),
