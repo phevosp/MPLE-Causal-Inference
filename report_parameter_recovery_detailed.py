@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import math
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 from omegaconf import OmegaConf
 
+from io_utils import _as_float, _metric_or_inf, write_csv, write_markdown_table
 from model_utils import latent_field_bound_norm
 from pipeline_specs import read_csv_manifest
 
@@ -67,17 +67,6 @@ WINNER_COLUMNS = [
     "interaction_fro_error",
     "optimizer_status",
 ]
-
-
-def _as_float(value: object) -> float | None:
-    if value in (None, ""):
-        return None
-    return float(value)
-
-
-def _metric_or_inf(value: object) -> float:
-    parsed = _as_float(value)
-    return math.inf if parsed is None else parsed
 
 
 def total_recovery_rmse(row: dict[str, object]) -> float | None:
@@ -262,38 +251,6 @@ def group_and_rank_fit_rows(
         )
     )
     return ranked_groups, winners
-
-
-def write_csv(path: Path, rows: list[dict[str, object]], columns: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(
-            [{column: row.get(column, "") for column in columns} for row in rows]
-        )
-
-
-def _fmt(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, float):
-        return f"{value:.6f}"
-    return str(value)
-
-
-def write_markdown_table(
-    handle, rows: list[dict[str, object]], columns: list[str]
-) -> None:
-    handle.write("| " + " | ".join(columns) + " |\n")
-    handle.write("| " + " | ".join(["---"] * len(columns)) + " |\n")
-    for row in rows:
-        handle.write(
-            "| " + " | ".join(_fmt(row.get(column, "")) for column in columns) + " |\n"
-        )
-    handle.write("\n")
 
 
 def write_per_experiment_summary(

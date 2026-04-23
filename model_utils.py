@@ -11,6 +11,9 @@ from sklearn.datasets import make_low_rank_matrix
 
 
 DEFAULT_LATENT_RANK = 0
+_DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerate
+_RMS_SCALE_FACTOR = 0.4         # targets initial field RMS at _RMS_SCALE_FACTOR * B
+_TAIL_STRENGTH = 0.5            # tail_strength arg for sklearn make_low_rank_matrix
 SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
 OPTIMIZER_MODE_MANIFOLD = "manifold"
 OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
@@ -108,7 +111,7 @@ def _normalize_dense_graph(gamma_matrix: np.ndarray) -> np.ndarray:
     gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2.0
     np.fill_diagonal(gamma_matrix, 0.0)
     norm = float(np.linalg.norm(gamma_matrix, ord=np.inf))
-    if norm < 1e-12:
+    if norm < _DEGENERACY_THRESHOLD:
         return np.zeros_like(gamma_matrix)
     return gamma_matrix / norm
 
@@ -119,7 +122,7 @@ def _normalize_sparse_graph(gamma_matrix) -> sparse.csr_matrix:
     normalized.setdiag(0.0)
     normalized.eliminate_zeros()
     norm = interaction_matrix_infinity_norm(normalized)
-    if norm < 1e-12:
+    if norm < _DEGENERACY_THRESHOLD:
         return sparse.csr_matrix(normalized.shape, dtype=float)
     return normalized.multiply(1.0 / norm).tocsr()
 
@@ -141,6 +144,11 @@ def validate_graph_infinity_norm(gamma_matrix, tol: float = 1e-8) -> None:
 def compose_latent_field_matrix(
     node_factors: np.ndarray, time_factors: np.ndarray
 ) -> np.ndarray:
+    """Return the (T × N) field matrix as time_factors @ node_factors.T.
+
+    Both node_factors (N × r) and time_factors (T × r) share r latent dimensions.
+    The resulting matrix has entry [t, n] = <time_factors[t], node_factors[n]>.
+    """
     return (
         np.asarray(time_factors, dtype=float) @ np.asarray(node_factors, dtype=float).T
     )
@@ -159,6 +167,7 @@ def zero_latent_field(n_nodes: int, t_steps: int) -> np.ndarray:
 
 
 def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
+    """Project field_matrix onto its best rank-r approximation via truncated SVD."""
     field_matrix = np.asarray(field_matrix, dtype=float)
     max_rank = min(max(int(rank), 0), *field_matrix.shape)
     if max_rank == 0:
@@ -170,9 +179,13 @@ def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
 def scale_latent_field_matrix(
     field_matrix: np.ndarray, target_rms: float, bound: float
 ) -> np.ndarray:
+    """Rescale field_matrix to have RMS ≈ target_rms, then clip to inf-norm ≤ bound.
+
+    Returns the zero matrix if the initial RMS is below _DEGENERACY_THRESHOLD.
+    """
     field_matrix = np.asarray(field_matrix, dtype=float)
     rms = float(np.sqrt(np.mean(field_matrix**2)))
-    if rms < 1e-12:
+    if rms < _DEGENERACY_THRESHOLD:
         return np.zeros_like(field_matrix)
     field_matrix = field_matrix * (target_rms / rms)
     norm = latent_field_bound_norm(field_matrix)
@@ -188,7 +201,7 @@ def project_latent_field(
     time_factors = np.asarray(time_factors, dtype=float).copy()
     field_matrix = compose_latent_field_matrix(node_factors, time_factors)
     norm = latent_field_bound_norm(field_matrix)
-    if norm <= bound or norm < 1e-12:
+    if norm <= bound or norm < _DEGENERACY_THRESHOLD:
         return node_factors, time_factors
     scale = np.sqrt(bound / norm)
     return node_factors * scale, time_factors * scale
@@ -202,11 +215,11 @@ def _sample_latent_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
         n_samples=t_steps,
         n_features=n_nodes,
         effective_rank=rank,
-        tail_strength=0.5,
+        tail_strength=_TAIL_STRENGTH,
         random_state=int(config.generation_params.seed) + 101,
     )
     field_matrix = np.asarray(field_matrix, dtype=float)
-    target_rms = 0.4 * get_B(config)
+    target_rms = _RMS_SCALE_FACTOR * get_B(config)
     field_matrix = truncate_matrix_rank(field_matrix, rank)
     return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
 
