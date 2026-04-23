@@ -1,3 +1,10 @@
+"""Run posterior-predictive outcome simulations over explicit experiment/source/intervention targets.
+
+Reads a generation manifest, a fit manifest, a target-pairs CSV, and a posterior_predictive_spec.yaml.
+For each (experiment, source, intervention) triple in the target pairs, simulates outcome trajectories
+via Gibbs sampling and writes per-target statistics and summary reports.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -447,16 +454,52 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run posterior-predictive outcome simulations over explicit experiment/source targets."
     )
-    parser.add_argument("--generation_manifest_path", required=True, type=str)
-    parser.add_argument("--fit_manifest_path", required=True, type=str)
-    parser.add_argument("--target_pairs_path", required=True, type=str)
+    parser.add_argument(
+        "--generation_manifest_path",
+        required=True,
+        type=str,
+        help="Path to the generation manifest CSV produced by run_generation_pipeline.py.",
+    )
+    parser.add_argument(
+        "--fit_manifest_path",
+        required=True,
+        type=str,
+        help="Path to the fit manifest CSV produced by run_fit_pipeline.py.",
+    )
+    parser.add_argument(
+        "--target_pairs_path",
+        required=True,
+        type=str,
+        help="Path to the CSV enumerating (experiment, source_type, variant, intervention) targets.",
+    )
     parser.add_argument(
         "--spec_path",
         type=str,
         default="data/configs/posterior_predictive_spec.yaml",
+        help="Path to the posterior predictive YAML spec (default: data/configs/posterior_predictive_spec.yaml).",
     )
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="If set, delete and rebuild existing simulation output directories.",
+    )
+    parser.add_argument(
+        "--dry_run",
+        action="store_true",
+        help="Validate inputs and print planned targets without executing any simulations.",
+    )
     args = parser.parse_args()
+
+    if args.dry_run:
+        generation_lookup = _index_generation_rows(args.generation_manifest_path)
+        fit_lookup = _resolve_fit_lookup(args.fit_manifest_path)
+        target_pairs = _resolve_target_pairs(
+            args.target_pairs_path, generation_lookup, fit_lookup
+        )
+        print(f"Dry run: {len(target_pairs)} simulation target(s) planned.")
+        for pair in target_pairs:
+            print(f"  {pair['experiment_name']} / {pair.get('source_name', '?')} / {pair.get('intervention_name', '?')}")
+        return
 
     manifest_path = run_posterior_predictive(
         args.generation_manifest_path,

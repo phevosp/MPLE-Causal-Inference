@@ -10,46 +10,33 @@ base:
   latent_rank: 0
   optimizer_mode: manifold
   lambda_nuclear: 0.0
-  lambda_frobenius: 0.0
   lambda_uv_ridge: 0.0
   estimation:
-    fixed_scalar_params: {}
+    fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
 
 variants:
   - name: nuclear_lambda_15e_2
     optimizer_mode: nuclear_norm
     lambda_nuclear: 0.15
+
+  - name: nuclear_lambda_1e_1
+    optimizer_mode: nuclear_norm
+    lambda_nuclear: 0.1
+
+  - name: nuclear_lambda_15e_2
+    optimizer_mode: nuclear_norm
+    lambda_nuclear: 0.15
     estimation:
       fixed_scalar_params:
-        beta: 0
-        xi: 0
-        eta: 0
+        beta: 0.5
+        xi: 0.33
+        eta: -0.1
 
   - name: nuclear_lambda_1e_1
     optimizer_mode: nuclear_norm
     lambda_nuclear: 0.1
     estimation:
       fixed_scalar_params:
-        beta: 0
-        xi: 0
-        eta: 0
-
-  - name: alternative_low_rank_1
-    optimizer_mode: alternative_low_rank
-    latent_rank: 1
-    lambda_uv_ridge: 0.5
-    estimation:
-      fixed_scalar_params:
-        beta: 0
-        xi: 0
-        eta: 0
-
-  - name: alternative_low_rank_10
-    optimizer_mode: alternative_low_rank
-    latent_rank: 10
-    lambda_uv_ridge: 0.5
-    estimation:
-      fixed_scalar_params:
-        beta: 0
-        xi: 0
-        eta: 0
+        beta: 0.5
+        xi: 0.33
+        eta: -0.1

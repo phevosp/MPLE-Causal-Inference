@@ -10,8 +10,6 @@ from pathlib import Path
 
 import numpy as np
 from omegaconf import OmegaConf
-from scipy import sparse
-
 from data.synthetic_data_generation import (
     derive_pre_intervention_steps,
     simulate_outcomes_given_fixed_interventions,
@@ -22,6 +20,7 @@ from model_utils import (
     load_model_artifacts,
 )
 from pipeline_specs import slugify
+from io_utils import first_existing_path, load_gamma_matrix, load_yaml_config
 
 
 GENERATION_CONFIG_FILENAMES = (
@@ -62,32 +61,6 @@ def _io_path(path: str | Path) -> str:
     if os.name == "nt" and not resolved.startswith("\\\\?\\"):
         return "\\\\?\\" + resolved
     return resolved
-
-
-def first_existing_path(*paths: str | Path) -> Path:
-    for path in paths:
-        candidate = Path(path)
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(
-        "Could not find any of the expected paths: "
-        + ", ".join(str(Path(path)) for path in paths)
-    )
-
-
-def load_yaml_config(path: str | Path):
-    return OmegaConf.load(Path(path))
-
-
-def load_gamma_matrix(data_folder: str | Path):
-    data_path = Path(data_folder)
-    gamma_sparse = data_path / "gamma_matrix_sparse.npz"
-    gamma_dense = data_path / "gamma_matrix.npy"
-    if gamma_sparse.exists():
-        return sparse.load_npz(gamma_sparse).tocsr()
-    if gamma_dense.exists():
-        return np.load(gamma_dense, allow_pickle=False)
-    raise FileNotFoundError(f"Missing gamma matrix artifact in {data_path}.")
 
 
 def load_panel_context_from_artifacts(

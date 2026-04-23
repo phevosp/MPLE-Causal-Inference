@@ -9,8 +9,10 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
+from io_utils import first_existing_path, load_gamma_matrix
 from model_utils import interaction_effect, load_model_artifacts
-from mple import first_existing_path, load_gamma_matrix
+
+_DEGENERACY_THRESHOLD = 1e-12  # denominators below this are treated as degenerate
 
 
 DIAGNOSTIC_FIELDNAMES = [
@@ -81,6 +83,7 @@ def _field_stats(prefix: str, field: np.ndarray | None) -> dict[str, object]:
 
 
 def _field_alignment(true_field: np.ndarray, estimated_field: np.ndarray) -> dict[str, float]:
+    """Compute RMSE, relative Frobenius error, Pearson correlation, and cosine similarity between two fields."""
     error = estimated_field - true_field
     true_flat = true_field.reshape(-1)
     est_flat = estimated_field.reshape(-1)

@@ -1,3 +1,9 @@
+"""Run USCounty vaccination sensitivity analysis across start dates and latent ranks.
+
+Slices each source experiment at a grid of temporal start points, re-fits MPLE models,
+and aggregates results into a ranked summary CSV and Markdown report.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -10,7 +16,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
-from scipy import sparse
+
+from io_utils import load_gamma_matrix
 
 from data.synthetic_data_generation import derive_pre_intervention_steps
 from data.USCountyVaccination.experiment_artifacts import (
@@ -73,16 +80,6 @@ def _load_yaml_mapping(path: Path) -> dict[str, Any]:
         return {}
     payload = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
     return dict(payload) if isinstance(payload, dict) else {}
-
-
-def _load_gamma_matrix(experiment_root: Path):
-    sparse_path = experiment_root / "gamma_matrix_sparse.npz"
-    dense_path = experiment_root / "gamma_matrix.npy"
-    if sparse_path.exists():
-        return sparse.load_npz(sparse_path).tocsr()
-    if dense_path.exists():
-        return np.load(dense_path)
-    raise FileNotFoundError(f"Missing gamma matrix in {experiment_root}.")
 
 
 def _load_adjacency_edges(experiment_root: Path) -> pd.DataFrame:
@@ -207,7 +204,7 @@ def _save_sliced_experiment(
             )
         ),
     )
-    gamma_matrix = _load_gamma_matrix(source_root)
+    gamma_matrix = load_gamma_matrix(source_root)
     adjacency_edges = _load_adjacency_edges(source_root)
     metadata = {
         **source_metadata,
@@ -312,6 +309,7 @@ def write_sensitivity_fit_spec(
     seed: int,
     n_starts: int = 1,
     lambda_nuclear_values: list[float] | None = None,
+    b_values: list[float] | None = None,
 ) -> Path:
     output_root_path = _repo_path(output_root)
     if not latent_ranks:
@@ -321,28 +319,34 @@ def write_sensitivity_fit_spec(
     lambda_nuclear_values = list(lambda_nuclear_values or [])
     if any(value < 0.0 for value in lambda_nuclear_values):
         raise ValueError("lambda_nuclear values must be nonnegative.")
+    b_values_list = list(b_values) if b_values is not None else [None]
     variants: list[dict[str, Any]] = []
-    for latent_rank in latent_ranks:
-        variants.append(
-            {
-                "name": f"rank_{int(latent_rank)}",
-                "optimizer_mode": "manifold",
-                "latent_rank": int(latent_rank),
-                "lambda_nuclear": 0.0,
-                "lambda_uv_ridge": 0.0,
-            }
-        )
-    for lambda_value in lambda_nuclear_values:
-        lambda_label = ("%g" % float(lambda_value)).replace(".", "p").replace("-", "m")
-        variants.append(
-            {
-                "name": f"nuclear_lambda_{lambda_label}",
-                "optimizer_mode": "nuclear_norm",
-                "latent_rank": 0,
-                "lambda_nuclear": float(lambda_value),
-                "lambda_uv_ridge": 0.0,
-            }
-        )
+    for b in b_values_list:
+        b_suffix = "" if b is None else f"_b{('%g' % float(b)).replace('.', 'p').replace('-', 'm')}"
+        b_dict: dict[str, Any] = {} if b is None else {"B": float(b)}
+        for latent_rank in latent_ranks:
+            variants.append(
+                {
+                    "name": f"rank_{int(latent_rank)}{b_suffix}",
+                    "optimizer_mode": "manifold",
+                    "latent_rank": int(latent_rank),
+                    "lambda_nuclear": 0.0,
+                    "lambda_uv_ridge": 0.0,
+                    **b_dict,
+                }
+            )
+        for lambda_value in lambda_nuclear_values:
+            lambda_label = ("%g" % float(lambda_value)).replace(".", "p").replace("-", "m")
+            variants.append(
+                {
+                    "name": f"nuclear_lambda_{lambda_label}{b_suffix}",
+                    "optimizer_mode": "nuclear_norm",
+                    "latent_rank": 0,
+                    "lambda_nuclear": float(lambda_value),
+                    "lambda_uv_ridge": 0.0,
+                    **b_dict,
+                }
+            )
     spec = OmegaConf.create(
         {
             "base": {
@@ -498,12 +502,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional source experiment_name values to include. Defaults to all rows.",
     )
-    parser.add_argument("--start_dates", nargs="+", default=list(DEFAULT_START_DATES))
+    parser.add_argument(
+        "--start_dates",
+        nargs="+",
+        default=list(DEFAULT_START_DATES),
+        help="ISO date strings (YYYY-MM-DD) used as temporal slice start points.",
+    )
     parser.add_argument(
         "--latent_ranks",
         nargs="+",
         type=int,
         default=list(DEFAULT_LATENT_RANKS),
+        help="Latent field ranks to sweep (0 = scalar-only manifold mode).",
     )
     parser.add_argument(
         "--lambda_nuclear_values",
@@ -512,16 +522,35 @@ def parse_args() -> argparse.Namespace:
         default=list(DEFAULT_LAMBDA_NUCLEAR_VALUES),
         help="Optional nuclear-norm penalty values to add as convex-relaxation fit variants.",
     )
-    parser.add_argument("--steps", type=int, default=50000)
-    parser.add_argument("--tol", type=float, default=1.0e-9)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=50000,
+        help="Maximum optimizer iterations per fit (default: 50000).",
+    )
+    parser.add_argument(
+        "--tol",
+        type=float,
+        default=1.0e-9,
+        help="Convergence tolerance for the optimizer (default: 1e-9).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Base random seed; each start index increments from this value (default: 0).",
+    )
     parser.add_argument(
         "--n_starts",
         type=int,
         default=5,
-        help="Number of random starts for each fit variant.",
+        help="Number of random starts for each fit variant (default: 5).",
     )
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="If set, delete and rebuild existing experiment and fit directories.",
+    )
     parser.add_argument(
         "--run_fits",
         action="store_true",

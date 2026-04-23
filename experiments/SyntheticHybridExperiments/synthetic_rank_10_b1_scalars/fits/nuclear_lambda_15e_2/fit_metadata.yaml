@@ -1,0 +1,17 @@
+variant_name: nuclear_lambda_15e_2
+variant_slug: nuclear_lambda_15e_2
+fits_spec_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\data\configs\fits_spec.yaml
+experiment_name: synthetic_rank_10_B1_scalars
+experiment_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars
+model_artifact_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars
+truth_artifact_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars
+panel_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\panel_data.npz
+x0_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\x_0.npy
+latent_rank: 0
+optimizer_mode: nuclear_norm
+lambda_nuclear: 0.15
+lambda_frobenius: 0.0
+lambda_uv_ridge: 0.0
+'N': 1000
+T: 100
+s: 0

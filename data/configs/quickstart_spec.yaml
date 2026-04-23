@@ -1,13 +1,13 @@
 base:
-  experiment_root: experiments/SyntheticHybridExperiments
-  manifest_path: experiments/SyntheticHybridExperiments/generation_manifest.csv
+  experiment_root: experiments/Quickstart
+  manifest_path: experiments/Quickstart/generation_manifest.csv
   dimensions:
-    N: 1000
-    T: 100
+    N: 30
+    T: 10
     s: 0
   generation:
-    gibbs_sweeps: 20
-    seed: 42
+    gibbs_sweeps: 5
+    seed: 0
   x0:
     generator: bernoulli
     params:
@@ -17,7 +17,7 @@ base:
     source: generated
     generator: erdos_renyi
     params:
-      p: 0.05
+      p: 0.2
     artifact:
       gamma_path: null
       node_index_path: null
@@ -46,16 +46,7 @@ base:
       psi: 0
 
 experiments:
-  - name: synthetic_rank_1_B1_scalars
-    generation:
-      seed: 720
+  - name: quickstart_rank_2
     truth:
-      latent_rank: 1
-      B: 1
-
-  - name: synthetic_rank_10_B1_scalars
-    generation:
-      seed: 720
-    truth:
-      latent_rank: 10
-      B: 1
+      latent_rank: 2
+      B: 1.0

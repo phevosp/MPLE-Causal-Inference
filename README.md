@@ -17,6 +17,38 @@ The repository currently supports two main workflows:
 - Manifest and artifact reference: [PIPELINE_REFERENCE.md](PIPELINE_REFERENCE.md)
 - US county workflow details: [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md)
 
+## Quickstart
+
+Verify your install works end-to-end in under 2 minutes using the toy experiment (N=30, T=10, rank=2, 500 optimizer steps):
+
+```bash
+pixi install
+pixi run quickstart-generate
+pixi run quickstart-fit
+```
+
+Outputs land in `experiments/Quickstart/`. Once this works, proceed to the full synthetic or real-data workflows below.
+
+## Configuration Guide
+
+All pipeline YAML specs use a `base + named entries` pattern: every named entry is deep-merged with `base`, inheriting all fields it doesn't override. The spec is then expanded into one config per entry by `pipeline_specs.expand_named_entries()`.
+
+**There are two separate config directories — do not mix them:**
+
+| Directory | Used by |
+| --- | --- |
+| `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive_pipeline.py`) |
+| `data/USCountyVaccination/experiment_configs/` | Real-data pipeline and `run_uscounty_sensitivity_analysis.py` |
+
+Both directories contain identically named files (`fits_spec.yaml`, etc.) for their respective workflows. Updating fitting behavior requires editing both files independently.
+
+**Key `fits_spec.yaml` fields:**
+
+- `optimizer_mode`: one of `manifold` (Riemannian CG, default), `nuclear_norm` (proximal gradient), or `alternative_low_rank` (alternating L-BFGS-B).
+- `latent_rank`: must be ≥ 1 for `alternative_low_rank`; ignored for `nuclear_norm`.
+- `estimation.fixed_scalar_params`: scalars held **fixed** at these values (not initial guesses). Leave as `{}` to estimate all scalars freely.
+- `lambda_uv_ridge`: only active for `alternative_low_rank` mode.
+
 ## Environment
 
 The project is configured with `pixi.toml` and currently targets `win-64`.
