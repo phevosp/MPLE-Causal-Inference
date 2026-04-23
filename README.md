@@ -51,6 +51,11 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 - `lambda_frobenius`: only active for `exact_rank_manifold`.
 - `lambda_uv_ridge`: only active for `alternating_latent_rank`.
 
+**Key `generation_spec.yaml` truth fields:**
+
+- `truth.field_mode`: `random_low_rank` or `node_bias_plus_smooth_time_drift`
+- `truth.field_params`: optional tuning knobs for structured fields such as `node_bias_scale`, `drift_scale`, and `time_trend_sharpness`
+
 ## Environment
 
 The project is configured with `pixi.toml` and currently targets `win-64`.
@@ -104,6 +109,7 @@ What generation resolves:
 - outcome truth scalars `beta`, `xi`, `eta`
 - generation-only intervention scalars `zeta`, `psi`
 - `truth.latent_rank`
+- `truth.field_mode`
 - graph source
 - intervention source
 - initial state generator

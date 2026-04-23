@@ -50,6 +50,7 @@ from model_utils import (
     compose_interaction_matrix,
     compose_latent_field_matrix,
     get_xi,
+    _smooth_time_trend,
     interaction_effect,
     interaction_matrix_infinity_norm,
     latent_field_bound_norm,
@@ -339,6 +340,40 @@ class MinimalPipelineTests(unittest.TestCase):
             latent_field_bound_norm(field_matrix),
             float(config.global_params.B) + 1e-12,
         )
+
+    def test_node_bias_plus_smooth_time_drift_field_is_rank_two(self) -> None:
+        config = base_config()
+        config.global_params.B = 1.0
+        config.global_params.latent_rank = 2
+        config.global_params.field_mode = "node_bias_plus_smooth_time_drift"
+        config.global_params.field_params = {
+            "node_bias_scale": 1.0,
+            "drift_scale": 0.4,
+            "time_trend_sharpness": 2.0,
+        }
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+
+        artifacts = build_synthetic_field(config, gamma)
+        field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
+        trend = _smooth_time_trend(int(config.global_params.T), sharpness=2.0)
+
+        self.assertEqual(artifacts.latent_rank, 2)
+        self.assertEqual(field_matrix.shape, (3, 4))
+        self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
+        self.assertLessEqual(
+            latent_field_bound_norm(field_matrix),
+            float(config.global_params.B) + 1e-12,
+        )
+        self.assertAlmostEqual(float(np.mean(trend)), 0.0, places=12)
+        self.assertAlmostEqual(float(np.sqrt(np.mean(trend**2))), 1.0, places=12)
+        self.assertTrue(np.all(np.diff(trend) >= -1e-12))
 
     def test_latent_field_projection_bounds_max_entry_not_row_sum(self) -> None:
         node_factors = np.array([[2.0], [2.0]])

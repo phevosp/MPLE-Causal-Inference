@@ -29,6 +29,8 @@ Important keys:
 - `intervention.artifact.*` for fixed intervention artifacts
 - `truth.B`
 - `truth.latent_rank`
+- `truth.field_mode`
+- `truth.field_params`
 - `truth.scalars.beta`, `xi`, `eta`
 - generation-only intervention scalars `truth.scalars.zeta`, `psi`
 
@@ -36,6 +38,7 @@ Supported source modes:
 
 - `graph.source: generated | fixed_artifact`
 - `intervention.source: generated | fixed_artifact`
+- `truth.field_mode: random_low_rank | node_bias_plus_smooth_time_drift`
 
 Dimension resolution:
 

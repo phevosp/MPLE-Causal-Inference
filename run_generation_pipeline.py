@@ -121,6 +121,8 @@ def translate_generation_spec(spec: dict[str, Any]):
     dims = resolve_dimensions(spec)
     truth = dict(spec.get("truth", {}) or {})
     scalars = dict(truth.get("scalars", {}) or {})
+    field_mode = str(truth.get("field_mode", "random_low_rank"))
+    field_params = dict(truth.get("field_params", {}) or {})
     generation = dict(spec.get("generation", {}) or {})
     x0 = dict(spec.get("x0", {}) or {})
     graph = dict(spec.get("graph", {}) or {})
@@ -167,6 +169,8 @@ def translate_generation_spec(spec: dict[str, Any]):
                 },
                 "x_0_generator": str(x0["generator"]),
                 "latent_rank": latent_rank,
+                "field_mode": field_mode,
+                "field_params": field_params,
                 "gamma_matrix_params": gamma_matrix_params,
                 "x_0_params": dict(x0.get("params", {}) or {}),
             },
@@ -202,6 +206,7 @@ def manifest_row_for_experiment(
     spec: dict[str, Any],
     data_folder: Path,
     dims: dict[str, int],
+    metadata: dict[str, object],
 ) -> dict[str, object]:
     return {
         "experiment_name": spec["name"],
@@ -216,7 +221,8 @@ def manifest_row_for_experiment(
         "T": dims["T"],
         "s": dims["s"],
         "has_truth": True,
-        "latent_rank": int(spec.get("truth", {}).get("latent_rank", 0)),
+        "field_mode": str(metadata.get("field_mode", "random_low_rank")),
+        "latent_rank": int(metadata.get("latent_rank", spec.get("truth", {}).get("latent_rank", 0))),
     }
 
 
@@ -244,7 +250,7 @@ def run_generation(spec_path: str | Path, overwrite: bool = False) -> Path:
                 raise FileExistsError(
                     f"{data_folder} already exists. Re-run with --overwrite to rebuild it."
                 )
-        materialize_generation_experiment(
+        metadata = materialize_generation_experiment(
             config=config,
             data_folder=data_folder,
             descriptor=experiment_spec["name"],
@@ -263,7 +269,7 @@ def run_generation(spec_path: str | Path, overwrite: bool = False) -> Path:
             config_filename="generation_realized_config.yaml",
         )
         manifest_rows.append(
-            manifest_row_for_experiment(experiment_spec, data_folder, dims)
+            manifest_row_for_experiment(experiment_spec, data_folder, dims, metadata)
         )
         print(f"Recorded manifest entry for '{experiment_spec['name']}'.")
 

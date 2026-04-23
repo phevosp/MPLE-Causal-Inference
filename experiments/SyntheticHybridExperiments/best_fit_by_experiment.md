@@ -2,8 +2,7 @@
 
 Each row is the top-ranked MPLE variant within one generated experiment.
 
-| experiment_name | descriptor | intervention_source | graph_source | N | T | s | variant_name | variant_slug | optimizer_mode | latent_rank | lambda_nuclear | lambda_frobenius | lambda_uv_ridge | fixed_scalar_params | ranking_mode | total_recovery_rmse | final_loss | field_rmse | interaction_fro_error | optimizer_status |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| synthetic_rank_10_B1_scalars | synthetic_rank_10_B1_scalars | generated | generated | 1000 | 100 | 0 | alternating_rank_10 | alternating_rank_10 | alternating_latent_rank | 10 | 0.000000 | 0.000000 | 15.000000 | {} | total_recovery_rmse | 0.302056 | 0.560290 | 0.170643 | 0.379422 | CONVERGED: alternating objective tolerance reached |
-| synthetic_rank_1_B1_scalars | synthetic_rank_1_B1_scalars | generated | generated | 1000 | 100 | 0 | alternating_rank_10 | alternating_rank_10 | alternating_latent_rank | 10 | 0.000000 | 0.000000 | 15.000000 | {} | total_recovery_rmse | 0.159470 | 0.558178 | 0.106405 | 0.148678 | CONVERGED: alternating objective tolerance reached |
+| experiment_name | descriptor | intervention_source | graph_source | field_mode | N | T | s | variant_name | variant_slug | optimizer_mode | latent_rank | lambda_nuclear | lambda_frobenius | lambda_uv_ridge | fixed_scalar_params | ranking_mode | total_recovery_rmse | final_loss | field_rmse | interaction_fro_error | optimizer_status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| synthetic_bias_drift_B1_scalars | synthetic_bias_drift_B1_scalars | generated | generated | node_bias_plus_smooth_time_drift | 1000 | 100 | 0 | manifold_rank_1 | manifold_rank_1 | exact_rank_manifold | 1 | 0.000000 | 0.100000 | 0.000000 | {} | total_recovery_rmse | 0.224324 | 0.566897 | 0.153957 | 0.184853 | Terminated - max iterations reached after 121.41 seconds. | best_start=1/1 |
 

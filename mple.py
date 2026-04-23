@@ -18,7 +18,13 @@ from pymanopt import Problem, function
 from pymanopt.manifolds import Euclidean, FixedRankEmbedded, Product
 from pymanopt.optimizers import ConjugateGradient
 
-from io_utils import _fmt, first_existing_path, io_path, load_gamma_matrix, load_yaml_config
+from io_utils import (
+    _fmt,
+    first_existing_path,
+    io_path,
+    load_gamma_matrix,
+    load_yaml_config,
+)
 from loading_utils import save_estimated_parameter_bundle
 from model_utils import (
     ModelArtifacts,
@@ -187,8 +193,12 @@ def _evaluate_factorized_loss(
         free_scalar_values=free_scalar_values,
         scalar_values=scalar_values,
     )
-    time_gradient = (residual @ np.asarray(node_factors, dtype=float)) / context.outcome_size
-    node_gradient = (residual.T @ np.asarray(time_factors, dtype=float)) / context.outcome_size
+    time_gradient = (
+        residual @ np.asarray(node_factors, dtype=float)
+    ) / context.outcome_size
+    node_gradient = (
+        residual.T @ np.asarray(time_factors, dtype=float)
+    ) / context.outcome_size
     return smooth_loss, residual, time_gradient, node_gradient, scalar_gradient
 
 
@@ -214,9 +224,9 @@ def _prox_threshold_field_matrix(
 ) -> tuple[np.ndarray, float]:
     matrix = np.asarray(field_matrix, dtype=float)
     if matrix.size == 0 or threshold <= 0.0:
-        nuclear_norm = float(
-            np.linalg.svd(matrix, compute_uv=False).sum()
-        ) if matrix.size else 0.0
+        nuclear_norm = (
+            float(np.linalg.svd(matrix, compute_uv=False).sum()) if matrix.size else 0.0
+        )
         return matrix.copy(), nuclear_norm
     u, singular_values, vt = np.linalg.svd(matrix, full_matrices=False)
     shrunk = np.maximum(singular_values - float(threshold), 0.0)
@@ -284,15 +294,17 @@ def pseudo_nll(
         )
         field_grad = residual.reshape(-1) / context.outcome_size
     else:
-        smooth_loss, _, time_grad, node_grad, scalar_gradient = _evaluate_factorized_loss(
-            np.asarray(theta_parts["time_factors"], dtype=float),
-            np.asarray(theta_parts["node_factors"], dtype=float),
-            context,
-            scalar_values={
-                "beta": theta_parts["beta"],
-                "xi": theta_parts["xi"],
-                "eta": theta_parts["eta"],
-            },
+        smooth_loss, _, time_grad, node_grad, scalar_gradient = (
+            _evaluate_factorized_loss(
+                np.asarray(theta_parts["time_factors"], dtype=float),
+                np.asarray(theta_parts["node_factors"], dtype=float),
+                context,
+                scalar_values={
+                    "beta": theta_parts["beta"],
+                    "xi": theta_parts["xi"],
+                    "eta": theta_parts["eta"],
+                },
+            )
         )
         field_grad = np.concatenate([node_grad.reshape(-1), time_grad.reshape(-1)])
     return float(smooth_loss), np.concatenate([field_grad, scalar_gradient])
@@ -312,10 +324,6 @@ def _nuclear_norm_normalizer(artifacts: ModelArtifacts) -> float:
     if size <= 0:
         return 1.0
     return float(np.sqrt(size))
-
-
-def _frobenius_norm_normalizer(artifacts: ModelArtifacts) -> float:
-    return _nuclear_norm_normalizer(artifacts)
 
 
 def _fit_mple_nuclear_norm(
@@ -440,12 +448,12 @@ def _fit_mple_nuclear_norm(
         previous_objective = penalized_obj
 
         next_momentum = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * momentum * momentum))
-        y_field = candidate_field + (
-            (momentum - 1.0) / next_momentum
-        ) * (candidate_field - field_matrix)
-        y_scalars = stepped_scalars + (
-            (momentum - 1.0) / next_momentum
-        ) * (stepped_scalars - free_scalars)
+        y_field = candidate_field + ((momentum - 1.0) / next_momentum) * (
+            candidate_field - field_matrix
+        )
+        y_scalars = stepped_scalars + ((momentum - 1.0) / next_momentum) * (
+            stepped_scalars - free_scalars
+        )
         field_matrix = candidate_field
         free_scalars = stepped_scalars
         momentum = next_momentum
@@ -457,9 +465,7 @@ def _fit_mple_nuclear_norm(
     )
     nuclear_norm = _nuclear_norm(field_matrix)
     normalized_nuclear_norm = nuclear_norm / nuclear_normalizer
-    penalized_obj = float(
-        smooth_loss + float(lambda_nuclear) * normalized_nuclear_norm
-    )
+    penalized_obj = float(smooth_loss + float(lambda_nuclear) * normalized_nuclear_norm)
     scalar_values = _scalar_values_from_free_vector(free_scalars, context)
     theta = pack_theta(
         {
@@ -553,7 +559,7 @@ def _random_fixed_rank_point(
     u, _ = np.linalg.qr(rng.normal(size=(int(t_steps), int(rank))))
     v, _ = np.linalg.qr(rng.normal(size=(int(n_nodes), int(rank))))
     singular_values = np.sort(
-        np.maximum(np.abs(rng.normal(loc=0.1, scale=0.05, size=int(rank))), 1.0e-3)
+        np.maximum(np.abs(rng.normal(loc=1.0, scale=0.25, size=int(rank))), 1.0e-3)
     )[::-1]
     singular_values += (
         np.finfo(float).eps
@@ -706,7 +712,7 @@ def _fit_mple_low_rank_manifold(
     else:
         manifold = fixed_rank_manifold
 
-    frobenius_normalizer = _frobenius_norm_normalizer(artifacts)
+    frobenius_normalizer = _nuclear_norm_normalizer(artifacts)
     frobenius_penalty_normalizer = float(context.outcome_size)
 
     def loss_and_grad(
@@ -826,8 +832,8 @@ def _fit_mple_low_rank_manifold(
     )
     optimizer = ConjugateGradient(
         max_iterations=max(1, int(steps)),
-        min_gradient_norm=float(tol),
-        max_cost_evaluations=max(10, int(steps) * 10),
+        min_gradient_norm=1e-5,
+        max_cost_evaluations=max(50, int(steps) * 25),
         verbosity=0,
     )
 
@@ -1059,8 +1065,8 @@ def _fit_mple_alternative_low_rank(
         time_factors: np.ndarray,
         node_factors: np.ndarray,
         free_scalar_values: np.ndarray,
-    ) -> tuple[float, float, np.ndarray, np.ndarray, np.ndarray, float, float, np.ndarray]:
-        smooth_loss, residual, time_gradient, node_gradient, scalar_gradient = (
+    ) -> tuple[float, float, np.ndarray, np.ndarray, float, float, np.ndarray]:
+        smooth_loss, _, time_gradient, node_gradient, scalar_gradient = (
             _evaluate_factorized_loss(
                 time_factors,
                 node_factors,
@@ -1076,7 +1082,6 @@ def _fit_mple_alternative_low_rank(
         return (
             smooth_loss + ridge_penalty,
             smooth_loss,
-            residual,
             time_gradient
             + (2.0 * float(lambda_uv_ridge) / context.outcome_size)
             * np.asarray(time_factors, dtype=float),
@@ -1125,9 +1130,7 @@ def _fit_mple_alternative_low_rank(
             "xi": context.interaction_effect_x.reshape(-1),
             "eta": context.prev_x.reshape(-1),
         }
-        feature_matrix = np.column_stack(
-            [feature_columns[name] for name in free_names]
-        )
+        feature_matrix = np.column_stack([feature_columns[name] for name in free_names])
         lipschitz = (
             float(np.linalg.norm(feature_matrix, ord=2) ** 2) / context.outcome_size
         )
@@ -1210,7 +1213,6 @@ def _fit_mple_alternative_low_rank(
             _,
             _,
             _,
-            _,
         ) = evaluate_state(time_factors, node_factors, free_scalar_values)
         mple_history = [initial_mple_loss]
         penalized_history = [initial_penalized_objective]
@@ -1232,7 +1234,6 @@ def _fit_mple_alternative_low_rank(
         for outer_index in range(outer_iterations):
             if free_names:
                 (
-                    _,
                     _,
                     _,
                     _,
@@ -1279,7 +1280,6 @@ def _fit_mple_alternative_low_rank(
             (
                 penalized_loss,
                 smooth_loss,
-                residual,
                 _,
                 _,
                 u_frobenius_norm,
@@ -1314,7 +1314,6 @@ def _fit_mple_alternative_low_rank(
         (
             final_penalized_loss,
             final_smooth_loss,
-            _,
             _,
             _,
             final_u_norm,

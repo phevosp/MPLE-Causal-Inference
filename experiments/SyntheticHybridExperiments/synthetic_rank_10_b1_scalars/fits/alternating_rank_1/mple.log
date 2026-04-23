@@ -1,0 +1,43 @@
+2026-04-23 18:12:19 | INFO | Loading data...
+2026-04-23 18:12:19 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\panel_data.npz
+2026-04-23 18:12:19 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\x_0.npy
+2026-04-23 18:12:19 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\fits\alternating_rank_1\fit_realized_config.yaml
+2026-04-23 18:12:19 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars
+2026-04-23 18:12:19 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars
+2026-04-23 18:12:19 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-23 18:12:19 | INFO | Configured latent rank: 1
+2026-04-23 18:12:19 | INFO | Using a fixed known graph with scalar xi.
+2026-04-23 18:12:19 | INFO | Fit-time hard bounds active: False
+2026-04-23 18:12:19 | INFO | Fixed scalar parameters: {}
+2026-04-23 18:12:19 | INFO | Optimizer settings: steps=5000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=10.0, proximal_lr=1.0
+2026-04-23 18:12:19 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.697735 | initial_penalized=0.698806
+2026-04-23 18:12:20 | INFO | Alternating low-rank iter 0 | Loss: 0.582052 | Penalized: 0.584296
+2026-04-23 18:12:24 | INFO | Alternating low-rank iter 100 | Loss: 0.577346 | Penalized: 0.581865
+2026-04-23 18:12:29 | INFO | Alternating low-rank iter 200 | Loss: 0.577246 | Penalized: 0.581765
+2026-04-23 18:12:33 | INFO | Alternating low-rank iter 300 | Loss: 0.577224 | Penalized: 0.581744
+2026-04-23 18:12:37 | INFO | Alternating low-rank iter 400 | Loss: 0.577219 | Penalized: 0.581740
+2026-04-23 18:12:42 | INFO | Alternating low-rank iter 500 | Loss: 0.577218 | Penalized: 0.581739
+2026-04-23 18:12:45 | INFO | Done fitting.
+2026-04-23 18:12:45 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-23 18:12:45 | INFO | Best optimizer start: 1 / 1
+2026-04-23 18:12:45 | INFO | Final Loss: 0.577218
+2026-04-23 18:12:45 | INFO | Estimated vs True Parameters:
+2026-04-23 18:12:45 | INFO |   beta: 0.4917 (True: 0.5000) | SQE: 0.000069
+2026-04-23 18:12:45 | INFO |   xi: 0.4428 (True: 0.3300) | SQE: 0.012727
+2026-04-23 18:12:45 | INFO |   eta: -0.0972 (True: -0.1000) | SQE: 0.000008
+2026-04-23 18:12:45 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-23 18:12:45 | INFO |   penalized_objective: 0.581738
+2026-04-23 18:12:45 | INFO |   mple_loss_without_penalty: 0.577218
+2026-04-23 18:12:45 | INFO |   lambda_uv_ridge: 10.000000
+2026-04-23 18:12:45 | INFO |   u_frobenius_norm: 4.754248
+2026-04-23 18:12:45 | INFO |   v_frobenius_norm: 4.754248
+2026-04-23 18:12:45 | INFO |   effective_rank: 1.000000
+2026-04-23 18:12:45 | INFO | Field and interaction diagnostics:
+2026-04-23 18:12:45 | INFO |   field_rmse: 0.174470
+2026-04-23 18:12:45 | INFO |   interaction_fro_error: 0.355743
+2026-04-23 18:12:45 | INFO |   estimated_field_max_abs_entry: 0.635175
+2026-04-23 18:12:45 | INFO |   estimated_field_rank: 1.000000
+2026-04-23 18:12:45 | INFO |   true_field_max_abs_entry: 1.000000
+2026-04-23 18:12:45 | INFO |   true_field_rank: 10.000000
+2026-04-23 18:12:45 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\fits\alternating_rank_1\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\fits\alternating_rank_1\mple_summary.md
+2026-04-23 18:12:45 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_10_b1_scalars\fits\alternating_rank_1\mple.log

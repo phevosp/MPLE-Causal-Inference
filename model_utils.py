@@ -15,6 +15,14 @@ _DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerat
 _RMS_SCALE_FACTOR = 0.4         # targets initial field RMS at _RMS_SCALE_FACTOR * B
 _TAIL_STRENGTH = 0.5            # tail_strength arg for sklearn make_low_rank_matrix
 SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
+SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK = "random_low_rank"
+SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT = (
+    "node_bias_plus_smooth_time_drift"
+)
+VALID_SYNTHETIC_FIELD_MODES = {
+    SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK,
+    SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT,
+}
 OPTIMIZER_MODE_NO_EXTERNAL_FIELD = "no_external_field"
 OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
 OPTIMIZER_MODE_EXACT_RANK_MANIFOLD = "exact_rank_manifold"
@@ -110,6 +118,31 @@ def get_xi(config) -> float:
     return float(config.estimation_params.xi)
 
 
+def get_synthetic_field_mode(config) -> str:
+    global_params = getattr(config, "global_params", None)
+    if global_params is None or "field_mode" not in global_params:
+        return SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK
+    field_mode = str(global_params.field_mode).strip()
+    if field_mode not in VALID_SYNTHETIC_FIELD_MODES:
+        raise ValueError(
+            "global_params.field_mode must be one of: "
+            + ", ".join(sorted(VALID_SYNTHETIC_FIELD_MODES))
+        )
+    return field_mode
+
+
+def get_synthetic_field_params(config) -> dict[str, object]:
+    global_params = getattr(config, "global_params", None)
+    if global_params is None or "field_params" not in global_params:
+        return {}
+    field_params = global_params.field_params
+    if field_params is None:
+        return {}
+    if isinstance(field_params, dict):
+        return dict(field_params)
+    return dict(field_params)
+
+
 def _normalize_dense_graph(gamma_matrix: np.ndarray) -> np.ndarray:
     gamma_matrix = np.asarray(gamma_matrix, dtype=float)
     gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2.0
@@ -170,6 +203,20 @@ def zero_latent_field(n_nodes: int, t_steps: int) -> np.ndarray:
     return np.zeros((t_steps, n_nodes), dtype=float)
 
 
+def _smooth_time_trend(t_steps: int, sharpness: float = 2.0) -> np.ndarray:
+    if t_steps <= 0:
+        raise ValueError("t_steps must be positive.")
+    if t_steps == 1:
+        return np.zeros(1, dtype=float)
+    grid = np.linspace(-1.0, 1.0, int(t_steps), dtype=float)
+    trend = np.tanh(float(sharpness) * grid)
+    trend = trend - float(np.mean(trend))
+    rms = float(np.sqrt(np.mean(trend**2)))
+    if rms < _DEGENERACY_THRESHOLD:
+        return np.zeros_like(trend)
+    return trend / rms
+
+
 def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
     """Project field_matrix onto its best rank-r approximation via truncated SVD."""
     field_matrix = np.asarray(field_matrix, dtype=float)
@@ -211,7 +258,7 @@ def project_latent_field(
     return node_factors * scale, time_factors * scale
 
 
-def _sample_latent_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
+def _sample_random_low_rank_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
     rank = get_latent_rank(config)
     if rank == 0:
         return zero_latent_field(n_nodes, t_steps)
@@ -228,16 +275,77 @@ def _sample_latent_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
     return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
 
 
+def _sample_node_bias_plus_smooth_time_drift_field(
+    config,
+    n_nodes: int,
+    t_steps: int,
+) -> np.ndarray:
+    field_params = get_synthetic_field_params(config)
+    node_bias_scale = float(field_params.get("node_bias_scale", 1.0))
+    drift_scale = float(field_params.get("drift_scale", 0.5))
+    time_trend_sharpness = float(field_params.get("time_trend_sharpness", 2.0))
+    rng = np.random.default_rng(int(config.generation_params.seed) + 211)
+
+    node_bias = rng.normal(size=n_nodes)
+    drift_loading = rng.normal(size=n_nodes)
+    node_bias_norm = float(np.linalg.norm(node_bias))
+    if node_bias_norm < _DEGENERACY_THRESHOLD:
+        node_bias = np.ones(n_nodes, dtype=float)
+        node_bias_norm = float(np.linalg.norm(node_bias))
+    node_bias = node_bias / node_bias_norm
+
+    drift_norm = float(np.linalg.norm(drift_loading))
+    if drift_norm < _DEGENERACY_THRESHOLD:
+        drift_loading = np.zeros(n_nodes, dtype=float)
+        drift_loading[0] = 1.0
+        drift_norm = 1.0
+    if node_bias_norm >= _DEGENERACY_THRESHOLD:
+        projection = float(np.dot(drift_loading, node_bias))
+        drift_loading = drift_loading - projection * node_bias
+        drift_norm = float(np.linalg.norm(drift_loading))
+        if drift_norm < _DEGENERACY_THRESHOLD:
+            drift_loading = rng.normal(size=n_nodes)
+            projection = float(np.dot(drift_loading, node_bias))
+            drift_loading = drift_loading - projection * node_bias
+            drift_norm = float(np.linalg.norm(drift_loading))
+    if drift_norm < _DEGENERACY_THRESHOLD:
+        drift_loading = np.zeros(n_nodes, dtype=float)
+        drift_loading[min(1, n_nodes - 1)] = 1.0
+        drift_norm = float(np.linalg.norm(drift_loading))
+    drift_loading = drift_loading / drift_norm
+
+    trend = _smooth_time_trend(t_steps, sharpness=time_trend_sharpness)
+    field_matrix = (
+        node_bias_scale * node_bias[None, :]
+        + drift_scale * trend[:, None] * drift_loading[None, :]
+    )
+    target_rms = _RMS_SCALE_FACTOR * get_B(config)
+    return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
+
+
 def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
     n_nodes = int(config.global_params.N)
     t_steps = int(config.global_params.T)
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
-    field_matrix = _sample_latent_field(config, n_nodes, t_steps)
+    field_mode = get_synthetic_field_mode(config)
+    if field_mode == SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK:
+        field_matrix = _sample_random_low_rank_field(config, n_nodes, t_steps)
+        latent_rank = get_latent_rank(config)
+    elif field_mode == SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT:
+        field_matrix = _sample_node_bias_plus_smooth_time_drift_field(
+            config, n_nodes, t_steps
+        )
+        latent_rank = min(2, n_nodes, t_steps)
+    else:
+        raise ValueError(
+            "Unsupported synthetic field_mode: "
+            f"{field_mode}"
+        )
     return ModelArtifacts(
         gamma_matrix=gamma_matrix,
         t_steps=t_steps,
-        latent_rank=get_latent_rank(config),
+        latent_rank=int(latent_rank),
         optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
         field_matrix=field_matrix,
     )

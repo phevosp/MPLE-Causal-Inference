@@ -18,6 +18,7 @@ from model_utils import (
     build_synthetic_field,
     compose_interaction_matrix,
     get_xi,
+    get_synthetic_field_mode,
     interaction_matrix_infinity_norm,
     save_model_artifacts,
 )
@@ -400,10 +401,12 @@ def materialize_generation_experiment(
     )
     print(
         "Building latent field artifacts with"
+        f" field_mode={get_synthetic_field_mode(config)} and"
         f" latent_rank={int(config.global_params.latent_rank)} and"
         f" B={float(config.global_params.B):.4f}."
     )
     artifacts = build_synthetic_field(config, gamma_matrix)
+    config.global_params.latent_rank = int(artifacts.latent_rank)
 
     fixed_z_metadata: dict[str, str] = {}
     if intervention_mode(config) == "fixed_z":
@@ -440,6 +443,7 @@ def materialize_generation_experiment(
             else float(np.linalg.norm(artifacts.gamma_matrix, ord="fro"))
         ),
         "intervention_mode": intervention_mode(config),
+        "field_mode": get_synthetic_field_mode(config),
         "has_truth": True,
         **extra_metadata,
         **fixed_z_metadata,
