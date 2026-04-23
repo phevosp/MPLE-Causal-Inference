@@ -15,7 +15,7 @@ from model_utils import latent_field_bound_norm
 from pipeline_specs import read_csv_manifest
 
 
-SCALAR_NAMES = ("beta", "xi", "eta", "zeta", "psi")
+SCALAR_NAMES = ("beta", "xi", "eta")
 METRIC_NAMES = ("final_loss", "field_rmse", "interaction_fro_error")
 PER_EXPERIMENT_COLUMNS = [
     "experiment_name",
@@ -26,7 +26,6 @@ PER_EXPERIMENT_COLUMNS = [
     "latent_rank",
     "lambda_nuclear",
     "B",
-    "fit_intervention_model",
     "fixed_scalar_params",
     "ranking_mode",
     "rank_in_experiment",
@@ -39,8 +38,6 @@ PER_EXPERIMENT_COLUMNS = [
     "beta_abs_error",
     "xi_abs_error",
     "eta_abs_error",
-    "zeta_abs_error",
-    "psi_abs_error",
     "estimated_field_inf_norm",
     "estimated_field_rank",
     "true_field_inf_norm",
@@ -60,7 +57,6 @@ WINNER_COLUMNS = [
     "latent_rank",
     "lambda_nuclear",
     "B",
-    "fit_intervention_model",
     "fixed_scalar_params",
     "ranking_mode",
     "total_recovery_rmse",
@@ -92,18 +88,6 @@ def total_recovery_rmse(row: dict[str, object]) -> float | None:
         if scalar_error is not None:
             total += scalar_error
     return total
-
-
-def _as_bool_string(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    text = str(value).strip()
-    if not text:
-        return ""
-    lowered = text.lower()
-    if lowered in {"true", "false"}:
-        return lowered
-    return text
 
 
 def read_summary_entries(summary_path: Path) -> dict[str, dict[str, float | None]]:
@@ -187,9 +171,6 @@ def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | 
             else ""
         ),
         "lambda_nuclear": _as_float(manifest_row.get("lambda_nuclear")),
-        "fit_intervention_model": _as_bool_string(
-            manifest_row.get("fit_intervention_model", "")
-        ),
         "fixed_scalar_params": manifest_row.get("fixed_scalar_params", ""),
         "optimizer_status": parse_optimizer_status(fit_root / "mple.log"),
     }

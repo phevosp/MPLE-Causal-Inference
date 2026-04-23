@@ -40,9 +40,6 @@ class OutcomeParameterBundle:
     beta: float
     xi: float
     eta: float
-    zeta: float
-    psi: float
-    fit_intervention_model: bool
     latent_rank: int
     t_steps: int
     field_matrix: np.ndarray
@@ -316,9 +313,6 @@ def save_estimated_parameter_bundle(
     beta: float,
     xi: float,
     eta: float,
-    zeta: float,
-    psi: float,
-    fit_intervention_model: bool,
     latent_rank: int,
     t_steps: int,
     field_matrix: np.ndarray,
@@ -328,9 +322,6 @@ def save_estimated_parameter_bundle(
         beta=np.asarray(float(beta)),
         xi=np.asarray(float(xi)),
         eta=np.asarray(float(eta)),
-        zeta=np.asarray(float(zeta)),
-        psi=np.asarray(float(psi)),
-        fit_intervention_model=np.asarray(bool(fit_intervention_model)),
         latent_rank=np.asarray(int(latent_rank), dtype=int),
         t_steps=np.asarray(int(t_steps), dtype=int),
         field_matrix=np.asarray(field_matrix, dtype=float),
@@ -342,7 +333,7 @@ def _load_scalar_estimates_from_summary(summary_path: Path) -> dict[str, float]:
     with summary_path.open("r", encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             name = row.get("name", "")
-            if name in {"beta", "xi", "eta", "zeta", "psi"} and row.get("estimate"):
+            if name in {"beta", "xi", "eta"} and row.get("estimate"):
                 estimates[name] = float(row["estimate"])
     return estimates
 
@@ -362,9 +353,6 @@ def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameter
         beta=float(config.estimation_params.beta),
         xi=float(config.estimation_params.xi),
         eta=float(config.estimation_params.eta),
-        zeta=float(getattr(config.estimation_params, "zeta", 0.0)),
-        psi=float(getattr(config.estimation_params, "psi", 0.0)),
-        fit_intervention_model=True,
         latent_rank=int(artifacts.latent_rank),
         t_steps=int(artifacts.t_steps),
         field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
@@ -379,8 +367,6 @@ def load_fit_parameter_bundle(
     fit_path = Path(fit_root)
     experiment_path = Path(experiment_root)
     bundle_path = fit_path / "estimated_parameter_bundle.npz"
-    config = load_yaml_config(fit_path / "fit_realized_config.yaml")
-    fit_intervention_model = bool(config.estimation_params.fit_intervention_model)
     gamma_matrix = load_gamma_matrix(experiment_path)
 
     if bundle_path.exists():
@@ -391,9 +377,6 @@ def load_fit_parameter_bundle(
                 beta=float(data["beta"]),
                 xi=float(data["xi"]),
                 eta=float(data["eta"]),
-                zeta=float(data["zeta"]),
-                psi=float(data["psi"]),
-                fit_intervention_model=bool(data["fit_intervention_model"]),
                 latent_rank=int(data["latent_rank"]),
                 t_steps=int(data["t_steps"]),
                 field_matrix=np.asarray(data["field_matrix"], dtype=float),
@@ -418,9 +401,6 @@ def load_fit_parameter_bundle(
         beta=float(estimates["beta"]),
         xi=float(estimates["xi"]),
         eta=float(estimates["eta"]),
-        zeta=float(estimates.get("zeta", 0.0)),
-        psi=float(estimates.get("psi", 0.0)),
-        fit_intervention_model=fit_intervention_model,
         latent_rank=latent_rank,
         t_steps=t_steps,
         field_matrix=field_matrix,

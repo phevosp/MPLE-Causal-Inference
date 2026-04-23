@@ -7,10 +7,11 @@ from pathlib import Path
 
 import numpy as np
 from scipy import sparse
+from sklearn.datasets import make_low_rank_matrix
 
 
 DEFAULT_LATENT_RANK = 0
-SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta", "zeta", "psi")
+SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
 FIELD_MODE_LOW_RANK = "low_rank"
 FIELD_MODE_NUCLEAR_NORM = "nuclear_norm"
 VALID_FIELD_MODES = {FIELD_MODE_LOW_RANK, FIELD_MODE_NUCLEAR_NORM}
@@ -29,22 +30,12 @@ class ModelArtifacts:
     time_factors: np.ndarray | None = None
 
 
-def intervention_model_enabled(config) -> bool:
-    estimation_params = getattr(config, "estimation_params", None)
-    if estimation_params is None or "fit_intervention_model" not in estimation_params:
-        return True
-    return bool(estimation_params.fit_intervention_model)
-
-
-def scalar_parameter_names(fit_intervention_model: bool = True) -> list[str]:
-    if fit_intervention_model:
-        return list(SCALAR_PARAMETER_ORDER)
-    return list(SCALAR_PARAMETER_ORDER[:3])
+def scalar_parameter_names() -> list[str]:
+    return list(SCALAR_PARAMETER_ORDER)
 
 
 def validate_fixed_scalar_params(
     fixed_scalar_params: dict[str, float] | None,
-    fit_intervention_model: bool = True,
 ) -> dict[str, float]:
     fixed_scalar_params = {
         str(key): float(value) for key, value in (fixed_scalar_params or {}).items()
@@ -52,27 +43,14 @@ def validate_fixed_scalar_params(
     invalid = sorted(set(fixed_scalar_params) - set(SCALAR_PARAMETER_ORDER))
     if invalid:
         raise ValueError(f"Unknown fixed scalar parameter(s): {', '.join(invalid)}.")
-    if not fit_intervention_model:
-        blocked = [name for name in ["zeta", "psi"] if name in fixed_scalar_params]
-        if blocked:
-            raise ValueError(
-                "fixed_scalar_params cannot include zeta or psi when fit_intervention_model=false."
-            )
     return fixed_scalar_params
 
 
 def free_scalar_parameter_names(
-    fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[str]:
-    fixed = validate_fixed_scalar_params(
-        fixed_scalar_params, fit_intervention_model=fit_intervention_model
-    )
-    return [
-        name
-        for name in scalar_parameter_names(fit_intervention_model)
-        if name not in fixed
-    ]
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
+    return [name for name in scalar_parameter_names() if name not in fixed]
 
 
 def interaction_matrix_infinity_norm(matrix) -> float:
@@ -167,11 +145,31 @@ def latent_field_bound_norm(field_matrix: np.ndarray) -> float:
     return float(np.max(np.abs(field_matrix)))
 
 
-def zero_latent_factors(n_nodes: int, t_steps: int) -> tuple[np.ndarray, np.ndarray]:
-    return (
-        np.zeros((n_nodes, 0), dtype=float),
-        np.zeros((t_steps, 0), dtype=float),
-    )
+def zero_latent_field(n_nodes: int, t_steps: int) -> np.ndarray:
+    return np.zeros((t_steps, n_nodes), dtype=float)
+
+
+def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    max_rank = min(max(int(rank), 0), *field_matrix.shape)
+    if max_rank == 0:
+        return np.zeros_like(field_matrix)
+    u, singular_values, vt = np.linalg.svd(field_matrix, full_matrices=False)
+    return (u[:, :max_rank] * singular_values[:max_rank]) @ vt[:max_rank, :]
+
+
+def scale_latent_field_matrix(
+    field_matrix: np.ndarray, target_rms: float, bound: float
+) -> np.ndarray:
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    rms = float(np.sqrt(np.mean(field_matrix**2)))
+    if rms < 1e-12:
+        return np.zeros_like(field_matrix)
+    field_matrix = field_matrix * (target_rms / rms)
+    norm = latent_field_bound_norm(field_matrix)
+    if norm > bound and norm >= 1e-12:
+        field_matrix = field_matrix * (bound / norm)
+    return field_matrix
 
 
 def project_latent_field(
@@ -187,16 +185,21 @@ def project_latent_field(
     return node_factors * scale, time_factors * scale
 
 
-def _sample_latent_factors(
-    config, n_nodes: int, t_steps: int
-) -> tuple[np.ndarray, np.ndarray]:
+def _sample_latent_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
     rank = get_latent_rank(config)
     if rank == 0:
-        return zero_latent_factors(n_nodes, t_steps)
-    rng = np.random.default_rng(int(config.generation_params.seed) + 101)
-    node_factors = rng.normal(size=(n_nodes, rank))
-    time_factors = rng.normal(size=(t_steps, rank))
-    return project_latent_field(node_factors, time_factors, get_B(config))
+        return zero_latent_field(n_nodes, t_steps)
+    field_matrix = make_low_rank_matrix(
+        n_samples=t_steps,
+        n_features=n_nodes,
+        effective_rank=rank,
+        tail_strength=0.5,
+        random_state=int(config.generation_params.seed) + 101,
+    )
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    target_rms = 0.4 * get_B(config)
+    field_matrix = truncate_matrix_rank(field_matrix, rank)
+    return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
 
 
 def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
@@ -204,15 +207,13 @@ def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
     t_steps = int(config.global_params.T)
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
-    node_factors, time_factors = _sample_latent_factors(config, n_nodes, t_steps)
+    field_matrix = _sample_latent_field(config, n_nodes, t_steps)
     return ModelArtifacts(
         gamma_matrix=gamma_matrix,
         t_steps=t_steps,
         latent_rank=get_latent_rank(config),
         field_mode=FIELD_MODE_LOW_RANK,
-        field_matrix=compose_latent_field_matrix(node_factors, time_factors),
-        node_factors=node_factors,
-        time_factors=time_factors,
+        field_matrix=field_matrix,
     )
 
 
@@ -239,10 +240,6 @@ def save_field_artifacts(path: str | Path, artifacts: ModelArtifacts) -> None:
     }
     if artifacts.field_matrix is not None:
         payload["field_matrix"] = np.asarray(artifacts.field_matrix, dtype=float)
-    if artifacts.node_factors is not None:
-        payload["node_factors"] = np.asarray(artifacts.node_factors, dtype=float)
-    if artifacts.time_factors is not None:
-        payload["time_factors"] = np.asarray(artifacts.time_factors, dtype=float)
     np.savez(Path(path), **payload)
 
 
@@ -257,7 +254,7 @@ def load_field_artifacts(path: str | Path) -> dict[str, object]:
                 else FIELD_MODE_LOW_RANK
             ),
         }
-        for key in ["field_matrix", "node_factors", "time_factors"]:
+        for key in ["field_matrix"]:
             if key in data:
                 result[key] = data[key]
     return result
@@ -299,8 +296,6 @@ def load_model_artifacts(data_folder: str | Path) -> ModelArtifacts:
         latent_rank=int(payload.get("latent_rank", 0)),
         field_mode=str(payload.get("field_mode", FIELD_MODE_LOW_RANK)),
         field_matrix=payload.get("field_matrix"),
-        node_factors=payload.get("node_factors"),
-        time_factors=payload.get("time_factors"),
     )
 
 
@@ -328,7 +323,6 @@ def interaction_effect(x: np.ndarray, gamma_matrix) -> np.ndarray:
 
 def parameter_names(
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[str]:
     n_nodes = artifacts.gamma_matrix.shape[0]
@@ -349,14 +343,11 @@ def parameter_names(
             for time_idx in range(artifacts.t_steps)
             for rank_idx in range(artifacts.latent_rank)
         )
-    return field_keys + free_scalar_parameter_names(
-        fit_intervention_model=fit_intervention_model,
-        fixed_scalar_params=fixed_scalar_params,
-    )
+    return field_keys + free_scalar_parameter_names(fixed_scalar_params)
 
 
 def summarize_theta_for_logging(param_names: list[str], theta: np.ndarray) -> str:
-    scalar_names = {"beta", "xi", "eta", "zeta", "psi"}
+    scalar_names = set(SCALAR_PARAMETER_ORDER)
     scalar_parts = [
         f"{key}: {value:+.4f}"
         for key, value in zip(param_names, theta)
@@ -370,7 +361,6 @@ def summarize_theta_for_logging(param_names: list[str], theta: np.ndarray) -> st
 def unpack_theta(
     theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> dict[str, object]:
     theta = np.asarray(theta, dtype=float)
@@ -384,12 +374,7 @@ def unpack_theta(
         n_field = 0
         n_u = n_nodes * artifacts.latent_rank
         n_v = t_steps * artifacts.latent_rank
-    tail = len(
-        free_scalar_parameter_names(
-            fit_intervention_model=fit_intervention_model,
-            fixed_scalar_params=fixed_scalar_params,
-        )
-    )
+    tail = len(free_scalar_parameter_names(fixed_scalar_params))
     expected_length = n_field + n_u + n_v + tail
     if len(theta) != expected_length:
         raise ValueError(
@@ -405,11 +390,9 @@ def unpack_theta(
         node_factors = theta[:n_u].reshape(n_nodes, artifacts.latent_rank)
         time_factors = theta[n_u : n_u + n_v].reshape(t_steps, artifacts.latent_rank)
         cursor = n_u + n_v
-    fixed = validate_fixed_scalar_params(
-        fixed_scalar_params, fit_intervention_model=fit_intervention_model
-    )
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
     scalar_values: dict[str, float] = {}
-    for name in scalar_parameter_names(fit_intervention_model):
+    for name in scalar_parameter_names():
         if name in fixed:
             scalar_values[name] = float(fixed[name])
         else:
@@ -422,15 +405,12 @@ def unpack_theta(
         "beta": scalar_values["beta"],
         "xi": scalar_values["xi"],
         "eta": scalar_values["eta"],
-        "zeta": float(scalar_values.get("zeta", 0.0)),
-        "psi": float(scalar_values.get("psi", 0.0)),
     }
 
 
 def pack_theta(
     theta_parts: dict[str, object],
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> np.ndarray:
     if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
@@ -448,12 +428,10 @@ def pack_theta(
                 np.asarray(theta_parts["time_factors"], dtype=float).reshape(-1),
             ]
         )
-    fixed = validate_fixed_scalar_params(
-        fixed_scalar_params, fit_intervention_model=fit_intervention_model
-    )
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
     tail = [
         np.array([float(theta_parts[name])], dtype=float)
-        for name in scalar_parameter_names(fit_intervention_model)
+        for name in scalar_parameter_names()
         if name not in fixed
     ]
     return np.concatenate([field_block, *tail])
@@ -495,26 +473,26 @@ def with_theta_field(
 def load_true_parameters(
     config,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool | None = None,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> np.ndarray:
-    if fit_intervention_model is None:
-        fit_intervention_model = intervention_model_enabled(config)
-    if artifacts.node_factors is None or artifacts.time_factors is None:
-        raise ValueError("Missing latent truth in field_artifacts.")
+    if artifacts.field_matrix is None:
+        raise ValueError("Missing latent truth field in field_artifacts.")
+    truth_artifacts = ModelArtifacts(
+        gamma_matrix=artifacts.gamma_matrix,
+        t_steps=artifacts.t_steps,
+        latent_rank=0,
+        field_mode=FIELD_MODE_NUCLEAR_NORM,
+        field_matrix=artifacts.field_matrix,
+    )
     theta_parts = {
-        "node_factors": artifacts.node_factors,
-        "time_factors": artifacts.time_factors,
+        "field_matrix": artifacts.field_matrix,
         "beta": float(config.estimation_params.beta),
         "xi": float(get_xi(config)),
         "eta": float(config.estimation_params.eta),
-        "zeta": float(getattr(config.estimation_params, "zeta", 0.0)),
-        "psi": float(getattr(config.estimation_params, "psi", 0.0)),
     }
     return pack_theta(
         theta_parts,
-        artifacts,
-        fit_intervention_model=fit_intervention_model,
+        truth_artifacts,
         fixed_scalar_params=fixed_scalar_params,
     )
 
@@ -523,19 +501,16 @@ def summary_metrics(
     est_theta: np.ndarray,
     true_theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> dict[str, float]:
     est_parts = unpack_theta(
         est_theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     true_parts = unpack_theta(
         true_theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     est_artifacts = with_theta_field(artifacts, est_parts)
@@ -569,5 +544,4 @@ def summary_metrics(
             )
         ),
         "interaction_fro_error": interaction_fro_error,
-        "parameter_rmse": float(np.sqrt(np.mean((est_theta - true_theta) ** 2))),
     }

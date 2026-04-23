@@ -85,7 +85,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--latent_B", type=float, default=1.0)
     parser.add_argument("--tau_zero_mean", action="store_true")
     parser.add_argument("--tau_smoothness_lambda", type=float, default=0.0)
-    parser.add_argument("--beta_mask_pre_intervention", action="store_true")
     return parser.parse_args()
 
 
@@ -212,7 +211,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
             state_scope_label=state_scope_label,
             tau_zero_mean=args.tau_zero_mean,
             tau_smoothness_lambda=args.tau_smoothness_lambda,
-            beta_mask_pre_intervention=bool(args.beta_mask_pre_intervention),
         )
         metadata = {
             "source": SOURCE_LABEL,
@@ -238,7 +236,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
             "latent_B": float(args.latent_B) if model_field_mode == "latent_feature_matrix" else None,
             "tau_zero_mean": bool(args.tau_zero_mean),
             "tau_smoothness_lambda": float(args.tau_smoothness_lambda),
-            "beta_mask_pre_intervention": bool(args.beta_mask_pre_intervention),
             "shared_panel_dir": str(shared_panel_dir),
             "shared_panel_path": str(shared_panel_dir / "panel_data.npz"),
             "shared_x0_path": str(shared_panel_dir / "x_0.npy"),

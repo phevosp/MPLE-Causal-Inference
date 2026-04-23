@@ -705,7 +705,6 @@ def create_config(
     state_scope_label: str,
     tau_zero_mean: bool,
     tau_smoothness_lambda: float,
-    beta_mask_pre_intervention: bool,
 ) -> OmegaConf:
     return OmegaConf.create(
         {
@@ -723,15 +722,11 @@ def create_config(
                 "x_0_generator": "observed",
             },
             "estimation_params": {
-                "fit_intervention_model": True,
                 "beta": 0.0,
                 "eta": 0.0,
-                "zeta": 0.0,
-                "psi": 0.0,
                 "tau_params": None,
                 "tau_zero_mean": bool(tau_zero_mean),
                 "tau_smoothness_lambda": float(tau_smoothness_lambda),
-                "beta_mask_pre_intervention": bool(beta_mask_pre_intervention),
                 "fixed_scalar_params": {},
             },
             "real_data_params": {

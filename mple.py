@@ -22,7 +22,6 @@ from model_utils import (
     free_scalar_parameter_names,
     interaction_effect,
     interaction_matrix_infinity_norm,
-    intervention_model_enabled,
     latent_field_bound_norm,
     load_model_artifacts,
     pack_theta,
@@ -67,18 +66,16 @@ def load_gamma_matrix(data_folder: str | Path):
 def _canonicalize_theta(
     theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool,
     bound_B: float | None,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> np.ndarray:
     theta_parts = unpack_theta(
         theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     if bound_B is not None:
-        for key in scalar_parameter_names(fit_intervention_model):
+        for key in scalar_parameter_names():
             value = theta_parts.get(key, None)
             if value is None:
                 continue
@@ -109,7 +106,6 @@ def _canonicalize_theta(
     return pack_theta(
         theta_parts,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
 
@@ -143,12 +139,8 @@ def pseudo_nll(
     z: np.ndarray,
     theta: np.ndarray,
     x_0: np.ndarray,
-    z_0: np.ndarray,
-    s: int,
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
-    fit_intervention_model: bool = True,
-    beta_mask_pre_intervention: bool = False,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> tuple[float, np.ndarray]:
     if x.shape[0] != artifacts.t_steps:
@@ -156,17 +148,11 @@ def pseudo_nll(
     theta_parts = unpack_theta(
         theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
 
     prev_x = np.vstack([x_0, x[:-1, :]])
-    prev_z = np.vstack([z_0, z[:-1, :]])
     beta_feature = np.asarray(z, dtype=float)
-    if beta_mask_pre_intervention:
-        beta_mask = np.ones_like(beta_feature)
-        beta_mask[:s, :] = 0.0
-        beta_feature = beta_feature * beta_mask
     field_matrix = compose_field_matrix_from_theta(theta_parts, artifacts)
     h_x = (
         field_matrix
@@ -176,26 +162,8 @@ def pseudo_nll(
     )
     loss_x = np.logaddexp(h_x, -h_x) - x * h_x
     res_x = np.tanh(h_x) - x
-
-    if fit_intervention_model:
-        h_z = theta_parts["zeta"] * prev_x + theta_parts["psi"] * prev_z
-        mask = np.ones_like(z)
-        mask[:s, :] = 0
-        outcome_size = x.size
-        intervention_size = mask.sum()
-        gradient_denominator = outcome_size + intervention_size
-        total_loss = (
-            loss_x.sum() + ((np.logaddexp(h_z, -h_z) - z * h_z) * mask).sum()
-        ) / gradient_denominator
-        res_z = (np.tanh(h_z) - z) * mask
-        zeta_grad = float((res_z * prev_x).sum())
-        psi_grad = float((res_z * prev_z).sum())
-    else:
-        outcome_size = x.size
-        gradient_denominator = outcome_size
-        total_loss = loss_x.sum() / outcome_size
-        zeta_grad = 0.0
-        psi_grad = 0.0
+    gradient_denominator = x.size
+    total_loss = loss_x.sum() / gradient_denominator
 
     if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
         field_grad = res_x.reshape(-1)
@@ -208,14 +176,9 @@ def pseudo_nll(
         "beta": float((res_x * beta_feature).sum()) / gradient_denominator,
         "xi": float((res_x * interaction_effect_x).sum()) / gradient_denominator,
         "eta": float((res_x * prev_x).sum()) / gradient_denominator,
-        "zeta": float(zeta_grad) / gradient_denominator,
-        "psi": float(psi_grad) / gradient_denominator,
     }
     grad_parts = [field_grad / gradient_denominator]
-    for name in free_scalar_parameter_names(
-        fit_intervention_model=fit_intervention_model,
-        fixed_scalar_params=fixed_scalar_params,
-    ):
+    for name in free_scalar_parameter_names(fixed_scalar_params):
         grad_parts.append(np.array([scalar_grad_lookup[name]], dtype=float))
     return float(total_loss), np.concatenate(grad_parts)
 
@@ -225,12 +188,8 @@ def _pseudo_loss(
     z: np.ndarray,
     theta: np.ndarray,
     x_0: np.ndarray,
-    z_0: np.ndarray,
-    s: int,
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
-    fit_intervention_model: bool,
-    beta_mask_pre_intervention: bool,
     fixed_scalar_params: dict[str, float] | None,
 ) -> float:
     loss, _ = pseudo_nll(
@@ -238,12 +197,8 @@ def _pseudo_loss(
         z,
         theta,
         x_0,
-        z_0,
-        s,
         artifacts=artifacts,
         interaction_effect_x=interaction_effect_x,
-        fit_intervention_model=fit_intervention_model,
-        beta_mask_pre_intervention=beta_mask_pre_intervention,
         fixed_scalar_params=fixed_scalar_params,
     )
     return float(loss)
@@ -253,6 +208,14 @@ def _nuclear_norm(field_matrix: np.ndarray) -> float:
     if field_matrix.size == 0:
         return 0.0
     return float(np.linalg.svd(np.asarray(field_matrix, dtype=float), compute_uv=False).sum())
+
+
+def _nuclear_norm_normalizer(artifacts: ModelArtifacts) -> float:
+    n_nodes = int(artifacts.gamma_matrix.shape[0])
+    size = int(artifacts.t_steps) * n_nodes
+    if size <= 0:
+        return 1.0
+    return float(np.sqrt(size))
 
 
 def _singular_value_threshold(field_matrix: np.ndarray, threshold: float) -> np.ndarray:
@@ -270,7 +233,6 @@ def _singular_value_threshold(field_matrix: np.ndarray, threshold: float) -> np.
 def _prox_nuclear_theta(
     theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool,
     bound_B: float | None,
     fixed_scalar_params: dict[str, float] | None,
     threshold: float,
@@ -278,7 +240,6 @@ def _prox_nuclear_theta(
     theta_parts = unpack_theta(
         theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     theta_parts["field_matrix"] = _singular_value_threshold(
@@ -289,11 +250,9 @@ def _prox_nuclear_theta(
         pack_theta(
             theta_parts,
             artifacts,
-            fit_intervention_model,
             fixed_scalar_params=fixed_scalar_params,
         ),
         artifacts,
-        fit_intervention_model,
         bound_B,
         fixed_scalar_params=fixed_scalar_params,
     )
@@ -304,39 +263,32 @@ def _penalized_nuclear_objective(
     x: np.ndarray,
     z: np.ndarray,
     x_0: np.ndarray,
-    z_0: np.ndarray,
-    s: int,
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
-    fit_intervention_model: bool,
-    beta_mask_pre_intervention: bool,
     fixed_scalar_params: dict[str, float] | None,
     lambda_nuclear: float,
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float]:
     smooth_loss = _pseudo_loss(
         x,
         z,
         theta,
         x_0,
-        z_0,
-        s,
         artifacts=artifacts,
         interaction_effect_x=interaction_effect_x,
-        fit_intervention_model=fit_intervention_model,
-        beta_mask_pre_intervention=beta_mask_pre_intervention,
         fixed_scalar_params=fixed_scalar_params,
     )
     theta_parts = unpack_theta(
         theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     nuclear_norm = _nuclear_norm(np.asarray(theta_parts["field_matrix"], dtype=float))
+    normalized_nuclear_norm = nuclear_norm / _nuclear_norm_normalizer(artifacts)
     return (
-        float(smooth_loss + float(lambda_nuclear) * nuclear_norm),
+        float(smooth_loss + float(lambda_nuclear) * normalized_nuclear_norm),
         float(smooth_loss),
         float(nuclear_norm),
+        float(normalized_nuclear_norm),
     )
 
 
@@ -344,8 +296,6 @@ def _fit_mple_nuclear_norm(
     x: np.ndarray,
     z: np.ndarray,
     x_0: np.ndarray,
-    z_0: np.ndarray,
-    s: int,
     param_names: list[str],
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
@@ -355,9 +305,7 @@ def _fit_mple_nuclear_norm(
     tol: float,
     logger,
     theta_init,
-    fit_intervention_model: bool,
     bound_B: float | None,
-    beta_mask_pre_intervention: bool,
     fixed_scalar_params: dict[str, float] | None,
     lambda_nuclear: float,
     proximal_lr: float = 1.0,
@@ -376,7 +324,6 @@ def _fit_mple_nuclear_norm(
     theta = _canonicalize_theta(
         raw_init,
         artifacts,
-        fit_intervention_model,
         bound_B,
         fixed_scalar_params=fixed_scalar_params,
     )
@@ -386,6 +333,7 @@ def _fit_mple_nuclear_norm(
     penalized_history: list[float] = []
     converged = False
     previous_objective = np.inf
+    nuclear_normalizer = _nuclear_norm_normalizer(artifacts)
 
     for iteration in range(max(1, int(steps))):
         loss_y, grad_y = pseudo_nll(
@@ -393,34 +341,30 @@ def _fit_mple_nuclear_norm(
             z,
             y,
             x_0,
-            z_0,
-            s,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect_x,
-            fit_intervention_model=fit_intervention_model,
-            beta_mask_pre_intervention=beta_mask_pre_intervention,
             fixed_scalar_params=fixed_scalar_params,
         )
         stepped = y - float(proximal_lr) * grad_y
         candidate = _prox_nuclear_theta(
             stepped,
             artifacts,
-            fit_intervention_model,
             bound_B,
             fixed_scalar_params,
-            threshold=float(proximal_lr) * float(lambda_nuclear),
+            threshold=float(proximal_lr) * float(lambda_nuclear) / nuclear_normalizer,
         )
-        penalized_obj, smooth_loss, nuclear_norm = _penalized_nuclear_objective(
+        (
+            penalized_obj,
+            smooth_loss,
+            nuclear_norm,
+            normalized_nuclear_norm,
+        ) = _penalized_nuclear_objective(
             candidate,
             x,
             z,
             x_0,
-            z_0,
-            s,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect_x,
-            fit_intervention_model=fit_intervention_model,
-            beta_mask_pre_intervention=beta_mask_pre_intervention,
             fixed_scalar_params=fixed_scalar_params,
             lambda_nuclear=lambda_nuclear,
         )
@@ -436,11 +380,12 @@ def _fit_mple_nuclear_norm(
                 print(message)
             else:
                 logger.info(
-                    "Nuclear prox iter %s | Loss: %.6f | Penalized: %.6f | nuclear_norm: %.6f",
+                    "Nuclear prox iter %s | Loss: %.6f | Penalized: %.6f | nuclear_norm: %.6f | normalized_nuclear_norm: %.6f",
                     iteration,
                     smooth_loss,
                     penalized_obj,
                     nuclear_norm,
+                    normalized_nuclear_norm,
                 )
                 logger.info(message)
 
@@ -457,7 +402,6 @@ def _fit_mple_nuclear_norm(
         y = _canonicalize_theta(
             y,
             artifacts,
-            fit_intervention_model,
             bound_B,
             fixed_scalar_params=fixed_scalar_params,
         )
@@ -467,28 +411,27 @@ def _fit_mple_nuclear_norm(
     theta = _canonicalize_theta(
         theta,
         artifacts,
-        fit_intervention_model,
         bound_B,
         fixed_scalar_params=fixed_scalar_params,
     )
-    penalized_obj, smooth_loss, nuclear_norm = _penalized_nuclear_objective(
+    (
+        penalized_obj,
+        smooth_loss,
+        nuclear_norm,
+        normalized_nuclear_norm,
+    ) = _penalized_nuclear_objective(
         theta,
         x,
         z,
         x_0,
-        z_0,
-        s,
         artifacts=artifacts,
         interaction_effect_x=interaction_effect_x,
-        fit_intervention_model=fit_intervention_model,
-        beta_mask_pre_intervention=beta_mask_pre_intervention,
         fixed_scalar_params=fixed_scalar_params,
         lambda_nuclear=lambda_nuclear,
     )
     theta_parts = unpack_theta(
         theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     field_matrix = np.asarray(theta_parts["field_matrix"], dtype=float)
@@ -507,6 +450,8 @@ def _fit_mple_nuclear_norm(
         final_penalized_objective=float(penalized_obj),
         final_mple_loss=float(smooth_loss),
         nuclear_norm=float(nuclear_norm),
+        normalized_nuclear_norm=float(normalized_nuclear_norm),
+        nuclear_norm_normalizer=float(nuclear_normalizer),
         effective_rank=float(np.linalg.matrix_rank(field_matrix)),
         proximal_iterations=int(len(history)),
         penalized_history=penalized_history,
@@ -521,13 +466,9 @@ def _torch_adam_stage(
     z: np.ndarray,
     theta_init: np.ndarray,
     x_0: np.ndarray,
-    z_0: np.ndarray,
-    s: int,
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
-    fit_intervention_model: bool,
     bound_B: float | None,
-    beta_mask_pre_intervention: bool,
     fixed_scalar_params: dict[str, float] | None,
     steps: int,
     lr: float,
@@ -548,10 +489,8 @@ def _torch_adam_stage(
     if lr <= 0.0:
         raise ValueError("adam_lr must be positive when adam_steps > 0.")
 
-    fixed = validate_fixed_scalar_params(
-        fixed_scalar_params, fit_intervention_model=fit_intervention_model
-    )
-    scalar_names = scalar_parameter_names(fit_intervention_model)
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
+    scalar_names = scalar_parameter_names()
     n_nodes = int(artifacts.gamma_matrix.shape[0])
     t_steps = int(artifacts.t_steps)
     latent_rank = int(artifacts.latent_rank)
@@ -559,25 +498,14 @@ def _torch_adam_stage(
     n_v = t_steps * latent_rank
     outcome_size = float(np.asarray(x).size)
     prev_x_np = np.vstack([x_0, x[:-1, :]])
-    prev_z_np = np.vstack([z_0, z[:-1, :]])
     beta_feature_np = np.asarray(z, dtype=float).copy()
-    if beta_mask_pre_intervention:
-        beta_feature_np[:s, :] = 0.0
-    intervention_mask_np = np.ones_like(z, dtype=float)
-    intervention_mask_np[:s, :] = 0.0
-    intervention_size = float(intervention_mask_np.sum())
 
     dtype = torch.float64
     x_t = torch.as_tensor(np.asarray(x, dtype=float), dtype=dtype, device=device)
-    z_t = torch.as_tensor(np.asarray(z, dtype=float), dtype=dtype, device=device)
     prev_x_t = torch.as_tensor(prev_x_np, dtype=dtype, device=device)
-    prev_z_t = torch.as_tensor(prev_z_np, dtype=dtype, device=device)
     beta_feature_t = torch.as_tensor(beta_feature_np, dtype=dtype, device=device)
     interaction_t = torch.as_tensor(
         np.asarray(interaction_effect_x, dtype=float), dtype=dtype, device=device
-    )
-    intervention_mask_t = torch.as_tensor(
-        intervention_mask_np, dtype=dtype, device=device
     )
     theta = torch.nn.Parameter(
         torch.as_tensor(np.asarray(theta_init, dtype=float), dtype=dtype, device=device)
@@ -639,14 +567,6 @@ def _torch_adam_stage(
             + scalars["xi"] * interaction_t
         )
         loss_x = torch.logaddexp(h_x, -h_x) - x_t * h_x
-        if fit_intervention_model and intervention_size > 0.0:
-            h_z = scalars["zeta"] * prev_x_t + scalars["psi"] * prev_z_t
-            loss_z = (
-                torch.logaddexp(h_z, -h_z) - z_t * h_z
-            ) * intervention_mask_t
-            return (loss_x.sum() + loss_z.sum()) / (
-                outcome_size + intervention_size
-            )
         return loss_x.sum() / outcome_size
 
     history: list[float] = []
@@ -659,7 +579,6 @@ def _torch_adam_stage(
             projected = _canonicalize_theta(
                 theta.detach().cpu().numpy(),
                 artifacts,
-                fit_intervention_model,
                 bound_B,
                 fixed_scalar_params=fixed,
             )
@@ -682,7 +601,6 @@ def _torch_adam_stage(
     theta_hat = _canonicalize_theta(
         theta.detach().cpu().numpy(),
         artifacts,
-        fit_intervention_model,
         bound_B,
         fixed_scalar_params=fixed,
     )
@@ -694,8 +612,6 @@ def _run_lbfgs_stage(
     z: np.ndarray,
     theta_init: np.ndarray,
     x_0: np.ndarray,
-    z_0: np.ndarray,
-    s: int,
     param_names: list[str],
     artifacts: ModelArtifacts,
     interaction_effect_x: np.ndarray,
@@ -703,9 +619,7 @@ def _run_lbfgs_stage(
     tol: float,
     logger,
     verbose_every: int,
-    fit_intervention_model: bool,
     bound_B: float | None,
-    beta_mask_pre_intervention: bool,
     fixed_scalar_params: dict[str, float] | None,
     start_index: int,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
@@ -716,7 +630,6 @@ def _run_lbfgs_stage(
         constrained_theta = _canonicalize_theta(
             theta,
             artifacts,
-            fit_intervention_model,
             bound_B,
             fixed_scalar_params=fixed_scalar_params,
         )
@@ -725,12 +638,8 @@ def _run_lbfgs_stage(
             z,
             constrained_theta,
             x_0,
-            z_0,
-            s,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect_x,
-            fit_intervention_model=fit_intervention_model,
-            beta_mask_pre_intervention=beta_mask_pre_intervention,
             fixed_scalar_params=fixed_scalar_params,
         )
         history.append(loss)
@@ -763,7 +672,6 @@ def _run_lbfgs_stage(
     theta_hat = _canonicalize_theta(
         result.x,
         artifacts,
-        fit_intervention_model,
         bound_B,
         fixed_scalar_params=fixed_scalar_params,
     )
@@ -774,7 +682,6 @@ def fit_mple(
     x: np.ndarray,
     z: np.ndarray,
     x_0: np.ndarray,
-    z_0: np.ndarray,
     s: int,
     param_names: list[str],
     artifacts: ModelArtifacts,
@@ -785,9 +692,7 @@ def fit_mple(
     tol: float = 1e-9,
     logger=None,
     theta_init=None,
-    fit_intervention_model: bool = True,
     bound_B: float | None = None,
-    beta_mask_pre_intervention: bool = False,
     fixed_scalar_params: dict[str, float] | None = None,
     n_starts: int = 1,
     adam_steps: int = 0,
@@ -807,8 +712,6 @@ def fit_mple(
             x,
             z,
             x_0=x_0,
-            z_0=z_0,
-            s=s,
             param_names=param_names,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect_x,
@@ -818,9 +721,7 @@ def fit_mple(
             tol=tol,
             logger=logger,
             theta_init=theta_init,
-            fit_intervention_model=fit_intervention_model,
             bound_B=bound_B,
-            beta_mask_pre_intervention=beta_mask_pre_intervention,
             fixed_scalar_params=fixed_scalar_params,
             lambda_nuclear=lambda_nuclear,
             proximal_lr=proximal_lr,
@@ -847,7 +748,6 @@ def fit_mple(
         start_theta = _canonicalize_theta(
             raw_init,
             artifacts,
-            fit_intervention_model,
             bound_B,
             fixed_scalar_params=fixed_scalar_params,
         )
@@ -856,12 +756,8 @@ def fit_mple(
             z,
             start_theta,
             x_0,
-            z_0,
-            s,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect_x,
-            fit_intervention_model=fit_intervention_model,
-            beta_mask_pre_intervention=beta_mask_pre_intervention,
             fixed_scalar_params=fixed_scalar_params,
         )
         if logger is not None:
@@ -875,19 +771,25 @@ def fit_mple(
 
         adam_history: list[float] = []
         adam_final_loss = initial_loss
-        if adam_steps > 0:
+        if start_theta.size == 0:
+            theta_hat = start_theta
+            lbfgs_history: list[float] = []
+            result = OptimizeResult(
+                x=start_theta,
+                success=True,
+                message="CONVERGENCE: no free parameters",
+                nit=0,
+                nfev=1,
+            )
+        elif adam_steps > 0:
             start_theta, adam_history = _torch_adam_stage(
                 x,
                 z,
                 start_theta,
                 x_0,
-                z_0,
-                s,
                 artifacts=artifacts,
                 interaction_effect_x=interaction_effect_x,
-                fit_intervention_model=fit_intervention_model,
                 bound_B=bound_B,
-                beta_mask_pre_intervention=beta_mask_pre_intervention,
                 fixed_scalar_params=fixed_scalar_params,
                 steps=adam_steps,
                 lr=adam_lr,
@@ -901,46 +803,51 @@ def fit_mple(
                 z,
                 start_theta,
                 x_0,
-                z_0,
-                s,
                 artifacts=artifacts,
                 interaction_effect_x=interaction_effect_x,
-                fit_intervention_model=fit_intervention_model,
-                beta_mask_pre_intervention=beta_mask_pre_intervention,
                 fixed_scalar_params=fixed_scalar_params,
             )
 
-        theta_hat, lbfgs_history, result = _run_lbfgs_stage(
-            x,
-            z,
-            start_theta,
-            x_0,
-            z_0,
-            s,
-            param_names=param_names,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            steps=steps,
-            tol=tol,
-            logger=logger,
-            verbose_every=verbose_every,
-            fit_intervention_model=fit_intervention_model,
-            bound_B=bound_B,
-            beta_mask_pre_intervention=beta_mask_pre_intervention,
-            fixed_scalar_params=fixed_scalar_params,
-            start_index=start_index,
-        )
+            theta_hat, lbfgs_history, result = _run_lbfgs_stage(
+                x,
+                z,
+                start_theta,
+                x_0,
+                param_names=param_names,
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect_x,
+                steps=steps,
+                tol=tol,
+                logger=logger,
+                verbose_every=verbose_every,
+                bound_B=bound_B,
+                fixed_scalar_params=fixed_scalar_params,
+                start_index=start_index,
+            )
+        else:
+            theta_hat, lbfgs_history, result = _run_lbfgs_stage(
+                x,
+                z,
+                start_theta,
+                x_0,
+                param_names=param_names,
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect_x,
+                steps=steps,
+                tol=tol,
+                logger=logger,
+                verbose_every=verbose_every,
+                bound_B=bound_B,
+                fixed_scalar_params=fixed_scalar_params,
+                start_index=start_index,
+            )
         final_loss = _pseudo_loss(
             x,
             z,
             theta_hat,
             x_0,
-            z_0,
-            s,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect_x,
-            fit_intervention_model=fit_intervention_model,
-            beta_mask_pre_intervention=beta_mask_pre_intervention,
             fixed_scalar_params=fixed_scalar_params,
         )
         run_history = [initial_loss, *adam_history, *lbfgs_history, final_loss]
@@ -997,18 +904,16 @@ def _fmt(value):
 def scalar_summary_rows(
     est_theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool,
     scalar_truths: dict[str, float] | None,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[dict[str, object]]:
     est_parts = unpack_theta(
         est_theta,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     rows: list[dict[str, object]] = []
-    for name in scalar_parameter_names(fit_intervention_model):
+    for name in scalar_parameter_names():
         est = float(est_parts[name])
         true = None if scalar_truths is None else scalar_truths.get(name)
         rows.append(
@@ -1023,10 +928,7 @@ def scalar_summary_rows(
     return rows
 
 
-def load_truth_context(
-    truth_artifact_dir: str | Path,
-    fit_intervention_model: bool,
-) -> dict[str, object] | None:
+def load_truth_context(truth_artifact_dir: str | Path) -> dict[str, object] | None:
     truth_root = Path(truth_artifact_dir)
     metadata_path = truth_root / "experiment_metadata.yaml"
     metadata = (
@@ -1047,9 +949,6 @@ def load_truth_context(
         "xi": float(truth_config.estimation_params.xi),
         "eta": float(truth_config.estimation_params.eta),
     }
-    if fit_intervention_model:
-        scalar_truths["zeta"] = float(truth_config.estimation_params.zeta)
-        scalar_truths["psi"] = float(truth_config.estimation_params.psi)
     truth_interaction = compose_interaction_matrix(
         scalar_truths["xi"], truth_artifacts.gamma_matrix
     )
@@ -1064,7 +963,6 @@ def load_truth_context(
 def compute_truth_metrics(
     est_theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool,
     truth_context: dict[str, object] | None,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> dict[str, float]:
@@ -1073,7 +971,6 @@ def compute_truth_metrics(
     est_parts = unpack_theta(
         est_theta,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     est_artifacts = with_theta_field(artifacts, est_parts)
@@ -1106,7 +1003,6 @@ def compute_truth_metrics(
 def latent_diagnostic_rows(
     est_theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool,
     bound_B: float | None,
     truth_context: dict[str, object] | None,
     fixed_scalar_params: dict[str, float] | None = None,
@@ -1114,7 +1010,6 @@ def latent_diagnostic_rows(
     est_parts = unpack_theta(
         est_theta,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     est_artifacts = with_theta_field(artifacts, est_parts)
@@ -1174,7 +1069,6 @@ def write_summary_table(
     metrics,
     loss,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool,
     bound_B: float | None,
     truth_context: dict[str, object] | None,
     fixed_scalar_params: dict[str, float] | None = None,
@@ -1184,7 +1078,6 @@ def write_summary_table(
     rows = scalar_summary_rows(
         est_theta,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         scalar_truths=(
             None if truth_context is None else truth_context.get("scalar_truths")
         ),
@@ -1204,7 +1097,6 @@ def write_summary_table(
         latent_diagnostic_rows(
             est_theta,
             artifacts,
-            fit_intervention_model=fit_intervention_model,
             bound_B=bound_B,
             truth_context=truth_context,
             fixed_scalar_params=fixed_scalar_params,
@@ -1276,7 +1168,6 @@ def log_field_diagnostics(
     metrics: dict[str, float],
     est_theta: np.ndarray,
     artifacts: ModelArtifacts,
-    fit_intervention_model: bool,
     bound_B: float | None,
     truth_context: dict[str, object] | None,
     fixed_scalar_params: dict[str, float] | None = None,
@@ -1288,7 +1179,6 @@ def log_field_diagnostics(
     for row in latent_diagnostic_rows(
         est_theta,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         bound_B=bound_B,
         truth_context=truth_context,
         fixed_scalar_params=fixed_scalar_params,
@@ -1301,13 +1191,11 @@ def save_estimated_artifacts(
     est_theta: np.ndarray,
     artifacts: ModelArtifacts,
     truth_context: dict[str, object] | None,
-    fit_intervention_model: bool = True,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> None:
     est_parts = unpack_theta(
         est_theta,
         artifacts,
-        fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     est_artifacts = with_theta_field(
@@ -1336,9 +1224,6 @@ def save_estimated_artifacts(
         beta=float(est_parts["beta"]),
         xi=float(est_parts["xi"]),
         eta=float(est_parts["eta"]),
-        zeta=float(est_parts["zeta"]),
-        psi=float(est_parts["psi"]),
-        fit_intervention_model=fit_intervention_model,
         latent_rank=int(est_artifacts.latent_rank),
         t_steps=int(est_artifacts.t_steps),
         field_matrix=np.asarray(est_artifacts.field_matrix, dtype=float),
@@ -1371,7 +1256,6 @@ def main() -> None:
     parser.add_argument("--truth_artifact_dir", type=str, default=None)
     parser.add_argument("--panel_path", type=str, default=None)
     parser.add_argument("--x0_path", type=str, default=None)
-    parser.add_argument("--z0_path", type=str, default=None)
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--tol", type=float, default=None)
     parser.add_argument("--seed", type=int, default=None)
@@ -1381,7 +1265,6 @@ def main() -> None:
     parser.add_argument("--adam_device", type=str, default=None)
     parser.add_argument("--lambda_nuclear", type=float, default=None)
     parser.add_argument("--proximal_lr", type=float, default=None)
-    parser.add_argument("--outcome_only", action="store_true")
     parser.add_argument("--log_file", type=str, default=None)
     args = parser.parse_args()
 
@@ -1400,9 +1283,6 @@ def main() -> None:
         )
     )
     config = load_yaml_config(config_path)
-    fit_intervention_model = (
-        intervention_model_enabled(config) and not args.outcome_only
-    )
     fixed_scalar_params = validate_fixed_scalar_params(
         (
             OmegaConf.to_container(
@@ -1411,13 +1291,7 @@ def main() -> None:
             )
             if "estimation_params" in config
             else {}
-        ),
-        fit_intervention_model=fit_intervention_model,
-    )
-    beta_mask_pre_intervention = (
-        bool(config.estimation_params.get("beta_mask_pre_intervention", False))
-        if "estimation_params" in config
-        else False
+        )
     )
     bound_B = float(config.global_params.B) if "B" in config.global_params else None
     lambda_nuclear = float(
@@ -1475,15 +1349,12 @@ def main() -> None:
         else truth_artifact_dir / "panel_data.npz"
     )
     x0_path = Path(args.x0_path) if args.x0_path else truth_artifact_dir / "x_0.npy"
-    z0_path = Path(args.z0_path) if args.z0_path else truth_artifact_dir / "z_0.npy"
     logger.info("Using panel artifact: %s", panel_path)
     logger.info("Using x_0 artifact: %s", x0_path)
-    logger.info("Using z_0 artifact: %s", z0_path)
     logger.info("Using fit config: %s", config_path)
     logger.info("Using model artifact directory: %s", model_artifact_dir)
     logger.info("Using truth artifact directory: %s", truth_artifact_dir)
     x_0 = np.load(x0_path)
-    z_0 = np.load(z0_path) if z0_path.exists() else np.zeros_like(x_0)
     panel = load_panel_artifact(panel_path)
     x = panel["x"]
     z = panel["z"]
@@ -1506,15 +1377,13 @@ def main() -> None:
             )
     param_keys = parameter_names(
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
-    truth_context = load_truth_context(truth_artifact_dir, fit_intervention_model)
+    truth_context = load_truth_context(truth_artifact_dir)
     interaction_effect_x = interaction_effect(x, artifacts.gamma_matrix)
     logger.info("Configured field mode: %s", artifacts.field_mode)
     logger.info("Configured latent rank: %s", artifacts.latent_rank)
     logger.info("Using a fixed known graph with scalar xi.")
-    logger.info("Intervention-process model enabled: %s", fit_intervention_model)
     logger.info("Global temperature bound B active: %s", bound_B is not None)
     if bound_B is not None:
         gamma_inf = interaction_matrix_infinity_norm(artifacts.gamma_matrix)
@@ -1525,7 +1394,6 @@ def main() -> None:
             )
         else:
             logger.info("Effective xi bound from interaction constraint: %.6f", bound_B)
-    logger.info("Beta mask pre-intervention enabled: %s", beta_mask_pre_intervention)
     logger.info("Fixed scalar parameters: %s", fixed_scalar_params or {})
     logger.info(
         "Optimizer settings: n_starts=%s, lbfgs_steps=%s, tol=%s, "
@@ -1546,7 +1414,6 @@ def main() -> None:
         x,
         z,
         x_0=x_0,
-        z_0=z_0,
         s=int(config.global_params.s),
         param_names=param_keys,
         artifacts=artifacts,
@@ -1555,9 +1422,7 @@ def main() -> None:
         tol=tol,
         seed=seed,
         logger=logger,
-        fit_intervention_model=fit_intervention_model,
         bound_B=bound_B,
-        beta_mask_pre_intervention=beta_mask_pre_intervention,
         fixed_scalar_params=fixed_scalar_params,
         n_starts=n_starts,
         adam_steps=adam_steps,
@@ -1578,7 +1443,6 @@ def main() -> None:
     scalar_rows = scalar_summary_rows(
         params_hat,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         scalar_truths=(
             None if truth_context is None else truth_context.get("scalar_truths")
         ),
@@ -1596,7 +1460,6 @@ def main() -> None:
     metrics = compute_truth_metrics(
         params_hat,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         truth_context=truth_context,
         fixed_scalar_params=fixed_scalar_params,
     )
@@ -1606,6 +1469,8 @@ def main() -> None:
                 "penalized_objective": float(result["final_penalized_objective"]),
                 "mple_loss_without_penalty": float(result["final_mple_loss"]),
                 "nuclear_norm": float(result["nuclear_norm"]),
+                "normalized_nuclear_norm": float(result["normalized_nuclear_norm"]),
+                "nuclear_norm_normalizer": float(result["nuclear_norm_normalizer"]),
                 "effective_rank": float(result["effective_rank"]),
                 "proximal_iterations": float(result["proximal_iterations"]),
             }
@@ -1614,6 +1479,8 @@ def main() -> None:
         logger.info("  penalized_objective: %.6f", metrics["penalized_objective"])
         logger.info("  mple_loss_without_penalty: %.6f", metrics["mple_loss_without_penalty"])
         logger.info("  nuclear_norm: %.6f", metrics["nuclear_norm"])
+        logger.info("  normalized_nuclear_norm: %.6f", metrics["normalized_nuclear_norm"])
+        logger.info("  nuclear_norm_normalizer: %.6f", metrics["nuclear_norm_normalizer"])
         logger.info("  effective_rank: %.6f", metrics["effective_rank"])
         logger.info("  proximal_iterations: %.0f", metrics["proximal_iterations"])
     log_field_diagnostics(
@@ -1621,7 +1488,6 @@ def main() -> None:
         metrics,
         params_hat,
         artifacts,
-        fit_intervention_model=fit_intervention_model,
         bound_B=bound_B,
         truth_context=truth_context,
         fixed_scalar_params=fixed_scalar_params,
@@ -1632,7 +1498,6 @@ def main() -> None:
         metrics,
         loss_history[-1],
         artifacts,
-        fit_intervention_model,
         bound_B,
         truth_context=truth_context,
         fixed_scalar_params=fixed_scalar_params,
@@ -1646,7 +1511,6 @@ def main() -> None:
         params_hat,
         artifacts,
         truth_context=truth_context,
-        fit_intervention_model=fit_intervention_model,
         fixed_scalar_params=fixed_scalar_params,
     )
     logger.info(

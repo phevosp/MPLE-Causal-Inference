@@ -240,15 +240,11 @@ def _simulate_target(
     if target["source_type"] == "truth":
         bundle = load_truth_parameter_bundle(experiment_root)
         bound_B = _load_truth_bound(experiment_root)
-        fit_intervention_model = True
     else:
         fit_row = target["fit_row"]
         fit_root = Path(str(fit_row["fit_path"]))
         bundle = load_fit_parameter_bundle(fit_root, experiment_root)
         bound_B = float(fit_row["B"]) if str(fit_row.get("B", "")).strip() else None
-        fit_intervention_model = (
-            str(fit_row.get("fit_intervention_model", "")).lower() == "true"
-        )
     if int(bundle.t_steps) != int(panel_context["T"]):
         raise ValueError(
             f"Posterior-predictive source '{target['source_name']}' has t_steps={bundle.t_steps},"
@@ -352,7 +348,6 @@ def _simulate_target(
         "intervention_slug": intervention_slug,
         "latent_rank": int(bundle.latent_rank),
         "B": bound_B,
-        "fit_intervention_model": bool(fit_intervention_model),
         "num_samples": num_samples,
         "gibbs_sweeps": gibbs_sweeps,
         "seed": seed,
@@ -386,7 +381,6 @@ def _simulate_target(
         "target_intervention_slug": intervention_slug,
         "latent_rank": int(bundle.latent_rank),
         "B": bound_B if bound_B is not None else "",
-        "fit_intervention_model": bool(fit_intervention_model),
         "num_samples": num_samples,
         "gibbs_sweeps": gibbs_sweeps,
         "seed": seed,

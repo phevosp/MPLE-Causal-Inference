@@ -10,33 +10,37 @@ base:
     adam_lr: 1.0e-2
     adam_device: cpu
     proximal_lr: 1.0
-  B: 1.0
+  B: 15.0
   latent_rank: 0
   field_mode: low_rank
   lambda_nuclear: 0.0
   estimation:
-    fit_intervention_model: true
-    beta_mask_pre_intervention: false
     fixed_scalar_params: {}
 
 variants:
-  - name: rank_40_B1_fixed_xi
-    latent_rank: 40
-    estimation:
-      fixed_scalar_params:
-        xi: 0.0
-    
-
-  - name: nuclear_lambda_1e_3_B1_fixed_xi
+  - name: nuclear_lambda_5e_2_B15
     field_mode: nuclear_norm
-    lambda_nuclear: 0.001
+    lambda_nuclear: 0.05
     estimation:
       fixed_scalar_params:
-        xi: 0.0
+        beta: 0.55
+        xi: 0.75
+        eta: -0.3
 
-  - name: nuclear_lambda_5e_4_B1_fixed_xi
+  - name: nuclear_lambda_8e_2_B15
     field_mode: nuclear_norm
-    lambda_nuclear: 0.0005
+    lambda_nuclear: 0.08
     estimation:
       fixed_scalar_params:
-        xi: 0.0
+        beta: 0.55
+        xi: 0.75
+        eta: -0.3
+
+  - name: nuclear_lambda_1e_1_B15
+    field_mode: nuclear_norm
+    lambda_nuclear: 0.1
+    estimation:
+      fixed_scalar_params:
+        beta: 0.55
+        xi: 0.75
+        eta: -0.3

@@ -45,7 +45,6 @@ def build_fit_config(
     variant: dict[str, Any],
     dims: dict[str, int],
 ) -> tuple[object, float]:
-    estimation = dict(variant.get("estimation", {}) or {})
     optimizer = dict(variant.get("optimizer", {}) or {})
     bound_B = float(variant["B"])
     field_mode = str(variant.get("field_mode", "low_rank"))
@@ -80,12 +79,9 @@ def build_fit_config(
             "lambda_nuclear": lambda_nuclear,
         },
         "estimation_params": {
-            "fit_intervention_model": bool(estimation["fit_intervention_model"]),
-            "beta_mask_pre_intervention": bool(
-                estimation["beta_mask_pre_intervention"]
-            ),
             "fixed_scalar_params": dict(
-                estimation.get("fixed_scalar_params", {}) or {}
+                (variant.get("estimation", {}) or {}).get("fixed_scalar_params", {})
+                or {}
             ),
         },
         "optimizer_params": optimizer_config,
@@ -122,7 +118,6 @@ def run_fit_variant(
         "truth_artifact_dir": str(experiment_root.resolve()),
         "panel_path": str((experiment_root / "panel_data.npz").resolve()),
         "x0_path": str((experiment_root / "x_0.npy").resolve()),
-        "z0_path": str((experiment_root / "z_0.npy").resolve()),
         "requested_B": variant.get("B"),
         "resolved_B": float(resolved_B),
         "latent_rank": int(fit_config.global_params.latent_rank),
@@ -148,8 +143,6 @@ def run_fit_variant(
         str(experiment_root / "panel_data.npz"),
         "--x0_path",
         str(experiment_root / "x_0.npy"),
-        "--z0_path",
-        str(experiment_root / "z_0.npy"),
     ]
     subprocess.run(command, check=True, cwd=REPO_ROOT)
     return {
@@ -169,9 +162,6 @@ def run_fit_variant(
         "latent_rank": int(fit_config.global_params.latent_rank),
         "field_mode": str(fit_config.global_params.field_mode),
         "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
-        "fit_intervention_model": bool(
-            fit_config.estimation_params.fit_intervention_model
-        ),
         "fixed_scalar_params": str(
             OmegaConf.to_container(
                 fit_config.estimation_params.fixed_scalar_params, resolve=True

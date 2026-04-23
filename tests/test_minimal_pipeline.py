@@ -120,8 +120,8 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         artifacts = build_synthetic_field(config, gamma)
         self.assertEqual(artifacts.latent_rank, 0)
-        self.assertEqual(artifacts.node_factors.shape, (4, 0))
-        self.assertEqual(artifacts.time_factors.shape, (3, 0))
+        self.assertIsNone(artifacts.node_factors)
+        self.assertIsNone(artifacts.time_factors)
         self.assertTrue(np.allclose(artifacts.field_matrix, 0.0))
 
     def test_xi_is_scalar(self) -> None:
@@ -265,9 +265,6 @@ class MinimalPipelineTests(unittest.TestCase):
             beta=float(config.estimation_params.beta),
             xi=float(config.estimation_params.xi),
             eta=float(config.estimation_params.eta),
-            zeta=float(config.estimation_params.zeta),
-            psi=float(config.estimation_params.psi),
-            fit_intervention_model=True,
             latent_rank=int(artifacts.latent_rank),
             t_steps=int(config.global_params.T),
             field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
@@ -304,18 +301,17 @@ class MinimalPipelineTests(unittest.TestCase):
             ]
         )
         artifacts = build_synthetic_field(config, gamma)
-        field_matrix = compose_latent_field_matrix(
-            artifacts.node_factors, artifacts.time_factors
-        )
         self.assertEqual(artifacts.latent_rank, 2)
-        self.assertEqual(artifacts.node_factors.shape, (4, 2))
-        self.assertEqual(artifacts.time_factors.shape, (3, 2))
+        self.assertIsNone(artifacts.node_factors)
+        self.assertIsNone(artifacts.time_factors)
+        field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
         self.assertEqual(field_matrix.shape, (3, 4))
+        self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
         self.assertLessEqual(
             latent_field_bound_norm(field_matrix), 1.0 + 1e-8
         )
 
-    def test_generated_latent_field_only_projects_composed_field(self) -> None:
+    def test_generated_latent_field_uses_target_rms_scaling(self) -> None:
         config = base_config()
         config.global_params.latent_rank = 2
         config.global_params.B = 0.5
@@ -329,19 +325,18 @@ class MinimalPipelineTests(unittest.TestCase):
         )
 
         artifacts = build_synthetic_field(config, gamma)
-        rng = np.random.default_rng(int(config.generation_params.seed) + 101)
-        raw_nodes = rng.normal(size=(4, 2))
-        raw_times = rng.normal(size=(3, 2))
-        expected_nodes, expected_times = project_latent_field(
-            raw_nodes,
-            raw_times,
-            float(config.global_params.B),
-        )
+        field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
+        target_rms = 0.4 * float(config.global_params.B)
 
-        self.assertTrue(np.allclose(artifacts.node_factors, expected_nodes))
-        self.assertTrue(np.allclose(artifacts.time_factors, expected_times))
+        self.assertIsNone(artifacts.node_factors)
+        self.assertIsNone(artifacts.time_factors)
+        self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
         self.assertLessEqual(
-            latent_field_bound_norm(artifacts.field_matrix),
+            float(np.sqrt(np.mean(field_matrix**2))),
+            target_rms + 1e-12,
+        )
+        self.assertLessEqual(
+            latent_field_bound_norm(field_matrix),
             float(config.global_params.B) + 1e-12,
         )
 
@@ -377,7 +372,16 @@ class MinimalPipelineTests(unittest.TestCase):
             loaded = load_model_artifacts(root)
             theta = load_true_parameters(config, loaded)
             self.assertEqual(loaded.t_steps, 3)
-            self.assertEqual(theta.shape[0], 5)
+            self.assertIsNone(loaded.node_factors)
+            self.assertIsNone(loaded.time_factors)
+            self.assertEqual(theta.shape[0], 3 * 4 + 3)
+            with np.load(root / "field_artifacts.npz", allow_pickle=False) as data:
+                self.assertIn("field_matrix", data)
+                self.assertIn("latent_rank", data)
+                self.assertIn("t_steps", data)
+                self.assertIn("field_mode", data)
+                self.assertNotIn("node_factors", data)
+                self.assertNotIn("time_factors", data)
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
@@ -388,42 +392,37 @@ class MinimalPipelineTests(unittest.TestCase):
             t_steps=1,
             latent_rank=0,
         )
-        theta = np.array([5.0, 4.0, -3.5, 2.5, -2.2], dtype=float)
+        theta = np.array([5.0, 4.0, -3.5], dtype=float)
         projected = _canonicalize_theta(
             theta=theta,
             artifacts=artifacts,
-            fit_intervention_model=True,
             bound_B=1.0,
         )
-        parts = unpack_theta(projected, artifacts, fit_intervention_model=True)
+        parts = unpack_theta(projected, artifacts)
         self.assertLessEqual(abs(float(parts["beta"])), 1.0 + 1e-12)
         self.assertLessEqual(abs(float(parts["eta"])), 1.0 + 1e-12)
-        self.assertLessEqual(abs(float(parts["zeta"])), 1.0 + 1e-12)
-        self.assertLessEqual(abs(float(parts["psi"])), 1.0 + 1e-12)
         interaction = compose_interaction_matrix(float(parts["xi"]), artifacts.gamma_matrix)
         self.assertLessEqual(
             interaction_matrix_infinity_norm(interaction),
             1.0 + 1e-12,
         )
 
-    def test_pseudo_nll_gradient_matches_combined_loss_scaling(self) -> None:
+    def test_pseudo_nll_gradient_matches_low_rank_factor_loss_scaling(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
-        z_0 = np.array([-1.0, 1.0], dtype=float)
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
         artifacts = ModelArtifacts(
             gamma_matrix=gamma,
             t_steps=2,
-            latent_rank=0,
-            field_mode="nuclear_norm",
+            latent_rank=1,
         )
         theta = np.array(
-            [0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2, -0.1, 0.4],
+            [0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2],
             dtype=float,
         )
         direction = np.array(
-            [0.2, -0.1, 0.3, -0.4, 0.5, 0.1, -0.2, 0.25, -0.35],
+            [0.2, -0.1, 0.3, -0.4, 0.5, 0.1, -0.2],
             dtype=float,
         )
         direction /= np.linalg.norm(direction)
@@ -431,12 +430,8 @@ class MinimalPipelineTests(unittest.TestCase):
             x=x,
             z=z,
             x_0=x_0,
-            z_0=z_0,
-            s=1,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect(x, gamma),
-            fit_intervention_model=True,
-            beta_mask_pre_intervention=False,
             fixed_scalar_params={},
         )
 
@@ -456,7 +451,6 @@ class MinimalPipelineTests(unittest.TestCase):
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
-        z_0 = np.array([-1.0, 1.0], dtype=float)
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
         artifacts = ModelArtifacts(
             gamma_matrix=gamma,
@@ -471,12 +465,8 @@ class MinimalPipelineTests(unittest.TestCase):
             x=x,
             z=z,
             x_0=x_0,
-            z_0=z_0,
-            s=1,
             artifacts=artifacts,
             interaction_effect_x=interaction_effect(x, gamma),
-            fit_intervention_model=False,
-            beta_mask_pre_intervention=False,
             fixed_scalar_params={},
         )
 
@@ -496,19 +486,17 @@ class MinimalPipelineTests(unittest.TestCase):
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
-        z_0 = np.array([-1.0, -1.0], dtype=float)
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
         artifacts = ModelArtifacts(
             gamma_matrix=gamma,
             t_steps=2,
             latent_rank=1,
         )
-        param_keys = parameter_names(artifacts, fit_intervention_model=False)
+        param_keys = parameter_names(artifacts)
         theta_hat, loss_history, result = fit_mple(
             x,
             z,
             x_0=x_0,
-            z_0=z_0,
             s=1,
             param_names=param_keys,
             artifacts=artifacts,
@@ -517,7 +505,6 @@ class MinimalPipelineTests(unittest.TestCase):
             tol=1.0e-6,
             seed=11,
             verbose_every=0,
-            fit_intervention_model=False,
             bound_B=1.0,
             n_starts=2,
             adam_steps=2,
@@ -536,26 +523,24 @@ class MinimalPipelineTests(unittest.TestCase):
             t_steps=1,
             latent_rank=0,
         )
-        theta = np.array([0.1, 0.25, 0.4], dtype=float)
+        theta = np.array([0.1, 0.25], dtype=float)
         names = parameter_names(
             artifacts,
-            fit_intervention_model=True,
-            fixed_scalar_params={"beta": 0.0, "psi": 0.3},
+            fixed_scalar_params={"beta": 0.0},
         )
-        self.assertEqual(names, ["xi", "eta", "zeta"])
+        self.assertEqual(names, ["xi", "eta"])
         parts = unpack_theta(
             theta,
             artifacts,
-            fit_intervention_model=True,
-            fixed_scalar_params={"beta": 0.0, "psi": 0.3},
+            fixed_scalar_params={"beta": 0.0},
         )
         self.assertEqual(parts["beta"], 0.0)
-        self.assertEqual(parts["psi"], 0.3)
         self.assertAlmostEqual(parts["xi"], 0.1)
         self.assertAlmostEqual(parts["eta"], 0.25)
-        self.assertAlmostEqual(parts["zeta"], 0.4)
         self.assertEqual(parts["node_factors"].shape, (2, 0))
         self.assertEqual(parts["time_factors"].shape, (1, 0))
+        with self.assertRaises(ValueError):
+            parameter_names(artifacts, fixed_scalar_params={"psi": 0.3})
 
     def test_build_fit_model_artifacts_uses_latent_rank_only(self) -> None:
         config = base_config()
@@ -584,7 +569,7 @@ class MinimalPipelineTests(unittest.TestCase):
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
 
         artifacts = build_fit_model_artifacts(config, gamma)
-        names = parameter_names(artifacts, fit_intervention_model=False)
+        names = parameter_names(artifacts)
 
         self.assertEqual(artifacts.field_mode, "nuclear_norm")
         self.assertEqual(artifacts.latent_rank, 0)
@@ -595,7 +580,6 @@ class MinimalPipelineTests(unittest.TestCase):
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
-        z_0 = np.array([-1.0, -1.0], dtype=float)
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
         artifacts = ModelArtifacts(
             gamma_matrix=gamma,
@@ -603,13 +587,12 @@ class MinimalPipelineTests(unittest.TestCase):
             latent_rank=0,
             field_mode="nuclear_norm",
         )
-        param_keys = parameter_names(artifacts, fit_intervention_model=False)
+        param_keys = parameter_names(artifacts)
 
         low_penalty_theta, _, low_penalty_result = fit_mple(
             x,
             z,
             x_0=x_0,
-            z_0=z_0,
             s=1,
             param_names=param_keys,
             artifacts=artifacts,
@@ -618,7 +601,6 @@ class MinimalPipelineTests(unittest.TestCase):
             tol=0.0,
             seed=11,
             verbose_every=0,
-            fit_intervention_model=False,
             bound_B=0.25,
             lambda_nuclear=0.0,
         )
@@ -626,7 +608,6 @@ class MinimalPipelineTests(unittest.TestCase):
             x,
             z,
             x_0=x_0,
-            z_0=z_0,
             s=1,
             param_names=param_keys,
             artifacts=artifacts,
@@ -635,7 +616,6 @@ class MinimalPipelineTests(unittest.TestCase):
             tol=0.0,
             seed=11,
             verbose_every=0,
-            fit_intervention_model=False,
             bound_B=0.25,
             lambda_nuclear=0.5,
         )
@@ -643,12 +623,10 @@ class MinimalPipelineTests(unittest.TestCase):
         low_field = unpack_theta(
             low_penalty_theta,
             artifacts,
-            fit_intervention_model=False,
         )["field_matrix"]
         high_field = unpack_theta(
             high_penalty_theta,
             artifacts,
-            fit_intervention_model=False,
         )["field_matrix"]
         self.assertLessEqual(latent_field_bound_norm(low_field), 0.25 + 1e-12)
         self.assertLessEqual(latent_field_bound_norm(high_field), 0.25 + 1e-12)
@@ -658,6 +636,11 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         self.assertEqual(low_penalty_result["field_mode"], "nuclear_norm")
         self.assertEqual(high_penalty_result["field_mode"], "nuclear_norm")
+        self.assertAlmostEqual(float(high_penalty_result["nuclear_norm_normalizer"]), 2.0)
+        self.assertAlmostEqual(
+            float(high_penalty_result["normalized_nuclear_norm"]),
+            float(high_penalty_result["nuclear_norm"]) / 2.0,
+        )
 
 
 class FitReportingTests(unittest.TestCase):
@@ -679,7 +662,6 @@ class FitReportingTests(unittest.TestCase):
         graph_source: str = "generated",
         latent_rank: int = 0,
         B: float = 1.0,
-        fit_intervention_model: bool = True,
         fixed_scalar_params: str = "{}",
     ) -> dict[str, object]:
         experiment_root = self.root / experiment_name
@@ -723,7 +705,6 @@ class FitReportingTests(unittest.TestCase):
                 {
                     "global_params": {"B": B, "latent_rank": latent_rank},
                     "estimation_params": {
-                        "fit_intervention_model": fit_intervention_model,
                         "fixed_scalar_params": {},
                     },
                 }
@@ -745,7 +726,6 @@ class FitReportingTests(unittest.TestCase):
             "s": 1,
             "B": B,
             "latent_rank": latent_rank,
-            "fit_intervention_model": fit_intervention_model,
             "fixed_scalar_params": fixed_scalar_params,
             "status": "completed",
         }
@@ -915,15 +895,15 @@ class FitReportingTests(unittest.TestCase):
                     "  B: 1.0",
                     "  latent_rank: 0",
                     "  estimation:",
-                    "    fit_intervention_model: true",
-                    "    beta_mask_pre_intervention: false",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",
-                    "  - name: rank_0_fixed_xi",
+                    "  - name: rank_0_fixed_scalars",
                     "    estimation:",
                     "      fixed_scalar_params:",
-                    "        xi: 0.0",
+                    "        beta: 0.2",
+                    "        xi: 0.1",
+                    "        eta: 0.05",
                     "  - name: nuclear_lambda_1e_2_B1",
                     "    field_mode: nuclear_norm",
                     "    lambda_nuclear: 0.01",
@@ -1071,7 +1051,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             state_scope_label="Mainland US counties with total_population >= 2000",
             tau_zero_mean=False,
             tau_smoothness_lambda=0.0,
-            beta_mask_pre_intervention=True,
         )
         metadata = {
             "source": "USCountyVaccination",
@@ -1156,8 +1135,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             steps=3,
             tol=1.0e-6,
             seed=9,
-            fit_intervention_model=False,
-            beta_mask_pre_intervention=True,
             lambda_nuclear_values=[0.01],
         )
 
@@ -1182,7 +1159,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         self.assertEqual(fit_spec.base.optimizer.adam_steps, 0)
         self.assertEqual(fit_spec.variants[-1].field_mode, "nuclear_norm")
         self.assertAlmostEqual(float(fit_spec.variants[-1].lambda_nuclear), 0.01)
-        self.assertFalse(bool(fit_spec.base.estimation.fit_intervention_model))
 
     def test_us_county_truth_targets_are_rejected(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
@@ -1226,8 +1202,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
                     "  B: 1.0",
                     "  latent_rank: 0",
                     "  estimation:",
-                    "    fit_intervention_model: true",
-                    "    beta_mask_pre_intervention: true",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",
@@ -1373,7 +1347,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "source_slug": "truth",
                     "latent_rank": 0,
                     "B": 1.0,
-                    "fit_intervention_model": True,
                     "num_samples": 8,
                     "gibbs_sweeps": 2,
                     "seed": 0,
@@ -1400,7 +1373,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "source_slug": "fit_rank_0",
                     "latent_rank": 0,
                     "B": 1.0,
-                    "fit_intervention_model": True,
                     "num_samples": 8,
                     "gibbs_sweeps": 2,
                     "seed": 0,
@@ -1439,7 +1411,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "source_slug": "fit_variant_worse_max",
                     "latent_rank": 0,
                     "B": 1.0,
-                    "fit_intervention_model": True,
                     "num_samples": 8,
                     "gibbs_sweeps": 2,
                     "seed": 0,
@@ -1466,7 +1437,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "source_slug": "fit_variant_better_max",
                     "latent_rank": 0,
                     "B": 1.0,
-                    "fit_intervention_model": True,
                     "num_samples": 8,
                     "gibbs_sweeps": 2,
                     "seed": 0,
@@ -1502,7 +1472,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     (self.root / "generated" / "exp_a" / "fits" / "rank_0").resolve()
                 ),
                 "B": "1.0",
-                "fit_intervention_model": "True",
             }
         ]
         with generation_manifest_path.open("w", encoding="utf-8", newline="") as handle:
@@ -1752,8 +1721,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "  B: 1.0",
                     "  latent_rank: 0",
                     "  estimation:",
-                    "    fit_intervention_model: true",
-                    "    beta_mask_pre_intervention: false",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",
@@ -1922,8 +1889,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "  B: 1.0",
                     "  latent_rank: 0",
                     "  estimation:",
-                    "    fit_intervention_model: true",
-                    "    beta_mask_pre_intervention: false",
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",

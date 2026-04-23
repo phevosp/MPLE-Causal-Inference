@@ -2,8 +2,8 @@ base:
   experiment_root: experiments/SyntheticHybridExperiments
   manifest_path: experiments/SyntheticHybridExperiments/generation_manifest.csv
   dimensions:
-    N: 500
-    T: 50
+    N: 1000
+    T: 100
     s: 10
   generation:
     gibbs_sweeps: 20
@@ -36,7 +36,7 @@ base:
       lag_code: null
       trim_scope: null
   truth:
-    B: 1.0
+    B: 2.0
     latent_rank: 0
     scalars:
       beta: 0.55
@@ -46,33 +46,9 @@ base:
       psi: 0.8
 
 experiments:
-  - name: synthetic_rank_40_B1
+  - name: synthetic_rank_10_B15
     generation:
       seed: 720
     truth:
-      B: 0.9
-      latent_rank: 40
-
-  - name: hybrid_uscounty_intervention_uscounty_graph_rank_40
-    generation:
-      seed: 930
-    graph:
-      source: fixed_artifact
-      artifact:
-        gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
-        node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/node_index.csv
-        artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed
-        network_name: contiguity
-        trim_scope: trimmed
-    intervention:
-      source: fixed_artifact
-      artifact:
-        panel_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed/panel_data.npz
-        z0_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed/z_0.npy
-        artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed
-        intervention_code: complete_cov_ge_30
-        lag_code: 2w
-        trim_scope: trimmed
-    truth:
-      B: 0.9
-      latent_rank: 40
+      latent_rank: 10
+      B: 15.0

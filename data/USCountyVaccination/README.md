@@ -296,7 +296,6 @@ Useful experiment-runner flags:
 - `--field_mode`
 - `--latent_rank`
 - `--latent_B`
-- `--beta_mask_pre_intervention`
 
 Two additional flags are currently passed through into saved configs and metadata:
 
@@ -307,19 +306,7 @@ At the moment those `tau_*` settings are recorded by the real-data runner, but t
 
 ## Fitting Behavior
 
-When `--run_mple` is enabled, the runner first attempts the full outcome-plus-intervention fit.
-
-If that full fit fails, it automatically retries with:
-
-- `mple.py --outcome_only`
-
-The manifest records:
-
-- `full_fit_status`
-- `outcome_only_fit_status`
-- `fallback_run`
-
-`fallback_run = true` means the full fit failed and the experiment was rerun outcome-only.
+When `--run_mple` is enabled, the runner fits the outcome pseudo-likelihood only.
 
 ## Shared MPLE And Counterfactual Workflow
 
@@ -566,7 +553,6 @@ pixi run python data/USCountyVaccination/create_us_county_vaccination_experiment
   --field_mode latent_feature_matrix \
   --latent_rank 6 \
   --latent_B 1.5 \
-  --beta_mask_pre_intervention \
   --overwrite
 ```
 

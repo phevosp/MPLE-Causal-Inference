@@ -21,7 +21,6 @@ PER_EXPERIMENT_COLUMNS = [
     "source_slug",
     "latent_rank",
     "B",
-    "fit_intervention_model",
     "rank_in_experiment",
     "is_best",
     "mean_abs_zscore",
@@ -47,7 +46,6 @@ WINNER_COLUMNS = [
     "source_slug",
     "latent_rank",
     "B",
-    "fit_intervention_model",
     "mean_abs_zscore",
     "max_abs_zscore",
     "coverage_rate",
@@ -67,18 +65,6 @@ def _as_float(value: object) -> float | None:
 def _metric_or_inf(value: object) -> float:
     parsed = _as_float(value)
     return math.inf if parsed is None else parsed
-
-
-def _as_bool_string(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    text = str(value).strip()
-    if not text:
-        return ""
-    lowered = text.lower()
-    if lowered in {"true", "false"}:
-        return lowered
-    return text
 
 
 def collect_predictive_rows(manifest_path: str | Path) -> list[dict[str, object]]:
@@ -103,9 +89,6 @@ def collect_predictive_rows(manifest_path: str | Path) -> list[dict[str, object]
         ]:
             value = manifest_row.get(key)
             row[key] = int(value) if value not in (None, "") else ""
-        row["fit_intervention_model"] = _as_bool_string(
-            manifest_row.get("fit_intervention_model", "")
-        )
         rows.append(row)
     rows.sort(
         key=lambda row: (

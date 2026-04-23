@@ -15,8 +15,6 @@ base:
   field_mode: low_rank
   lambda_nuclear: 0.0
   estimation:
-    fit_intervention_model: false
-    beta_mask_pre_intervention: true
     fixed_scalar_params: {}
 
 variants:

@@ -67,7 +67,8 @@ pixi run python -u run_generation_pipeline.py --spec_path data/configs/generatio
 What generation resolves:
 
 - `dimensions.N`, `dimensions.T`, and `dimensions.s`
-- truth scalars `beta`, `xi`, `eta`, `zeta`, `psi`
+- outcome truth scalars `beta`, `xi`, `eta`
+- generation-only intervention scalars `zeta`, `psi`
 - `truth.latent_rank`
 - graph source
 - intervention source
@@ -110,8 +111,6 @@ Each fit variant controls:
 - `field_mode`: `low_rank` or `nuclear_norm`
 - `latent_rank`
 - `lambda_nuclear` for `field_mode: nuclear_norm`
-- `estimation.fit_intervention_model`
-- `estimation.beta_mask_pre_intervention`
 - `estimation.fixed_scalar_params`
 - optimizer `steps`, `tol`, `seed`, `n_starts`, `adam_steps`, `adam_lr`, `adam_device`, and `proximal_lr`
 
@@ -236,11 +235,10 @@ At experiment scope, the shared panel/model artifacts are:
 
 - `latent_rank`
 - `t_steps`
-- `node_factors`
-- `time_factors`
+- `field_mode`
 - `field_matrix`
 
-`latent_rank = 0` means the realized field is exactly zero and the latent factor arrays are empty.
+`latent_rank = 0` means the realized field is exactly zero.
 
 Each fit folder additionally writes:
 
@@ -359,14 +357,12 @@ pixi run python -u mple.py \
   --model_artifact_dir experiments/<experiment> \
   --truth_artifact_dir experiments/<experiment> \
   --panel_path experiments/<experiment>/panel_data.npz \
-  --x0_path experiments/<experiment>/x_0.npy \
-  --z0_path experiments/<experiment>/z_0.npy
+  --x0_path experiments/<experiment>/x_0.npy
 ```
 
 Useful flags:
 
 - `--steps`, `--tol`, `--seed`, `--n_starts`, `--adam_steps`, `--adam_lr`, `--adam_device`, `--lambda_nuclear`, and `--proximal_lr` override optimizer settings
-- `--outcome_only` disables fitting the intervention process
 - `--log_file` redirects the MPLE log
 
 When `n_starts > 1`, MPLE runs independent random starts and keeps the fit with the lowest final pseudo-negative log likelihood. When `adam_steps > 0`, each start first runs a PyTorch Adam basin-search stage and then uses L-BFGS-B for the final polish. Per-start diagnostics are saved to `optimizer_start_summary.csv`.

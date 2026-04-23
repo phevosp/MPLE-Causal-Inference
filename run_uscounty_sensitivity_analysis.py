@@ -56,8 +56,6 @@ SUMMARY_COLUMNS = [
     "beta",
     "xi",
     "eta",
-    "zeta",
-    "psi",
     "estimated_field_inf_norm",
     "estimated_field_rank",
     "fit_path",
@@ -311,8 +309,6 @@ def write_sensitivity_fit_spec(
     steps: int,
     tol: float,
     seed: int,
-    fit_intervention_model: bool,
-    beta_mask_pre_intervention: bool,
     n_starts: int = 1,
     adam_steps: int = 0,
     adam_lr: float = 1.0e-2,
@@ -376,8 +372,6 @@ def write_sensitivity_fit_spec(
                 "field_mode": "low_rank",
                 "lambda_nuclear": 0.0,
                 "estimation": {
-                    "fit_intervention_model": bool(fit_intervention_model),
-                    "beta_mask_pre_intervention": bool(beta_mask_pre_intervention),
                     "fixed_scalar_params": {},
                 },
             },
@@ -456,8 +450,6 @@ def write_sensitivity_summary(fit_manifest_path: str | Path) -> Path:
             "beta": _summary_value(entries, "beta"),
             "xi": _summary_value(entries, "xi"),
             "eta": _summary_value(entries, "eta"),
-            "zeta": _summary_value(entries, "zeta"),
-            "psi": _summary_value(entries, "psi"),
             "fit_path": str(fit_root.resolve()),
         }
         row.update(latent_diagnostics(fit_root))
@@ -552,12 +544,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--adam_lr", type=float, default=1.0e-2)
     parser.add_argument("--adam_device", type=str, default="cpu")
-    parser.add_argument("--fit_intervention_model", action="store_true")
-    parser.add_argument(
-        "--no_beta_mask_pre_intervention",
-        action="store_true",
-        help="Disable the default beta pre-intervention mask used by the USCounty fit spec.",
-    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--run_fits",
@@ -594,8 +580,6 @@ def main() -> None:
         steps=int(args.steps),
         tol=float(args.tol),
         seed=int(args.seed),
-        fit_intervention_model=bool(args.fit_intervention_model),
-        beta_mask_pre_intervention=not bool(args.no_beta_mask_pre_intervention),
         n_starts=int(args.n_starts),
         adam_steps=int(args.adam_steps),
         adam_lr=float(args.adam_lr),

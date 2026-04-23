@@ -29,7 +29,8 @@ Important keys:
 - `intervention.artifact.*` for fixed intervention artifacts
 - `truth.B`
 - `truth.latent_rank`
-- `truth.scalars.beta`, `xi`, `eta`, `zeta`, `psi`
+- `truth.scalars.beta`, `xi`, `eta`
+- generation-only intervention scalars `truth.scalars.zeta`, `psi`
 
 Supported source modes:
 
@@ -63,8 +64,6 @@ Important keys:
 - `field_mode`
 - `latent_rank`
 - `lambda_nuclear`
-- `estimation.fit_intervention_model`
-- `estimation.beta_mask_pre_intervention`
 - `estimation.fixed_scalar_params`
 
 ### Posterior Predictive Spec
@@ -228,7 +227,6 @@ Typical columns:
 - `s`
 - `B`
 - `latent_rank`
-- `fit_intervention_model`
 - `fixed_scalar_params`
 - `status`
 
@@ -263,7 +261,6 @@ Typical columns:
 - `target_intervention_slug`
 - `latent_rank`
 - `B`
-- `fit_intervention_model`
 - `num_samples`
 - `gibbs_sweeps`
 - `seed`
@@ -333,7 +330,6 @@ Typical columns:
 - `target_intervention_slug`
 - `latent_rank`
 - `B`
-- `fit_intervention_model`
 - `num_samples`
 - `gibbs_sweeps`
 - `seed`
@@ -487,9 +483,6 @@ It stores:
 - `beta`
 - `xi`
 - `eta`
-- `zeta`
-- `psi`
-- `fit_intervention_model`
 - `latent_rank`
 - `t_steps`
 - `field_matrix`
