@@ -1,3 +1,10 @@
+"""Run MPLE fit variants over a generation manifest.
+
+Reads a generation manifest and a fits_spec.yaml, builds per-variant fit configs,
+invokes mple.py via subprocess for each (experiment, variant) pair, and writes a
+fit_manifest.csv and per-experiment fit summary reports.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -11,7 +18,12 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from data.synthetic_data_generation import derive_pre_intervention_steps
-from pipeline_specs import expand_named_entries, read_csv_manifest, write_csv_manifest
+from pipeline_specs import (
+    expand_named_entries,
+    read_csv_manifest,
+    validate_fits_spec,
+    write_csv_manifest,
+)
 from report_parameter_recovery_detailed import write_fit_reports
 
 
@@ -191,6 +203,7 @@ def run_fits(
     fits_spec_path: str | Path,
     overwrite: bool = False,
 ) -> Path:
+    validate_fits_spec(fits_spec_path)
     generation_rows = read_csv_manifest(manifest_path)
     variants = expand_named_entries(fits_spec_path, "variants")
     if not generation_rows:
@@ -219,14 +232,41 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run MPLE fit variants over a generation manifest."
     )
-    parser.add_argument("--manifest_path", type=str, required=True)
+    parser.add_argument(
+        "--manifest_path",
+        type=str,
+        required=True,
+        help="Path to the generation manifest CSV produced by run_generation_pipeline.py.",
+    )
     parser.add_argument(
         "--fits_spec_path",
         type=str,
         default="data/configs/fits_spec.yaml",
+        help="Path to the fits YAML spec defining optimizer variants (default: data/configs/fits_spec.yaml).",
     )
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="If set, delete and rebuild existing fit directories.",
+    )
+    parser.add_argument(
+        "--dry_run",
+        action="store_true",
+        help="Validate configs and print the planned (experiment, variant) work without executing any fits.",
+    )
     args = parser.parse_args()
+
+    if args.dry_run:
+        generation_rows = read_csv_manifest(args.manifest_path)
+        variants = expand_named_entries(args.fits_spec_path, "variants")
+        print(
+            f"Dry run: {len(generation_rows)} experiment(s) × {len(variants)} variant(s) "
+            f"= {len(generation_rows) * len(variants)} fit(s) planned."
+        )
+        for row in generation_rows:
+            for variant in variants:
+                print(f"  {row.get('experiment_name', '?')} / {variant['name']}")
+        return
 
     fit_manifest_path = run_fits(
         args.manifest_path,
