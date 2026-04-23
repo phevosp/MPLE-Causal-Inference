@@ -35,7 +35,14 @@ from loading_utils import (
     load_fit_parameter_bundle,
     load_truth_parameter_bundle,
 )
-from mple import _canonicalize_theta, fit_mple, pseudo_nll
+from mple import (
+    _build_fit_eval_context,
+    _evaluate_factorized_loss,
+    _evaluate_full_field_loss,
+    _evaluate_scalar_only_loss,
+    fit_mple,
+    pseudo_nll,
+)
 from model_utils import (
     ModelArtifacts,
     build_fit_model_artifacts,
@@ -347,6 +354,51 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertLessEqual(latent_field_bound_norm(field_matrix), 1.0 + 1e-12)
         self.assertGreater(float(np.linalg.norm(field_matrix, ord=np.inf)), 1.0)
 
+    def test_fit_report_latent_diagnostics_uses_max_abs_entry_names(self) -> None:
+        from report_parameter_recovery_detailed import latent_diagnostics
+
+        fit_root = REPO_ROOT / "experiments" / f".tmp_latent_diag_{uuid.uuid4().hex}"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        try:
+            estimated_field = np.array([[2.0, -1.0], [2.0, -1.0]], dtype=float)
+            true_field = np.array([[0.25, -0.75], [0.5, -0.5]], dtype=float)
+            np.savez(fit_root / "estimated_field_artifacts.npz", field_matrix=estimated_field)
+            np.savez(fit_root / "true_field_artifacts.npz", field_matrix=true_field)
+
+            row = latent_diagnostics(fit_root)
+
+            self.assertEqual(row["estimated_field_max_abs_entry"], 2.0)
+            self.assertEqual(row["true_field_max_abs_entry"], 0.75)
+            self.assertNotIn("estimated_field_inf_norm", row)
+            self.assertNotIn("true_field_inf_norm", row)
+            self.assertGreater(float(np.linalg.norm(estimated_field, ord=np.inf)), 2.0)
+        finally:
+            shutil.rmtree(fit_root, ignore_errors=True)
+
+    def test_fit_report_latent_diagnostics_reads_legacy_inf_norm_names(self) -> None:
+        from report_parameter_recovery_detailed import latent_diagnostics
+
+        fit_root = REPO_ROOT / "experiments" / f".tmp_legacy_latent_diag_{uuid.uuid4().hex}"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        try:
+            (fit_root / "mple_summary.csv").write_text(
+                "\n".join(
+                    [
+                        "category,name,estimate,true,squared_error",
+                        "latent_diagnostic,estimated_field_inf_norm,1.25,,",
+                        "latent_diagnostic,true_field_inf_norm,0.75,,",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            row = latent_diagnostics(fit_root)
+
+            self.assertEqual(row["estimated_field_max_abs_entry"], 1.25)
+            self.assertEqual(row["true_field_max_abs_entry"], 0.75)
+        finally:
+            shutil.rmtree(fit_root, ignore_errors=True)
+
     def test_model_artifact_roundtrip_and_true_parameter_loading(self) -> None:
         config = base_config()
         gamma = np.array(
@@ -376,7 +428,7 @@ class MinimalPipelineTests(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_canonicalization_preserves_unconstrained_scalars_and_interaction(
+    def test_scalar_only_theta_preserves_unconstrained_scalars_and_interaction(
         self,
     ) -> None:
         gamma = np.array([[0.0, 2.0], [2.0, 0.0]], dtype=float)
@@ -384,13 +436,9 @@ class MinimalPipelineTests(unittest.TestCase):
             gamma_matrix=gamma,
             t_steps=1,
             latent_rank=0,
+            optimizer_mode="no_external_field",
         )
-        theta = np.array([5.0, 4.0, -3.5], dtype=float)
-        projected = _canonicalize_theta(
-            theta=theta,
-            artifacts=artifacts,
-        )
-        parts = unpack_theta(projected, artifacts)
+        parts = unpack_theta(np.array([5.0, 4.0, -3.5], dtype=float), artifacts)
         self.assertAlmostEqual(float(parts["beta"]), 5.0)
         self.assertAlmostEqual(float(parts["xi"]), 4.0)
         self.assertAlmostEqual(float(parts["eta"]), -3.5)
@@ -441,6 +489,128 @@ class MinimalPipelineTests(unittest.TestCase):
             float(finite_difference),
             places=8,
         )
+
+    def test_specialized_scalar_only_kernel_matches_pseudo_nll(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="no_external_field",
+        )
+        theta = np.array([0.3, -0.25, 0.2], dtype=float)
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+        )
+
+        ref_loss, ref_grad = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fixed_scalar_params={},
+        )
+        kernel_loss, kernel_grad = _evaluate_scalar_only_loss(theta, context)
+
+        self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
+        self.assertTrue(np.allclose(kernel_grad, ref_grad))
+
+    def test_specialized_full_field_kernel_matches_pseudo_nll(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="nuclear_norm",
+        )
+        theta = np.array([0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2], dtype=float)
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+        )
+
+        ref_loss, ref_grad = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fixed_scalar_params={},
+        )
+        field_matrix = theta[:4].reshape(2, 2)
+        kernel_loss, residual, scalar_grad = _evaluate_full_field_loss(
+            field_matrix,
+            context,
+            free_scalar_values=theta[4:],
+        )
+        kernel_grad = np.concatenate(
+            [(residual / x.size).reshape(-1), scalar_grad]
+        )
+
+        self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
+        self.assertTrue(np.allclose(kernel_grad, ref_grad))
+
+    def test_specialized_factorized_kernel_matches_pseudo_nll(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+        )
+        theta = np.array(
+            [0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2],
+            dtype=float,
+        )
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+        )
+
+        ref_loss, ref_grad = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fixed_scalar_params={},
+        )
+        node_factors = theta[:2].reshape(2, 1)
+        time_factors = theta[2:4].reshape(2, 1)
+        kernel_loss, _, time_grad, node_grad, scalar_grad = _evaluate_factorized_loss(
+            time_factors,
+            node_factors,
+            context,
+            free_scalar_values=theta[4:],
+        )
+        kernel_grad = np.concatenate(
+            [node_grad.reshape(-1), time_grad.reshape(-1), scalar_grad]
+        )
+
+        self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
+        self.assertTrue(np.allclose(kernel_grad, ref_grad))
 
     def test_pseudo_nll_gradient_matches_outcome_only_loss_scaling(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
@@ -592,6 +762,14 @@ class MinimalPipelineTests(unittest.TestCase):
             float(high_penalty_result["normalized_frobenius_norm"]),
             float(high_penalty_result["frobenius_norm"]) / 2.0,
         )
+        self.assertAlmostEqual(
+            float(high_penalty_result["squared_normalized_frobenius_norm"]),
+            float(high_penalty_result["frobenius_norm"]) ** 2 / 4.0,
+        )
+        self.assertAlmostEqual(
+            float(high_penalty_result["frobenius_penalty_normalizer"]),
+            4.0,
+        )
         self.assertGreaterEqual(
             float(high_penalty_result["final_penalized_objective"]),
             float(high_penalty_result["final_mple_loss"]),
@@ -732,7 +910,7 @@ class MinimalPipelineTests(unittest.TestCase):
             gamma_matrix=gamma,
             t_steps=2,
             latent_rank=1,
-            optimizer_mode="alternative_low_rank",
+            optimizer_mode="alternating_latent_rank",
         )
         param_keys = parameter_names(artifacts)
 
@@ -754,7 +932,7 @@ class MinimalPipelineTests(unittest.TestCase):
 
         self.assertEqual(theta_hat.shape, (len(param_keys),))
         self.assertTrue(np.isfinite(loss_history[-1]))
-        self.assertEqual(result["optimizer_mode"], "alternative_low_rank")
+        self.assertEqual(result["optimizer_mode"], "alternating_latent_rank")
         self.assertEqual(result["optimizer"], "alternating_low_rank")
         self.assertEqual(result["n_starts"], 2)
         self.assertEqual(len(result["start_summaries"]), 2)
@@ -762,15 +940,46 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertIn("penalized_history", result)
         self.assertAlmostEqual(float(result["lambda_uv_ridge"]), 0.1)
 
+    def test_alternating_low_rank_penalized_history_decreases(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_latent_rank",
+        )
+        _, _, result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=parameter_names(artifacts),
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=4,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.1,
+        )
+        history = list(result["penalized_history"])
+
+        self.assertGreaterEqual(len(history), 2)
+        self.assertLessEqual(history[-1], history[0])
+
     def test_build_fit_model_artifacts_rejects_nonpositive_alternative_rank(
         self,
     ) -> None:
         config = base_config()
-        config.global_params.optimizer_mode = "alternative_low_rank"
+        config.global_params.optimizer_mode = "alternating_latent_rank"
         config.global_params.latent_rank = 0
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
 
-        with self.assertRaisesRegex(ValueError, "alternative_low_rank"):
+        with self.assertRaisesRegex(ValueError, "alternating_latent_rank"):
             build_fit_model_artifacts(config, gamma)
 
 
@@ -792,7 +1001,7 @@ class FitReportingTests(unittest.TestCase):
         intervention_source: str = "generated",
         graph_source: str = "generated",
         latent_rank: int = 0,
-        optimizer_mode: str = "manifold",
+        optimizer_mode: str = "no_external_field",
         B: float = 1.0,
         fixed_scalar_params: str = "{}",
     ) -> dict[str, object]:
@@ -1032,7 +1241,7 @@ class FitReportingTests(unittest.TestCase):
                     "    seed: 0",
                     "  B: 1.0",
                     "  latent_rank: 0",
-                    "  optimizer_mode: manifold",
+                    "  optimizer_mode: no_external_field",
                     "  lambda_frobenius: 0.0",
                     "  lambda_uv_ridge: 0.0",
                     "  estimation:",
@@ -1076,6 +1285,10 @@ class FitReportingTests(unittest.TestCase):
         self.assertIn("optimizer_mode", rows[0])
         self.assertIn("lambda_frobenius", rows[0])
         self.assertIn("lambda_uv_ridge", rows[0])
+        self.assertIn("estimated_field_max_abs_entry", rows[0])
+        self.assertIn("true_field_max_abs_entry", rows[0])
+        self.assertNotIn("estimated_field_inf_norm", rows[0])
+        self.assertNotIn("true_field_inf_norm", rows[0])
         nuclear_root = experiment_root / "fits" / "nuclear_lambda_1e_2_b1"
         self.assertTrue((nuclear_root / "mple_summary.csv").exists())
         self.assertTrue((nuclear_root / "estimated_field_artifacts.npz").exists())

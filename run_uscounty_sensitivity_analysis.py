@@ -54,6 +54,7 @@ SUMMARY_COLUMNS = [
     "optimizer_mode",
     "latent_rank",
     "lambda_nuclear",
+    "lambda_frobenius",
     "lambda_uv_ridge",
     "T",
     "s",
@@ -328,9 +329,14 @@ def write_sensitivity_fit_spec(
             variants.append(
                 {
                     "name": f"rank_{int(latent_rank)}{b_suffix}",
-                    "optimizer_mode": "manifold",
+                    "optimizer_mode": (
+                        "no_external_field"
+                        if int(latent_rank) == 0
+                        else "exact_rank_manifold"
+                    ),
                     "latent_rank": int(latent_rank),
                     "lambda_nuclear": 0.0,
+                    "lambda_frobenius": 0.0,
                     "lambda_uv_ridge": 0.0,
                     **b_dict,
                 }
@@ -361,8 +367,13 @@ def write_sensitivity_fit_spec(
                     "n_starts": int(n_starts),
                 },
                 "latent_rank": int(latent_ranks[0]),
-                "optimizer_mode": "manifold",
+                "optimizer_mode": (
+                    "no_external_field"
+                    if int(latent_ranks[0]) == 0
+                    else "exact_rank_manifold"
+                ),
                 "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
                 "lambda_uv_ridge": 0.0,
                 "estimation": {
                     "fixed_scalar_params": {},
@@ -434,9 +445,10 @@ def write_sensitivity_summary(fit_manifest_path: str | Path) -> Path:
             ),
             "sensitivity_start_index": metadata.get("sensitivity_start_index", ""),
             "variant_name": fit_row.get("variant_name", ""),
-            "optimizer_mode": fit_row.get("optimizer_mode", "manifold"),
+            "optimizer_mode": fit_row.get("optimizer_mode", "no_external_field"),
             "latent_rank": fit_row.get("latent_rank", ""),
             "lambda_nuclear": fit_row.get("lambda_nuclear", ""),
+            "lambda_frobenius": fit_row.get("lambda_frobenius", ""),
             "lambda_uv_ridge": fit_row.get("lambda_uv_ridge", ""),
             "T": fit_row.get("T", ""),
             "s": fit_row.get("s", ""),
@@ -456,9 +468,10 @@ def write_sensitivity_summary(fit_manifest_path: str | Path) -> Path:
         key=lambda row: (
             math.inf if row.get("final_loss") is None else float(row["final_loss"]),
             str(row.get("sensitivity_start_week_end_date", "")),
-            str(row.get("optimizer_mode", "manifold")),
+            str(row.get("optimizer_mode", "no_external_field")),
             int(row.get("latent_rank") or 0),
             float(row.get("lambda_nuclear") or 0.0),
+            float(row.get("lambda_frobenius") or 0.0),
             float(row.get("lambda_uv_ridge") or 0.0),
         )
     )
@@ -513,7 +526,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         type=int,
         default=list(DEFAULT_LATENT_RANKS),
-        help="Latent field ranks to sweep (0 = scalar-only manifold mode).",
+        help="Latent field ranks to sweep (0 = no_external_field mode).",
     )
     parser.add_argument(
         "--lambda_nuclear_values",

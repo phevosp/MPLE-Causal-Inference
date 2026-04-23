@@ -46,9 +46,10 @@ Each entry is deep-merged with `base`; entries inherit all base fields they don'
 
 | Mode | Description |
 |---|---|
-| `manifold` | Riemannian conjugate gradient on the FixedRankEmbedded manifold (pymanopt). Default. Use when rank is known. |
+| `exact_rank_manifold` | Riemannian conjugate gradient on the FixedRankEmbedded manifold (pymanopt). Use when rank is known. |
+| `no_external_field` | Scalar-only optimization with the latent field fixed to zero. |
 | `nuclear_norm` | Proximal gradient descent with nuclear-norm regularization. Promotes low rank without fixing it. |
-| `alternative_low_rank` | Alternating L-BFGS-B over U and Vt factor matrices. Requires `latent_rank >= 1`. |
+| `alternating_latent_rank` | Alternating optimization over U and V factor matrices. Requires `latent_rank >= 1`. |
 
 ## Key Source Files
 
@@ -66,8 +67,9 @@ Each entry is deep-merged with `base`; entries inherit all base fields they don'
 ## Important Config Semantics
 
 - `estimation.fixed_scalar_params` — scalars **fixed at these values**, not initial guesses. Empty dict `{}` means all scalars are estimated freely.
-- `lambda_uv_ridge` — only active for `alternative_low_rank` mode.
-- `latent_rank: 0` with `optimizer_mode: manifold` → scalar-only model (no latent field).
+- `lambda_frobenius` — only active for `exact_rank_manifold` mode.
+- `lambda_uv_ridge` — only active for `alternating_latent_rank` mode.
+- `optimizer_mode: no_external_field` → scalar-only model (no latent field).
 
 ## Manifest Flow
 

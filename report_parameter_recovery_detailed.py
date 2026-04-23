@@ -39,9 +39,9 @@ PER_EXPERIMENT_COLUMNS = [
     "beta_abs_error",
     "xi_abs_error",
     "eta_abs_error",
-    "estimated_field_inf_norm",
+    "estimated_field_max_abs_entry",
     "estimated_field_rank",
-    "true_field_inf_norm",
+    "true_field_max_abs_entry",
     "true_field_rank",
 ]
 WINNER_COLUMNS = [
@@ -124,13 +124,31 @@ def latent_diagnostics(folder: Path) -> dict[str, object]:
     estimated_field = load_field_matrix(folder / "estimated_field_artifacts.npz")
     true_field = load_field_matrix(folder / "true_field_artifacts.npz")
     if estimated_field is None:
-        return {}
+        summary_entries = read_summary_entries(folder / "mple_summary.csv")
+        row: dict[str, object] = {}
+        estimated_value = scalar_value(
+            summary_entries, "estimated_field_max_abs_entry", "estimate"
+        )
+        if estimated_value is None:
+            estimated_value = scalar_value(
+                summary_entries, "estimated_field_inf_norm", "estimate"
+            )
+        true_value = scalar_value(
+            summary_entries, "true_field_max_abs_entry", "estimate"
+        )
+        if true_value is None:
+            true_value = scalar_value(summary_entries, "true_field_inf_norm", "estimate")
+        if estimated_value is not None:
+            row["estimated_field_max_abs_entry"] = estimated_value
+        if true_value is not None:
+            row["true_field_max_abs_entry"] = true_value
+        return row
     row: dict[str, object] = {
-        "estimated_field_inf_norm": latent_field_bound_norm(estimated_field),
+        "estimated_field_max_abs_entry": latent_field_bound_norm(estimated_field),
         "estimated_field_rank": int(np.linalg.matrix_rank(estimated_field)),
     }
     if true_field is not None:
-        row["true_field_inf_norm"] = latent_field_bound_norm(true_field)
+        row["true_field_max_abs_entry"] = latent_field_bound_norm(true_field)
         row["true_field_rank"] = int(np.linalg.matrix_rank(true_field))
     return row
 
@@ -154,7 +172,7 @@ def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | 
         "N": manifest_row.get("N", ""),
         "T": manifest_row.get("T", ""),
         "s": manifest_row.get("s", ""),
-        "optimizer_mode": manifest_row.get("optimizer_mode", "manifold"),
+        "optimizer_mode": manifest_row.get("optimizer_mode", "no_external_field"),
         "latent_rank": (
             int(manifest_row["latent_rank"])
             if manifest_row.get("latent_rank") not in (None, "")

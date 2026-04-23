@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,12 +18,13 @@ from pymanopt import Problem, function
 from pymanopt.manifolds import Euclidean, FixedRankEmbedded, Product
 from pymanopt.optimizers import ConjugateGradient
 
-from io_utils import first_existing_path, io_path, load_gamma_matrix, load_yaml_config
+from io_utils import _fmt, first_existing_path, io_path, load_gamma_matrix, load_yaml_config
 from loading_utils import save_estimated_parameter_bundle
 from model_utils import (
     ModelArtifacts,
-    OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK,
-    OPTIMIZER_MODE_MANIFOLD,
+    OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+    OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
+    OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
     build_fit_model_artifacts,
     compose_field_matrix_from_theta,
@@ -43,24 +45,184 @@ from model_utils import (
     with_theta_field,
 )
 
-_RANDOM_INIT_SCALE = 0.05  # std-dev for random scalar/singular-value initializations
+
+@dataclass(frozen=True)
+class _FitEvalContext:
+    x: np.ndarray
+    prev_x: np.ndarray
+    beta_feature: np.ndarray
+    interaction_effect_x: np.ndarray
+    outcome_size: float
+    fixed_scalar_params: dict[str, float]
+    free_scalar_names: list[str]
 
 
-def _canonicalize_theta(
-    theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    fixed_scalar_params: dict[str, float] | None = None,
+def _build_fit_eval_context(
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    interaction_effect_x: np.ndarray,
+    fixed_scalar_params: dict[str, float] | None,
+) -> _FitEvalContext:
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
+    x_array = np.asarray(x, dtype=float)
+    return _FitEvalContext(
+        x=x_array,
+        prev_x=np.vstack([np.asarray(x_0, dtype=float), x_array[:-1, :]]),
+        beta_feature=np.asarray(z, dtype=float),
+        interaction_effect_x=np.asarray(interaction_effect_x, dtype=float),
+        outcome_size=float(x_array.size),
+        fixed_scalar_params=fixed,
+        free_scalar_names=free_scalar_parameter_names(fixed),
+    )
+
+
+def _scalar_values_from_free_vector(
+    free_scalar_values: np.ndarray,
+    context: _FitEvalContext,
+) -> dict[str, float]:
+    scalars = dict(context.fixed_scalar_params)
+    scalars.update(
+        {
+            name: float(value)
+            for name, value in zip(
+                context.free_scalar_names,
+                np.asarray(free_scalar_values, dtype=float).reshape(-1),
+            )
+        }
+    )
+    return scalars
+
+
+def _resolve_scalar_values(
+    *,
+    context: _FitEvalContext,
+    free_scalar_values: np.ndarray | None = None,
+    scalar_values: dict[str, float] | None = None,
+) -> dict[str, float]:
+    if scalar_values is not None:
+        resolved = dict(context.fixed_scalar_params)
+        resolved.update({name: float(value) for name, value in scalar_values.items()})
+        return resolved
+    if free_scalar_values is None:
+        raise ValueError("Either free_scalar_values or scalar_values must be provided.")
+    return _scalar_values_from_free_vector(free_scalar_values, context)
+
+
+def _compute_h_x(
+    field_matrix: np.ndarray,
+    scalar_values: dict[str, float],
+    context: _FitEvalContext,
 ) -> np.ndarray:
-    theta_parts = unpack_theta(
-        theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
+    return (
+        np.asarray(field_matrix, dtype=float)
+        + float(scalar_values["beta"]) * context.beta_feature
+        + float(scalar_values["eta"]) * context.prev_x
+        + float(scalar_values["xi"]) * context.interaction_effect_x
     )
-    return pack_theta(
-        theta_parts,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
+
+
+def _scalar_gradient_from_residual(
+    residual: np.ndarray,
+    context: _FitEvalContext,
+) -> np.ndarray:
+    if not context.free_scalar_names:
+        return np.zeros(0, dtype=float)
+    gradient_lookup = {
+        "beta": float((residual * context.beta_feature).sum()) / context.outcome_size,
+        "xi": float((residual * context.interaction_effect_x).sum())
+        / context.outcome_size,
+        "eta": float((residual * context.prev_x).sum()) / context.outcome_size,
+    }
+    return np.asarray(
+        [gradient_lookup[name] for name in context.free_scalar_names],
+        dtype=float,
     )
+
+
+def _evaluate_full_field_loss(
+    field_matrix: np.ndarray,
+    context: _FitEvalContext,
+    *,
+    free_scalar_values: np.ndarray | None = None,
+    scalar_values: dict[str, float] | None = None,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    resolved_scalars = _resolve_scalar_values(
+        context=context,
+        free_scalar_values=free_scalar_values,
+        scalar_values=scalar_values,
+    )
+    h_x = _compute_h_x(field_matrix, resolved_scalars, context)
+    loss_x = np.logaddexp(h_x, -h_x) - context.x * h_x
+    residual = np.tanh(h_x) - context.x
+    smooth_loss = float(loss_x.sum() / context.outcome_size)
+    scalar_gradient = _scalar_gradient_from_residual(residual, context)
+    return smooth_loss, residual, scalar_gradient
+
+
+def _evaluate_scalar_only_loss(
+    free_scalar_values: np.ndarray,
+    context: _FitEvalContext,
+) -> tuple[float, np.ndarray]:
+    smooth_loss, residual, scalar_gradient = _evaluate_full_field_loss(
+        np.zeros_like(context.x, dtype=float),
+        context,
+        free_scalar_values=free_scalar_values,
+    )
+    return smooth_loss, scalar_gradient
+
+
+def _evaluate_factorized_loss(
+    time_factors: np.ndarray,
+    node_factors: np.ndarray,
+    context: _FitEvalContext,
+    *,
+    free_scalar_values: np.ndarray | None = None,
+    scalar_values: dict[str, float] | None = None,
+) -> tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    field_matrix = compose_latent_field_matrix(node_factors, time_factors)
+    smooth_loss, residual, scalar_gradient = _evaluate_full_field_loss(
+        field_matrix,
+        context,
+        free_scalar_values=free_scalar_values,
+        scalar_values=scalar_values,
+    )
+    time_gradient = (residual @ np.asarray(node_factors, dtype=float)) / context.outcome_size
+    node_gradient = (residual.T @ np.asarray(time_factors, dtype=float)) / context.outcome_size
+    return smooth_loss, residual, time_gradient, node_gradient, scalar_gradient
+
+
+def _evaluate_factorized_loss_with_offset(
+    time_factors: np.ndarray,
+    node_factors: np.ndarray,
+    scalar_offset: np.ndarray,
+    context: _FitEvalContext,
+) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
+    field_matrix = time_factors @ node_factors.T
+    h_x = field_matrix + scalar_offset
+    loss_x = np.logaddexp(h_x, -h_x) - context.x * h_x
+    residual = np.tanh(h_x) - context.x
+    smooth_loss = float(loss_x.sum() / context.outcome_size)
+    time_gradient = (residual @ node_factors) / context.outcome_size
+    node_gradient = (residual.T @ time_factors) / context.outcome_size
+    return smooth_loss, residual, time_gradient, node_gradient
+
+
+def _prox_threshold_field_matrix(
+    field_matrix: np.ndarray,
+    threshold: float,
+) -> tuple[np.ndarray, float]:
+    matrix = np.asarray(field_matrix, dtype=float)
+    if matrix.size == 0 or threshold <= 0.0:
+        nuclear_norm = float(
+            np.linalg.svd(matrix, compute_uv=False).sum()
+        ) if matrix.size else 0.0
+        return matrix.copy(), nuclear_norm
+    u, singular_values, vt = np.linalg.svd(matrix, full_matrices=False)
+    shrunk = np.maximum(singular_values - float(threshold), 0.0)
+    if not np.any(shrunk):
+        return np.zeros_like(matrix, dtype=float), 0.0
+    return (u * shrunk) @ vt, float(shrunk.sum())
 
 
 def setup_logger(log_file: str) -> logging.Logger:
@@ -98,63 +260,42 @@ def pseudo_nll(
 ) -> tuple[float, np.ndarray]:
     if x.shape[0] != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+    )
     theta_parts = unpack_theta(
         theta,
         artifacts,
-        fixed_scalar_params=fixed_scalar_params,
+        fixed_scalar_params=context.fixed_scalar_params,
     )
-
-    prev_x = np.vstack([x_0, x[:-1, :]])
-    beta_feature = np.asarray(z, dtype=float)
-    field_matrix = compose_field_matrix_from_theta(theta_parts, artifacts)
-    h_x = (
-        field_matrix
-        + theta_parts["beta"] * beta_feature
-        + theta_parts["eta"] * prev_x
-        + theta_parts["xi"] * interaction_effect_x
-    )
-    loss_x = np.logaddexp(h_x, -h_x) - x * h_x
-    res_x = np.tanh(h_x) - x
-    gradient_denominator = x.size
-    total_loss = loss_x.sum() / gradient_denominator
-
     if uses_full_matrix_parameterization(artifacts):
-        field_grad = res_x.reshape(-1)
+        smooth_loss, residual, scalar_gradient = _evaluate_full_field_loss(
+            np.asarray(theta_parts["field_matrix"], dtype=float),
+            context,
+            scalar_values={
+                "beta": theta_parts["beta"],
+                "xi": theta_parts["xi"],
+                "eta": theta_parts["eta"],
+            },
+        )
+        field_grad = residual.reshape(-1) / context.outcome_size
     else:
-        node_grad = res_x.T @ theta_parts["time_factors"]
-        time_grad = res_x @ theta_parts["node_factors"]
+        smooth_loss, _, time_grad, node_grad, scalar_gradient = _evaluate_factorized_loss(
+            np.asarray(theta_parts["time_factors"], dtype=float),
+            np.asarray(theta_parts["node_factors"], dtype=float),
+            context,
+            scalar_values={
+                "beta": theta_parts["beta"],
+                "xi": theta_parts["xi"],
+                "eta": theta_parts["eta"],
+            },
+        )
         field_grad = np.concatenate([node_grad.reshape(-1), time_grad.reshape(-1)])
-
-    scalar_grad_lookup = {
-        "beta": float((res_x * beta_feature).sum()) / gradient_denominator,
-        "xi": float((res_x * interaction_effect_x).sum()) / gradient_denominator,
-        "eta": float((res_x * prev_x).sum()) / gradient_denominator,
-    }
-    grad_parts = [field_grad / gradient_denominator]
-    for name in free_scalar_parameter_names(fixed_scalar_params):
-        grad_parts.append(np.array([scalar_grad_lookup[name]], dtype=float))
-    return float(total_loss), np.concatenate(grad_parts)
-
-
-def _pseudo_loss(
-    x: np.ndarray,
-    z: np.ndarray,
-    theta: np.ndarray,
-    x_0: np.ndarray,
-    artifacts: ModelArtifacts,
-    interaction_effect_x: np.ndarray,
-    fixed_scalar_params: dict[str, float] | None,
-) -> float:
-    loss, _ = pseudo_nll(
-        x,
-        z,
-        theta,
-        x_0,
-        artifacts=artifacts,
-        interaction_effect_x=interaction_effect_x,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    return float(loss)
+    return float(smooth_loss), np.concatenate([field_grad, scalar_gradient])
 
 
 def _nuclear_norm(field_matrix: np.ndarray) -> float:
@@ -175,78 +316,6 @@ def _nuclear_norm_normalizer(artifacts: ModelArtifacts) -> float:
 
 def _frobenius_norm_normalizer(artifacts: ModelArtifacts) -> float:
     return _nuclear_norm_normalizer(artifacts)
-
-
-def _singular_value_threshold(field_matrix: np.ndarray, threshold: float) -> np.ndarray:
-    if field_matrix.size == 0 or threshold <= 0.0:
-        return np.asarray(field_matrix, dtype=float)
-    u, singular_values, vt = np.linalg.svd(
-        np.asarray(field_matrix, dtype=float), full_matrices=False
-    )
-    shrunk = np.maximum(singular_values - float(threshold), 0.0)
-    if not np.any(shrunk):
-        return np.zeros_like(field_matrix, dtype=float)
-    return (u * shrunk) @ vt
-
-
-def _prox_nuclear_theta(
-    theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    fixed_scalar_params: dict[str, float] | None,
-    threshold: float,
-) -> np.ndarray:
-    theta_parts = unpack_theta(
-        theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    theta_parts["field_matrix"] = _singular_value_threshold(
-        np.asarray(theta_parts["field_matrix"], dtype=float),
-        threshold,
-    )
-    return _canonicalize_theta(
-        pack_theta(
-            theta_parts,
-            artifacts,
-            fixed_scalar_params=fixed_scalar_params,
-        ),
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-
-
-def _penalized_nuclear_objective(
-    theta: np.ndarray,
-    x: np.ndarray,
-    z: np.ndarray,
-    x_0: np.ndarray,
-    artifacts: ModelArtifacts,
-    interaction_effect_x: np.ndarray,
-    fixed_scalar_params: dict[str, float] | None,
-    lambda_nuclear: float,
-) -> tuple[float, float, float, float]:
-    smooth_loss = _pseudo_loss(
-        x,
-        z,
-        theta,
-        x_0,
-        artifacts=artifacts,
-        interaction_effect_x=interaction_effect_x,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    theta_parts = unpack_theta(
-        theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    nuclear_norm = _nuclear_norm(np.asarray(theta_parts["field_matrix"], dtype=float))
-    normalized_nuclear_norm = nuclear_norm / _nuclear_norm_normalizer(artifacts)
-    return (
-        float(smooth_loss + float(lambda_nuclear) * normalized_nuclear_norm),
-        float(smooth_loss),
-        float(nuclear_norm),
-        float(normalized_nuclear_norm),
-    )
 
 
 def _fit_mple_nuclear_norm(
@@ -277,71 +346,73 @@ def _fit_mple_nuclear_norm(
     if proximal_lr <= 0.0:
         raise ValueError("proximal_lr must be positive.")
 
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+    )
+    n_nodes = int(artifacts.gamma_matrix.shape[0])
+    free_scalar_count = len(context.free_scalar_names)
+    field_size = int(artifacts.t_steps) * n_nodes
     rng = np.random.default_rng(seed)
     raw_init = (
         rng.normal(0, 0.1, size=len(param_names))
         if theta_init is None
         else np.asarray(theta_init, dtype=float)
     )
-    theta = _canonicalize_theta(
-        raw_init,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    y = theta.copy()
+    theta = np.asarray(raw_init, dtype=float)
+    field_matrix = theta[:field_size].reshape(artifacts.t_steps, n_nodes)
+    free_scalars = theta[field_size : field_size + free_scalar_count].copy()
+    y_field = field_matrix.copy()
+    y_scalars = free_scalars.copy()
     momentum = 1.0
     history: list[float] = []
     penalized_history: list[float] = []
     converged = False
     previous_objective = np.inf
     nuclear_normalizer = _nuclear_norm_normalizer(artifacts)
-    initial_penalized_obj, initial_smooth_loss, _, _ = _penalized_nuclear_objective(
-        theta,
-        x,
-        z,
-        x_0,
-        artifacts=artifacts,
-        interaction_effect_x=interaction_effect_x,
-        fixed_scalar_params=fixed_scalar_params,
-        lambda_nuclear=lambda_nuclear,
+    initial_smooth_loss, _, _ = _evaluate_full_field_loss(
+        field_matrix,
+        context,
+        free_scalar_values=free_scalars,
+    )
+    initial_nuclear_norm = _nuclear_norm(field_matrix)
+    initial_penalized_obj = float(
+        initial_smooth_loss
+        + float(lambda_nuclear) * (initial_nuclear_norm / nuclear_normalizer)
     )
 
     for iteration in range(max(1, int(steps))):
-        loss_y, grad_y = pseudo_nll(
-            x,
-            z,
-            y,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            fixed_scalar_params=fixed_scalar_params,
+        loss_y, residual_y, scalar_grad_y = _evaluate_full_field_loss(
+            y_field,
+            context,
+            free_scalar_values=y_scalars,
         )
-        stepped = y - float(proximal_lr) * grad_y
-        candidate = _prox_nuclear_theta(
-            stepped,
-            artifacts,
-            fixed_scalar_params,
+        field_grad_y = residual_y / context.outcome_size
+        stepped_field = y_field - float(proximal_lr) * field_grad_y
+        stepped_scalars = y_scalars - float(proximal_lr) * scalar_grad_y
+        candidate_field, nuclear_norm = _prox_threshold_field_matrix(
+            stepped_field,
             threshold=float(proximal_lr) * float(lambda_nuclear) / nuclear_normalizer,
         )
-        (
-            penalized_obj,
-            smooth_loss,
-            nuclear_norm,
-            normalized_nuclear_norm,
-        ) = _penalized_nuclear_objective(
-            candidate,
-            x,
-            z,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            fixed_scalar_params=fixed_scalar_params,
-            lambda_nuclear=lambda_nuclear,
+        smooth_loss, _, _ = _evaluate_full_field_loss(
+            candidate_field,
+            context,
+            free_scalar_values=stepped_scalars,
+        )
+        normalized_nuclear_norm = nuclear_norm / nuclear_normalizer
+        penalized_obj = float(
+            smooth_loss + float(lambda_nuclear) * normalized_nuclear_norm
         )
         history.append(smooth_loss)
         penalized_history.append(penalized_obj)
         if verbose_every and iteration % verbose_every == 0:
-            message = summarize_theta_for_logging(param_names, candidate)
+            candidate_theta = np.concatenate(
+                [candidate_field.reshape(-1), stepped_scalars]
+            )
+            message = summarize_theta_for_logging(param_names, candidate_theta)
             if logger is None:
                 print(
                     f"Nuclear prox iter {iteration} | Loss: {smooth_loss:.6f} "
@@ -363,46 +434,43 @@ def _fit_mple_nuclear_norm(
             improvement = abs(previous_objective - penalized_obj)
             if improvement <= float(tol) * max(1.0, abs(previous_objective)):
                 converged = True
-                theta = candidate
+                field_matrix = candidate_field
+                free_scalars = stepped_scalars
                 break
         previous_objective = penalized_obj
 
         next_momentum = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * momentum * momentum))
-        y = candidate + ((momentum - 1.0) / next_momentum) * (candidate - theta)
-        y = _canonicalize_theta(
-            y,
-            artifacts,
-            fixed_scalar_params=fixed_scalar_params,
-        )
-        theta = candidate
+        y_field = candidate_field + (
+            (momentum - 1.0) / next_momentum
+        ) * (candidate_field - field_matrix)
+        y_scalars = stepped_scalars + (
+            (momentum - 1.0) / next_momentum
+        ) * (stepped_scalars - free_scalars)
+        field_matrix = candidate_field
+        free_scalars = stepped_scalars
         momentum = next_momentum
 
-    theta = _canonicalize_theta(
-        theta,
+    smooth_loss, _, _ = _evaluate_full_field_loss(
+        field_matrix,
+        context,
+        free_scalar_values=free_scalars,
+    )
+    nuclear_norm = _nuclear_norm(field_matrix)
+    normalized_nuclear_norm = nuclear_norm / nuclear_normalizer
+    penalized_obj = float(
+        smooth_loss + float(lambda_nuclear) * normalized_nuclear_norm
+    )
+    scalar_values = _scalar_values_from_free_vector(free_scalars, context)
+    theta = pack_theta(
+        {
+            "field_matrix": field_matrix,
+            "beta": scalar_values["beta"],
+            "xi": scalar_values["xi"],
+            "eta": scalar_values["eta"],
+        },
         artifacts,
-        fixed_scalar_params=fixed_scalar_params,
+        fixed_scalar_params=context.fixed_scalar_params,
     )
-    (
-        penalized_obj,
-        smooth_loss,
-        nuclear_norm,
-        normalized_nuclear_norm,
-    ) = _penalized_nuclear_objective(
-        theta,
-        x,
-        z,
-        x_0,
-        artifacts=artifacts,
-        interaction_effect_x=interaction_effect_x,
-        fixed_scalar_params=fixed_scalar_params,
-        lambda_nuclear=lambda_nuclear,
-    )
-    theta_parts = unpack_theta(
-        theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    field_matrix = np.asarray(theta_parts["field_matrix"], dtype=float)
     result = OptimizeResult(
         x=theta,
         success=bool(converged),
@@ -541,43 +609,30 @@ def _fit_zero_rank_unconstrained(
     theta_init,
     fixed_scalar_params: dict[str, float] | None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
-    fixed = validate_fixed_scalar_params(fixed_scalar_params)
-    free_names = free_scalar_parameter_names(fixed)
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+    )
+    fixed = context.fixed_scalar_params
+    free_names = context.free_scalar_names
     rng = np.random.default_rng(seed)
     if theta_init is None:
         initial = rng.normal(0.0, 0.1, size=len(free_names))
     else:
         initial = np.asarray(theta_init, dtype=float)
-    initial = _canonicalize_theta(
-        initial,
-        artifacts,
-        fixed_scalar_params=fixed,
-    )
+    initial = np.asarray(initial, dtype=float)
     history: list[float] = []
 
     def objective(theta):
-        loss, grad = pseudo_nll(
-            x,
-            z,
-            theta,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            fixed_scalar_params=fixed,
-        )
+        loss, grad = _evaluate_scalar_only_loss(theta, context)
         history.append(float(loss))
         return loss, grad
 
     if initial.size == 0:
-        final_loss = _pseudo_loss(
-            x,
-            z,
-            initial,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            fixed_scalar_params=fixed,
-        )
+        final_loss, _ = _evaluate_scalar_only_loss(initial, context)
         result = OptimizeResult(
             x=initial,
             success=True,
@@ -594,20 +649,8 @@ def _fit_zero_rank_unconstrained(
         jac=True,
         options={"maxiter": int(steps), "gtol": float(tol)},
     )
-    theta_hat = _canonicalize_theta(
-        result.x,
-        artifacts,
-        fixed_scalar_params=fixed,
-    )
-    final_loss = _pseudo_loss(
-        x,
-        z,
-        theta_hat,
-        x_0,
-        artifacts=artifacts,
-        interaction_effect_x=interaction_effect_x,
-        fixed_scalar_params=fixed,
-    )
+    theta_hat = np.asarray(result.x, dtype=float)
+    final_loss, _ = _evaluate_scalar_only_loss(theta_hat, context)
     if not history or history[-1] != final_loss:
         history.append(float(final_loss))
     result.x = theta_hat
@@ -638,55 +681,15 @@ def _fit_mple_low_rank_manifold(
     """
     if lambda_frobenius < 0.0:
         raise ValueError("lambda_frobenius must be nonnegative.")
-    if artifacts.latent_rank == 0:
-        theta_hat, history, result = _fit_zero_rank_unconstrained(
-            x,
-            z,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            steps=steps,
-            seed=seed,
-            tol=tol,
-            theta_init=theta_init,
-            fixed_scalar_params=fixed_scalar_params,
-        )
-        result["optimizer_mode"] = OPTIMIZER_MODE_MANIFOLD
-        result["optimizer"] = "scipy_bfgs_zero_rank"
-        result["best_start"] = 0
-        result["n_starts"] = 1
-        result["iterations"] = int(getattr(result, "nit", 0))
-        result["cost_evaluations"] = int(getattr(result, "nfev", len(history)))
-        result["lambda_frobenius"] = float(lambda_frobenius)
-        result["final_mple_loss"] = float(history[-1])
-        result["final_penalized_objective"] = float(history[-1])
-        result["frobenius_norm"] = 0.0
-        result["normalized_frobenius_norm"] = 0.0
-        result["frobenius_norm_normalizer"] = float(
-            _frobenius_norm_normalizer(artifacts)
-        )
-        result["effective_rank"] = 0.0
-        result["mple_history"] = list(history)
-        result["penalized_history"] = list(history)
-        result["start_summaries"] = [
-            {
-                "start_index": 0,
-                "seed": int(seed),
-                "initialization_kind": "random",
-                "initial_mple_loss": float(history[0]),
-                "initial_penalized_objective": float(history[0]),
-                "final_mple_loss": float(history[-1]),
-                "final_penalized_objective": float(history[-1]),
-                "iterations": int(getattr(result, "nit", 0)),
-                "cost_evaluations": int(getattr(result, "nfev", len(history))),
-                "success": bool(getattr(result, "success", False)),
-                "message": str(getattr(result, "message", "")),
-            }
-        ]
-        return theta_hat, history, result
-
-    fixed = validate_fixed_scalar_params(fixed_scalar_params)
-    free_names = free_scalar_parameter_names(fixed)
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+    )
+    fixed = context.fixed_scalar_params
+    free_names = context.free_scalar_names
     n_starts = max(1, int(n_starts))
     rank = int(artifacts.latent_rank)
     t_steps = int(artifacts.t_steps)
@@ -703,22 +706,8 @@ def _fit_mple_low_rank_manifold(
     else:
         manifold = fixed_rank_manifold
 
-    prev_x = np.vstack([x_0, x[:-1, :]])
-    beta_feature = np.asarray(z, dtype=float)
-    outcome_size = float(np.asarray(x).size)
     frobenius_normalizer = _frobenius_norm_normalizer(artifacts)
-
-    def scalar_values(free_scalar_values: np.ndarray) -> dict[str, float]:
-        scalars = dict(fixed)
-        scalars.update(
-            {
-                name: float(value)
-                for name, value in zip(
-                    free_names, np.asarray(free_scalar_values, dtype=float).reshape(-1)
-                )
-            }
-        )
-        return scalars
+    frobenius_penalty_normalizer = float(context.outcome_size)
 
     def loss_and_grad(
         u: np.ndarray,
@@ -726,45 +715,36 @@ def _fit_mple_low_rank_manifold(
         vt: np.ndarray,
         free_scalar_values: np.ndarray,
     ):
-        scalars = scalar_values(free_scalar_values)
+        scalars = _scalar_values_from_free_vector(free_scalar_values, context)
         field_matrix = _fixed_rank_field_matrix(u, singular_values, vt)
-        h_x = (
-            field_matrix
-            + scalars["beta"] * beta_feature
-            + scalars["eta"] * prev_x
-            + scalars["xi"] * interaction_effect_x
+        smooth_loss, residual, scalar_gradient = _evaluate_full_field_loss(
+            field_matrix,
+            context,
+            scalar_values=scalars,
         )
-        loss_x = np.logaddexp(h_x, -h_x) - x * h_x
-        residual = np.tanh(h_x) - x
-        field_gradient = residual / outcome_size
+        field_gradient = residual / context.outcome_size
         grad_u = (field_gradient @ vt.T) * singular_values[np.newaxis, :]
         grad_s = np.diag(u.T @ field_gradient @ vt.T)
         grad_vt = singular_values[:, np.newaxis] * (u.T @ field_gradient)
         frobenius_norm = float(np.linalg.norm(singular_values))
         normalized_frobenius_norm = frobenius_norm / frobenius_normalizer
-        if lambda_frobenius > 0.0 and frobenius_norm > 0.0:
-            grad_s = grad_s + (
-                float(lambda_frobenius)
-                * singular_values
-                / (frobenius_normalizer * frobenius_norm)
-            )
-        scalar_gradient_lookup = {
-            "beta": float((residual * beta_feature).sum()) / outcome_size,
-            "xi": float((residual * interaction_effect_x).sum()) / outcome_size,
-            "eta": float((residual * prev_x).sum()) / outcome_size,
-        }
-        scalar_gradient = np.asarray(
-            [scalar_gradient_lookup[name] for name in free_names], dtype=float
+        squared_normalized_frobenius_norm = (
+            frobenius_norm * frobenius_norm / frobenius_penalty_normalizer
         )
-        smooth_loss = float(loss_x.sum() / outcome_size)
+        if lambda_frobenius > 0.0:
+            grad_s = grad_s + (
+                float(lambda_frobenius) * singular_values / frobenius_penalty_normalizer
+            )
         penalized_loss = (
-            smooth_loss + float(lambda_frobenius) * normalized_frobenius_norm
+            smooth_loss
+            + 0.5 * float(lambda_frobenius) * squared_normalized_frobenius_norm
         )
         return (
             float(penalized_loss),
             float(smooth_loss),
             float(frobenius_norm),
             float(normalized_frobenius_norm),
+            float(squared_normalized_frobenius_norm),
             grad_u,
             grad_s,
             grad_vt,
@@ -802,7 +782,7 @@ def _fit_mple_low_rank_manifold(
 
         @function.numpy(manifold)
         def euclidean_gradient(u, singular_values, vt, free_scalar_values):
-            _, _, _, _, grad_u, grad_s, grad_vt, scalar_gradient = loss_and_grad(
+            _, _, _, _, _, grad_u, grad_s, grad_vt, scalar_gradient = loss_and_grad(
                 u, singular_values, vt, free_scalar_values
             )
             return [grad_u, grad_s, grad_vt, scalar_gradient]
@@ -834,7 +814,7 @@ def _fit_mple_low_rank_manifold(
 
         @function.numpy(manifold)
         def euclidean_gradient(u, singular_values, vt):
-            _, _, _, _, grad_u, grad_s, grad_vt, _ = loss_and_grad(
+            _, _, _, _, _, grad_u, grad_s, grad_vt, _ = loss_and_grad(
                 u, singular_values, vt, np.zeros(0, dtype=float)
             )
             return [grad_u, grad_s, grad_vt]
@@ -886,11 +866,18 @@ def _fit_mple_low_rank_manifold(
             )
             initial_scalars = rng.normal(0.0, 0.1, size=len(free_names))
         initial_point = [field_point, initial_scalars] if free_names else field_point
-        initial_penalized_objective = float(problem.cost(initial_point))
-        initial_mple_loss = (
-            float(active_mple_history[-1])
-            if active_mple_history
-            else float(initial_penalized_objective)
+        (
+            initial_penalized_objective,
+            initial_mple_loss,
+            _,
+            _,
+            _,
+            *_,
+        ) = loss_and_grad(
+            field_point[0],
+            field_point[1],
+            field_point[2],
+            initial_scalars,
         )
         if logger is not None:
             logger.info(
@@ -909,23 +896,23 @@ def _fit_mple_low_rank_manifold(
             free_names,
             fixed,
         )
-        final_loss = _pseudo_loss(
-            x,
-            z,
-            theta_hat,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            fixed_scalar_params=fixed,
+        final_point, final_free_scalars = (
+            (result.point[0], np.asarray(result.point[1], dtype=float))
+            if free_names
+            else (result.point, np.zeros(0, dtype=float))
         )
-        final_field = compose_field_matrix_from_theta(
-            unpack_theta(theta_hat, artifacts, fixed_scalar_params=fixed),
-            artifacts,
-        )
-        frobenius_norm = float(np.linalg.norm(final_field, "fro"))
-        normalized_frobenius_norm = frobenius_norm / frobenius_normalizer
-        final_penalized = float(final_loss) + float(lambda_frobenius) * float(
-            normalized_frobenius_norm
+        (
+            final_penalized,
+            final_loss,
+            frobenius_norm,
+            normalized_frobenius_norm,
+            squared_normalized_frobenius_norm,
+            *_,
+        ) = loss_and_grad(
+            final_point[0],
+            final_point[1],
+            final_point[2],
+            final_free_scalars,
         )
         run_mple_history = list(active_mple_history)
         run_penalized_history = list(active_penalized_history)
@@ -971,22 +958,23 @@ def _fit_mple_low_rank_manifold(
     if best_theta is None or best_result is None:
         raise RuntimeError("Pymanopt optimizer did not produce a candidate solution.")
     best_start = int(best_start_index)
-    final_field = compose_field_matrix_from_theta(
-        unpack_theta(best_theta, artifacts, fixed_scalar_params=fixed),
-        artifacts,
+    best_point, best_free_scalars = (
+        (best_result.point[0], np.asarray(best_result.point[1], dtype=float))
+        if free_names
+        else (best_result.point, np.zeros(0, dtype=float))
     )
-    final_frobenius_norm = float(np.linalg.norm(final_field, "fro"))
-    final_normalized_frobenius_norm = final_frobenius_norm / frobenius_normalizer
-    final_mple_loss = float(
-        _pseudo_loss(
-            x,
-            z,
-            best_theta,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            fixed_scalar_params=fixed,
-        )
+    (
+        final_penalized_objective,
+        final_mple_loss,
+        final_frobenius_norm,
+        final_normalized_frobenius_norm,
+        final_squared_normalized_frobenius_norm,
+        *_,
+    ) = loss_and_grad(
+        best_point[0],
+        best_point[1],
+        best_point[2],
+        best_free_scalars,
     )
     optimize_result = OptimizeResult(
         x=best_theta,
@@ -1000,16 +988,18 @@ def _fit_mple_low_rank_manifold(
         cost_evaluations=int(
             best_result.cost_evaluations or len(best_penalized_history)
         ),
-        optimizer_mode=OPTIMIZER_MODE_MANIFOLD,
+        optimizer_mode=OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
         optimizer="pymanopt_conjugate_gradient",
         lambda_frobenius=float(lambda_frobenius),
-        final_penalized_objective=float(
-            final_mple_loss + float(lambda_frobenius) * final_normalized_frobenius_norm
-        ),
+        final_penalized_objective=float(final_penalized_objective),
         final_mple_loss=final_mple_loss,
         frobenius_norm=final_frobenius_norm,
         normalized_frobenius_norm=float(final_normalized_frobenius_norm),
+        squared_normalized_frobenius_norm=float(
+            final_squared_normalized_frobenius_norm
+        ),
         frobenius_norm_normalizer=float(frobenius_normalizer),
+        frobenius_penalty_normalizer=float(frobenius_penalty_normalizer),
         effective_rank=float(artifacts.latent_rank),
         best_start=int(best_start),
         n_starts=int(n_starts),
@@ -1036,134 +1026,128 @@ def _fit_mple_alternative_low_rank(
     n_starts: int,
     lambda_uv_ridge: float,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
-    """Fit via alternating proximal gradient between U, Vt factor matrices and scalar parameters.
+    """Fit via alternating gradient updates between U, Vt factors and scalar parameters.
 
-    Parameterizes the field as U @ Vt (no explicit singular values) and alternates L-BFGS-B
-    sub-problems for U, Vt, and scalars with optional ridge regularization on the factors.
+    Parameterizes the field as U @ Vt (no explicit singular values) and alternates
+    explicit gradient steps for scalars, U, and V with optional ridge regularization.
     Use this mode as an alternative to manifold optimization when pymanopt convergence is poor.
     Requires latent_rank >= 1.
     """
     if lambda_uv_ridge < 0.0:
         raise ValueError("lambda_uv_ridge must be nonnegative.")
-    if artifacts.latent_rank == 0:
-        theta_hat, history, result = _fit_zero_rank_unconstrained(
-            x,
-            z,
-            x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            steps=steps,
-            seed=seed,
-            tol=tol,
-            theta_init=theta_init,
-            fixed_scalar_params=fixed_scalar_params,
-        )
-        result["optimizer_mode"] = OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK
-        result["optimizer"] = "alternating_low_rank_zero_rank"
-        result["best_start"] = 0
-        result["n_starts"] = 1
-        result["iterations"] = int(getattr(result, "nit", 0))
-        result["cost_evaluations"] = int(getattr(result, "nfev", len(history)))
-        result["lambda_uv_ridge"] = float(lambda_uv_ridge)
-        result["final_mple_loss"] = float(history[-1])
-        result["final_penalized_objective"] = float(history[-1])
-        result["u_frobenius_norm"] = 0.0
-        result["v_frobenius_norm"] = 0.0
-        result["effective_rank"] = 0.0
-        result["mple_history"] = list(history)
-        result["penalized_history"] = list(history)
-        result["start_summaries"] = [
-            {
-                "start_index": 0,
-                "seed": int(seed),
-                "initialization_kind": "random",
-                "initial_mple_loss": float(history[0]),
-                "initial_penalized_objective": float(history[0]),
-                "final_mple_loss": float(history[-1]),
-                "final_penalized_objective": float(history[-1]),
-                "iterations": int(getattr(result, "nit", 0)),
-                "cost_evaluations": int(getattr(result, "nfev", len(history))),
-                "success": bool(getattr(result, "success", False)),
-                "message": str(getattr(result, "message", "")),
-            }
-        ]
-        return theta_hat, history, result
 
-    fixed = validate_fixed_scalar_params(fixed_scalar_params)
-    free_names = free_scalar_parameter_names(fixed)
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+    )
+    fixed = context.fixed_scalar_params
+    free_names = context.free_scalar_names
     n_starts = max(1, int(n_starts))
     rank = int(artifacts.latent_rank)
     t_steps = int(artifacts.t_steps)
     n_nodes = int(artifacts.gamma_matrix.shape[0])
-    outcome_size = float(np.asarray(x).size)
-    prev_x = np.vstack([x_0, x[:-1, :]])
-    beta_feature = np.asarray(z, dtype=float)
     base_theta_init = (
         None if theta_init is None else np.asarray(theta_init, dtype=float)
     )
     outer_iterations = max(1, int(steps))
-    subproblem_maxiter = min(25, max(5, outer_iterations))
-
-    def scalar_values_from_vector(free_scalar_values: np.ndarray) -> dict[str, float]:
-        scalars = dict(fixed)
-        scalars.update(
-            {
-                name: float(value)
-                for name, value in zip(
-                    free_names, np.asarray(free_scalar_values, dtype=float).reshape(-1)
-                )
-            }
-        )
-        return scalars
+    inner_gradient_steps = 3
 
     def evaluate_state(
         time_factors: np.ndarray,
         node_factors: np.ndarray,
         free_scalar_values: np.ndarray,
-    ) -> dict[str, object]:
-        scalars = scalar_values_from_vector(free_scalar_values)
-        field_matrix = compose_latent_field_matrix(node_factors, time_factors)
-        h_x = (
-            field_matrix
-            + scalars["beta"] * beta_feature
-            + scalars["eta"] * prev_x
-            + scalars["xi"] * interaction_effect_x
+    ) -> tuple[float, float, np.ndarray, np.ndarray, np.ndarray, float, float, np.ndarray]:
+        smooth_loss, residual, time_gradient, node_gradient, scalar_gradient = (
+            _evaluate_factorized_loss(
+                time_factors,
+                node_factors,
+                context,
+                free_scalar_values=free_scalar_values,
+            )
         )
-        loss_x = np.logaddexp(h_x, -h_x) - x * h_x
-        residual = np.tanh(h_x) - x
-        smooth_loss = float(loss_x.sum() / outcome_size)
         u_norm_sq = float(np.sum(np.asarray(time_factors, dtype=float) ** 2))
         v_norm_sq = float(np.sum(np.asarray(node_factors, dtype=float) ** 2))
-        ridge_penalty = float(lambda_uv_ridge) * (u_norm_sq + v_norm_sq) / outcome_size
-        scalar_gradient_lookup = {
-            "beta": float((residual * beta_feature).sum()) / outcome_size,
-            "xi": float((residual * interaction_effect_x).sum()) / outcome_size,
-            "eta": float((residual * prev_x).sum()) / outcome_size,
-        }
-        return {
-            "smooth_loss": smooth_loss,
-            "penalized_loss": smooth_loss + ridge_penalty,
-            "field_matrix": field_matrix,
-            "residual": residual,
-            "time_gradient": (residual @ np.asarray(node_factors, dtype=float))
-            / outcome_size
-            + (2.0 * float(lambda_uv_ridge) / outcome_size)
+        ridge_penalty = (
+            float(lambda_uv_ridge) * (u_norm_sq + v_norm_sq) / context.outcome_size
+        )
+        return (
+            smooth_loss + ridge_penalty,
+            smooth_loss,
+            residual,
+            time_gradient
+            + (2.0 * float(lambda_uv_ridge) / context.outcome_size)
             * np.asarray(time_factors, dtype=float),
-            "node_gradient": (residual.T @ np.asarray(time_factors, dtype=float))
-            / outcome_size
-            + (2.0 * float(lambda_uv_ridge) / outcome_size)
+            node_gradient
+            + (2.0 * float(lambda_uv_ridge) / context.outcome_size)
             * np.asarray(node_factors, dtype=float),
-            "scalar_gradient_lookup": scalar_gradient_lookup,
-            "u_frobenius_norm": float(np.linalg.norm(time_factors, ord="fro")),
-            "v_frobenius_norm": float(np.linalg.norm(node_factors, ord="fro")),
+            float(np.linalg.norm(time_factors, ord="fro")),
+            float(np.linalg.norm(node_factors, ord="fro")),
+            scalar_gradient,
+        )
+
+    def penalized_factor_state_with_offset(
+        time_factors: np.ndarray,
+        node_factors: np.ndarray,
+        scalar_offset: np.ndarray,
+    ) -> tuple[float, float, np.ndarray, np.ndarray]:
+        smooth_loss, _, time_gradient, node_gradient = (
+            _evaluate_factorized_loss_with_offset(
+                time_factors,
+                node_factors,
+                scalar_offset,
+                context,
+            )
+        )
+        ridge_scale = 2.0 * float(lambda_uv_ridge) / context.outcome_size
+        ridge_penalty = (
+            float(lambda_uv_ridge)
+            * (
+                float(np.sum(time_factors * time_factors))
+                + float(np.sum(node_factors * node_factors))
+            )
+            / context.outcome_size
+        )
+        return (
+            smooth_loss + ridge_penalty,
+            smooth_loss,
+            time_gradient + ridge_scale * time_factors,
+            node_gradient + ridge_scale * node_factors,
+        )
+
+    def scalar_step_size() -> float:
+        if not free_names:
+            return 0.0
+        feature_columns = {
+            "beta": context.beta_feature.reshape(-1),
+            "xi": context.interaction_effect_x.reshape(-1),
+            "eta": context.prev_x.reshape(-1),
         }
+        feature_matrix = np.column_stack(
+            [feature_columns[name] for name in free_names]
+        )
+        lipschitz = (
+            float(np.linalg.norm(feature_matrix, ord=2) ** 2) / context.outcome_size
+        )
+        return 1.0 if lipschitz <= 0.0 else 1.0 / lipschitz
+
+    def factor_step_size(fixed_factors: np.ndarray) -> float:
+        lipschitz = (
+            float(np.linalg.norm(fixed_factors, ord=2) ** 2)
+            + 2.0 * float(lambda_uv_ridge)
+        ) / context.outcome_size
+        return 1.0 if lipschitz <= 0.0 else 1.0 / lipschitz
+
+    scalar_lr = scalar_step_size()
 
     def pack_state(
         time_factors: np.ndarray,
         node_factors: np.ndarray,
         free_scalar_values: np.ndarray,
     ) -> np.ndarray:
-        scalars = scalar_values_from_vector(free_scalar_values)
+        scalars = _scalar_values_from_free_vector(free_scalar_values, context)
         return pack_theta(
             {
                 "time_factors": np.asarray(time_factors, dtype=float),
@@ -1198,6 +1182,14 @@ def _fit_mple_alternative_low_rank(
             rng.normal(0.0, 0.1, size=len(free_names)),
         )
 
+    def offset_matrix(free_scalar_values: np.ndarray) -> np.ndarray:
+        scalars = _scalar_values_from_free_vector(free_scalar_values, context)
+        return (
+            float(scalars["beta"]) * context.beta_feature
+            + float(scalars["eta"]) * context.prev_x
+            + float(scalars["xi"]) * context.interaction_effect_x
+        )
+
     best_theta: np.ndarray | None = None
     best_result: OptimizeResult | None = None
     best_penalized_history: list[float] = []
@@ -1210,9 +1202,16 @@ def _fit_mple_alternative_low_rank(
         time_factors, node_factors, free_scalar_values = initial_state_for_start(
             start_index
         )
-        state = evaluate_state(time_factors, node_factors, free_scalar_values)
-        initial_mple_loss = float(state["smooth_loss"])
-        initial_penalized_objective = float(state["penalized_loss"])
+        (
+            initial_penalized_objective,
+            initial_mple_loss,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+        ) = evaluate_state(time_factors, node_factors, free_scalar_values)
         mple_history = [initial_mple_loss]
         penalized_history = [initial_penalized_objective]
         cost_evaluations = 1
@@ -1232,72 +1231,76 @@ def _fit_mple_alternative_low_rank(
 
         for outer_index in range(outer_iterations):
             if free_names:
-                scalar_result = minimize(
-                    lambda raw: _alt_scalar_objective(
-                        raw,
-                        time_factors,
-                        node_factors,
-                        free_names,
-                        evaluate_state,
-                    ),
-                    free_scalar_values,
-                    method="BFGS",
-                    jac=True,
-                    options={"maxiter": subproblem_maxiter, "gtol": float(tol)},
-                )
-                free_scalar_values = np.asarray(scalar_result.x, dtype=float)
-                cost_evaluations += int(getattr(scalar_result, "nfev", 0))
+                (
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    scalar_gradient,
+                ) = evaluate_state(time_factors, node_factors, free_scalar_values)
+                free_scalar_values = free_scalar_values - scalar_lr * scalar_gradient
+                cost_evaluations += 1
 
-            time_result = minimize(
-                lambda raw: _alt_time_objective(
-                    raw,
-                    node_factors,
-                    free_scalar_values,
-                    t_steps,
-                    rank,
-                    evaluate_state,
-                ),
-                np.asarray(time_factors, dtype=float).reshape(-1),
-                method="BFGS",
-                jac=True,
-                options={"maxiter": subproblem_maxiter, "gtol": float(tol)},
-            )
-            time_factors = np.asarray(time_result.x, dtype=float).reshape(t_steps, rank)
-            cost_evaluations += int(getattr(time_result, "nfev", 0))
-
-            node_result = minimize(
-                lambda raw: _alt_node_objective(
-                    raw,
+            current_offset = offset_matrix(free_scalar_values)
+            for _ in range(inner_gradient_steps):
+                (
+                    _,
+                    _,
+                    time_gradient,
+                    _,
+                ) = penalized_factor_state_with_offset(
                     time_factors,
-                    free_scalar_values,
-                    n_nodes,
-                    rank,
-                    evaluate_state,
-                ),
-                np.asarray(node_factors, dtype=float).reshape(-1),
-                method="BFGS",
-                jac=True,
-                options={"maxiter": subproblem_maxiter, "gtol": float(tol)},
-            )
-            node_factors = np.asarray(node_result.x, dtype=float).reshape(n_nodes, rank)
-            cost_evaluations += int(getattr(node_result, "nfev", 0))
+                    node_factors,
+                    current_offset,
+                )
+                time_factors = (
+                    time_factors - factor_step_size(node_factors) * time_gradient
+                )
+                cost_evaluations += 1
 
-            state = evaluate_state(time_factors, node_factors, free_scalar_values)
-            penalized_history.append(float(state["penalized_loss"]))
-            mple_history.append(float(state["smooth_loss"]))
+                (
+                    _,
+                    _,
+                    _,
+                    node_gradient,
+                ) = penalized_factor_state_with_offset(
+                    time_factors,
+                    node_factors,
+                    current_offset,
+                )
+                node_factors = (
+                    node_factors - factor_step_size(time_factors) * node_gradient
+                )
+                cost_evaluations += 1
+
+            (
+                penalized_loss,
+                smooth_loss,
+                residual,
+                _,
+                _,
+                u_frobenius_norm,
+                v_frobenius_norm,
+                _,
+            ) = evaluate_state(time_factors, node_factors, free_scalar_values)
+            penalized_history.append(float(penalized_loss))
+            mple_history.append(float(smooth_loss))
             iterations_completed = outer_index + 1
 
             if verbose_every and outer_index % verbose_every == 0:
                 if logger is None:
                     print(
-                        f"Alternating low-rank iter {outer_index} | Loss: {state['smooth_loss']:.6f} | Penalized: {state['penalized_loss']:.6f}"
+                        f"Alternating low-rank iter {outer_index} | Loss: {smooth_loss:.6f} | Penalized: {penalized_loss:.6f}"
                     )
                 else:
                     logger.info(
                         "Alternating low-rank iter %s | Loss: %.6f | Penalized: %.6f",
                         outer_index,
-                        state["smooth_loss"],
-                        state["penalized_loss"],
+                        smooth_loss,
+                        penalized_loss,
                     )
 
             if len(penalized_history) >= 2:
@@ -1308,23 +1311,33 @@ def _fit_mple_alternative_low_rank(
                     break
 
         theta_hat = pack_state(time_factors, node_factors, free_scalar_values)
-        final_state = evaluate_state(time_factors, node_factors, free_scalar_values)
+        (
+            final_penalized_loss,
+            final_smooth_loss,
+            _,
+            _,
+            _,
+            final_u_norm,
+            final_v_norm,
+            _,
+        ) = evaluate_state(time_factors, node_factors, free_scalar_values)
+        final_field_matrix = compose_latent_field_matrix(node_factors, time_factors)
         start_summary = {
             "start_index": start_index,
             "seed": int(seed) + start_index,
             "initialization_kind": "random",
             "initial_mple_loss": initial_mple_loss,
             "initial_penalized_objective": initial_penalized_objective,
-            "final_mple_loss": float(final_state["smooth_loss"]),
-            "final_penalized_objective": float(final_state["penalized_loss"]),
+            "final_mple_loss": float(final_smooth_loss),
+            "final_penalized_objective": float(final_penalized_loss),
             "iterations": int(iterations_completed),
             "cost_evaluations": int(cost_evaluations),
             "success": bool(converged),
             "message": message,
         }
         start_summaries.append(start_summary)
-        if float(final_state["penalized_loss"]) < best_penalized_objective:
-            best_penalized_objective = float(final_state["penalized_loss"])
+        if float(final_penalized_loss) < best_penalized_objective:
+            best_penalized_objective = float(final_penalized_loss)
             best_start = start_index
             best_theta = theta_hat
             best_mple_history = list(mple_history)
@@ -1337,17 +1350,15 @@ def _fit_mple_alternative_low_rank(
                 nfev=int(cost_evaluations),
                 iterations=int(iterations_completed),
                 cost_evaluations=int(cost_evaluations),
-                optimizer_mode=OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK,
+                optimizer_mode=OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
                 optimizer="alternating_low_rank",
                 lambda_uv_ridge=float(lambda_uv_ridge),
-                final_mple_loss=float(final_state["smooth_loss"]),
-                final_penalized_objective=float(final_state["penalized_loss"]),
-                u_frobenius_norm=float(final_state["u_frobenius_norm"]),
-                v_frobenius_norm=float(final_state["v_frobenius_norm"]),
+                final_mple_loss=float(final_smooth_loss),
+                final_penalized_objective=float(final_penalized_loss),
+                u_frobenius_norm=float(final_u_norm),
+                v_frobenius_norm=float(final_v_norm),
                 effective_rank=float(
-                    np.linalg.matrix_rank(
-                        np.asarray(final_state["field_matrix"], dtype=float)
-                    )
+                    np.linalg.matrix_rank(np.asarray(final_field_matrix, dtype=float))
                 ),
                 mple_history=list(mple_history),
                 penalized_history=list(penalized_history),
@@ -1364,53 +1375,6 @@ def _fit_mple_alternative_low_rank(
     best_result["best_start"] = int(best_start)
     best_result["n_starts"] = int(n_starts)
     return best_theta, best_mple_history, best_result
-
-
-def _alt_scalar_objective(
-    raw_scalars: np.ndarray,
-    time_factors: np.ndarray,
-    node_factors: np.ndarray,
-    free_names: list[str],
-    evaluate_state,
-) -> tuple[float, np.ndarray]:
-    state = evaluate_state(
-        time_factors, node_factors, np.asarray(raw_scalars, dtype=float)
-    )
-    gradient = np.asarray(
-        [state["scalar_gradient_lookup"][name] for name in free_names],
-        dtype=float,
-    )
-    return float(state["penalized_loss"]), gradient
-
-
-def _alt_time_objective(
-    raw_time: np.ndarray,
-    node_factors: np.ndarray,
-    free_scalar_values: np.ndarray,
-    t_steps: int,
-    rank: int,
-    evaluate_state,
-) -> tuple[float, np.ndarray]:
-    time_factors = np.asarray(raw_time, dtype=float).reshape(t_steps, rank)
-    state = evaluate_state(time_factors, node_factors, free_scalar_values)
-    return float(state["penalized_loss"]), np.asarray(
-        state["time_gradient"], dtype=float
-    ).reshape(-1)
-
-
-def _alt_node_objective(
-    raw_node: np.ndarray,
-    time_factors: np.ndarray,
-    free_scalar_values: np.ndarray,
-    n_nodes: int,
-    rank: int,
-    evaluate_state,
-) -> tuple[float, np.ndarray]:
-    node_factors = np.asarray(raw_node, dtype=float).reshape(n_nodes, rank)
-    state = evaluate_state(time_factors, node_factors, free_scalar_values)
-    return float(state["penalized_loss"]), np.asarray(
-        state["node_gradient"], dtype=float
-    ).reshape(-1)
 
 
 def fit_mple(
@@ -1440,6 +1404,46 @@ def fit_mple(
     t_steps = x.shape[0]
     if t_steps != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
+    if artifacts.optimizer_mode == OPTIMIZER_MODE_NO_EXTERNAL_FIELD:
+        theta_hat, history, result = _fit_zero_rank_unconstrained(
+            x,
+            z,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            steps=steps,
+            seed=seed,
+            tol=tol,
+            theta_init=theta_init,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        result["optimizer_mode"] = OPTIMIZER_MODE_NO_EXTERNAL_FIELD
+        result["optimizer"] = "scipy_bfgs_no_external_field"
+        result["best_start"] = 0
+        result["n_starts"] = 1
+        result["iterations"] = int(getattr(result, "nit", 0))
+        result["cost_evaluations"] = int(getattr(result, "nfev", len(history)))
+        result["final_mple_loss"] = float(history[-1])
+        result["final_penalized_objective"] = float(history[-1])
+        result["mple_history"] = list(history)
+        result["penalized_history"] = list(history)
+        result["effective_rank"] = 0.0
+        result["start_summaries"] = [
+            {
+                "start_index": 0,
+                "seed": int(seed),
+                "initialization_kind": "random",
+                "initial_mple_loss": float(history[0]),
+                "initial_penalized_objective": float(history[0]),
+                "final_mple_loss": float(history[-1]),
+                "final_penalized_objective": float(history[-1]),
+                "iterations": int(getattr(result, "nit", 0)),
+                "cost_evaluations": int(getattr(result, "nfev", len(history))),
+                "success": bool(getattr(result, "success", False)),
+                "message": str(getattr(result, "message", "")),
+            }
+        ]
+        return theta_hat, history, result
     if artifacts.optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM:
         return _fit_mple_nuclear_norm(
             x,
@@ -1458,7 +1462,7 @@ def fit_mple(
             lambda_nuclear=lambda_nuclear,
             proximal_lr=proximal_lr,
         )
-    if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK:
+    if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
         return _fit_mple_alternative_low_rank(
             x,
             z,
@@ -1475,7 +1479,7 @@ def fit_mple(
             n_starts=n_starts,
             lambda_uv_ridge=lambda_uv_ridge,
         )
-    if artifacts.optimizer_mode == OPTIMIZER_MODE_MANIFOLD:
+    if artifacts.optimizer_mode == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD:
         return _fit_mple_low_rank_manifold(
             x,
             z,
@@ -1493,12 +1497,6 @@ def fit_mple(
             lambda_frobenius=lambda_frobenius,
         )
     raise ValueError(f"Unsupported optimizer_mode: {artifacts.optimizer_mode}")
-
-
-def _fmt(value):
-    if value is None:
-        return ""
-    return f"{float(value):.6f}"
 
 
 def scalar_summary_rows(
@@ -1616,7 +1614,7 @@ def latent_diagnostic_rows(
     rows: list[dict[str, object]] = [
         {
             "category": "latent_diagnostic",
-            "name": "estimated_field_inf_norm",
+            "name": "estimated_field_max_abs_entry",
             "estimate": latent_field_bound_norm(est_field),
             "true": None,
             "squared_error": None,
@@ -1635,7 +1633,7 @@ def latent_diagnostic_rows(
             [
                 {
                     "category": "latent_diagnostic",
-                    "name": "true_field_inf_norm",
+                    "name": "true_field_max_abs_entry",
                     "estimate": latent_field_bound_norm(true_field),
                     "true": None,
                     "squared_error": None,
@@ -1840,19 +1838,6 @@ def main() -> None:
         description="Fit active conditional-model parameters with MPLE."
     )
     parser.add_argument("--data_folder", required=True, type=str)
-    parser.add_argument("--config_path", type=str, default=None)
-    parser.add_argument("--model_artifact_dir", type=str, default=None)
-    parser.add_argument("--truth_artifact_dir", type=str, default=None)
-    parser.add_argument("--panel_path", type=str, default=None)
-    parser.add_argument("--x0_path", type=str, default=None)
-    parser.add_argument("--steps", type=int, default=None)
-    parser.add_argument("--tol", type=float, default=None)
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--n_starts", type=int, default=None)
-    parser.add_argument("--lambda_nuclear", type=float, default=None)
-    parser.add_argument("--lambda_frobenius", type=float, default=None)
-    parser.add_argument("--lambda_uv_ridge", type=float, default=None)
-    parser.add_argument("--proximal_lr", type=float, default=None)
     parser.add_argument("--log_file", type=str, default=None)
     args = parser.parse_args()
 
@@ -1861,16 +1846,7 @@ def main() -> None:
     logger = setup_logger(log_file)
 
     logger.info("Loading data...")
-    # Resolve config
-    config_path = (
-        Path(args.config_path)
-        if args.config_path
-        else first_existing_path(
-            Path(args.data_folder) / "fit_realized_config.yaml",
-            Path(args.data_folder) / "generation_realized_config.yaml",
-            Path(args.data_folder) / "realized_config.yaml",
-        )
-    )
+    config_path = Path(args.data_folder) / "fit_realized_config.yaml"
     config = load_yaml_config(config_path)
     fixed_scalar_params = validate_fixed_scalar_params(
         (
@@ -1882,56 +1858,24 @@ def main() -> None:
             else {}
         )
     )
-    lambda_nuclear = float(
-        args.lambda_nuclear
-        if args.lambda_nuclear is not None
-        else config.global_params.get("lambda_nuclear", 0.0)
-    )
-    lambda_frobenius = float(
-        args.lambda_frobenius
-        if args.lambda_frobenius is not None
-        else config.global_params.get("lambda_frobenius", 0.0)
-    )
-    lambda_uv_ridge = float(
-        args.lambda_uv_ridge
-        if args.lambda_uv_ridge is not None
-        else config.global_params.get("lambda_uv_ridge", 0.0)
-    )
+    lambda_nuclear = float(config.global_params.get("lambda_nuclear", 0.0))
+    lambda_frobenius = float(config.global_params.get("lambda_frobenius", 0.0))
+    lambda_uv_ridge = float(config.global_params.get("lambda_uv_ridge", 0.0))
     optimizer_params = (
         config.optimizer_params
         if "optimizer_params" in config
         else OmegaConf.create({})
     )
-    steps = int(
-        args.steps if args.steps is not None else optimizer_params.get("steps", 10000)
-    )
-    tol = float(args.tol if args.tol is not None else optimizer_params.get("tol", 1e-9))
-    seed = int(args.seed if args.seed is not None else optimizer_params.get("seed", 0))
-    n_starts = int(
-        args.n_starts
-        if args.n_starts is not None
-        else optimizer_params.get("n_starts", 1)
-    )
-    proximal_lr = float(
-        args.proximal_lr
-        if args.proximal_lr is not None
-        else optimizer_params.get("proximal_lr", 1.0)
-    )
-    model_artifact_dir = (
-        Path(args.model_artifact_dir)
-        if args.model_artifact_dir
-        else Path(args.data_folder)
-    )
-    truth_artifact_dir = (
-        Path(args.truth_artifact_dir) if args.truth_artifact_dir else model_artifact_dir
-    )
-
-    panel_path = (
-        Path(args.panel_path)
-        if args.panel_path
-        else truth_artifact_dir / "panel_data.npz"
-    )
-    x0_path = Path(args.x0_path) if args.x0_path else truth_artifact_dir / "x_0.npy"
+    steps = int(optimizer_params.get("steps", 10000))
+    tol = float(optimizer_params.get("tol", 1e-9))
+    seed = int(optimizer_params.get("seed", 0))
+    n_starts = int(optimizer_params.get("n_starts", 1))
+    proximal_lr = float(optimizer_params.get("proximal_lr", 1.0))
+    input_artifacts = config.input_artifacts
+    model_artifact_dir = Path(str(input_artifacts.model_artifact_dir))
+    truth_artifact_dir = Path(str(input_artifacts.truth_artifact_dir))
+    panel_path = Path(str(input_artifacts.panel_path))
+    x0_path = Path(str(input_artifacts.x0_path))
     logger.info("Using panel artifact: %s", panel_path)
     logger.info("Using x_0 artifact: %s", x0_path)
     logger.info("Using fit config: %s", config_path)
@@ -2046,7 +1990,7 @@ def main() -> None:
         )
         logger.info("  effective_rank: %.6f", metrics["effective_rank"])
         logger.info("  proximal_iterations: %.0f", metrics["proximal_iterations"])
-    elif result.get("optimizer_mode") == OPTIMIZER_MODE_MANIFOLD:
+    elif result.get("optimizer_mode") == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD:
         metrics.update(
             {
                 "penalized_objective": float(result["final_penalized_objective"]),
@@ -2054,7 +1998,13 @@ def main() -> None:
                 "lambda_frobenius": float(result["lambda_frobenius"]),
                 "frobenius_norm": float(result["frobenius_norm"]),
                 "normalized_frobenius_norm": float(result["normalized_frobenius_norm"]),
+                "squared_normalized_frobenius_norm": float(
+                    result["squared_normalized_frobenius_norm"]
+                ),
                 "frobenius_norm_normalizer": float(result["frobenius_norm_normalizer"]),
+                "frobenius_penalty_normalizer": float(
+                    result["frobenius_penalty_normalizer"]
+                ),
                 "effective_rank": float(result["effective_rank"]),
             }
         )
@@ -2072,10 +2022,18 @@ def main() -> None:
                 metrics["normalized_frobenius_norm"],
             )
             logger.info(
+                "  squared_normalized_frobenius_norm: %.6f",
+                metrics["squared_normalized_frobenius_norm"],
+            )
+            logger.info(
                 "  frobenius_norm_normalizer: %.6f",
                 metrics["frobenius_norm_normalizer"],
             )
-    elif result.get("optimizer_mode") == OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK:
+            logger.info(
+                "  frobenius_penalty_normalizer: %.6f",
+                metrics["frobenius_penalty_normalizer"],
+            )
+    elif result.get("optimizer_mode") == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
         metrics.update(
             {
                 "penalized_objective": float(result["final_penalized_objective"]),

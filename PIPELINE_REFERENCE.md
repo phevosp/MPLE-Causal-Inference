@@ -59,11 +59,13 @@ Important keys:
 - `fit_root_name`
 - `fit_manifest_path`
 - `optimizer.steps`, `optimizer.tol`, `optimizer.seed`
-- `optimizer.n_starts`, `optimizer.adam_steps`, `optimizer.adam_lr`, `optimizer.adam_device`, `optimizer.proximal_lr`
+- `optimizer.n_starts`, `optimizer.proximal_lr`
 - `B`
-- `field_mode`
+- `optimizer_mode`
 - `latent_rank`
 - `lambda_nuclear`
+- `lambda_frobenius`
+- `lambda_uv_ridge`
 - `estimation.fixed_scalar_params`
 
 ### Posterior Predictive Spec

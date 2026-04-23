@@ -15,13 +15,15 @@ _DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerat
 _RMS_SCALE_FACTOR = 0.4         # targets initial field RMS at _RMS_SCALE_FACTOR * B
 _TAIL_STRENGTH = 0.5            # tail_strength arg for sklearn make_low_rank_matrix
 SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
-OPTIMIZER_MODE_MANIFOLD = "manifold"
+OPTIMIZER_MODE_NO_EXTERNAL_FIELD = "no_external_field"
 OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
-OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK = "alternative_low_rank"
+OPTIMIZER_MODE_EXACT_RANK_MANIFOLD = "exact_rank_manifold"
+OPTIMIZER_MODE_ALTERNATING_LATENT_RANK = "alternating_latent_rank"
 VALID_OPTIMIZER_MODES = {
-    OPTIMIZER_MODE_MANIFOLD,
+    OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
-    OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK,
+    OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
+    OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
 }
 
 
@@ -32,7 +34,7 @@ class ModelArtifacts:
     gamma_matrix: object
     t_steps: int
     latent_rank: int = 0
-    optimizer_mode: str = OPTIMIZER_MODE_MANIFOLD
+    optimizer_mode: str = OPTIMIZER_MODE_EXACT_RANK_MANIFOLD
     field_matrix: np.ndarray | None = None
 
 
@@ -78,7 +80,9 @@ def get_latent_rank(config) -> int:
 def get_optimizer_mode(config) -> str:
     global_params = getattr(config, "global_params", None)
     if global_params is None or "optimizer_mode" not in global_params:
-        return OPTIMIZER_MODE_MANIFOLD
+        if global_params is not None and int(global_params.get("latent_rank", 0)) > 0:
+            return OPTIMIZER_MODE_EXACT_RANK_MANIFOLD
+        return OPTIMIZER_MODE_NO_EXTERNAL_FIELD
     optimizer_mode = str(global_params.optimizer_mode)
     if optimizer_mode not in VALID_OPTIMIZER_MODES:
         raise ValueError(
@@ -234,7 +238,7 @@ def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
         gamma_matrix=gamma_matrix,
         t_steps=t_steps,
         latent_rank=get_latent_rank(config),
-        optimizer_mode=OPTIMIZER_MODE_MANIFOLD,
+        optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
         field_matrix=field_matrix,
     )
 
@@ -244,15 +248,18 @@ def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
     validate_graph_infinity_norm(gamma_matrix)
     optimizer_mode = get_optimizer_mode(config)
     latent_rank = get_latent_rank(config)
-    if optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM:
+    if optimizer_mode in {
+        OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+        OPTIMIZER_MODE_NUCLEAR_NORM,
+    }:
         latent_rank = 0
-    elif optimizer_mode == OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK and latent_rank <= 0:
+    elif optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK and latent_rank <= 0:
         raise ValueError(
-            "global_params.latent_rank must be positive for optimizer_mode='alternative_low_rank'."
+            "global_params.latent_rank must be positive for optimizer_mode='alternating_latent_rank'."
         )
-    elif optimizer_mode == OPTIMIZER_MODE_MANIFOLD and latent_rank < 0:
+    elif optimizer_mode == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD and latent_rank <= 0:
         raise ValueError(
-            "global_params.latent_rank must be nonnegative for optimizer_mode='manifold'."
+            "global_params.latent_rank must be positive for optimizer_mode='exact_rank_manifold'."
         )
     return ModelArtifacts(
         gamma_matrix=gamma_matrix,
@@ -318,7 +325,7 @@ def load_model_artifacts(data_folder: str | Path) -> ModelArtifacts:
         gamma_matrix=gamma_matrix,
         t_steps=int(payload["t_steps"]),
         latent_rank=int(payload.get("latent_rank", 0)),
-        optimizer_mode=OPTIMIZER_MODE_MANIFOLD,
+        optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
         field_matrix=payload.get("field_matrix"),
     )
 

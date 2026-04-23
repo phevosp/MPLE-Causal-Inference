@@ -44,10 +44,12 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 
 **Key `fits_spec.yaml` fields:**
 
-- `optimizer_mode`: one of `manifold` (Riemannian CG, default), `nuclear_norm` (proximal gradient), or `alternative_low_rank` (alternating L-BFGS-B).
-- `latent_rank`: must be ≥ 1 for `alternative_low_rank`; ignored for `nuclear_norm`.
+- `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, or `alternating_latent_rank`.
+- `latent_rank`: must be ≥ 1 for `exact_rank_manifold` and `alternating_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
 - `estimation.fixed_scalar_params`: scalars held **fixed** at these values (not initial guesses). Leave as `{}` to estimate all scalars freely.
-- `lambda_uv_ridge`: only active for `alternative_low_rank` mode.
+- `lambda_nuclear`: only active for `nuclear_norm`.
+- `lambda_frobenius`: only active for `exact_rank_manifold`.
+- `lambda_uv_ridge`: only active for `alternating_latent_rank`.
 
 ## Environment
 
@@ -140,11 +142,13 @@ pixi run python -u run_fit_pipeline.py \
 Each fit variant controls:
 
 - `B`
-- `field_mode`: `low_rank` or `nuclear_norm`
+- `optimizer_mode`
 - `latent_rank`
-- `lambda_nuclear` for `field_mode: nuclear_norm`
+- `lambda_nuclear` for `nuclear_norm`
+- `lambda_frobenius` for `exact_rank_manifold`
+- `lambda_uv_ridge` for `alternating_latent_rank`
 - `estimation.fixed_scalar_params`
-- optimizer `steps`, `tol`, `seed`, `n_starts`, `adam_steps`, `adam_lr`, `adam_device`, and `proximal_lr`
+- optimizer `steps`, `tol`, `seed`, `n_starts`, and `proximal_lr`
 
 Outputs:
 
@@ -267,7 +271,7 @@ At experiment scope, the shared panel/model artifacts are:
 
 - `latent_rank`
 - `t_steps`
-- `field_mode`
+- `optimizer_mode`
 - `field_matrix`
 
 `latent_rank = 0` means the realized field is exactly zero.
@@ -384,22 +388,17 @@ Typical manual fit with an explicit fit config:
 
 ```bash
 pixi run python -u mple.py \
-  --data_folder experiments/<experiment>/fits/<variant> \
-  --config_path experiments/<experiment>/fits/<variant>/fit_realized_config.yaml \
-  --model_artifact_dir experiments/<experiment> \
-  --truth_artifact_dir experiments/<experiment> \
-  --panel_path experiments/<experiment>/panel_data.npz \
-  --x0_path experiments/<experiment>/x_0.npy
+  --data_folder experiments/<experiment>/fits/<variant>
 ```
 
 Useful flags:
 
-- `--steps`, `--tol`, `--seed`, `--n_starts`, `--adam_steps`, `--adam_lr`, `--adam_device`, `--lambda_nuclear`, and `--proximal_lr` override optimizer settings
+- optimizer settings and artifact paths are read from `fit_realized_config.yaml` in the fit folder
 - `--log_file` redirects the MPLE log
 
-When `n_starts > 1`, MPLE runs independent random starts and keeps the fit with the lowest final pseudo-negative log likelihood. When `adam_steps > 0`, each start first runs a PyTorch Adam basin-search stage and then uses L-BFGS-B for the final polish. Per-start diagnostics are saved to `optimizer_start_summary.csv`.
+When `n_starts > 1`, MPLE runs independent random starts and keeps the fit with the lowest final pseudo-negative log likelihood. Per-start diagnostics are saved to `optimizer_start_summary.csv`.
 
-For `field_mode: nuclear_norm`, MPLE optimizes the full latent field directly with a nuclear-norm penalty, using proximal singular-value thresholding instead of the low-rank factorization. The usual `mple_summary.csv` includes the unpenalized MPLE loss, penalized objective, nuclear norm, and effective rank.
+For `optimizer_mode: nuclear_norm`, MPLE optimizes the full latent field directly with a nuclear-norm penalty, using proximal singular-value thresholding instead of the low-rank factorization. The usual `mple_summary.csv` includes the unpenalized MPLE loss, penalized objective, nuclear norm, and effective rank.
 
 `global_params.B` is the active fit-time bound:
 
@@ -491,7 +490,6 @@ pixi run python run_uscounty_sensitivity_analysis.py \
   --B_values 0.5 1 2 5 \
   --lambda_nuclear_values 0.0001 0.0003 0.001 0.003 0.01 \
   --n_starts 5 \
-  --adam_steps 1000 \
   --overwrite \
   --run_fits
 ```

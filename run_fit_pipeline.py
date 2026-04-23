@@ -58,22 +58,29 @@ def build_fit_config(
     dims: dict[str, int],
 ) -> object:
     optimizer = dict(variant.get("optimizer", {}) or {})
-    optimizer_mode = str(variant.get("optimizer_mode", "manifold"))
-    if optimizer_mode not in {"manifold", "nuclear_norm", "alternative_low_rank"}:
+    optimizer_mode = str(variant.get("optimizer_mode", "no_external_field"))
+    if optimizer_mode not in {
+        "no_external_field",
+        "nuclear_norm",
+        "exact_rank_manifold",
+        "alternating_latent_rank",
+    }:
         raise ValueError(
-            "optimizer_mode must be one of 'manifold', 'nuclear_norm', or "
-            "'alternative_low_rank'."
+            "optimizer_mode must be one of 'no_external_field', 'nuclear_norm', "
+            "'exact_rank_manifold', or 'alternating_latent_rank'."
         )
     latent_rank = (
-        0 if optimizer_mode == "nuclear_norm" else int(variant.get("latent_rank", 0))
+        0
+        if optimizer_mode in {"no_external_field", "nuclear_norm"}
+        else int(variant.get("latent_rank", 0))
     )
-    if optimizer_mode == "alternative_low_rank" and latent_rank <= 0:
+    if optimizer_mode == "alternating_latent_rank" and latent_rank <= 0:
         raise ValueError(
-            "latent_rank must be positive for optimizer_mode='alternative_low_rank'."
+            "latent_rank must be positive for optimizer_mode='alternating_latent_rank'."
         )
-    if optimizer_mode == "manifold" and latent_rank < 0:
+    if optimizer_mode == "exact_rank_manifold" and latent_rank <= 0:
         raise ValueError(
-            "latent_rank must be nonnegative for optimizer_mode='manifold'."
+            "latent_rank must be positive for optimizer_mode='exact_rank_manifold'."
         )
     lambda_nuclear = float(variant.get("lambda_nuclear", 0.0))
     if lambda_nuclear < 0.0:
@@ -84,6 +91,16 @@ def build_fit_config(
     lambda_uv_ridge = float(variant.get("lambda_uv_ridge", 0.0))
     if lambda_uv_ridge < 0.0:
         raise ValueError("lambda_uv_ridge must be nonnegative.")
+    if optimizer_mode != "nuclear_norm" and lambda_nuclear != 0.0:
+        raise ValueError("lambda_nuclear is only valid for optimizer_mode='nuclear_norm'.")
+    if optimizer_mode != "exact_rank_manifold" and lambda_frobenius != 0.0:
+        raise ValueError(
+            "lambda_frobenius is only valid for optimizer_mode='exact_rank_manifold'."
+        )
+    if optimizer_mode != "alternating_latent_rank" and lambda_uv_ridge != 0.0:
+        raise ValueError(
+            "lambda_uv_ridge is only valid for optimizer_mode='alternating_latent_rank'."
+        )
 
     optimizer_config: dict[str, Any] = {
         "steps": int(optimizer["steps"]),
@@ -133,6 +150,14 @@ def run_fit_variant(
 
     dims = infer_panel_dimensions(experiment_root)
     fit_config = build_fit_config(variant, dims)
+    fit_config.input_artifacts = OmegaConf.create(
+        {
+            "model_artifact_dir": str(experiment_root.resolve()),
+            "truth_artifact_dir": str(experiment_root.resolve()),
+            "panel_path": str((experiment_root / "panel_data.npz").resolve()),
+            "x0_path": str((experiment_root / "x_0.npy").resolve()),
+        }
+    )
     config_path = fit_root / "fit_realized_config.yaml"
     fit_metadata = {
         "variant_name": variant["name"],
@@ -159,16 +184,6 @@ def run_fit_variant(
         str(REPO_ROOT / "mple.py"),
         "--data_folder",
         str(fit_root),
-        "--config_path",
-        str(config_path),
-        "--model_artifact_dir",
-        str(experiment_root),
-        "--truth_artifact_dir",
-        str(experiment_root),
-        "--panel_path",
-        str(experiment_root / "panel_data.npz"),
-        "--x0_path",
-        str(experiment_root / "x_0.npy"),
     ]
     subprocess.run(command, check=True, cwd=REPO_ROOT)
     return {

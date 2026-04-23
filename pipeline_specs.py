@@ -104,29 +104,36 @@ def read_csv_manifest(path: str | Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-_VALID_OPTIMIZER_MODES = frozenset({"manifold", "nuclear_norm", "alternative_low_rank"})
+_VALID_OPTIMIZER_MODES = frozenset(
+    {
+        "no_external_field",
+        "nuclear_norm",
+        "exact_rank_manifold",
+        "alternating_latent_rank",
+    }
+)
 
 
 def validate_fits_spec(spec_path: str | Path) -> None:
     """Validate a fits_spec.yaml at load time and raise ValueError on the first problem found.
 
-    Checks that each variant has a valid optimizer_mode, that alternative_low_rank has a
-    positive latent_rank, and that all regularization values are non-negative.  Call this
+    Checks that each variant has a valid optimizer_mode, that rank-based modes have a
+    positive latent_rank, and that all regularization values are non-negative. Call this
     at the top of run_fit_pipeline.py before processing any experiments.
     """
     variants = expand_named_entries(spec_path, "variants")
     for variant in variants:
         name = variant.get("name", "<unnamed>")
-        mode = str(variant.get("optimizer_mode", "manifold"))
+        mode = str(variant.get("optimizer_mode", "no_external_field"))
         if mode not in _VALID_OPTIMIZER_MODES:
             raise ValueError(
                 f"Variant '{name}': optimizer_mode '{mode}' is not valid. "
                 f"Must be one of: {sorted(_VALID_OPTIMIZER_MODES)}."
             )
         rank = int(variant.get("latent_rank", 0))
-        if mode == "alternative_low_rank" and rank <= 0:
+        if mode in {"exact_rank_manifold", "alternating_latent_rank"} and rank <= 0:
             raise ValueError(
-                f"Variant '{name}': latent_rank must be >= 1 for optimizer_mode='alternative_low_rank' (got {rank})."
+                f"Variant '{name}': latent_rank must be >= 1 for optimizer_mode='{mode}' (got {rank})."
             )
         for param in ("lambda_nuclear", "lambda_frobenius", "lambda_uv_ridge"):
             val = float(variant.get(param, 0.0))
@@ -134,3 +141,15 @@ def validate_fits_spec(spec_path: str | Path) -> None:
                 raise ValueError(
                     f"Variant '{name}': {param} must be non-negative (got {val})."
                 )
+        if mode != "nuclear_norm" and float(variant.get("lambda_nuclear", 0.0)) != 0.0:
+            raise ValueError(
+                f"Variant '{name}': lambda_nuclear is only valid for optimizer_mode='nuclear_norm'."
+            )
+        if mode != "exact_rank_manifold" and float(variant.get("lambda_frobenius", 0.0)) != 0.0:
+            raise ValueError(
+                f"Variant '{name}': lambda_frobenius is only valid for optimizer_mode='exact_rank_manifold'."
+            )
+        if mode != "alternating_latent_rank" and float(variant.get("lambda_uv_ridge", 0.0)) != 0.0:
+            raise ValueError(
+                f"Variant '{name}': lambda_uv_ridge is only valid for optimizer_mode='alternating_latent_rank'."
+            )
