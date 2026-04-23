@@ -1,3 +1,9 @@
+"""Materialize synthetic experiment artifacts from a generation_spec.yaml.
+
+For each experiment entry in the spec, generates panel data (x, z), a latent field matrix,
+a graph (Gamma), and experiment metadata, then writes a generation_manifest.csv.
+"""
+
 from __future__ import annotations
 
 import argparse
