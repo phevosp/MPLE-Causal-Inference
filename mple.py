@@ -41,32 +41,9 @@ from model_utils import (
     with_theta_field,
 )
 from posterior_predictive_utils import _io_path, save_estimated_parameter_bundle
+from io_utils import first_existing_path, load_gamma_matrix, load_yaml_config
 
-
-def load_yaml_config(path: str | Path):
-    return OmegaConf.load(Path(path))
-
-
-def first_existing_path(*paths: str | Path) -> Path:
-    for path in paths:
-        candidate = Path(path)
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(
-        "Could not find any of the expected paths: "
-        + ", ".join(str(Path(path)) for path in paths)
-    )
-
-
-def load_gamma_matrix(data_folder: str | Path):
-    data_path = Path(data_folder)
-    gamma_sparse = data_path / "gamma_matrix_sparse.npz"
-    gamma_dense = data_path / "gamma_matrix.npy"
-    if gamma_sparse.exists():
-        return sparse.load_npz(gamma_sparse).tocsr()
-    if gamma_dense.exists():
-        return np.load(gamma_dense, allow_pickle=False)
-    raise FileNotFoundError(f"Missing gamma matrix artifact in {data_path}.")
+_RANDOM_INIT_SCALE = 0.05  # std-dev for random scalar/singular-value initializations
 
 
 def _canonicalize_theta(
@@ -289,6 +266,12 @@ def _fit_mple_nuclear_norm(
     lambda_nuclear: float,
     proximal_lr: float = 1.0,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
+    """Fit via proximal gradient descent with nuclear-norm regularization on the field matrix.
+
+    Optimizes the full (unconstrained) field matrix in vectorized theta space, applying a
+    soft-threshold proximal operator after each gradient step to promote low-rank solutions.
+    Prefer this mode when you want data-driven rank selection rather than a fixed rank.
+    """
     if lambda_nuclear < 0.0:
         raise ValueError("lambda_nuclear must be nonnegative.")
     if proximal_lr <= 0.0:
@@ -647,6 +630,12 @@ def _fit_mple_low_rank_manifold(
     n_starts: int,
     lambda_frobenius: float,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
+    """Fit using Riemannian conjugate gradient on the fixed-rank matrix manifold (pymanopt).
+
+    Parameterizes the field as a rank-r matrix via its thin SVD factors (U, sigma, Vt) and
+    optimizes directly on the FixedRankEmbedded manifold. Use this mode when the rank is known
+    or when manifold geometry is expected to give better convergence than nuclear-norm relaxation.
+    """
     if lambda_frobenius < 0.0:
         raise ValueError("lambda_frobenius must be nonnegative.")
     if artifacts.latent_rank == 0:
@@ -1047,6 +1036,13 @@ def _fit_mple_alternative_low_rank(
     n_starts: int,
     lambda_uv_ridge: float,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
+    """Fit via alternating proximal gradient between U, Vt factor matrices and scalar parameters.
+
+    Parameterizes the field as U @ Vt (no explicit singular values) and alternates L-BFGS-B
+    sub-problems for U, Vt, and scalars with optional ridge regularization on the factors.
+    Use this mode as an alternative to manifold optimization when pymanopt convergence is poor.
+    Requires latent_rank >= 1.
+    """
     if lambda_uv_ridge < 0.0:
         raise ValueError("lambda_uv_ridge must be nonnegative.")
     if artifacts.latent_rank == 0:
@@ -1865,6 +1861,7 @@ def main() -> None:
     logger = setup_logger(log_file)
 
     logger.info("Loading data...")
+    # Resolve config
     config_path = (
         Path(args.config_path)
         if args.config_path
@@ -1940,6 +1937,7 @@ def main() -> None:
     logger.info("Using fit config: %s", config_path)
     logger.info("Using model artifact directory: %s", model_artifact_dir)
     logger.info("Using truth artifact directory: %s", truth_artifact_dir)
+    # Load Data
     x_0 = np.load(x0_path)
     panel = load_panel_artifact(panel_path)
     x = panel["x"]
