@@ -27,6 +27,14 @@ from data.USCountyVaccination.experiment_artifacts import (
     create_config as create_us_county_config,
     save_experiment as save_us_county_experiment,
 )
+from intervention_utils import COUNTERFACTUAL_MANIFEST_NAME, load_saved_intervention_context
+from io_utils import io_path
+from loading_utils import (
+    OutcomeParameterBundle,
+    load_experiment_panel_context,
+    load_fit_parameter_bundle,
+    load_truth_parameter_bundle,
+)
 from mple import _canonicalize_theta, fit_mple, pseudo_nll
 from model_utils import (
     ModelArtifacts,
@@ -46,14 +54,7 @@ from model_utils import (
     unpack_theta,
 )
 from posterior_predictive_utils import (
-    COUNTERFACTUAL_MANIFEST_NAME,
-    OutcomeParameterBundle,
-    _io_path,
     compute_panel_statistics,
-    load_experiment_panel_context,
-    load_fit_parameter_bundle,
-    load_truth_parameter_bundle,
-    load_saved_intervention_context,
     simulate_outcomes_for_bundle,
     summarize_predictive_statistics,
 )
@@ -1099,7 +1100,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         self.root.mkdir(parents=True, exist_ok=True)
 
     def tearDown(self) -> None:
-        shutil.rmtree(_io_path(self.root), ignore_errors=True)
+        shutil.rmtree(io_path(self.root), ignore_errors=True)
 
     def _write_target_pairs(self, rows: list[dict[str, object]]) -> Path:
         target_pairs_path = self.root / "target_pairs.csv"
@@ -1432,11 +1433,11 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         self.assertEqual(Path(manifest_path), self.root / COUNTERFACTUAL_MANIFEST_NAME)
         self.assertTrue((self.root / COUNTERFACTUAL_MANIFEST_NAME).exists())
         self.assertTrue(
-            Path(_io_path(counterfactual_root / "counterfactual_summary.csv")).exists()
+            Path(io_path(counterfactual_root / "counterfactual_summary.csv")).exists()
         )
         self.assertTrue(
             Path(
-                _io_path(counterfactual_root / "counterfactual_unit_summary.csv")
+                io_path(counterfactual_root / "counterfactual_unit_summary.csv")
             ).exists()
         )
 

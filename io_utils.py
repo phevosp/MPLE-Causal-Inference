@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,13 @@ from scipy import sparse
 
 def load_yaml_config(path: str | Path):
     return OmegaConf.load(Path(path))
+
+
+def io_path(path: str | Path) -> str:
+    resolved = str(Path(path).resolve())
+    if os.name == "nt" and not resolved.startswith("\\\\?\\"):
+        return "\\\\?\\" + resolved
+    return resolved
 
 
 def first_existing_path(*paths: str | Path) -> Path:
@@ -79,3 +87,108 @@ def write_markdown_table(
             "| " + " | ".join(_fmt(row.get(column, "")) for column in columns) + " |\n"
         )
     handle.write("\n")
+
+
+def write_predictive_stats_tables(
+    output_root: str | Path,
+    stat_rows: list[dict[str, object]],
+) -> tuple[Path, Path]:
+    output_path = Path(output_root)
+    output_path.mkdir(parents=True, exist_ok=True)
+    csv_path = output_path / "posterior_predictive_stats.csv"
+    md_path = output_path / "posterior_predictive_stats.md"
+    columns = [
+        "statistic",
+        "observed_value",
+        "sample_mean",
+        "sample_std",
+        "z_score",
+        "tail_probability",
+        "q025",
+        "q500",
+        "q975",
+        "in_95_interval",
+    ]
+    write_csv(csv_path, stat_rows, columns)
+    with md_path.open("w", encoding="utf-8") as handle:
+        write_markdown_table(handle, stat_rows, columns)
+    return csv_path, md_path
+
+
+def _finite_summary(values: np.ndarray) -> dict[str, object]:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return {
+            "sample_mean": "",
+            "sample_std": "",
+            "q025": "",
+            "q500": "",
+            "q975": "",
+            "num_finite_samples": 0,
+        }
+    q025, q500, q975 = np.quantile(finite, [0.025, 0.5, 0.975])
+    return {
+        "sample_mean": float(np.mean(finite)),
+        "sample_std": float(np.std(finite, ddof=0)),
+        "q025": float(q025),
+        "q500": float(q500),
+        "q975": float(q975),
+        "num_finite_samples": int(finite.size),
+    }
+
+
+def write_counterfactual_summary_tables(
+    output_root: str | Path,
+    *,
+    sample_summaries: dict[str, np.ndarray],
+) -> tuple[Path, Path, Path]:
+    output_path = Path(output_root)
+    output_path.mkdir(parents=True, exist_ok=True)
+    sample_npz_path = output_path / "counterfactual_sample_summaries.npz"
+    summary_csv_path = output_path / "counterfactual_summary.csv"
+    unit_csv_path = output_path / "counterfactual_unit_summary.csv"
+    np.savez(io_path(sample_npz_path), **sample_summaries)
+
+    summary_rows = []
+    for key in [
+        "overall_mean_magnetization",
+        "post_intervention_mean_magnetization",
+    ]:
+        row = {"statistic": key}
+        row.update(_finite_summary(np.asarray(sample_summaries[key], dtype=float)))
+        summary_rows.append(row)
+    write_csv(
+        summary_csv_path,
+        summary_rows,
+        [
+            "statistic",
+            "sample_mean",
+            "sample_std",
+            "q025",
+            "q500",
+            "q975",
+            "num_finite_samples",
+        ],
+    )
+
+    unit_values = np.asarray(sample_summaries["unit_mean_magnetization"], dtype=float)
+    unit_rows = []
+    for unit_index in range(unit_values.shape[1]):
+        row = {"unit_index": int(unit_index)}
+        row.update(_finite_summary(unit_values[:, unit_index]))
+        unit_rows.append(row)
+    write_csv(
+        unit_csv_path,
+        unit_rows,
+        [
+            "unit_index",
+            "sample_mean",
+            "sample_std",
+            "q025",
+            "q500",
+            "q975",
+            "num_finite_samples",
+        ],
+    )
+    return sample_npz_path, summary_csv_path, unit_csv_path

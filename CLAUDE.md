@@ -56,9 +56,11 @@ Each entry is deep-merged with `base`; entries inherit all base fields they don'
 |---|---|
 | `mple.py` | Core MPLE optimizer (all three modes). Also the subprocess entry point called by `run_fit_pipeline.py`. |
 | `model_utils.py` | ModelArtifacts dataclass, parameter packing/unpacking, field matrix operations, named constants. |
-| `posterior_predictive_utils.py` | Gibbs-sampling outcome simulator, parameter bundle I/O, intervention context loading. |
+| `loading_utils.py` | Experiment/panel artifact loading plus fit/truth parameter-bundle loading and persistence. |
+| `intervention_utils.py` | Intervention-panel construction plus saved-intervention artifact loading and resolution. |
+| `posterior_predictive_utils.py` | Gibbs-sampling outcome simulation and posterior-predictive summary statistics. |
 | `pipeline_specs.py` | YAML spec loading, deep-merge, `expand_named_entries`, `validate_fits_spec`, manifest I/O. |
-| `io_utils.py` | Shared I/O helpers: `load_yaml_config`, `first_existing_path`, `load_gamma_matrix`, CSV/Markdown writers. |
+| `io_utils.py` | Shared I/O helpers: `load_yaml_config`, `first_existing_path`, `load_gamma_matrix`, path handling, CSV/Markdown writers. |
 | `latent_recovery_diagnostics.py` | Diagnostic stats (RMSE, correlation, cosine alignment) between true and estimated fields. |
 
 ## Important Config Semantics

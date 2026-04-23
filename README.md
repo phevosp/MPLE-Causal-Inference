@@ -430,7 +430,9 @@ They call the same Python entry points and accept environment-variable overrides
 - `run_posterior_predictive_pipeline.py`: posterior-predictive orchestration
 - `mple.py`: conditional MPLE optimizer and artifact writer
 - `model_utils.py`: model artifact loading, parameter packing, and field utilities
-- `posterior_predictive_utils.py`: predictive simulation, intervention loading, and summary utilities
+- `loading_utils.py`: experiment/panel artifact loading plus fit/truth parameter-bundle loading
+- `intervention_utils.py`: intervention construction and saved-intervention artifact helpers
+- `posterior_predictive_utils.py`: predictive simulation and posterior-predictive summary utilities
 - `pipeline_specs.py`: YAML deep-merge, slugging, and manifest helpers
 - `tests/test_minimal_pipeline.py`: regression coverage for generation, fitting, summaries, and predictive ranking
 

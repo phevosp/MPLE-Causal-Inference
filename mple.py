@@ -17,6 +17,8 @@ from pymanopt import Problem, function
 from pymanopt.manifolds import Euclidean, FixedRankEmbedded, Product
 from pymanopt.optimizers import ConjugateGradient
 
+from io_utils import first_existing_path, io_path, load_gamma_matrix, load_yaml_config
+from loading_utils import save_estimated_parameter_bundle
 from model_utils import (
     ModelArtifacts,
     OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK,
@@ -40,8 +42,6 @@ from model_utils import (
     validate_fixed_scalar_params,
     with_theta_field,
 )
-from posterior_predictive_utils import _io_path, save_estimated_parameter_bundle
-from io_utils import first_existing_path, load_gamma_matrix, load_yaml_config
 
 _RANDOM_INIT_SCALE = 0.05  # std-dev for random scalar/singular-value initializations
 
@@ -1797,12 +1797,12 @@ def save_estimated_artifacts(
     )
     if sparse.issparse(estimated_interaction):
         sparse.save_npz(
-            _io_path(Path(data_folder) / "estimated_interaction_matrix_sparse.npz"),
+            io_path(Path(data_folder) / "estimated_interaction_matrix_sparse.npz"),
             estimated_interaction,
         )
     else:
         np.save(
-            _io_path(Path(data_folder) / "estimated_interaction_matrix.npy"),
+            io_path(Path(data_folder) / "estimated_interaction_matrix.npy"),
             estimated_interaction,
         )
     save_estimated_parameter_bundle(
@@ -1825,12 +1825,12 @@ def save_estimated_artifacts(
         return
     if sparse.issparse(true_interaction):
         sparse.save_npz(
-            _io_path(Path(data_folder) / "true_interaction_matrix_sparse.npz"),
+            io_path(Path(data_folder) / "true_interaction_matrix_sparse.npz"),
             true_interaction,
         )
     else:
         np.save(
-            _io_path(Path(data_folder) / "true_interaction_matrix.npy"),
+            io_path(Path(data_folder) / "true_interaction_matrix.npy"),
             true_interaction,
         )
 

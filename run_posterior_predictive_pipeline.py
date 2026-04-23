@@ -14,6 +14,17 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
+from intervention_utils import (
+    COUNTERFACTUAL_MANIFEST_NAME,
+    COUNTERFACTUAL_ROOT_NAME,
+    resolve_intervention_context,
+)
+from io_utils import io_path, write_counterfactual_summary_tables, write_predictive_stats_tables
+from loading_utils import (
+    load_experiment_panel_context,
+    load_fit_parameter_bundle,
+    load_truth_parameter_bundle,
+)
 from pipeline_specs import (
     expand_named_entries,
     read_csv_manifest,
@@ -21,19 +32,10 @@ from pipeline_specs import (
     write_csv_manifest,
 )
 from posterior_predictive_utils import (
-    COUNTERFACTUAL_MANIFEST_NAME,
-    COUNTERFACTUAL_ROOT_NAME,
-    _io_path,
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
-    load_experiment_panel_context,
-    load_fit_parameter_bundle,
-    load_truth_parameter_bundle,
-    resolve_intervention_context,
     simulate_outcomes_for_bundle,
     summarize_predictive_statistics,
-    write_counterfactual_summary_tables,
-    write_predictive_stats_tables,
 )
 from report_posterior_predictive import write_posterior_predictive_reports
 
@@ -102,7 +104,7 @@ def _experiment_has_truth(experiment_row: dict[str, str]) -> bool:
     )
     if not metadata_path.exists():
         return True
-    with open(_io_path(metadata_path), "r", encoding="utf-8") as handle:
+    with open(io_path(metadata_path), "r", encoding="utf-8") as handle:
         metadata = OmegaConf.to_container(OmegaConf.load(handle), resolve=True)
     if not isinstance(metadata, dict):
         return True
@@ -365,7 +367,7 @@ def _simulate_target(
         if intervention_source == "observed_experiment"
         else "counterfactual_metadata.yaml"
     )
-    with open(_io_path(metadata_path), "w", encoding="utf-8") as handle:
+    with open(io_path(metadata_path), "w", encoding="utf-8") as handle:
         OmegaConf.save(OmegaConf.create(metadata), handle)
     base_row = {
         "experiment_name": experiment_row.get("experiment_name", ""),
