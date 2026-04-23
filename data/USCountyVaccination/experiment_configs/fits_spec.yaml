@@ -6,24 +6,22 @@ base:
     tol: 1.0e-9
     seed: 0
     n_starts: 5
-    adam_steps: 1000
-    adam_lr: 1.0e-2
-    adam_device: cpu
     proximal_lr: 1.0
-  B: 1.0
   latent_rank: 0
-  field_mode: low_rank
+  optimizer_mode: manifold
   lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.0
   estimation:
     fixed_scalar_params: {}
 
 variants:
-  - name: rank_10_B1
+  - name: rank_10
     latent_rank: 10
 
-  - name: rank_40_B1
+  - name: rank_40
     latent_rank: 40
 
-  - name: rank_40_B5
+  - name: rank_40_penalized
     latent_rank: 40
-    B: 5.0
+    lambda_uv_ridge: 0.1

@@ -20,7 +20,6 @@ PER_EXPERIMENT_COLUMNS = [
     "source_name",
     "source_slug",
     "latent_rank",
-    "B",
     "rank_in_experiment",
     "is_best",
     "mean_abs_zscore",
@@ -45,7 +44,6 @@ WINNER_COLUMNS = [
     "source_name",
     "source_slug",
     "latent_rank",
-    "B",
     "mean_abs_zscore",
     "max_abs_zscore",
     "coverage_rate",
@@ -72,7 +70,6 @@ def collect_predictive_rows(manifest_path: str | Path) -> list[dict[str, object]
     for manifest_row in read_csv_manifest(manifest_path):
         row: dict[str, object] = dict(manifest_row)
         for key in [
-            "B",
             "mean_abs_zscore",
             "max_abs_zscore",
             "coverage_rate",

@@ -7,7 +7,12 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from pipeline_specs import expand_named_entries, read_csv_manifest, slugify, write_csv_manifest
+from pipeline_specs import (
+    expand_named_entries,
+    read_csv_manifest,
+    slugify,
+    write_csv_manifest,
+)
 from posterior_predictive_utils import (
     COUNTERFACTUAL_MANIFEST_NAME,
     COUNTERFACTUAL_ROOT_NAME,
@@ -17,7 +22,6 @@ from posterior_predictive_utils import (
     load_experiment_panel_context,
     load_fit_parameter_bundle,
     load_truth_parameter_bundle,
-    load_yaml_config,
     resolve_intervention_context,
     simulate_outcomes_for_bundle,
     summarize_predictive_statistics,
@@ -69,16 +73,6 @@ def _resolve_fit_lookup(
     return lookup
 
 
-def _load_truth_bound(experiment_root: str | Path) -> float | None:
-    config_path = Path(experiment_root) / "generation_realized_config.yaml"
-    if not config_path.exists():
-        return None
-    config = load_yaml_config(config_path)
-    if "global_params" not in config or "B" not in config.global_params:
-        return None
-    return float(config.global_params.B)
-
-
 def _as_bool(value: object, default: bool = True) -> bool:
     if value in (None, ""):
         return default
@@ -95,7 +89,10 @@ def _as_bool(value: object, default: bool = True) -> bool:
 def _experiment_has_truth(experiment_row: dict[str, str]) -> bool:
     if "has_truth" in experiment_row:
         return _as_bool(experiment_row.get("has_truth"), default=True)
-    metadata_path = Path(str(experiment_row.get("experiment_path", ""))) / "experiment_metadata.yaml"
+    metadata_path = (
+        Path(str(experiment_row.get("experiment_path", "")))
+        / "experiment_metadata.yaml"
+    )
     if not metadata_path.exists():
         return True
     with open(_io_path(metadata_path), "r", encoding="utf-8") as handle:
@@ -174,7 +171,12 @@ def _resolve_target_pairs(
                 f"Target-pairs manifest {target_pairs_path} has invalid intervention_source '{intervention_source}' for experiment '{experiment_name}'."
             )
 
-        dedupe_key = (experiment_name, source_slug, intervention_source, intervention_slug)
+        dedupe_key = (
+            experiment_name,
+            source_slug,
+            intervention_source,
+            intervention_slug,
+        )
         if dedupe_key in seen_keys:
             raise ValueError(
                 f"Target-pairs manifest {target_pairs_path} contains duplicate target for experiment '{experiment_name}', source '{source_slug}', and intervention '{intervention_slug}'."
@@ -239,12 +241,10 @@ def _simulate_target(
     )
     if target["source_type"] == "truth":
         bundle = load_truth_parameter_bundle(experiment_root)
-        bound_B = _load_truth_bound(experiment_root)
     else:
         fit_row = target["fit_row"]
         fit_root = Path(str(fit_row["fit_path"]))
         bundle = load_fit_parameter_bundle(fit_root, experiment_root)
-        bound_B = float(fit_row["B"]) if str(fit_row.get("B", "")).strip() else None
     if int(bundle.t_steps) != int(panel_context["T"]):
         raise ValueError(
             f"Posterior-predictive source '{target['source_name']}' has t_steps={bundle.t_steps},"
@@ -299,9 +299,9 @@ def _simulate_target(
             counterfactual_sample_summaries["overall_mean_magnetization"].append(
                 sample_summary["overall_mean_magnetization"]
             )
-            counterfactual_sample_summaries["post_intervention_mean_magnetization"].append(
-                sample_summary["post_intervention_mean_magnetization"]
-            )
+            counterfactual_sample_summaries[
+                "post_intervention_mean_magnetization"
+            ].append(sample_summary["post_intervention_mean_magnetization"])
             counterfactual_sample_summaries["unit_mean_magnetization"].append(
                 sample_summary["unit_mean_magnetization"]
             )
@@ -347,7 +347,6 @@ def _simulate_target(
         "intervention_name": intervention_name,
         "intervention_slug": intervention_slug,
         "latent_rank": int(bundle.latent_rank),
-        "B": bound_B,
         "num_samples": num_samples,
         "gibbs_sweeps": gibbs_sweeps,
         "seed": seed,
@@ -380,7 +379,6 @@ def _simulate_target(
         "target_intervention_name": intervention_name,
         "target_intervention_slug": intervention_slug,
         "latent_rank": int(bundle.latent_rank),
-        "B": bound_B if bound_B is not None else "",
         "num_samples": num_samples,
         "gibbs_sweeps": gibbs_sweeps,
         "seed": seed,

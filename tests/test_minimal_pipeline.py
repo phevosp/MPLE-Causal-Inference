@@ -120,8 +120,6 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         artifacts = build_synthetic_field(config, gamma)
         self.assertEqual(artifacts.latent_rank, 0)
-        self.assertIsNone(artifacts.node_factors)
-        self.assertIsNone(artifacts.time_factors)
         self.assertTrue(np.allclose(artifacts.field_matrix, 0.0))
 
     def test_xi_is_scalar(self) -> None:
@@ -302,14 +300,10 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         artifacts = build_synthetic_field(config, gamma)
         self.assertEqual(artifacts.latent_rank, 2)
-        self.assertIsNone(artifacts.node_factors)
-        self.assertIsNone(artifacts.time_factors)
         field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
         self.assertEqual(field_matrix.shape, (3, 4))
         self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
-        self.assertLessEqual(
-            latent_field_bound_norm(field_matrix), 1.0 + 1e-8
-        )
+        self.assertLessEqual(latent_field_bound_norm(field_matrix), 1.0 + 1e-8)
 
     def test_generated_latent_field_uses_target_rms_scaling(self) -> None:
         config = base_config()
@@ -328,8 +322,6 @@ class MinimalPipelineTests(unittest.TestCase):
         field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
         target_rms = 0.4 * float(config.global_params.B)
 
-        self.assertIsNone(artifacts.node_factors)
-        self.assertIsNone(artifacts.time_factors)
         self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
         self.assertLessEqual(
             float(np.sqrt(np.mean(field_matrix**2))),
@@ -372,20 +364,20 @@ class MinimalPipelineTests(unittest.TestCase):
             loaded = load_model_artifacts(root)
             theta = load_true_parameters(config, loaded)
             self.assertEqual(loaded.t_steps, 3)
-            self.assertIsNone(loaded.node_factors)
-            self.assertIsNone(loaded.time_factors)
             self.assertEqual(theta.shape[0], 3 * 4 + 3)
             with np.load(root / "field_artifacts.npz", allow_pickle=False) as data:
                 self.assertIn("field_matrix", data)
                 self.assertIn("latent_rank", data)
                 self.assertIn("t_steps", data)
-                self.assertIn("field_mode", data)
+                self.assertNotIn("field_mode", data)
                 self.assertNotIn("node_factors", data)
                 self.assertNotIn("time_factors", data)
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_canonicalization_enforces_B_on_scalars_and_interaction(self) -> None:
+    def test_canonicalization_preserves_unconstrained_scalars_and_interaction(
+        self,
+    ) -> None:
         gamma = np.array([[0.0, 2.0], [2.0, 0.0]], dtype=float)
         artifacts = ModelArtifacts(
             gamma_matrix=gamma,
@@ -396,15 +388,17 @@ class MinimalPipelineTests(unittest.TestCase):
         projected = _canonicalize_theta(
             theta=theta,
             artifacts=artifacts,
-            bound_B=1.0,
         )
         parts = unpack_theta(projected, artifacts)
-        self.assertLessEqual(abs(float(parts["beta"])), 1.0 + 1e-12)
-        self.assertLessEqual(abs(float(parts["eta"])), 1.0 + 1e-12)
-        interaction = compose_interaction_matrix(float(parts["xi"]), artifacts.gamma_matrix)
-        self.assertLessEqual(
+        self.assertAlmostEqual(float(parts["beta"]), 5.0)
+        self.assertAlmostEqual(float(parts["xi"]), 4.0)
+        self.assertAlmostEqual(float(parts["eta"]), -3.5)
+        interaction = compose_interaction_matrix(
+            float(parts["xi"]), artifacts.gamma_matrix
+        )
+        self.assertGreater(
             interaction_matrix_infinity_norm(interaction),
-            1.0 + 1e-12,
+            1.0,
         )
 
     def test_pseudo_nll_gradient_matches_low_rank_factor_loss_scaling(self) -> None:
@@ -456,7 +450,7 @@ class MinimalPipelineTests(unittest.TestCase):
             gamma_matrix=gamma,
             t_steps=2,
             latent_rank=0,
-            field_mode="nuclear_norm",
+            optimizer_mode="nuclear_norm",
         )
         theta = np.array([0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2], dtype=float)
         direction = np.array([0.2, -0.1, 0.3, -0.4, 0.5, 0.1, -0.2], dtype=float)
@@ -482,7 +476,7 @@ class MinimalPipelineTests(unittest.TestCase):
             places=8,
         )
 
-    def test_fit_mple_supports_adam_multistart(self) -> None:
+    def test_fit_mple_uses_pymanopt_multistart_for_low_rank(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
@@ -505,17 +499,102 @@ class MinimalPipelineTests(unittest.TestCase):
             tol=1.0e-6,
             seed=11,
             verbose_every=0,
-            bound_B=1.0,
             n_starts=2,
-            adam_steps=2,
-            adam_lr=1.0e-2,
         )
 
         self.assertEqual(theta_hat.shape, (len(param_keys),))
         self.assertTrue(np.isfinite(loss_history[-1]))
         self.assertEqual(result["n_starts"], 2)
-        self.assertEqual(result["adam_steps"], 2)
+        self.assertEqual(result["optimizer"], "pymanopt_conjugate_gradient")
         self.assertEqual(len(result["start_summaries"]), 2)
+        self.assertIn(int(result["best_start"]), (0, 1))
+        self.assertIn("mple_history", result)
+        self.assertIn("penalized_history", result)
+        self.assertEqual(
+            sorted(result["start_summaries"][0].keys()),
+            sorted(
+                [
+                    "start_index",
+                    "seed",
+                    "initialization_kind",
+                    "initial_mple_loss",
+                    "initial_penalized_objective",
+                    "final_mple_loss",
+                    "final_penalized_objective",
+                    "iterations",
+                    "cost_evaluations",
+                    "success",
+                    "message",
+                ]
+            ),
+        )
+
+    def test_manifold_frobenius_penalty_shrinks_field_norm(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+        )
+        fixed_scalars = {"beta": 0.0, "xi": 0.0, "eta": 0.0}
+        param_keys = parameter_names(
+            artifacts,
+            fixed_scalar_params=fixed_scalars,
+        )
+        low_penalty_theta, _, low_penalty_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=10,
+            tol=1.0e-8,
+            seed=11,
+            verbose_every=0,
+            n_starts=1,
+            fixed_scalar_params=fixed_scalars,
+            lambda_frobenius=0.0,
+        )
+        high_penalty_theta, _, high_penalty_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=10,
+            tol=1.0e-8,
+            seed=11,
+            verbose_every=0,
+            n_starts=1,
+            fixed_scalar_params=fixed_scalars,
+            lambda_frobenius=1.0,
+        )
+
+        self.assertEqual(low_penalty_theta.shape, high_penalty_theta.shape)
+        self.assertEqual(
+            high_penalty_result["optimizer"],
+            "pymanopt_conjugate_gradient",
+        )
+        self.assertAlmostEqual(float(high_penalty_result["lambda_frobenius"]), 1.0)
+        self.assertLess(
+            float(high_penalty_result["frobenius_norm"]),
+            float(low_penalty_result["frobenius_norm"]),
+        )
+        self.assertAlmostEqual(
+            float(high_penalty_result["normalized_frobenius_norm"]),
+            float(high_penalty_result["frobenius_norm"]) / 2.0,
+        )
+        self.assertGreaterEqual(
+            float(high_penalty_result["final_penalized_objective"]),
+            float(high_penalty_result["final_mple_loss"]),
+        )
 
     def test_parameter_names_and_unpack_respect_fixed_scalars(self) -> None:
         artifacts = ModelArtifacts(
@@ -564,19 +643,21 @@ class MinimalPipelineTests(unittest.TestCase):
 
     def test_nuclear_norm_fit_mode_uses_full_field_parameterization(self) -> None:
         config = base_config()
-        config.global_params.field_mode = "nuclear_norm"
+        config.global_params.optimizer_mode = "nuclear_norm"
         config.global_params.latent_rank = 99
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
 
         artifacts = build_fit_model_artifacts(config, gamma)
         names = parameter_names(artifacts)
 
-        self.assertEqual(artifacts.field_mode, "nuclear_norm")
+        self.assertEqual(artifacts.optimizer_mode, "nuclear_norm")
         self.assertEqual(artifacts.latent_rank, 0)
         self.assertEqual(len([name for name in names if name.startswith("F::")]), 6)
         self.assertEqual(names[-3:], ["beta", "xi", "eta"])
 
-    def test_nuclear_norm_fit_enforces_B_and_shrinks_singular_values(self) -> None:
+    def test_nuclear_norm_fit_shrinks_singular_values_without_field_clipping(
+        self,
+    ) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
@@ -585,7 +666,7 @@ class MinimalPipelineTests(unittest.TestCase):
             gamma_matrix=gamma,
             t_steps=2,
             latent_rank=0,
-            field_mode="nuclear_norm",
+            optimizer_mode="nuclear_norm",
         )
         param_keys = parameter_names(artifacts)
 
@@ -601,7 +682,6 @@ class MinimalPipelineTests(unittest.TestCase):
             tol=0.0,
             seed=11,
             verbose_every=0,
-            bound_B=0.25,
             lambda_nuclear=0.0,
         )
         high_penalty_theta, _, high_penalty_result = fit_mple(
@@ -616,7 +696,6 @@ class MinimalPipelineTests(unittest.TestCase):
             tol=0.0,
             seed=11,
             verbose_every=0,
-            bound_B=0.25,
             lambda_nuclear=0.5,
         )
 
@@ -628,19 +707,70 @@ class MinimalPipelineTests(unittest.TestCase):
             high_penalty_theta,
             artifacts,
         )["field_matrix"]
-        self.assertLessEqual(latent_field_bound_norm(low_field), 0.25 + 1e-12)
-        self.assertLessEqual(latent_field_bound_norm(high_field), 0.25 + 1e-12)
+        self.assertGreater(latent_field_bound_norm(low_field), 0.25)
         self.assertLessEqual(
             float(np.linalg.svd(high_field, compute_uv=False).sum()),
             float(np.linalg.svd(low_field, compute_uv=False).sum()) + 1e-12,
         )
-        self.assertEqual(low_penalty_result["field_mode"], "nuclear_norm")
-        self.assertEqual(high_penalty_result["field_mode"], "nuclear_norm")
-        self.assertAlmostEqual(float(high_penalty_result["nuclear_norm_normalizer"]), 2.0)
+        self.assertEqual(low_penalty_result["optimizer_mode"], "nuclear_norm")
+        self.assertEqual(high_penalty_result["optimizer_mode"], "nuclear_norm")
+        self.assertAlmostEqual(
+            float(high_penalty_result["nuclear_norm_normalizer"]), 2.0
+        )
         self.assertAlmostEqual(
             float(high_penalty_result["normalized_nuclear_norm"]),
             float(high_penalty_result["nuclear_norm"]) / 2.0,
         )
+
+    def test_alternative_low_rank_uses_generic_bookkeeping(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternative_low_rank",
+        )
+        param_keys = parameter_names(artifacts)
+
+        theta_hat, loss_history, result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=4,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=2,
+            lambda_uv_ridge=0.1,
+        )
+
+        self.assertEqual(theta_hat.shape, (len(param_keys),))
+        self.assertTrue(np.isfinite(loss_history[-1]))
+        self.assertEqual(result["optimizer_mode"], "alternative_low_rank")
+        self.assertEqual(result["optimizer"], "alternating_low_rank")
+        self.assertEqual(result["n_starts"], 2)
+        self.assertEqual(len(result["start_summaries"]), 2)
+        self.assertIn("mple_history", result)
+        self.assertIn("penalized_history", result)
+        self.assertAlmostEqual(float(result["lambda_uv_ridge"]), 0.1)
+
+    def test_build_fit_model_artifacts_rejects_nonpositive_alternative_rank(
+        self,
+    ) -> None:
+        config = base_config()
+        config.global_params.optimizer_mode = "alternative_low_rank"
+        config.global_params.latent_rank = 0
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+
+        with self.assertRaisesRegex(ValueError, "alternative_low_rank"):
+            build_fit_model_artifacts(config, gamma)
 
 
 class FitReportingTests(unittest.TestCase):
@@ -661,6 +791,7 @@ class FitReportingTests(unittest.TestCase):
         intervention_source: str = "generated",
         graph_source: str = "generated",
         latent_rank: int = 0,
+        optimizer_mode: str = "manifold",
         B: float = 1.0,
         fixed_scalar_params: str = "{}",
     ) -> dict[str, object]:
@@ -678,7 +809,12 @@ class FitReportingTests(unittest.TestCase):
             for name, (estimate, truth, squared_error) in summary_entries.items():
                 writer.writerow(
                     {
-                        "category": "metric" if name in {"final_loss", "field_rmse", "interaction_fro_error"} else "scalar",
+                        "category": (
+                            "metric"
+                            if name
+                            in {"final_loss", "field_rmse", "interaction_fro_error"}
+                            else "scalar"
+                        ),
                         "name": name,
                         "estimate": "" if estimate is None else estimate,
                         "true": "" if truth is None else truth,
@@ -726,6 +862,7 @@ class FitReportingTests(unittest.TestCase):
             "s": 1,
             "B": B,
             "latent_rank": latent_rank,
+            "optimizer_mode": optimizer_mode,
             "fixed_scalar_params": fixed_scalar_params,
             "status": "completed",
         }
@@ -894,6 +1031,9 @@ class FitReportingTests(unittest.TestCase):
                     "    seed: 0",
                     "  B: 1.0",
                     "  latent_rank: 0",
+                    "  optimizer_mode: manifold",
+                    "  lambda_frobenius: 0.0",
+                    "  lambda_uv_ridge: 0.0",
                     "  estimation:",
                     "    fixed_scalar_params: {}",
                     "variants:",
@@ -905,7 +1045,7 @@ class FitReportingTests(unittest.TestCase):
                     "        xi: 0.1",
                     "        eta: 0.05",
                     "  - name: nuclear_lambda_1e_2_B1",
-                    "    field_mode: nuclear_norm",
+                    "    optimizer_mode: nuclear_norm",
                     "    lambda_nuclear: 0.01",
                     "    B: 1.0",
                 ]
@@ -932,6 +1072,9 @@ class FitReportingTests(unittest.TestCase):
         self.assertEqual(sum(row["is_best"] == "True" for row in rows), 1)
         self.assertEqual(len(rows), 3)
         self.assertIn("total_recovery_rmse", rows[0])
+        self.assertIn("optimizer_mode", rows[0])
+        self.assertIn("lambda_frobenius", rows[0])
+        self.assertIn("lambda_uv_ridge", rows[0])
         nuclear_root = experiment_root / "fits" / "nuclear_lambda_1e_2_b1"
         self.assertTrue((nuclear_root / "mple_summary.csv").exists())
         self.assertTrue((nuclear_root / "estimated_field_artifacts.npz").exists())
@@ -942,7 +1085,12 @@ class FitReportingTests(unittest.TestCase):
         self.assertEqual(len(winner_rows), 1)
         self.assertEqual(winner_rows[0]["experiment_name"], "smoke_rank_0")
         self.assertIn("total_recovery_rmse", winner_rows[0])
-        self.assertEqual(Path(fit_manifest), self.root / "generated" / "fit_manifest.csv")
+        self.assertIn("optimizer_mode", winner_rows[0])
+        self.assertIn("lambda_frobenius", winner_rows[0])
+        self.assertIn("lambda_uv_ridge", winner_rows[0])
+        self.assertEqual(
+            Path(fit_manifest), self.root / "generated" / "fit_manifest.csv"
+        )
 
 
 class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
@@ -1069,7 +1217,9 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             config,
             metadata,
             gamma,
-            pd.DataFrame({"fips": ["01001", "01003"], "neighbor_fips": ["01003", "01005"]}),
+            pd.DataFrame(
+                {"fips": ["01001", "01003"], "neighbor_fips": ["01003", "01005"]}
+            ),
             panel,
             node_table,
             time_index,
@@ -1115,7 +1265,16 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         self.assertEqual(artifacts.field_matrix.shape, (4, 4))
         self.assertTrue((experiment_root / "node_index.csv").exists())
         self.assertTrue((experiment_root / "time_index.csv").exists())
-        for key in ["experiment_name", "experiment_path", "intervention_source", "graph_source", "N", "T", "s", "has_truth"]:
+        for key in [
+            "experiment_name",
+            "experiment_path",
+            "intervention_source",
+            "graph_source",
+            "N",
+            "T",
+            "s",
+            "has_truth",
+        ]:
             self.assertIn(key, manifest_row)
 
     def test_us_county_sensitivity_materializes_start_week_slices(self) -> None:
@@ -1148,7 +1307,12 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
 
         derived_root = Path(rows[0]["experiment_path"])
         self.assertTrue((derived_root / "panel_data.npz").exists())
-        self.assertTrue(np.array_equal(np.load(derived_root / "x_0.npy"), np.array([1, 1, -1, -1], dtype=np.int8)))
+        self.assertTrue(
+            np.array_equal(
+                np.load(derived_root / "x_0.npy"),
+                np.array([1, 1, -1, -1], dtype=np.int8),
+            )
+        )
         derived_dims = infer_panel_dimensions(derived_root)
         self.assertEqual(derived_dims, {"N": 4, "T": 2, "s": 0})
 
@@ -1156,8 +1320,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         self.assertEqual(len(fit_spec.variants), 6)
         self.assertEqual(fit_spec.base.optimizer.steps, 3)
         self.assertEqual(fit_spec.base.optimizer.n_starts, 1)
-        self.assertEqual(fit_spec.base.optimizer.adam_steps, 0)
-        self.assertEqual(fit_spec.variants[-1].field_mode, "nuclear_norm")
+        self.assertEqual(fit_spec.variants[-1].optimizer_mode, "nuclear_norm")
         self.assertAlmostEqual(float(fit_spec.variants[-1].lambda_nuclear), 0.01)
 
     def test_us_county_truth_targets_are_rejected(self) -> None:
@@ -1268,8 +1431,14 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         )
         self.assertEqual(Path(manifest_path), self.root / COUNTERFACTUAL_MANIFEST_NAME)
         self.assertTrue((self.root / COUNTERFACTUAL_MANIFEST_NAME).exists())
-        self.assertTrue(Path(_io_path(counterfactual_root / "counterfactual_summary.csv")).exists())
-        self.assertTrue(Path(_io_path(counterfactual_root / "counterfactual_unit_summary.csv")).exists())
+        self.assertTrue(
+            Path(_io_path(counterfactual_root / "counterfactual_summary.csv")).exists()
+        )
+        self.assertTrue(
+            Path(
+                _io_path(counterfactual_root / "counterfactual_unit_summary.csv")
+            ).exists()
+        )
 
 
 class PosteriorPredictiveTests(unittest.TestCase):
@@ -1354,7 +1523,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "max_abs_zscore": 0.50,
                     "coverage_rate": 1.0,
                     "num_statistics": 10,
-                    "output_path": str((self.root / "exp_a" / "posterior_predictive" / "truth" / "run_one").resolve()),
+                    "output_path": str(
+                        (
+                            self.root
+                            / "exp_a"
+                            / "posterior_predictive"
+                            / "truth"
+                            / "run_one"
+                        ).resolve()
+                    ),
                 },
                 {
                     "experiment_name": "exp_a",
@@ -1380,7 +1557,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "max_abs_zscore": 0.45,
                     "coverage_rate": 0.9,
                     "num_statistics": 10,
-                    "output_path": str((self.root / "exp_a" / "posterior_predictive" / "fit_rank_0" / "run_one").resolve()),
+                    "output_path": str(
+                        (
+                            self.root
+                            / "exp_a"
+                            / "posterior_predictive"
+                            / "fit_rank_0"
+                            / "run_one"
+                        ).resolve()
+                    ),
                 },
             ]
         )
@@ -1418,7 +1603,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "max_abs_zscore": 0.60,
                     "coverage_rate": 0.9,
                     "num_statistics": 10,
-                    "output_path": str((self.root / "exp_tie" / "posterior_predictive" / "fit_variant_worse_max" / "run_one").resolve()),
+                    "output_path": str(
+                        (
+                            self.root
+                            / "exp_tie"
+                            / "posterior_predictive"
+                            / "fit_variant_worse_max"
+                            / "run_one"
+                        ).resolve()
+                    ),
                 },
                 {
                     "experiment_name": "exp_tie",
@@ -1444,7 +1637,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "max_abs_zscore": 0.40,
                     "coverage_rate": 0.9,
                     "num_statistics": 10,
-                    "output_path": str((self.root / "exp_tie" / "posterior_predictive" / "fit_variant_better_max" / "run_one").resolve()),
+                    "output_path": str(
+                        (
+                            self.root
+                            / "exp_tie"
+                            / "posterior_predictive"
+                            / "fit_variant_better_max"
+                            / "run_one"
+                        ).resolve()
+                    ),
                 },
             ]
         )
@@ -1485,8 +1686,16 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         target_pairs_path = self._write_target_pairs(
             [
-                {"experiment_name": "exp_a", "source_type": "truth", "variant_name": ""},
-                {"experiment_name": "exp_a", "source_type": "fit", "variant_name": "rank_0"},
+                {
+                    "experiment_name": "exp_a",
+                    "source_type": "truth",
+                    "variant_name": "",
+                },
+                {
+                    "experiment_name": "exp_a",
+                    "source_type": "fit",
+                    "variant_name": "rank_0",
+                },
             ]
         )
         generation_lookup = _index_generation_rows(generation_manifest_path)
@@ -1632,20 +1841,27 @@ class PosteriorPredictiveTests(unittest.TestCase):
         )
 
         experiment_root = self.root / "generated" / "smoke_rank_0"
-        observed_copy = load_saved_intervention_context(experiment_root, "observed_copy")
+        observed_copy = load_saved_intervention_context(
+            experiment_root, "observed_copy"
+        )
         full_on = load_saved_intervention_context(experiment_root, "full_on_from_s")
         single_unit = load_saved_intervention_context(
             experiment_root, "single_unit_2_from_step_2"
         )
 
-        self.assertEqual(Path(library_manifest), self.root / "generated" / "intervention_library_manifest.csv")
+        self.assertEqual(
+            Path(library_manifest),
+            self.root / "generated" / "intervention_library_manifest.csv",
+        )
         self.assertTrue(np.array_equal(observed_copy.z_0, np.zeros(6, dtype=float)))
         self.assertTrue(np.array_equal(full_on.z[:1, :], -np.ones((1, 6), dtype=float)))
         self.assertTrue(np.array_equal(full_on.z[1:, :], np.ones((3, 6), dtype=float)))
         self.assertEqual(full_on.s, 1)
         self.assertTrue(np.array_equal(single_unit.z[:2, 2], -np.ones(2, dtype=float)))
         self.assertTrue(np.array_equal(single_unit.z[2:, 2], np.ones(2, dtype=float)))
-        self.assertTrue(np.array_equal(single_unit.z[:, :2], -np.ones((4, 2), dtype=float)))
+        self.assertTrue(
+            np.array_equal(single_unit.z[:, :2], -np.ones((4, 2), dtype=float))
+        )
 
     def test_run_posterior_predictive_writes_counterfactual_outputs(self) -> None:
         generation_spec_path = self.root / "generation_spec.yaml"
@@ -1805,10 +2021,16 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertTrue(observed_output.exists())
         self.assertTrue(counterfactual_manifest.exists())
         self.assertTrue((counterfactual_root / "counterfactual_metadata.yaml").exists())
-        self.assertTrue((counterfactual_root / "counterfactual_sample_summaries.npz").exists())
+        self.assertTrue(
+            (counterfactual_root / "counterfactual_sample_summaries.npz").exists()
+        )
         self.assertTrue((counterfactual_root / "counterfactual_summary.csv").exists())
-        self.assertTrue((counterfactual_root / "counterfactual_unit_summary.csv").exists())
-        self.assertFalse((counterfactual_root / "posterior_predictive_stats.csv").exists())
+        self.assertTrue(
+            (counterfactual_root / "counterfactual_unit_summary.csv").exists()
+        )
+        self.assertFalse(
+            (counterfactual_root / "posterior_predictive_stats.csv").exists()
+        )
 
         with counterfactual_manifest.open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
@@ -1928,7 +2150,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         experiment_root = self.root / "generated" / "smoke_rank_0"
         truth_bundle = load_truth_parameter_bundle(experiment_root)
-        fit_bundle = load_fit_parameter_bundle(experiment_root / "fits" / "rank_0", experiment_root)
+        fit_bundle = load_fit_parameter_bundle(
+            experiment_root / "fits" / "rank_0", experiment_root
+        )
         self.assertEqual(truth_bundle.field_matrix.shape, (4, 6))
         self.assertEqual(fit_bundle.field_matrix.shape, (4, 6))
 
@@ -1970,8 +2194,12 @@ class PosteriorPredictiveTests(unittest.TestCase):
         )
         summary_csv = experiment_root / "posterior_predictive_summary.csv"
         summary_md = experiment_root / "posterior_predictive_summary.md"
-        winners_csv = self.root / "generated" / "best_posterior_predictive_by_experiment.csv"
-        winners_md = self.root / "generated" / "best_posterior_predictive_by_experiment.md"
+        winners_csv = (
+            self.root / "generated" / "best_posterior_predictive_by_experiment.csv"
+        )
+        winners_md = (
+            self.root / "generated" / "best_posterior_predictive_by_experiment.md"
+        )
 
         self.assertTrue(truth_default_csv.exists())
         self.assertTrue(truth_longer_csv.exists())

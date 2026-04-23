@@ -44,27 +44,40 @@ def infer_panel_dimensions(experiment_path: str | Path) -> dict[str, int]:
 def build_fit_config(
     variant: dict[str, Any],
     dims: dict[str, int],
-) -> tuple[object, float]:
+) -> object:
     optimizer = dict(variant.get("optimizer", {}) or {})
-    bound_B = float(variant["B"])
-    field_mode = str(variant.get("field_mode", "low_rank"))
-    if field_mode not in {"low_rank", "nuclear_norm"}:
-        raise ValueError("field_mode must be either 'low_rank' or 'nuclear_norm'.")
-    latent_rank = 0 if field_mode == "nuclear_norm" else int(variant.get("latent_rank", 0))
-    if field_mode == "low_rank" and latent_rank < 0:
-        raise ValueError("latent_rank must be nonnegative.")
+    optimizer_mode = str(variant.get("optimizer_mode", "manifold"))
+    if optimizer_mode not in {"manifold", "nuclear_norm", "alternative_low_rank"}:
+        raise ValueError(
+            "optimizer_mode must be one of 'manifold', 'nuclear_norm', or "
+            "'alternative_low_rank'."
+        )
+    latent_rank = (
+        0 if optimizer_mode == "nuclear_norm" else int(variant.get("latent_rank", 0))
+    )
+    if optimizer_mode == "alternative_low_rank" and latent_rank <= 0:
+        raise ValueError(
+            "latent_rank must be positive for optimizer_mode='alternative_low_rank'."
+        )
+    if optimizer_mode == "manifold" and latent_rank < 0:
+        raise ValueError(
+            "latent_rank must be nonnegative for optimizer_mode='manifold'."
+        )
     lambda_nuclear = float(variant.get("lambda_nuclear", 0.0))
     if lambda_nuclear < 0.0:
         raise ValueError("lambda_nuclear must be nonnegative.")
+    lambda_frobenius = float(variant.get("lambda_frobenius", 0.0))
+    if lambda_frobenius < 0.0:
+        raise ValueError("lambda_frobenius must be nonnegative.")
+    lambda_uv_ridge = float(variant.get("lambda_uv_ridge", 0.0))
+    if lambda_uv_ridge < 0.0:
+        raise ValueError("lambda_uv_ridge must be nonnegative.")
 
     optimizer_config: dict[str, Any] = {
         "steps": int(optimizer["steps"]),
         "tol": float(optimizer["tol"]),
         "seed": int(optimizer["seed"]),
         "n_starts": int(optimizer.get("n_starts", 1)),
-        "adam_steps": int(optimizer.get("adam_steps", 0)),
-        "adam_lr": float(optimizer.get("adam_lr", 1.0e-2)),
-        "adam_device": str(optimizer.get("adam_device", "cpu")),
         "proximal_lr": float(optimizer.get("proximal_lr", 1.0)),
     }
 
@@ -73,10 +86,11 @@ def build_fit_config(
             "N": dims["N"],
             "T": dims["T"],
             "s": dims["s"],
-            "B": bound_B,
             "latent_rank": latent_rank,
-            "field_mode": field_mode,
+            "optimizer_mode": optimizer_mode,
             "lambda_nuclear": lambda_nuclear,
+            "lambda_frobenius": lambda_frobenius,
+            "lambda_uv_ridge": lambda_uv_ridge,
         },
         "estimation_params": {
             "fixed_scalar_params": dict(
@@ -86,7 +100,7 @@ def build_fit_config(
         },
         "optimizer_params": optimizer_config,
     }
-    return OmegaConf.create(config_dict), bound_B
+    return OmegaConf.create(config_dict)
 
 
 def run_fit_variant(
@@ -106,7 +120,7 @@ def run_fit_variant(
     fit_root.mkdir(parents=True, exist_ok=False)
 
     dims = infer_panel_dimensions(experiment_root)
-    fit_config, resolved_B = build_fit_config(variant, dims)
+    fit_config = build_fit_config(variant, dims)
     config_path = fit_root / "fit_realized_config.yaml"
     fit_metadata = {
         "variant_name": variant["name"],
@@ -118,11 +132,11 @@ def run_fit_variant(
         "truth_artifact_dir": str(experiment_root.resolve()),
         "panel_path": str((experiment_root / "panel_data.npz").resolve()),
         "x0_path": str((experiment_root / "x_0.npy").resolve()),
-        "requested_B": variant.get("B"),
-        "resolved_B": float(resolved_B),
         "latent_rank": int(fit_config.global_params.latent_rank),
-        "field_mode": str(fit_config.global_params.field_mode),
+        "optimizer_mode": str(fit_config.global_params.optimizer_mode),
         "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
+        "lambda_frobenius": float(fit_config.global_params.lambda_frobenius),
+        "lambda_uv_ridge": float(fit_config.global_params.lambda_uv_ridge),
         **dims,
     }
     OmegaConf.save(fit_config, config_path)
@@ -158,10 +172,11 @@ def run_fit_variant(
         "N": dims["N"],
         "T": dims["T"],
         "s": dims["s"],
-        "B": float(resolved_B),
         "latent_rank": int(fit_config.global_params.latent_rank),
-        "field_mode": str(fit_config.global_params.field_mode),
+        "optimizer_mode": str(fit_config.global_params.optimizer_mode),
         "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
+        "lambda_frobenius": float(fit_config.global_params.lambda_frobenius),
+        "lambda_uv_ridge": float(fit_config.global_params.lambda_uv_ridge),
         "fixed_scalar_params": str(
             OmegaConf.to_container(
                 fit_config.estimation_params.fixed_scalar_params, resolve=True

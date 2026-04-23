@@ -35,7 +35,6 @@ DEFAULT_START_DATES = (
     "2021-01-03",
 )
 DEFAULT_LATENT_RANKS = (0, 10, 20, 40)
-DEFAULT_B_VALUES = (0.5, 1.0, 2.0, 5.0)
 DEFAULT_LAMBDA_NUCLEAR_VALUES: tuple[float, ...] = ()
 SUMMARY_COLUMNS = [
     "rank_in_sensitivity",
@@ -45,10 +44,10 @@ SUMMARY_COLUMNS = [
     "sensitivity_start_week_end_date",
     "sensitivity_start_index",
     "variant_name",
-    "field_mode",
+    "optimizer_mode",
     "latent_rank",
     "lambda_nuclear",
-    "B",
+    "lambda_uv_ridge",
     "T",
     "s",
     "final_loss",
@@ -107,16 +106,16 @@ def _resolve_start_index(
         )
     start_index = int(matches[0])
     if start_index >= len(time_index) - 1:
-        raise ValueError(
-            f"Start date {start_date} leaves no transition weeks to fit."
-        )
+        raise ValueError(f"Start date {start_date} leaves no transition weeks to fit.")
     return start_index, week_ends.iloc[start_index].date().isoformat()
 
 
 def _slice_panel(
     experiment_root: Path,
     start_date: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, dict[str, Any]]:
+) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, dict[str, Any]
+]:
     with np.load(experiment_root / "panel_data.npz", allow_pickle=False) as panel:
         x = np.asarray(panel["x"], dtype=np.int8)
         z = np.asarray(panel["z"], dtype=np.int8)
@@ -229,7 +228,10 @@ def _save_sliced_experiment(
         "shared_time_index_path": "",
         "time_steps": int(x.shape[0]),
         "pre_intervention_steps": int(source_config.global_params.s),
-        "realized_week_start_date": time_index["WeekStartDate"].min().date().isoformat(),
+        "realized_week_start_date": time_index["WeekStartDate"]
+        .min()
+        .date()
+        .isoformat(),
         "realized_week_end_date": time_index["WeekEndDate"].max().date().isoformat(),
     }
     save_experiment(
@@ -305,72 +307,59 @@ def materialize_sensitivity_experiments(
 def write_sensitivity_fit_spec(
     output_root: str | Path,
     latent_ranks: list[int],
-    b_values: list[float],
     steps: int,
     tol: float,
     seed: int,
     n_starts: int = 1,
-    adam_steps: int = 0,
-    adam_lr: float = 1.0e-2,
-    adam_device: str = "cpu",
     lambda_nuclear_values: list[float] | None = None,
 ) -> Path:
     output_root_path = _repo_path(output_root)
     if not latent_ranks:
         raise ValueError("At least one latent rank is required.")
-    if not b_values:
-        raise ValueError("At least one B value is required.")
     if any(rank < 0 for rank in latent_ranks):
         raise ValueError("Latent ranks must be nonnegative.")
-    if any(value <= 0.0 for value in b_values):
-        raise ValueError("B values must be positive.")
     lambda_nuclear_values = list(lambda_nuclear_values or [])
     if any(value < 0.0 for value in lambda_nuclear_values):
         raise ValueError("lambda_nuclear values must be nonnegative.")
     variants: list[dict[str, Any]] = []
     for latent_rank in latent_ranks:
-        for b_value in b_values:
-            b_label = ("%g" % float(b_value)).replace(".", "p")
-            variants.append(
-                {
-                    "name": f"rank_{int(latent_rank)}_B{b_label}",
-                    "field_mode": "low_rank",
-                    "latent_rank": int(latent_rank),
-                    "lambda_nuclear": 0.0,
-                    "B": float(b_value),
-                }
-            )
+        variants.append(
+            {
+                "name": f"rank_{int(latent_rank)}",
+                "optimizer_mode": "manifold",
+                "latent_rank": int(latent_rank),
+                "lambda_nuclear": 0.0,
+                "lambda_uv_ridge": 0.0,
+            }
+        )
     for lambda_value in lambda_nuclear_values:
         lambda_label = ("%g" % float(lambda_value)).replace(".", "p").replace("-", "m")
-        for b_value in b_values:
-            b_label = ("%g" % float(b_value)).replace(".", "p")
-            variants.append(
-                {
-                    "name": f"nuclear_lambda_{lambda_label}_B{b_label}",
-                    "field_mode": "nuclear_norm",
-                    "latent_rank": 0,
-                    "lambda_nuclear": float(lambda_value),
-                    "B": float(b_value),
-                }
-            )
+        variants.append(
+            {
+                "name": f"nuclear_lambda_{lambda_label}",
+                "optimizer_mode": "nuclear_norm",
+                "latent_rank": 0,
+                "lambda_nuclear": float(lambda_value),
+                "lambda_uv_ridge": 0.0,
+            }
+        )
     spec = OmegaConf.create(
         {
             "base": {
                 "fit_root_name": "fits",
-                "fit_manifest_path": str((output_root_path / "fit_manifest.csv").resolve()),
+                "fit_manifest_path": str(
+                    (output_root_path / "fit_manifest.csv").resolve()
+                ),
                 "optimizer": {
                     "steps": int(steps),
                     "tol": float(tol),
                     "seed": int(seed),
                     "n_starts": int(n_starts),
-                    "adam_steps": int(adam_steps),
-                    "adam_lr": float(adam_lr),
-                    "adam_device": str(adam_device),
                 },
-                "B": float(b_values[0]),
                 "latent_rank": int(latent_ranks[0]),
-                "field_mode": "low_rank",
+                "optimizer_mode": "manifold",
                 "lambda_nuclear": 0.0,
+                "lambda_uv_ridge": 0.0,
                 "estimation": {
                     "fixed_scalar_params": {},
                 },
@@ -383,7 +372,9 @@ def write_sensitivity_fit_spec(
     return spec_path
 
 
-def _summary_value(entries: dict[str, dict[str, float | None]], name: str) -> float | None:
+def _summary_value(
+    entries: dict[str, dict[str, float | None]], name: str
+) -> float | None:
     return entries.get(name, {}).get("estimate")
 
 
@@ -439,10 +430,10 @@ def write_sensitivity_summary(fit_manifest_path: str | Path) -> Path:
             ),
             "sensitivity_start_index": metadata.get("sensitivity_start_index", ""),
             "variant_name": fit_row.get("variant_name", ""),
-            "field_mode": fit_row.get("field_mode", "low_rank"),
+            "optimizer_mode": fit_row.get("optimizer_mode", "manifold"),
             "latent_rank": fit_row.get("latent_rank", ""),
             "lambda_nuclear": fit_row.get("lambda_nuclear", ""),
-            "B": fit_row.get("B", ""),
+            "lambda_uv_ridge": fit_row.get("lambda_uv_ridge", ""),
             "T": fit_row.get("T", ""),
             "s": fit_row.get("s", ""),
             "final_loss": _summary_value(entries, "final_loss"),
@@ -461,10 +452,10 @@ def write_sensitivity_summary(fit_manifest_path: str | Path) -> Path:
         key=lambda row: (
             math.inf if row.get("final_loss") is None else float(row["final_loss"]),
             str(row.get("sensitivity_start_week_end_date", "")),
-            str(row.get("field_mode", "low_rank")),
+            str(row.get("optimizer_mode", "manifold")),
             int(row.get("latent_rank") or 0),
             float(row.get("lambda_nuclear") or 0.0),
-            float(row.get("B") or 0.0),
+            float(row.get("lambda_uv_ridge") or 0.0),
         )
     )
     for index, row in enumerate(rows, start=1):
@@ -488,7 +479,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Create USCountyVaccination start-week sensitivity experiments and "
-            "optionally fit a latent-rank by B grid."
+            "optionally fit a latent-rank grid."
         )
     )
     parser.add_argument(
@@ -515,12 +506,6 @@ def parse_args() -> argparse.Namespace:
         default=list(DEFAULT_LATENT_RANKS),
     )
     parser.add_argument(
-        "--B_values",
-        nargs="+",
-        type=float,
-        default=list(DEFAULT_B_VALUES),
-    )
-    parser.add_argument(
         "--lambda_nuclear_values",
         nargs="*",
         type=float,
@@ -536,14 +521,6 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Number of random starts for each fit variant.",
     )
-    parser.add_argument(
-        "--adam_steps",
-        type=int,
-        default=1000,
-        help="PyTorch Adam steps to run before each L-BFGS-B polish.",
-    )
-    parser.add_argument("--adam_lr", type=float, default=1.0e-2)
-    parser.add_argument("--adam_device", type=str, default="cpu")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--run_fits",
@@ -576,20 +553,18 @@ def main() -> None:
     spec_path = write_sensitivity_fit_spec(
         output_root=output_root,
         latent_ranks=list(args.latent_ranks),
-        b_values=list(args.B_values),
         steps=int(args.steps),
         tol=float(args.tol),
         seed=int(args.seed),
         n_starts=int(args.n_starts),
-        adam_steps=int(args.adam_steps),
-        adam_lr=float(args.adam_lr),
-        adam_device=str(args.adam_device),
         lambda_nuclear_values=list(args.lambda_nuclear_values),
     )
     print(f"Sensitivity generation manifest: {manifest_path}")
     print(f"Sensitivity fit spec: {spec_path}")
     if args.run_fits:
-        fit_manifest = run_fits(manifest_path, spec_path, overwrite=bool(args.overwrite))
+        fit_manifest = run_fits(
+            manifest_path, spec_path, overwrite=bool(args.overwrite)
+        )
         summary_path = write_sensitivity_summary(fit_manifest)
         print(f"Sensitivity fit manifest: {fit_manifest}")
         print(f"Sensitivity summary: {summary_path}")

@@ -1,0 +1,51 @@
+2026-04-23 12:55:42 | INFO | Loading data...
+2026-04-23 12:55:42 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1\panel_data.npz
+2026-04-23 12:55:42 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1\x_0.npy
+2026-04-23 12:55:42 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1\fits\manifold_rank_1_high_pen\fit_realized_config.yaml
+2026-04-23 12:55:42 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1
+2026-04-23 12:55:42 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1
+2026-04-23 12:55:42 | INFO | Configured field mode: low_rank
+2026-04-23 12:55:42 | INFO | Configured latent rank: 1
+2026-04-23 12:55:42 | INFO | Using a fixed known graph with scalar xi.
+2026-04-23 12:55:42 | INFO | Fit-time hard bounds active: False
+2026-04-23 12:55:42 | INFO | Configured B retained for diagnostics only: 15.000000
+2026-04-23 12:55:42 | INFO | Fixed scalar parameters: {'beta': 0.0, 'xi': 0.0, 'eta': 0.0}
+2026-04-23 12:55:42 | INFO | Optimizer settings: steps=5000, tol=1e-09, n_starts=3, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.1, proximal_lr=1.0
+2026-04-23 12:55:44 | INFO | Ignoring adam_steps for low-rank Pymanopt manifold optimization; ConjugateGradient is used directly on the fixed-rank manifold.
+2026-04-23 12:55:44 | INFO | Pymanopt eval 0 | Loss: 0.693147 | Penalized: 0.693181
+2026-04-23 12:55:44 | INFO | Pymanopt start 1/3 | seed=0 | initialization=random | initial_loss=0.693147 | initial_penalized=0.693181
+2026-04-23 12:55:45 | INFO | Pymanopt eval 100 | Loss: 0.688378 | Penalized: 0.692360
+2026-04-23 12:55:45 | INFO | Pymanopt start 1/3 complete | final_loss=0.688378 | penalized=0.692360 | status=Terminated - min grad norm reached after 40 iterations, 0.80 seconds.
+2026-04-23 12:55:45 | INFO | Pymanopt eval 0 | Loss: 0.693147 | Penalized: 0.693172
+2026-04-23 12:55:45 | INFO | Pymanopt start 2/3 | seed=1 | initialization=random | initial_loss=0.693147 | initial_penalized=0.693172
+2026-04-23 12:55:45 | INFO | Pymanopt eval 100 | Loss: 0.688378 | Penalized: 0.692360
+2026-04-23 12:55:46 | INFO | Pymanopt start 2/3 complete | final_loss=0.688378 | penalized=0.692360 | status=Terminated - min grad norm reached after 49 iterations, 1.01 seconds.
+2026-04-23 12:55:46 | INFO | Pymanopt eval 0 | Loss: 0.693147 | Penalized: 0.693194
+2026-04-23 12:55:46 | INFO | Pymanopt start 3/3 | seed=2 | initialization=random | initial_loss=0.693147 | initial_penalized=0.693194
+2026-04-23 12:55:46 | INFO | Pymanopt eval 100 | Loss: 0.688378 | Penalized: 0.692360
+2026-04-23 12:55:47 | INFO | Pymanopt start 3/3 complete | final_loss=0.688378 | penalized=0.692360 | status=Terminated - min grad norm reached after 49 iterations, 1.11 seconds.
+2026-04-23 12:55:47 | INFO | Done fitting.
+2026-04-23 12:55:47 | INFO | Optimizer status: Terminated - min grad norm reached after 49 iterations, 1.11 seconds. | best_start=3/3
+2026-04-23 12:55:47 | INFO | Best optimizer start: 3 / 3
+2026-04-23 12:55:47 | INFO | Final Loss: 0.688378
+2026-04-23 12:55:47 | INFO | Estimated vs True Parameters:
+2026-04-23 12:55:47 | INFO |   beta: 0.0000 (True: 0.0000) | SQE: 0.000000
+2026-04-23 12:55:47 | INFO |   xi: 0.0000 (True: 0.0000) | SQE: 0.000000
+2026-04-23 12:55:47 | INFO |   eta: 0.0000 (True: 0.0000) | SQE: 0.000000
+2026-04-23 12:55:47 | INFO | Low-rank Frobenius optimizer diagnostics:
+2026-04-23 12:55:47 | INFO |   penalized_objective: 0.692360
+2026-04-23 12:55:47 | INFO |   mple_loss_without_penalty: 0.688378
+2026-04-23 12:55:47 | INFO |   lambda_frobenius: 0.100000
+2026-04-23 12:55:47 | INFO |   frobenius_norm: 12.590110
+2026-04-23 12:55:47 | INFO |   normalized_frobenius_norm: 0.039813
+2026-04-23 12:55:47 | INFO |   frobenius_norm_normalizer: 316.227766
+2026-04-23 12:55:47 | INFO | Field and interaction diagnostics:
+2026-04-23 12:55:47 | INFO |   field_rmse: 0.081252
+2026-04-23 12:55:47 | INFO |   interaction_fro_error: 0.000000
+2026-04-23 12:55:47 | INFO |   estimated_field_inf_norm: 0.367954
+2026-04-23 12:55:47 | INFO |   estimated_field_rank: 1.000000
+2026-04-23 12:55:47 | INFO |   bound_B: 15.000000
+2026-04-23 12:55:47 | INFO |   true_field_inf_norm: 1.000000
+2026-04-23 12:55:47 | INFO |   true_field_rank: 1.000000
+2026-04-23 12:55:47 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1\fits\manifold_rank_1_high_pen\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1\fits\manifold_rank_1_high_pen\mple_summary.md
+2026-04-23 12:55:47 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\synthetic_rank_1_b1\fits\manifold_rank_1_high_pen\mple.log

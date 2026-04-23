@@ -12,9 +12,14 @@ from sklearn.datasets import make_low_rank_matrix
 
 DEFAULT_LATENT_RANK = 0
 SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
-FIELD_MODE_LOW_RANK = "low_rank"
-FIELD_MODE_NUCLEAR_NORM = "nuclear_norm"
-VALID_FIELD_MODES = {FIELD_MODE_LOW_RANK, FIELD_MODE_NUCLEAR_NORM}
+OPTIMIZER_MODE_MANIFOLD = "manifold"
+OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
+OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK = "alternative_low_rank"
+VALID_OPTIMIZER_MODES = {
+    OPTIMIZER_MODE_MANIFOLD,
+    OPTIMIZER_MODE_NUCLEAR_NORM,
+    OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK,
+}
 
 
 @dataclass(frozen=True)
@@ -24,10 +29,8 @@ class ModelArtifacts:
     gamma_matrix: object
     t_steps: int
     latent_rank: int = 0
-    field_mode: str = FIELD_MODE_LOW_RANK
+    optimizer_mode: str = OPTIMIZER_MODE_MANIFOLD
     field_matrix: np.ndarray | None = None
-    node_factors: np.ndarray | None = None
-    time_factors: np.ndarray | None = None
 
 
 def scalar_parameter_names() -> list[str]:
@@ -69,17 +72,23 @@ def get_latent_rank(config) -> int:
     return rank
 
 
-def get_field_mode(config) -> str:
+def get_optimizer_mode(config) -> str:
     global_params = getattr(config, "global_params", None)
-    if global_params is None or "field_mode" not in global_params:
-        return FIELD_MODE_LOW_RANK
-    field_mode = str(global_params.field_mode)
-    if field_mode not in VALID_FIELD_MODES:
+    if global_params is None or "optimizer_mode" not in global_params:
+        return OPTIMIZER_MODE_MANIFOLD
+    optimizer_mode = str(global_params.optimizer_mode)
+    if optimizer_mode not in VALID_OPTIMIZER_MODES:
         raise ValueError(
-            "global_params.field_mode must be one of: "
-            + ", ".join(sorted(VALID_FIELD_MODES))
+            "global_params.optimizer_mode must be one of: "
+            + ", ".join(sorted(VALID_OPTIMIZER_MODES))
         )
-    return field_mode
+    return optimizer_mode
+
+
+def uses_full_matrix_parameterization(
+    artifacts: ModelArtifacts,
+) -> bool:
+    return artifacts.optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM
 
 
 def get_B(config) -> float:
@@ -212,7 +221,7 @@ def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
         gamma_matrix=gamma_matrix,
         t_steps=t_steps,
         latent_rank=get_latent_rank(config),
-        field_mode=FIELD_MODE_LOW_RANK,
+        optimizer_mode=OPTIMIZER_MODE_MANIFOLD,
         field_matrix=field_matrix,
     )
 
@@ -220,15 +229,23 @@ def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
 def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
-    field_mode = get_field_mode(config)
-    latent_rank = (
-        0 if field_mode == FIELD_MODE_NUCLEAR_NORM else get_latent_rank(config)
-    )
+    optimizer_mode = get_optimizer_mode(config)
+    latent_rank = get_latent_rank(config)
+    if optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM:
+        latent_rank = 0
+    elif optimizer_mode == OPTIMIZER_MODE_ALTERNATIVE_LOW_RANK and latent_rank <= 0:
+        raise ValueError(
+            "global_params.latent_rank must be positive for optimizer_mode='alternative_low_rank'."
+        )
+    elif optimizer_mode == OPTIMIZER_MODE_MANIFOLD and latent_rank < 0:
+        raise ValueError(
+            "global_params.latent_rank must be nonnegative for optimizer_mode='manifold'."
+        )
     return ModelArtifacts(
         gamma_matrix=gamma_matrix,
         t_steps=int(config.global_params.T),
         latent_rank=latent_rank,
-        field_mode=field_mode,
+        optimizer_mode=optimizer_mode,
     )
 
 
@@ -236,7 +253,6 @@ def save_field_artifacts(path: str | Path, artifacts: ModelArtifacts) -> None:
     payload: dict[str, np.ndarray] = {
         "latent_rank": np.asarray(int(artifacts.latent_rank), dtype=int),
         "t_steps": np.asarray(int(artifacts.t_steps), dtype=int),
-        "field_mode": np.asarray(str(artifacts.field_mode)),
     }
     if artifacts.field_matrix is not None:
         payload["field_matrix"] = np.asarray(artifacts.field_matrix, dtype=float)
@@ -248,11 +264,6 @@ def load_field_artifacts(path: str | Path) -> dict[str, object]:
         result: dict[str, object] = {
             "latent_rank": int(data["latent_rank"]),
             "t_steps": int(data["t_steps"]),
-            "field_mode": (
-                str(data["field_mode"].item())
-                if "field_mode" in data
-                else FIELD_MODE_LOW_RANK
-            ),
         }
         for key in ["field_matrix"]:
             if key in data:
@@ -294,7 +305,7 @@ def load_model_artifacts(data_folder: str | Path) -> ModelArtifacts:
         gamma_matrix=gamma_matrix,
         t_steps=int(payload["t_steps"]),
         latent_rank=int(payload.get("latent_rank", 0)),
-        field_mode=str(payload.get("field_mode", FIELD_MODE_LOW_RANK)),
+        optimizer_mode=OPTIMIZER_MODE_MANIFOLD,
         field_matrix=payload.get("field_matrix"),
     )
 
@@ -326,7 +337,7 @@ def parameter_names(
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[str]:
     n_nodes = artifacts.gamma_matrix.shape[0]
-    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         field_keys = [
             f"F::time_{time_idx}::node_{node_idx}"
             for time_idx in range(artifacts.t_steps)
@@ -366,7 +377,7 @@ def unpack_theta(
     theta = np.asarray(theta, dtype=float)
     n_nodes = artifacts.gamma_matrix.shape[0]
     t_steps = artifacts.t_steps
-    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         n_field = t_steps * n_nodes
         n_u = 0
         n_v = 0
@@ -380,7 +391,7 @@ def unpack_theta(
         raise ValueError(
             f"Theta length {len(theta)} does not match expected length {expected_length}."
         )
-    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         field_matrix = theta[:n_field].reshape(t_steps, n_nodes)
         node_factors = np.zeros((n_nodes, 0), dtype=float)
         time_factors = np.zeros((t_steps, 0), dtype=float)
@@ -413,14 +424,14 @@ def pack_theta(
     artifacts: ModelArtifacts,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> np.ndarray:
-    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         if theta_parts.get("field_matrix") is None:
-            raise ValueError("nuclear_norm field mode requires field_matrix.")
+            raise ValueError("Full-matrix parameterization requires field_matrix.")
         field_block = np.asarray(theta_parts["field_matrix"], dtype=float).reshape(-1)
     else:
         if theta_parts["node_factors"] is None or theta_parts["time_factors"] is None:
             raise ValueError(
-                "low_rank field mode requires node_factors and time_factors."
+                "Factorized parameterization requires node_factors and time_factors."
             )
         field_block = np.concatenate(
             [
@@ -440,7 +451,7 @@ def pack_theta(
 def compose_field_matrix_from_theta(
     theta_parts: dict[str, object], artifacts: ModelArtifacts
 ) -> np.ndarray:
-    if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         return np.asarray(theta_parts["field_matrix"], dtype=float)
     return compose_latent_field_matrix(
         theta_parts["node_factors"], theta_parts["time_factors"]
@@ -455,18 +466,8 @@ def with_theta_field(
         gamma_matrix=artifacts.gamma_matrix,
         t_steps=artifacts.t_steps,
         latent_rank=artifacts.latent_rank,
-        field_mode=artifacts.field_mode,
+        optimizer_mode=artifacts.optimizer_mode,
         field_matrix=field_matrix,
-        node_factors=(
-            None
-            if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM
-            else np.asarray(theta_parts["node_factors"], dtype=float)
-        ),
-        time_factors=(
-            None
-            if artifacts.field_mode == FIELD_MODE_NUCLEAR_NORM
-            else np.asarray(theta_parts["time_factors"], dtype=float)
-        ),
     )
 
 
@@ -481,7 +482,7 @@ def load_true_parameters(
         gamma_matrix=artifacts.gamma_matrix,
         t_steps=artifacts.t_steps,
         latent_rank=0,
-        field_mode=FIELD_MODE_NUCLEAR_NORM,
+        optimizer_mode=OPTIMIZER_MODE_NUCLEAR_NORM,
         field_matrix=artifacts.field_matrix,
     )
     theta_parts = {
@@ -495,53 +496,3 @@ def load_true_parameters(
         truth_artifacts,
         fixed_scalar_params=fixed_scalar_params,
     )
-
-
-def summary_metrics(
-    est_theta: np.ndarray,
-    true_theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    fixed_scalar_params: dict[str, float] | None = None,
-) -> dict[str, float]:
-    est_parts = unpack_theta(
-        est_theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    true_parts = unpack_theta(
-        true_theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    est_artifacts = with_theta_field(artifacts, est_parts)
-    true_artifacts = with_theta_field(artifacts, true_parts)
-    est_interaction = compose_interaction_matrix(
-        est_parts["xi"], artifacts.gamma_matrix
-    )
-    true_interaction = compose_interaction_matrix(
-        true_parts["xi"], artifacts.gamma_matrix
-    )
-    if sparse.issparse(est_interaction):
-        interaction_error = est_interaction - true_interaction
-        interaction_fro_error = float(
-            np.sqrt(interaction_error.multiply(interaction_error).sum())
-        )
-    else:
-        interaction_fro_error = float(
-            np.linalg.norm(est_interaction - true_interaction, ord="fro")
-        )
-
-    return {
-        "field_rmse": float(
-            np.sqrt(
-                np.mean((est_artifacts.field_matrix - true_artifacts.field_matrix) ** 2)
-            )
-        ),
-        "field_l2_error": float(
-            np.linalg.norm(
-                (est_artifacts.field_matrix - true_artifacts.field_matrix).reshape(-1),
-                ord=2,
-            )
-        ),
-        "interaction_fro_error": interaction_fro_error,
-    }
