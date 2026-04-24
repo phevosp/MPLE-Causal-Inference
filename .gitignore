@@ -218,9 +218,12 @@ experiments/**
 !experiments/**/*.md
 !experiments/**/*.log
 !experiments/**/**_summary.csv
+!experiments/**/**_manifest.csv
 experiments/.tmp_*/
 
 # Data
 data/*/processed/
 data/*/raw/
 
+# Logs
+slurm-logs/**
