@@ -149,16 +149,16 @@ submit_posterior_predictive_stage() {
   bash "${POSTERIOR_PREDICTIVE_SUBMITTER}"
 }
 
-# echo "Submitting generation jobs..."
-# generation_barrier_job_id="$(submit_generation_stage)"
-# wait_for_job "${generation_barrier_job_id}" "Generation"
+echo "Submitting generation jobs..."
+generation_barrier_job_id="$(submit_generation_stage)"
+wait_for_job "${generation_barrier_job_id}" "Generation"
 
-# echo "Submitting fit jobs..."
-# fit_barrier_job_id="$(submit_fit_stage)"
-# wait_for_job "${fit_barrier_job_id}" "Fit"
+echo "Submitting fit jobs..."
+fit_barrier_job_id="$(submit_fit_stage)"
+wait_for_job "${fit_barrier_job_id}" "Fit"
 
-# echo "Running intervention library..."
-# run_intervention_stage
+echo "Running intervention library..."
+run_intervention_stage
 
 echo "Submitting posterior predictive jobs..."
 posterior_predictive_report_job_id="$(submit_posterior_predictive_stage)"
