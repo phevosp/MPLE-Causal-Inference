@@ -16,6 +16,10 @@ base:
     fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
 
 variants:
+  - name: nuclear_lambda_6e_2
+    optimizer_mode: nuclear_norm
+    lambda_nuclear: 0.06
+
   - name: nuclear_lambda_8e_2
     optimizer_mode: nuclear_norm
     lambda_nuclear: 0.08
@@ -33,6 +37,11 @@ variants:
     latent_rank: 2
     lambda_frobenius: 0.1
 
+  - name: manifold_rank_5
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 5
+    lambda_frobenius: 0.3
+
   - name: manifold_rank_10
     optimizer_mode: exact_rank_manifold
     latent_rank: 10
@@ -42,6 +51,11 @@ variants:
     optimizer_mode: alternating_latent_rank
     latent_rank: 10
     lambda_uv_ridge: 18
+
+  - name: alternating_rank_5
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 14
 
   - name: alternating_rank_2
     optimizer_mode: alternating_latent_rank
@@ -57,6 +71,11 @@ variants:
     optimizer_mode: concurrent_latent_rank
     latent_rank: 2
     lambda_uv_ridge: 10
+
+  - name: concurrent_rank_5
+    optimizer_mode: concurrent_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 14
 
   - name: zero_external_field
     optimizer_mode: no_external_field
