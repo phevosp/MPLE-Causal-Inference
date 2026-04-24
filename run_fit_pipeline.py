@@ -64,19 +64,21 @@ def build_fit_config(
         "nuclear_norm",
         "exact_rank_manifold",
         "alternating_latent_rank",
+        "concurrent_latent_rank",
     }:
         raise ValueError(
             "optimizer_mode must be one of 'no_external_field', 'nuclear_norm', "
-            "'exact_rank_manifold', or 'alternating_latent_rank'."
+            "'exact_rank_manifold', 'alternating_latent_rank', or "
+            "'concurrent_latent_rank'."
         )
     latent_rank = (
         0
         if optimizer_mode in {"no_external_field", "nuclear_norm"}
         else int(variant.get("latent_rank", 0))
     )
-    if optimizer_mode == "alternating_latent_rank" and latent_rank <= 0:
+    if optimizer_mode in {"alternating_latent_rank", "concurrent_latent_rank"} and latent_rank <= 0:
         raise ValueError(
-            "latent_rank must be positive for optimizer_mode='alternating_latent_rank'."
+            f"latent_rank must be positive for optimizer_mode='{optimizer_mode}'."
         )
     if optimizer_mode == "exact_rank_manifold" and latent_rank <= 0:
         raise ValueError(
@@ -97,9 +99,13 @@ def build_fit_config(
         raise ValueError(
             "lambda_frobenius is only valid for optimizer_mode='exact_rank_manifold'."
         )
-    if optimizer_mode != "alternating_latent_rank" and lambda_uv_ridge != 0.0:
+    if (
+        optimizer_mode not in {"alternating_latent_rank", "concurrent_latent_rank"}
+        and lambda_uv_ridge != 0.0
+    ):
         raise ValueError(
-            "lambda_uv_ridge is only valid for optimizer_mode='alternating_latent_rank'."
+            "lambda_uv_ridge is only valid for optimizer_mode='alternating_latent_rank' "
+            "or 'concurrent_latent_rank'."
         )
 
     optimizer_config: dict[str, Any] = {

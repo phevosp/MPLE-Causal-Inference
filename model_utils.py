@@ -27,11 +27,13 @@ OPTIMIZER_MODE_NO_EXTERNAL_FIELD = "no_external_field"
 OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
 OPTIMIZER_MODE_EXACT_RANK_MANIFOLD = "exact_rank_manifold"
 OPTIMIZER_MODE_ALTERNATING_LATENT_RANK = "alternating_latent_rank"
+OPTIMIZER_MODE_CONCURRENT_LATENT_RANK = "concurrent_latent_rank"
 VALID_OPTIMIZER_MODES = {
     OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+    OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
 }
 
 
@@ -361,9 +363,16 @@ def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
         OPTIMIZER_MODE_NUCLEAR_NORM,
     }:
         latent_rank = 0
-    elif optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK and latent_rank <= 0:
+    elif (
+        optimizer_mode in {
+            OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+            OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
+        }
+        and latent_rank <= 0
+    ):
         raise ValueError(
-            "global_params.latent_rank must be positive for optimizer_mode='alternating_latent_rank'."
+            "global_params.latent_rank must be positive for optimizer_mode="
+            f"'{optimizer_mode}'."
         )
     elif optimizer_mode == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD and latent_rank <= 0:
         raise ValueError(

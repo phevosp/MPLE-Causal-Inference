@@ -44,12 +44,12 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 
 **Key `fits_spec.yaml` fields:**
 
-- `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, or `alternating_latent_rank`.
-- `latent_rank`: must be ≥ 1 for `exact_rank_manifold` and `alternating_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
+- `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, `alternating_latent_rank`, or `concurrent_latent_rank`.
+- `latent_rank`: must be ≥ 1 for `exact_rank_manifold`, `alternating_latent_rank`, and `concurrent_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
 - `estimation.fixed_scalar_params`: scalars held **fixed** at these values (not initial guesses). Leave as `{}` to estimate all scalars freely.
 - `lambda_nuclear`: only active for `nuclear_norm`.
 - `lambda_frobenius`: only active for `exact_rank_manifold`.
-- `lambda_uv_ridge`: only active for `alternating_latent_rank`.
+- `lambda_uv_ridge`: only active for `alternating_latent_rank` and `concurrent_latent_rank`.
 
 **Key `generation_spec.yaml` truth fields:**
 
@@ -152,7 +152,7 @@ Each fit variant controls:
 - `latent_rank`
 - `lambda_nuclear` for `nuclear_norm`
 - `lambda_frobenius` for `exact_rank_manifold`
-- `lambda_uv_ridge` for `alternating_latent_rank`
+- `lambda_uv_ridge` for `alternating_latent_rank` and `concurrent_latent_rank`
 - `estimation.fixed_scalar_params`
 - optimizer `steps`, `tol`, `seed`, `n_starts`, and `proximal_lr`
 
@@ -405,6 +405,8 @@ Useful flags:
 When `n_starts > 1`, MPLE runs independent random starts and keeps the fit with the lowest final pseudo-negative log likelihood. Per-start diagnostics are saved to `optimizer_start_summary.csv`.
 
 For `optimizer_mode: nuclear_norm`, MPLE optimizes the full latent field directly with a nuclear-norm penalty, using proximal singular-value thresholding instead of the low-rank factorization. The usual `mple_summary.csv` includes the unpenalized MPLE loss, penalized objective, nuclear norm, and effective rank.
+
+For `optimizer_mode: concurrent_latent_rank`, MPLE uses SciPy `L-BFGS-B` to optimize the same factorized `U, V` formulation and `lambda_uv_ridge * (||U||_F^2 + ||V||_F^2) / outcome_size` penalty used by `alternating_latent_rank`, but updates all packed parameters jointly rather than alternating block steps.
 
 `global_params.B` is the active fit-time bound:
 

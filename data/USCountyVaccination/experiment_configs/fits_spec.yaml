@@ -39,3 +39,8 @@ variants:
     optimizer_mode: alternating_latent_rank
     latent_rank: 1
     lambda_uv_ridge: 0.1
+
+  # - name: concurrent_rank_10
+  #   optimizer_mode: concurrent_latent_rank
+  #   latent_rank: 10
+  #   lambda_uv_ridge: 0.1

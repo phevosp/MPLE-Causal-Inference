@@ -27,6 +27,7 @@ from io_utils import (
 )
 from loading_utils import save_estimated_parameter_bundle
 from model_utils import (
+    OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     ModelArtifacts,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
@@ -1376,6 +1377,253 @@ def _fit_mple_alternative_low_rank(
     return best_theta, best_mple_history, best_result
 
 
+def _fit_mple_concurrent_low_rank(
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    artifacts: ModelArtifacts,
+    interaction_effect_x: np.ndarray,
+    steps: int,
+    seed: int,
+    verbose_every: int,
+    tol: float,
+    logger,
+    theta_init,
+    fixed_scalar_params: dict[str, float] | None,
+    n_starts: int,
+    lambda_uv_ridge: float,
+) -> tuple[np.ndarray, list[float], OptimizeResult]:
+    """Fit the factorized U/V formulation with SciPy L-BFGS-B.
+
+    Uses the same U/V ridge penalty as alternating_latent_rank, but optimizes all
+    packed parameters jointly with a quasi-Newton solver.
+    """
+    if lambda_uv_ridge < 0.0:
+        raise ValueError("lambda_uv_ridge must be nonnegative.")
+
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+    )
+    fixed = context.fixed_scalar_params
+    free_names = context.free_scalar_names
+    n_starts = max(1, int(n_starts))
+    rank = int(artifacts.latent_rank)
+    t_steps = int(artifacts.t_steps)
+    n_nodes = int(artifacts.gamma_matrix.shape[0])
+    base_theta_init = (
+        None if theta_init is None else np.asarray(theta_init, dtype=float)
+    )
+
+    if rank < 1 or rank > min(t_steps, n_nodes):
+        raise ValueError(
+            f"latent_rank={rank} must lie in [1, {min(t_steps, n_nodes)}] for concurrent low-rank optimization."
+        )
+
+    def evaluate_theta(
+        theta: np.ndarray,
+    ) -> tuple[float, float, np.ndarray, float, float, np.ndarray]:
+        theta_parts = unpack_theta(
+            theta,
+            artifacts,
+            fixed_scalar_params=fixed,
+        )
+        time_factors = np.asarray(theta_parts["time_factors"], dtype=float)
+        node_factors = np.asarray(theta_parts["node_factors"], dtype=float)
+        smooth_loss, _, time_gradient, node_gradient, scalar_gradient = (
+            _evaluate_factorized_loss(
+                time_factors,
+                node_factors,
+                context,
+                scalar_values={
+                    "beta": theta_parts["beta"],
+                    "xi": theta_parts["xi"],
+                    "eta": theta_parts["eta"],
+                },
+            )
+        )
+        ridge_penalty = (
+            float(lambda_uv_ridge)
+            * (
+                float(np.sum(time_factors * time_factors))
+                + float(np.sum(node_factors * node_factors))
+            )
+            / context.outcome_size
+        )
+        ridge_scale = 2.0 * float(lambda_uv_ridge) / context.outcome_size
+        penalized_loss = smooth_loss + ridge_penalty
+        grad = np.concatenate(
+            [
+                (node_gradient + ridge_scale * node_factors).reshape(-1),
+                (time_gradient + ridge_scale * time_factors).reshape(-1),
+                scalar_gradient,
+            ]
+        )
+        return (
+            float(penalized_loss),
+            float(smooth_loss),
+            grad,
+            float(np.linalg.norm(time_factors, ord="fro")),
+            float(np.linalg.norm(node_factors, ord="fro")),
+            compose_latent_field_matrix(node_factors, time_factors),
+        )
+
+    def random_theta_for_start(start_index: int) -> np.ndarray:
+        rng = np.random.default_rng(int(seed) + start_index)
+        return pack_theta(
+            {
+                "time_factors": rng.normal(0.0, 0.1, size=(t_steps, rank)),
+                "node_factors": rng.normal(0.0, 0.1, size=(n_nodes, rank)),
+                **{
+                    name: float(value)
+                    for name, value in zip(
+                        free_names,
+                        rng.normal(0.0, 0.1, size=len(free_names)),
+                    )
+                },
+                **fixed,
+            },
+            artifacts,
+            fixed_scalar_params=fixed,
+        )
+
+    best_theta: np.ndarray | None = None
+    best_result: OptimizeResult | None = None
+    best_penalized_history: list[float] = []
+    best_mple_history: list[float] = []
+    best_start = 0
+    best_penalized_objective = np.inf
+    start_summaries: list[dict[str, object]] = []
+
+    for start_index in range(n_starts):
+        initialization_kind = "random"
+        if base_theta_init is not None and start_index == 0:
+            initial_theta = np.asarray(base_theta_init, dtype=float)
+            initialization_kind = "theta_init"
+        else:
+            initial_theta = random_theta_for_start(start_index)
+
+        (
+            initial_penalized_objective,
+            initial_mple_loss,
+            _,
+            _,
+            _,
+            _,
+        ) = evaluate_theta(initial_theta)
+        mple_history = [initial_mple_loss]
+        penalized_history = [initial_penalized_objective]
+
+        def objective(theta: np.ndarray) -> tuple[float, np.ndarray]:
+            (
+                penalized_loss,
+                smooth_loss,
+                grad,
+                _,
+                _,
+                _,
+            ) = evaluate_theta(np.asarray(theta, dtype=float))
+            mple_history.append(float(smooth_loss))
+            penalized_history.append(float(penalized_loss))
+            return penalized_loss, grad
+
+        if logger is not None:
+            logger.info(
+                "Concurrent low-rank start %s/%s | seed=%s | initial_loss=%.6f | initial_penalized=%.6f",
+                start_index + 1,
+                n_starts,
+                int(seed) + start_index,
+                initial_mple_loss,
+                initial_penalized_objective,
+            )
+
+        result = minimize(
+            objective,
+            initial_theta,
+            method="L-BFGS-B",
+            jac=True,
+            options={"maxiter": int(steps), "gtol": float(tol)},
+        )
+        theta_hat = np.asarray(result.x, dtype=float)
+        (
+            final_penalized_loss,
+            final_smooth_loss,
+            _,
+            final_u_norm,
+            final_v_norm,
+            final_field_matrix,
+        ) = evaluate_theta(theta_hat)
+        if not penalized_history or penalized_history[-1] != final_penalized_loss:
+            penalized_history.append(float(final_penalized_loss))
+            mple_history.append(float(final_smooth_loss))
+        start_summary = {
+            "start_index": start_index,
+            "seed": int(seed) + start_index,
+            "initialization_kind": initialization_kind,
+            "initial_mple_loss": initial_mple_loss,
+            "initial_penalized_objective": initial_penalized_objective,
+            "final_mple_loss": float(final_smooth_loss),
+            "final_penalized_objective": float(final_penalized_loss),
+            "iterations": int(getattr(result, "nit", 0)),
+            "cost_evaluations": int(getattr(result, "nfev", len(penalized_history))),
+            "success": bool(getattr(result, "success", False)),
+            "message": str(getattr(result, "message", "")),
+        }
+        start_summaries.append(start_summary)
+
+        if verbose_every and logger is not None:
+            logger.info(
+                "Concurrent low-rank start %s finished | final_loss=%.6f | final_penalized=%.6f | nit=%s",
+                start_index + 1,
+                final_smooth_loss,
+                final_penalized_loss,
+                int(getattr(result, "nit", 0)),
+            )
+
+        if float(final_penalized_loss) < best_penalized_objective:
+            best_penalized_objective = float(final_penalized_loss)
+            best_start = start_index
+            best_theta = theta_hat
+            best_mple_history = list(mple_history)
+            best_penalized_history = list(penalized_history)
+            best_result = OptimizeResult(
+                x=theta_hat,
+                success=bool(getattr(result, "success", False)),
+                message=str(getattr(result, "message", "")),
+                nit=int(getattr(result, "nit", 0)),
+                nfev=int(getattr(result, "nfev", len(penalized_history))),
+                iterations=int(getattr(result, "nit", 0)),
+                cost_evaluations=int(getattr(result, "nfev", len(penalized_history))),
+                optimizer_mode=OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
+                optimizer="scipy_lbfgsb_low_rank",
+                lambda_uv_ridge=float(lambda_uv_ridge),
+                final_mple_loss=float(final_smooth_loss),
+                final_penalized_objective=float(final_penalized_loss),
+                u_frobenius_norm=float(final_u_norm),
+                v_frobenius_norm=float(final_v_norm),
+                effective_rank=float(
+                    np.linalg.matrix_rank(np.asarray(final_field_matrix, dtype=float))
+                ),
+                mple_history=list(mple_history),
+                penalized_history=list(penalized_history),
+                best_start=int(start_index),
+                n_starts=int(n_starts),
+                start_summaries=start_summaries,
+            )
+
+    if best_theta is None or best_result is None:
+        raise RuntimeError(
+            "Concurrent low-rank optimizer did not produce a candidate solution."
+        )
+    best_result["start_summaries"] = start_summaries
+    best_result["best_start"] = int(best_start)
+    best_result["n_starts"] = int(n_starts)
+    return best_theta, best_mple_history, best_result
+
+
 def fit_mple(
     x: np.ndarray,
     z: np.ndarray,
@@ -1463,6 +1711,23 @@ def fit_mple(
         )
     if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
         return _fit_mple_alternative_low_rank(
+            x,
+            z,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            steps=steps,
+            seed=seed,
+            verbose_every=verbose_every,
+            tol=tol,
+            logger=logger,
+            theta_init=theta_init,
+            fixed_scalar_params=fixed_scalar_params,
+            n_starts=n_starts,
+            lambda_uv_ridge=lambda_uv_ridge,
+        )
+    if artifacts.optimizer_mode == OPTIMIZER_MODE_CONCURRENT_LATENT_RANK:
+        return _fit_mple_concurrent_low_rank(
             x,
             z,
             x_0=x_0,
@@ -2032,7 +2297,10 @@ def main() -> None:
                 "  frobenius_penalty_normalizer: %.6f",
                 metrics["frobenius_penalty_normalizer"],
             )
-    elif result.get("optimizer_mode") == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
+    elif result.get("optimizer_mode") in {
+        OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+        OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
+    }:
         metrics.update(
             {
                 "penalized_objective": float(result["final_penalized_objective"]),
@@ -2043,7 +2311,12 @@ def main() -> None:
                 "effective_rank": float(result["effective_rank"]),
             }
         )
-        logger.info("Alternating low-rank optimizer diagnostics:")
+        optimizer_title = (
+            "Concurrent low-rank optimizer diagnostics:"
+            if result.get("optimizer_mode") == OPTIMIZER_MODE_CONCURRENT_LATENT_RANK
+            else "Alternating low-rank optimizer diagnostics:"
+        )
+        logger.info(optimizer_title)
         logger.info("  penalized_objective: %.6f", metrics["penalized_objective"])
         logger.info(
             "  mple_loss_without_penalty: %.6f",

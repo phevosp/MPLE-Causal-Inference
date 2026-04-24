@@ -110,6 +110,7 @@ _VALID_OPTIMIZER_MODES = frozenset(
         "nuclear_norm",
         "exact_rank_manifold",
         "alternating_latent_rank",
+        "concurrent_latent_rank",
     }
 )
 
@@ -131,7 +132,11 @@ def validate_fits_spec(spec_path: str | Path) -> None:
                 f"Must be one of: {sorted(_VALID_OPTIMIZER_MODES)}."
             )
         rank = int(variant.get("latent_rank", 0))
-        if mode in {"exact_rank_manifold", "alternating_latent_rank"} and rank <= 0:
+        if mode in {
+            "exact_rank_manifold",
+            "alternating_latent_rank",
+            "concurrent_latent_rank",
+        } and rank <= 0:
             raise ValueError(
                 f"Variant '{name}': latent_rank must be >= 1 for optimizer_mode='{mode}' (got {rank})."
             )
@@ -149,7 +154,11 @@ def validate_fits_spec(spec_path: str | Path) -> None:
             raise ValueError(
                 f"Variant '{name}': lambda_frobenius is only valid for optimizer_mode='exact_rank_manifold'."
             )
-        if mode != "alternating_latent_rank" and float(variant.get("lambda_uv_ridge", 0.0)) != 0.0:
+        if (
+            mode not in {"alternating_latent_rank", "concurrent_latent_rank"}
+            and float(variant.get("lambda_uv_ridge", 0.0)) != 0.0
+        ):
             raise ValueError(
-                f"Variant '{name}': lambda_uv_ridge is only valid for optimizer_mode='alternating_latent_rank'."
+                f"Variant '{name}': lambda_uv_ridge is only valid for optimizer_mode="
+                "'alternating_latent_rank' or 'concurrent_latent_rank'."
             )

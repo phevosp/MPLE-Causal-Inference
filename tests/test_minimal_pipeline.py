@@ -61,6 +61,7 @@ from model_utils import (
     save_model_artifacts,
     unpack_theta,
 )
+from pipeline_specs import validate_fits_spec
 from posterior_predictive_utils import (
     compute_panel_statistics,
     simulate_outcomes_for_bundle,
@@ -75,7 +76,7 @@ from report_parameter_recovery_detailed import (
     group_and_rank_fit_rows,
     write_fit_reports,
 )
-from run_fit_pipeline import infer_panel_dimensions, run_fits
+from run_fit_pipeline import build_fit_config, infer_panel_dimensions, run_fits
 from run_generation_pipeline import run_generation
 from run_intervention_library import run_intervention_library
 from run_posterior_predictive_pipeline import (
@@ -1016,6 +1017,218 @@ class MinimalPipelineTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "alternating_latent_rank"):
             build_fit_model_artifacts(config, gamma)
+
+    def test_concurrent_low_rank_uses_generic_bookkeeping(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="concurrent_latent_rank",
+        )
+        param_keys = parameter_names(artifacts)
+
+        theta_hat, loss_history, result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=8,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=2,
+            lambda_uv_ridge=0.1,
+        )
+
+        self.assertEqual(theta_hat.shape, (len(param_keys),))
+        self.assertTrue(np.isfinite(loss_history[-1]))
+        self.assertEqual(result["optimizer_mode"], "concurrent_latent_rank")
+        self.assertEqual(result["optimizer"], "scipy_lbfgsb_low_rank")
+        self.assertEqual(result["n_starts"], 2)
+        self.assertEqual(len(result["start_summaries"]), 2)
+        self.assertIn("mple_history", result)
+        self.assertIn("penalized_history", result)
+        self.assertAlmostEqual(float(result["lambda_uv_ridge"]), 0.1)
+
+    def test_concurrent_low_rank_penalized_history_decreases(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="concurrent_latent_rank",
+        )
+        _, _, result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=parameter_names(artifacts),
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=8,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.1,
+        )
+        history = list(result["penalized_history"])
+
+        self.assertGreaterEqual(len(history), 2)
+        self.assertLessEqual(history[-1], history[0])
+
+    def test_concurrent_low_rank_penalty_changes_objective(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="concurrent_latent_rank",
+        )
+        param_keys = parameter_names(artifacts)
+
+        _, _, low_penalty_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=8,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.0,
+        )
+        _, _, high_penalty_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=8,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.5,
+        )
+
+        self.assertLessEqual(
+            float(high_penalty_result["final_mple_loss"]),
+            float(high_penalty_result["final_penalized_objective"]) + 1e-12,
+        )
+        self.assertNotEqual(
+            float(low_penalty_result["final_penalized_objective"]),
+            float(high_penalty_result["final_penalized_objective"]),
+        )
+
+    def test_build_fit_model_artifacts_accepts_concurrent_rank(self) -> None:
+        config = base_config()
+        config.global_params.optimizer_mode = "concurrent_latent_rank"
+        config.global_params.latent_rank = 2
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+
+        artifacts = build_fit_model_artifacts(config, gamma)
+        self.assertEqual(artifacts.optimizer_mode, "concurrent_latent_rank")
+        self.assertEqual(artifacts.latent_rank, 2)
+
+    def test_build_fit_model_artifacts_rejects_nonpositive_concurrent_rank(
+        self,
+    ) -> None:
+        config = base_config()
+        config.global_params.optimizer_mode = "concurrent_latent_rank"
+        config.global_params.latent_rank = 0
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+
+        with self.assertRaisesRegex(ValueError, "concurrent_latent_rank"):
+            build_fit_model_artifacts(config, gamma)
+
+    def test_build_fit_config_allows_uv_ridge_for_concurrent_mode(self) -> None:
+        variant = {
+            "name": "concurrent_rank_2",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+            "optimizer_mode": "concurrent_latent_rank",
+            "latent_rank": 2,
+            "lambda_uv_ridge": 0.25,
+            "B": 1.0,
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
+        self.assertEqual(
+            str(fit_config.global_params.optimizer_mode), "concurrent_latent_rank"
+        )
+        self.assertEqual(int(fit_config.global_params.latent_rank), 2)
+        self.assertAlmostEqual(float(fit_config.global_params.lambda_uv_ridge), 0.25)
+
+    def test_validate_fits_spec_allows_uv_ridge_for_concurrent_mode(self) -> None:
+        spec_root = REPO_ROOT / "experiments" / f".tmp_spec_{uuid.uuid4().hex}"
+        spec_root.mkdir(parents=True, exist_ok=True)
+        spec_path = spec_root / "fits_spec.yaml"
+        try:
+            spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        "  fit_root_name: fits",
+                        "  fit_manifest_path: tmp.csv",
+                        "  optimizer:",
+                        "    steps: 5",
+                        "    tol: 1.0e-6",
+                        "    seed: 0",
+                        "  B: 1.0",
+                        "  latent_rank: 1",
+                        "  optimizer_mode: no_external_field",
+                        "  lambda_nuclear: 0.0",
+                        "  lambda_frobenius: 0.0",
+                        "  lambda_uv_ridge: 0.0",
+                        "  estimation:",
+                        "    fixed_scalar_params: {}",
+                        "variants:",
+                        "  - name: concurrent_rank_1",
+                        "    optimizer_mode: concurrent_latent_rank",
+                        "    latent_rank: 1",
+                        "    lambda_uv_ridge: 0.1",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            validate_fits_spec(spec_path)
+        finally:
+            shutil.rmtree(spec_root, ignore_errors=True)
+
+    def test_build_fit_config_rejects_uv_ridge_for_unrelated_mode(self) -> None:
+        variant = {
+            "name": "bad_rank_0",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+            "optimizer_mode": "no_external_field",
+            "latent_rank": 0,
+            "lambda_uv_ridge": 0.25,
+            "B": 1.0,
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "lambda_uv_ridge"):
+            build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
 
 
 class FitReportingTests(unittest.TestCase):

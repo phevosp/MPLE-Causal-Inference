@@ -40,5 +40,10 @@ variants:
   #   latent_rank: 1
   #   lambda_uv_ridge: 10
 
+  # - name: concurrent_rank_10
+  #   optimizer_mode: concurrent_latent_rank
+  #   latent_rank: 10
+  #   lambda_uv_ridge: 18
+
   # - name: zero_external_field
   #   optimizer_mode: no_external_field

@@ -50,6 +50,7 @@ Each entry is deep-merged with `base`; entries inherit all base fields they don'
 | `no_external_field` | Scalar-only optimization with the latent field fixed to zero. |
 | `nuclear_norm` | Proximal gradient descent with nuclear-norm regularization. Promotes low rank without fixing it. |
 | `alternating_latent_rank` | Alternating optimization over U and V factor matrices. Requires `latent_rank >= 1`. |
+| `concurrent_latent_rank` | Joint L-BFGS-B optimization over U and V factor matrices with the same UV ridge penalty as the alternating mode. Requires `latent_rank >= 1`. |
 
 ## Key Source Files
 
@@ -68,7 +69,7 @@ Each entry is deep-merged with `base`; entries inherit all base fields they don'
 
 - `estimation.fixed_scalar_params` — scalars **fixed at these values**, not initial guesses. Empty dict `{}` means all scalars are estimated freely.
 - `lambda_frobenius` — only active for `exact_rank_manifold` mode.
-- `lambda_uv_ridge` — only active for `alternating_latent_rank` mode.
+- `lambda_uv_ridge` — only active for `alternating_latent_rank` and `concurrent_latent_rank` modes.
 - `optimizer_mode: no_external_field` → scalar-only model (no latent field).
 
 ## Manifest Flow
