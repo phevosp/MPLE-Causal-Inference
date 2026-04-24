@@ -12,8 +12,9 @@ WORKER_SCRIPT="${WORKER_SCRIPT:-run_posterior_predictive_job.sh}"
 REPORT_JOB_NAME="${REPORT_JOB_NAME:-posterior-predictive-report}"
 
 job_ids=()
+FIELD_SEP=$'\x1f'
 
-while IFS=$'\t' read -r experiment_name source_type variant_name intervention_source intervention_name run_name; do
+while IFS="${FIELD_SEP}" read -r experiment_name source_type variant_name intervention_source intervention_name run_name; do
   submit_output="$(
     GEN_MANIFEST="${GEN_MANIFEST}" \
     FIT_MANIFEST="${FIT_MANIFEST}" \
@@ -43,7 +44,7 @@ with open(target_pairs_path, "r", encoding="utf-8", newline="") as handle:
     for row in reader:
         for run in runs:
             print(
-                "\t".join(
+                "\x1f".join(
                     [
                         row.get("experiment_name", "").strip(),
                         row.get("source_type", "").strip(),

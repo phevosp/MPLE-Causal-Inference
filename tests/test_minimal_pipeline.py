@@ -1881,7 +1881,9 @@ class PipelineStageRequestTests(unittest.TestCase):
                     "fi",
                     'count="$((count + 1))"',
                     'printf "%s" "${count}" > "${FAKE_SBATCH_COUNTER}"',
-                    'printf "%s\\n" "$*" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "%s|" "$#" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "<%s>" "$@" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "\\n" >> "${FAKE_SBATCH_LOG}"',
                     'printf "%s\\n" "job${count}"',
                 ]
             ),
@@ -3449,11 +3451,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(log_lines), 3)
-        self.assertIn("run_posterior_predictive_job.sh exp_a truth", log_lines[0])
-        self.assertIn("default", log_lines[0])
-        self.assertIn("run_posterior_predictive_job.sh exp_a truth", log_lines[1])
-        self.assertIn("longer", log_lines[1])
-        self.assertIn("--wrap", log_lines[2])
+        self.assertEqual(
+            log_lines[0],
+            "8|<--parsable><run_posterior_predictive_job.sh><exp_a><truth><><observed_experiment><><default>",
+        )
+        self.assertEqual(
+            log_lines[1],
+            "8|<--parsable><run_posterior_predictive_job.sh><exp_a><truth><><observed_experiment><><longer>",
+        )
+        self.assertIn("<--wrap>", log_lines[2])
 
 
 if __name__ == "__main__":
