@@ -164,10 +164,10 @@ The support-selection rule recorded in metadata is:
 Use the shared fit runner:
 
 ```bash
-pixi run python run_fit_pipeline.py \
-  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
-  --overwrite
+GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+FIT_OVERWRITE=true \
+bash submit_fit_jobs.sh
 ```
 
 ### 5. Counterfactual Pipeline
@@ -315,10 +315,10 @@ The preferred real-data workflow is now the same as the synthetic/hybrid workflo
 Fit MPLE variants:
 
 ```bash
-pixi run python run_fit_pipeline.py \
-  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
-  --overwrite
+GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+FIT_OVERWRITE=true \
+bash submit_fit_jobs.sh
 ```
 
 Build reusable intervention scenarios:
@@ -513,19 +513,19 @@ pixi run python data/USCountyVaccination/create_us_county_vaccination_experiment
   --max_experiments 1 \
   --overwrite
 
-pixi run python run_fit_pipeline.py \
-  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
-  --overwrite
+GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+FIT_OVERWRITE=true \
+bash submit_fit_jobs.sh
 ```
 
 Run the shared fit, intervention-library, and counterfactual workflow:
 
 ```bash
-pixi run python run_fit_pipeline.py \
-  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
-  --overwrite
+GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+FIT_OVERWRITE=true \
+bash submit_fit_jobs.sh
 
 pixi run python run_intervention_library.py \
   --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
@@ -569,10 +569,10 @@ pixi run python data/USCountyVaccination/create_us_county_vaccination_experiment
 Shared MPLE fitting writes per-experiment fit artifacts and updates the root-level `fit_manifest.csv`:
 
 ```bash
-pixi run python run_fit_pipeline.py \
-  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
-  --overwrite
+GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+FIT_OVERWRITE=true \
+bash submit_fit_jobs.sh
 ```
 
 For counterfactual summaries, build intervention-library entries and run the shared posterior-predictive runner:

@@ -46,6 +46,23 @@ Dimension resolution:
 - fixed intervention artifacts can determine `N`, `T`, and `s`
 - generated interventions require an explicit `dimensions.s`
 
+### Generation Requests
+
+Written by:
+
+- `run_generation_pipeline.py --write_requests`
+
+Default path:
+
+- `experiments/SyntheticHybridExperiments/generation_requests.csv`
+
+Columns:
+
+- `generation_spec_path`
+- `experiment_name`
+- `experiment_slug`
+- `experiment_path`
+
 ### Fit Spec
 
 File:
@@ -70,6 +87,26 @@ Important keys:
 - `lambda_frobenius`
 - `lambda_uv_ridge`
 - `estimation.fixed_scalar_params`
+
+### Fit Requests
+
+Written by:
+
+- `run_fit_pipeline.py --write_requests`
+
+Default path:
+
+- `experiments/SyntheticHybridExperiments/fit_requests.csv`
+
+Columns:
+
+- `generation_manifest_path`
+- `fits_spec_path`
+- `experiment_name`
+- `experiment_slug`
+- `variant_name`
+- `variant_slug`
+- `fit_path`
 
 ### Posterior Predictive Spec
 
@@ -206,6 +243,10 @@ USCountyVaccination rows also include real-data metadata such as:
 
 USCountyVaccination rows set `has_truth=false`.
 
+The synthetic/hybrid generation manifest is refreshed from completed experiment outputs by:
+
+- `run_generation_pipeline.py --refresh_manifest`
+
 ### Fit Manifest
 
 Written by:
@@ -234,6 +275,10 @@ Typical columns:
 - `latent_rank`
 - `fixed_scalar_params`
 - `status`
+
+The fit manifest is refreshed from completed fit outputs, and grouped fit reports are rebuilt, by:
+
+- `run_fit_pipeline.py --refresh_manifest`
 
 ### Posterior Predictive Manifest
 
@@ -459,6 +504,79 @@ Truth bundles are loaded from:
 
 ## Report Regeneration
 
+Plan generation requests without materializing experiments:
+
+```bash
+pixi run python -u run_generation_pipeline.py \
+  --spec_path data/configs/generation_spec.yaml \
+  --write_requests
+```
+
+Run one planned generation request:
+
+```bash
+pixi run python -u run_generation_pipeline.py \
+  --spec_path data/configs/generation_spec.yaml \
+  --run_request \
+  --experiment_slug synthetic_rank_40_b1 \
+  --overwrite
+```
+
+Refresh the generation manifest from completed outputs:
+
+```bash
+pixi run python -u run_generation_pipeline.py \
+  --spec_path data/configs/generation_spec.yaml \
+  --refresh_manifest
+```
+
+Submit all generation requests through SLURM and refresh the generation manifest afterward:
+
+```bash
+GENERATION_SPEC_PATH=data/configs/generation_spec.yaml \
+GENERATION_OVERWRITE=true \
+bash submit_generation_jobs.sh
+```
+
+Plan fit requests without launching MPLE:
+
+```bash
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --fits_spec_path data/configs/fits_spec.yaml \
+  --write_requests
+```
+
+Run one planned fit request:
+
+```bash
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --fits_spec_path data/configs/fits_spec.yaml \
+  --run_request \
+  --experiment_slug synthetic_rank_40_b1 \
+  --variant_slug rank_40_b1 \
+  --overwrite
+```
+
+Refresh the fit manifest and grouped fit reports from completed outputs:
+
+```bash
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --fits_spec_path data/configs/fits_spec.yaml \
+  --refresh_manifest
+```
+
+Submit all fit requests through SLURM and refresh the fit manifest/reports afterward:
+
+```bash
+GENERATION_MANIFEST_PATH=experiments/SyntheticHybridExperiments/generation_manifest.csv \
+FITS_SPEC_PATH=data/configs/fits_spec.yaml \
+FIT_OVERWRITE=true \
+bash submit_fit_jobs.sh
+```
+
 Regenerate fit summaries from an existing fit manifest:
 
 ```bash
@@ -524,10 +642,10 @@ pixi run python -u data/USCountyVaccination/create_us_county_vaccination_experim
   --outcomes death_rate_100k_ge_2 \
   --overwrite
 
-pixi run python -u run_fit_pipeline.py \
-  --manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fits_spec_path data/USCountyVaccination/experiment_configs/fits_spec.yaml \
-  --overwrite
+GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
+FIT_OVERWRITE=true \
+bash submit_fit_jobs.sh
 
 pixi run python -u run_intervention_library.py \
   --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \

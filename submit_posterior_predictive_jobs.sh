@@ -64,8 +64,12 @@ fi
 
 dependency=$(IFS=:; echo "${job_ids[*]}")
 
-GEN_MANIFEST="${GEN_MANIFEST}" \
-  "${SBATCH_BIN}" \
-  --job-name "${REPORT_JOB_NAME}" \
-  --dependency "afterok:${dependency}" \
-  --wrap "pixi run python -u report_posterior_predictive.py --generation_manifest_path '${GEN_MANIFEST}'"
+report_job_id="$(
+  GEN_MANIFEST="${GEN_MANIFEST}" \
+    "${SBATCH_BIN}" \
+    --parsable \
+    --job-name "${REPORT_JOB_NAME}" \
+    --dependency "afterok:${dependency}" \
+    --wrap "pixi run python -u report_posterior_predictive.py --generation_manifest_path '${GEN_MANIFEST}'"
+)"
+printf "%s\n" "${report_job_id%%;*}"

@@ -65,7 +65,7 @@ from model_utils import (
     save_model_artifacts,
     unpack_theta,
 )
-from pipeline_specs import validate_fits_spec
+from pipeline_specs import read_csv_manifest, validate_fits_spec
 from posterior_predictive_utils import (
     compute_panel_statistics,
     simulate_outcomes_for_bundle,
@@ -81,8 +81,20 @@ from report_parameter_recovery_detailed import (
     group_and_rank_fit_rows,
     write_fit_reports,
 )
-from run_fit_pipeline import build_fit_config, infer_panel_dimensions, run_fits
-from run_generation_pipeline import run_generation
+from run_fit_pipeline import (
+    build_fit_config,
+    infer_panel_dimensions,
+    refresh_fit_manifest,
+    run_fit_request,
+    run_fits,
+    write_fit_requests,
+)
+from run_generation_pipeline import (
+    refresh_generation_manifest,
+    run_generation,
+    run_generation_request,
+    write_generation_requests,
+)
 from run_intervention_library import run_intervention_library
 from posterior_predictive_job_utils import (
     index_generation_rows,
@@ -1755,6 +1767,428 @@ class FitReportingTests(unittest.TestCase):
         self.assertIn("lambda_uv_ridge", winner_rows[0])
         self.assertEqual(
             Path(fit_manifest), self.root / "generated" / "fit_manifest.csv"
+        )
+
+
+class PipelineStageRequestTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = REPO_ROOT / "experiments" / f".tmp_stage_requests_{uuid.uuid4().hex}"
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _write_generation_spec(self, experiments: list[dict[str, object] | str]) -> Path:
+        normalized_experiments: list[dict[str, object]] = []
+        for experiment in experiments:
+            if isinstance(experiment, str):
+                normalized_experiments.append({"name": experiment})
+            else:
+                normalized_experiments.append(dict(experiment))
+        spec_path = self.root / "generation_spec.yaml"
+        spec = {
+            "base": {
+                "experiment_root": f"{self.root.as_posix()}/generated",
+                "manifest_path": f"{self.root.as_posix()}/generated/generation_manifest.csv",
+                "dimensions": {"N": 6, "T": 4, "s": 1},
+                "generation": {"gibbs_sweeps": 1, "seed": 7},
+                "x0": {
+                    "generator": "bernoulli",
+                    "params": {"p": 0.5, "fixed_val": None},
+                },
+                "graph": {
+                    "source": "generated",
+                    "generator": "erdos_renyi",
+                    "params": {"p": 0.5},
+                    "artifact": {
+                        "gamma_path": None,
+                        "node_index_path": None,
+                        "artifact_dir": None,
+                        "network_name": None,
+                        "trim_scope": None,
+                    },
+                },
+                "intervention": {
+                    "source": "generated",
+                    "artifact": {
+                        "panel_path": None,
+                        "z0_path": None,
+                        "artifact_dir": None,
+                        "shared_panel_dir": None,
+                        "outcome_code": None,
+                        "intervention_code": None,
+                        "lag_code": None,
+                        "trim_scope": None,
+                    },
+                },
+                "truth": {
+                    "B": 1.0,
+                    "latent_rank": 0,
+                    "field_mode": "random_low_rank",
+                    "field_params": {},
+                    "scalars": {
+                        "beta": 0.2,
+                        "xi": 0.1,
+                        "eta": 0.05,
+                        "zeta": -0.1,
+                        "psi": 0.2,
+                    },
+                },
+            },
+            "experiments": normalized_experiments,
+        }
+        OmegaConf.save(OmegaConf.create(spec), spec_path)
+        return spec_path
+
+    def _write_fit_spec(self, variants: list[dict[str, object] | str]) -> Path:
+        normalized_variants: list[dict[str, object]] = []
+        for variant in variants:
+            if isinstance(variant, str):
+                normalized_variants.append({"name": variant})
+            else:
+                normalized_variants.append(dict(variant))
+        fits_spec_path = self.root / "fits_spec.yaml"
+        spec = {
+            "base": {
+                "fit_root_name": "fits",
+                "fit_manifest_path": f"{self.root.as_posix()}/generated/fit_manifest.csv",
+                "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+                "B": 1.0,
+                "latent_rank": 0,
+                "optimizer_mode": "no_external_field",
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.0,
+                "estimation": {"fixed_scalar_params": {}},
+            },
+            "variants": normalized_variants,
+        }
+        OmegaConf.save(OmegaConf.create(spec), fits_spec_path)
+        return fits_spec_path
+
+    def _write_fake_sbatch(self) -> tuple[Path, Path, Path]:
+        fake_sbatch_path = self.root / "fake_sbatch.sh"
+        fake_counter_path = self.root / "fake_sbatch_counter.txt"
+        fake_log_path = self.root / "fake_sbatch_log.txt"
+        fake_sbatch_path.write_text(
+            "\n".join(
+                [
+                    "#!/bin/bash",
+                    "set -euo pipefail",
+                    'count="0"',
+                    'if [[ -f "${FAKE_SBATCH_COUNTER}" ]]; then',
+                    '  count="$(cat "${FAKE_SBATCH_COUNTER}")"',
+                    "fi",
+                    'count="$((count + 1))"',
+                    'printf "%s" "${count}" > "${FAKE_SBATCH_COUNTER}"',
+                    'printf "%s\\n" "$*" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "%s\\n" "job${count}"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fake_sbatch_path.chmod(0o755)
+        return fake_sbatch_path, fake_counter_path, fake_log_path
+
+    def test_write_generation_requests_writes_one_row_per_experiment(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a", "exp_b"])
+
+        request_path = write_generation_requests(generation_spec_path)
+
+        rows = read_csv_manifest(request_path)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([row["experiment_slug"] for row in rows], ["exp_a", "exp_b"])
+        self.assertTrue(request_path.name.endswith("generation_requests.csv"))
+
+    def test_run_generation_request_only_materializes_targeted_experiment(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a", "exp_b"])
+
+        write_generation_requests(generation_spec_path)
+        run_generation_request(generation_spec_path, "exp_a", overwrite=True)
+
+        self.assertTrue((self.root / "generated" / "exp_a" / "panel_data.npz").exists())
+        self.assertFalse((self.root / "generated" / "exp_b").exists())
+
+    def test_refresh_generation_manifest_rebuilds_manifest_from_outputs(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [
+                {
+                    "name": "exp_rank_2",
+                    "truth": {
+                        "latent_rank": 2,
+                        "field_mode": "random_low_rank",
+                    },
+                }
+            ]
+        )
+
+        write_generation_requests(generation_spec_path)
+        run_generation_request(generation_spec_path, "exp_rank_2", overwrite=True)
+        manifest_path = refresh_generation_manifest(generation_spec_path)
+
+        rows = read_csv_manifest(manifest_path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["experiment_name"], "exp_rank_2")
+        self.assertEqual(rows[0]["field_mode"], "random_low_rank")
+        with np.load(
+            self.root / "generated" / "exp_rank_2" / "field_artifacts.npz",
+            allow_pickle=False,
+        ) as data:
+            expected_latent_rank = int(np.asarray(data["latent_rank"]).item())
+        self.assertEqual(int(rows[0]["latent_rank"]), expected_latent_rank)
+
+    def test_write_fit_requests_writes_cartesian_product(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a", "exp_b"])
+        fits_spec_path = self._write_fit_spec(["rank_0", "rank_0_fixed"])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+
+        request_path = write_fit_requests(generation_manifest, fits_spec_path)
+
+        rows = read_csv_manifest(request_path)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(
+            {(row["experiment_slug"], row["variant_slug"]) for row in rows},
+            {
+                ("exp_a", "rank_0"),
+                ("exp_a", "rank_0_fixed"),
+                ("exp_b", "rank_0"),
+                ("exp_b", "rank_0_fixed"),
+            },
+        )
+
+    def test_run_fit_request_writes_one_fit_folder(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a"])
+        fits_spec_path = self._write_fit_spec(
+            [
+                "rank_0",
+                {
+                    "name": "nuclear_lambda_1e_2",
+                    "optimizer_mode": "nuclear_norm",
+                    "lambda_nuclear": 0.01,
+                },
+            ]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+
+        write_fit_requests(generation_manifest, fits_spec_path)
+        run_fit_request(
+            generation_manifest,
+            fits_spec_path,
+            "exp_a",
+            "rank_0",
+            overwrite=True,
+        )
+
+        rank_0_root = self.root / "generated" / "exp_a" / "fits" / "rank_0"
+        nuclear_root = self.root / "generated" / "exp_a" / "fits" / "nuclear_lambda_1e_2"
+        self.assertTrue((rank_0_root / "mple_summary.csv").exists())
+        self.assertFalse(nuclear_root.exists())
+
+    def test_refresh_fit_manifest_rebuilds_manifest_and_reports(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a"])
+        fits_spec_path = self._write_fit_spec(["rank_0"])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+
+        write_fit_requests(generation_manifest, fits_spec_path)
+        run_fit_request(
+            generation_manifest,
+            fits_spec_path,
+            "exp_a",
+            "rank_0",
+            overwrite=True,
+        )
+        fit_manifest = refresh_fit_manifest(generation_manifest, fits_spec_path)
+
+        rows = read_csv_manifest(fit_manifest)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["experiment_name"], "exp_a")
+        self.assertEqual(rows[0]["variant_name"], "rank_0")
+        self.assertTrue(
+            (self.root / "generated" / "exp_a" / "fit_summary.csv").exists()
+        )
+        self.assertTrue(
+            (self.root / "generated" / "best_fit_by_experiment.csv").exists()
+        )
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
+    def test_submit_generation_jobs_submits_workers_and_report(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        generation_spec_path = self._write_generation_spec(["exp_a", "exp_b"])
+        fake_sbatch_path, fake_counter_path, fake_log_path = self._write_fake_sbatch()
+
+        result = subprocess.run(
+            [bash_path, "submit_generation_jobs.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "GENERATION_SPEC_PATH": str(generation_spec_path),
+                "SBATCH_BIN": str(fake_sbatch_path),
+                "WORKER_SCRIPT": "run_generation_job.sh",
+                "FAKE_SBATCH_COUNTER": str(fake_counter_path),
+                "FAKE_SBATCH_LOG": str(fake_log_path),
+            },
+        )
+
+        log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 3)
+        self.assertIn("run_generation_job.sh exp_a", log_lines[0])
+        self.assertIn("run_generation_job.sh exp_b", log_lines[1])
+        self.assertIn("--refresh_manifest", log_lines[2])
+        self.assertEqual(result.stdout.strip(), "job3")
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
+    def test_submit_fit_jobs_submits_workers_and_report(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        generation_manifest_path = self.root / "generation_manifest.csv"
+        experiment_root = self.root / "generated" / "exp_a"
+        experiment_root.mkdir(parents=True, exist_ok=True)
+        with generation_manifest_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "experiment_name",
+                    "experiment_slug",
+                    "descriptor",
+                    "experiment_path",
+                    "intervention_source",
+                    "graph_source",
+                    "N",
+                    "T",
+                    "s",
+                    "has_truth",
+                    "field_mode",
+                    "latent_rank",
+                ],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "experiment_name": "exp_a",
+                    "experiment_slug": "exp_a",
+                    "descriptor": "exp_a",
+                    "experiment_path": str(experiment_root.resolve()),
+                    "intervention_source": "generated",
+                    "graph_source": "generated",
+                    "N": 6,
+                    "T": 4,
+                    "s": 1,
+                    "has_truth": True,
+                    "field_mode": "random_low_rank",
+                    "latent_rank": 0,
+                }
+            )
+        fits_spec_path = self._write_fit_spec(["rank_0", "rank_0_fixed"])
+        fake_sbatch_path, fake_counter_path, fake_log_path = self._write_fake_sbatch()
+
+        result = subprocess.run(
+            [bash_path, "submit_fit_jobs.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "GENERATION_MANIFEST_PATH": str(generation_manifest_path),
+                "FITS_SPEC_PATH": str(fits_spec_path),
+                "SBATCH_BIN": str(fake_sbatch_path),
+                "WORKER_SCRIPT": "run_fit_job.sh",
+                "FAKE_SBATCH_COUNTER": str(fake_counter_path),
+                "FAKE_SBATCH_LOG": str(fake_log_path),
+            },
+        )
+
+        log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 3)
+        self.assertIn("run_fit_job.sh exp_a rank_0", log_lines[0])
+        self.assertIn("run_fit_job.sh exp_a rank_0_fixed", log_lines[1])
+        self.assertIn("--refresh_manifest", log_lines[2])
+        self.assertEqual(result.stdout.strip(), "job3")
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell orchestration test")
+    def test_run_tests_sh_waits_between_stage_submissions(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        log_path = self.root / "orchestration.log"
+        generation_submitter = self.root / "fake_generation_submitter.sh"
+        fit_submitter = self.root / "fake_fit_submitter.sh"
+        posterior_submitter = self.root / "fake_posterior_submitter.sh"
+        intervention_script = self.root / "fake_intervention.sh"
+        sacct_script = self.root / "fake_sacct.sh"
+        squeue_script = self.root / "fake_squeue.sh"
+
+        generation_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'generation_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-generation\\n'\n",
+            encoding="utf-8",
+        )
+        fit_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'fit_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-fit\\n'\n",
+            encoding="utf-8",
+        )
+        posterior_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'posterior_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-posterior\\n'\n",
+            encoding="utf-8",
+        )
+        intervention_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'intervention\\n' >> \"${STAGE_LOG}\"\n",
+            encoding="utf-8",
+        )
+        sacct_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\njob_id=\"\"\nwhile [[ $# -gt 0 ]]; do\n  if [[ \"$1\" == \"-j\" ]]; then\n    job_id=\"$2\"\n    shift 2\n    continue\n  fi\n  shift\n done\nprintf 'wait:%s\\n' \"${job_id}\" >> \"${STAGE_LOG}\"\nprintf 'COMPLETED\\n'\n",
+            encoding="utf-8",
+        )
+        squeue_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\n",
+            encoding="utf-8",
+        )
+        for script_path in [
+            generation_submitter,
+            fit_submitter,
+            posterior_submitter,
+            intervention_script,
+            sacct_script,
+            squeue_script,
+        ]:
+            script_path.chmod(0o755)
+
+        subprocess.run(
+            [bash_path, "run_tests.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "STAGE_LOG": str(log_path),
+                "GEN_MANIFEST": str(self.root / "generation_manifest.csv"),
+                "FIT_MANIFEST": str(self.root / "fit_manifest.csv"),
+                "GENERATION_SUBMITTER": str(generation_submitter),
+                "FIT_SUBMITTER": str(fit_submitter),
+                "POSTERIOR_PREDICTIVE_SUBMITTER": str(posterior_submitter),
+                "INTERVENTION_LIBRARY_SCRIPT": str(intervention_script),
+                "SACCT_BIN": str(sacct_script),
+                "SQUEUE_BIN": str(squeue_script),
+                "SLEEP_BIN": str(squeue_script),
+                "WAIT_POLL_SECONDS": "0",
+            },
+        )
+
+        self.assertEqual(
+            log_path.read_text(encoding="utf-8").splitlines(),
+            [
+                "generation_submit",
+                "wait:job-generation",
+                "fit_submit",
+                "wait:job-fit",
+                "intervention",
+                "posterior_submit",
+                "wait:job-posterior",
+            ],
         )
 
 
