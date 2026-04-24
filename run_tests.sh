@@ -40,10 +40,11 @@ FIT_MANIFEST="experiments/SyntheticHybridExperiments/fit_manifest.csv"
 #     --generation_manifest_path "$GEN_MANIFEST" \
 #     --spec_path data/configs/intervention_library_spec.yaml
 
-echo "Running posterior predictive pipeline..."
-pixi run python run_posterior_predictive_pipeline.py \
-    --generation_manifest_path "$GEN_MANIFEST" \
-    --fit_manifest_path "$FIT_MANIFEST" \
-    --target_pairs_path data/configs/posterior_predictive_target_pairs.csv
+echo "Submitting posterior predictive jobs..."
+GEN_MANIFEST="$GEN_MANIFEST" \
+FIT_MANIFEST="$FIT_MANIFEST" \
+TARGET_PAIRS_PATH="data/configs/posterior_predictive_target_pairs.csv" \
+POSTERIOR_PREDICTIVE_SPEC_PATH="data/configs/posterior_predictive_spec.yaml" \
+bash submit_posterior_predictive_jobs.sh
 
 echo "Job finished at $(date)"

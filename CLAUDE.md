@@ -10,7 +10,7 @@ Implements MPLE (Majorized Proximal Likelihood Estimation) for causal inference 
 1. run_generation_pipeline.py   — materialize synthetic experiment artifacts
 2. run_fit_pipeline.py          — run MPLE optimizer on each experiment × variant
 3. run_intervention_library.py  — (optional) pre-compute intervention panels
-4. run_posterior_predictive_pipeline.py — Gibbs-sample outcome trajectories
+4. run_posterior_predictive.py          — Gibbs-sample one explicit posterior-predictive or counterfactual target
 5. report_parameter_recovery_detailed.py  — aggregate fit summaries
 6. report_posterior_predictive.py         — aggregate predictive summaries
 ```
@@ -78,7 +78,8 @@ Each stage writes a CSV manifest that feeds into the next:
 ```
 generation_manifest.csv  →  run_fit_pipeline.py  →  fit_manifest.csv
                                                   ↘
-                             run_posterior_predictive_pipeline.py  →  posterior_predictive_manifest.csv
+                             run_posterior_predictive.py  →  per-target outputs
+                             report_posterior_predictive.py  →  posterior_predictive_manifest.csv
 ```
 Pass these paths explicitly via `--manifest_path`, `--generation_manifest_path`, `--fit_manifest_path`.
 

@@ -184,12 +184,11 @@ pixi run python run_intervention_library.py \
 Run counterfactual posterior predictive simulation:
 
 ```bash
-pixi run python run_posterior_predictive_pipeline.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
-  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
-  --overwrite
+GEN_MANIFEST=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FIT_MANIFEST=experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+TARGET_PAIRS_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+POSTERIOR_PREDICTIVE_SPEC_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+bash submit_posterior_predictive_jobs.sh
 ```
 
 ### Optional Descriptive Analysis
@@ -250,7 +249,8 @@ The duplicated root-level artifacts are the inputs consumed by:
 
 - `run_fit_pipeline.py`
 - `run_intervention_library.py`
-- `run_posterior_predictive_pipeline.py`
+- `run_posterior_predictive.py`
+- `report_posterior_predictive.py`
 
 ## Field Modes
 
@@ -333,12 +333,11 @@ pixi run python run_intervention_library.py \
 Run fit-based counterfactual posterior predictive simulation:
 
 ```bash
-pixi run python run_posterior_predictive_pipeline.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
-  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
-  --overwrite
+GEN_MANIFEST=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FIT_MANIFEST=experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+TARGET_PAIRS_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+POSTERIOR_PREDICTIVE_SPEC_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+bash submit_posterior_predictive_jobs.sh
 ```
 
 The included intervention-library template materializes:
@@ -533,12 +532,11 @@ pixi run python run_intervention_library.py \
   --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
   --overwrite
 
-pixi run python run_posterior_predictive_pipeline.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
-  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
-  --overwrite
+GEN_MANIFEST=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FIT_MANIFEST=experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+TARGET_PAIRS_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+POSTERIOR_PREDICTIVE_SPEC_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+bash submit_posterior_predictive_jobs.sh
 ```
 
 Create latent-field experiment configs:
@@ -585,12 +583,11 @@ pixi run python run_intervention_library.py \
   --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
   --overwrite
 
-pixi run python run_posterior_predictive_pipeline.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
-  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
-  --overwrite
+GEN_MANIFEST=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FIT_MANIFEST=experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+TARGET_PAIRS_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+POSTERIOR_PREDICTIVE_SPEC_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+bash submit_posterior_predictive_jobs.sh
 ```
 
 ## Interpretation Notes

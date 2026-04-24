@@ -37,7 +37,7 @@ All pipeline YAML specs use a `base + named entries` pattern: every named entry 
 
 | Directory | Used by |
 | --- | --- |
-| `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive_pipeline.py`) |
+| `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive.py`, `report_posterior_predictive.py`) |
 | `data/USCountyVaccination/experiment_configs/` | Real-data pipeline and `run_uscounty_sensitivity_analysis.py` |
 
 Both directories contain identically named files (`fits_spec.yaml`, etc.) for their respective workflows. Updating fitting behavior requires editing both files independently.
@@ -81,7 +81,7 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | Synthetic and hybrid generation | `run_generation_pipeline.py` | `data/configs/generation_spec.yaml` | `generation_manifest.csv`, experiment folders |
 | MPLE variant fitting | `run_fit_pipeline.py` | `generation_manifest.csv`, `data/configs/fits_spec.yaml` | `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
 | Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
-| Posterior predictive and counterfactual simulation | `run_posterior_predictive_pipeline.py` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, `counterfactual_manifest.csv`, predictive or counterfactual summaries |
+| Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `report_posterior_predictive.py`, `submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census, CDC SVI, USDA ERS sources | cached raw inputs |
 | Real-data preprocessing and realization | `data/USCountyVaccination/preprocess_us_county_vaccination_data.py` | cached raw inputs | processed panels, `realized_*`, `shared_panels` |
 | Real-data experiment materialization | `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | `realized_*`, `shared_panels` | shared-compatible experiment folders, `generation_manifest.csv` |
@@ -203,7 +203,7 @@ Outputs:
 
 ### 4. Posterior Predictive And Counterfactual Simulation
 
-`run_posterior_predictive_pipeline.py` keeps the observed intervention panel fixed and simulates alternative outcome panels from either:
+`run_posterior_predictive.py` runs one explicit posterior-predictive or counterfactual target while keeping the intervention panel fixed. `report_posterior_predictive.py` then scans completed outputs, rebuilds the unified manifest, and writes grouped posterior-predictive reports. Simulations can draw from either:
 
 - the experiment truth parameters
 - one or more saved MPLE fit bundles
@@ -225,33 +225,52 @@ If the intervention columns are omitted, the runner defaults to `observed_experi
 
 Run settings live in `data/configs/posterior_predictive_spec.yaml` and currently use `base + runs`.
 
-Default command:
+Single-target command:
 
 ```bash
-pixi run python -u run_posterior_predictive_pipeline.py \
+pixi run python -u run_posterior_predictive.py \
   --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
   --fit_manifest_path experiments/SyntheticHybridExperiments/fit_manifest.csv \
   --target_pairs_path data/configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/configs/posterior_predictive_spec.yaml
+  --spec_path data/configs/posterior_predictive_spec.yaml \
+  --experiment_name synthetic_rank_40_B1 \
+  --source_type fit \
+  --variant_name rank_40_B1 \
+  --intervention_source observed_experiment \
+  --intervention_name observed_experiment \
+  --run_name default
 ```
 
-For an observed-intervention posterior-predictive run, outputs are:
+Batch submission command:
+
+```bash
+GEN_MANIFEST=experiments/SyntheticHybridExperiments/generation_manifest.csv \
+FIT_MANIFEST=experiments/SyntheticHybridExperiments/fit_manifest.csv \
+TARGET_PAIRS_PATH=data/configs/posterior_predictive_target_pairs.csv \
+POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
+bash submit_posterior_predictive_jobs.sh
+```
+
+Manifest/report refresh command:
+
+```bash
+pixi run python -u report_posterior_predictive.py \
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
+```
+
+Unified outputs:
 
 - `experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv`
 - `posterior_predictive/<source_slug>/<run_slug>/...` under each experiment root
+- `counterfactual/<source_slug>/<intervention_slug>/<run_slug>/...` under each experiment root
 - per-experiment `posterior_predictive_summary.csv` and `posterior_predictive_summary.md`
 - cross-experiment `best_posterior_predictive_by_experiment.csv` and `best_posterior_predictive_by_experiment.md`
-
-For a saved-intervention counterfactual run, outputs are:
-
-- `experiments/SyntheticHybridExperiments/counterfactual_manifest.csv`
-- `counterfactual/<source_slug>/<intervention_slug>/<run_slug>/...` under each experiment root
 - `counterfactual_sample_summaries.npz`
 - `counterfactual_summary.csv`
 - `counterfactual_unit_summary.csv`
 - `counterfactual_metadata.yaml`
 
-Counterfactual runs do not write `posterior_predictive_stats.csv` and do not participate in posterior-predictive ranking.
+Counterfactual rows are included in the unified `posterior_predictive_manifest.csv`, but they do not write `posterior_predictive_stats.csv` and are excluded from posterior-predictive ranking.
 
 Example counterfactual target-pairs file:
 
@@ -347,14 +366,20 @@ pixi run python -u run_fit_pipeline.py \
   --fits_spec_path data/configs/fits_spec.yaml
 ```
 
-Run posterior predictive:
+Run one posterior predictive target:
 
 ```bash
-pixi run python -u run_posterior_predictive_pipeline.py \
+pixi run python -u run_posterior_predictive.py \
   --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
   --fit_manifest_path experiments/SyntheticHybridExperiments/fit_manifest.csv \
   --target_pairs_path data/configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/configs/posterior_predictive_spec.yaml
+  --spec_path data/configs/posterior_predictive_spec.yaml \
+  --experiment_name synthetic_rank_40_B1 \
+  --source_type fit \
+  --variant_name rank_40_B1 \
+  --intervention_source observed_experiment \
+  --intervention_name observed_experiment \
+  --run_name default
 ```
 
 Build saved intervention panels:
@@ -373,11 +398,11 @@ pixi run python -u report_parameter_recovery_detailed.py \
   --manifest experiments/SyntheticHybridExperiments/fit_manifest.csv
 ```
 
-Regenerate grouped posterior-predictive reports from an existing predictive manifest:
+Refresh the unified posterior-predictive manifest and grouped reports:
 
 ```bash
 pixi run python -u report_posterior_predictive.py \
-  --manifest experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
 ```
 
 Run the minimal regression suite:
@@ -420,13 +445,14 @@ The repo ships lightweight wrappers:
 
 - `generate_data.sh`
 - `run_experiments.sh`
-- `run_posterior_predictive.sh`
+- `run_posterior_predictive_job.sh`
+- `submit_posterior_predictive_jobs.sh`
 
 They call the same Python entry points and accept environment-variable overrides:
 
 - `GENERATION_SPEC_PATH`, `GENERATION_OVERWRITE`
 - `GENERATION_MANIFEST_PATH`, `FITS_SPEC_PATH`, `FIT_OVERWRITE`
-- `FIT_MANIFEST_PATH`, `TARGET_PAIRS_PATH`, `POSTERIOR_PREDICTIVE_SPEC_PATH`, `POSTERIOR_PREDICTIVE_OVERWRITE`
+- `GEN_MANIFEST`, `FIT_MANIFEST`, `TARGET_PAIRS_PATH`, `POSTERIOR_PREDICTIVE_SPEC_PATH`, `POSTERIOR_PREDICTIVE_OVERWRITE`
 
 ## Repository Map
 
@@ -434,7 +460,8 @@ They call the same Python entry points and accept environment-variable overrides
 - `run_generation_pipeline.py`: spec expansion for generation experiments
 - `run_fit_pipeline.py`: spec expansion for MPLE fit variants
 - `run_intervention_library.py`: reusable intervention-panel materialization
-- `run_posterior_predictive_pipeline.py`: posterior-predictive orchestration
+- `run_posterior_predictive.py`: single-target posterior-predictive/counterfactual execution
+- `report_posterior_predictive.py`: manifest refresh plus grouped posterior-predictive reporting
 - `mple.py`: conditional MPLE optimizer and artifact writer
 - `model_utils.py`: model artifact loading, parameter packing, and field utilities
 - `loading_utils.py`: experiment/panel artifact loading plus fit/truth parameter-bundle loading
@@ -476,12 +503,7 @@ pixi run python run_intervention_library.py \
   --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
   --overwrite
 
-pixi run python run_posterior_predictive_pipeline.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
-  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
-  --overwrite
+bash submit_posterior_predictive_jobs.sh
 ```
 
 The full US county workflow is documented in [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md).

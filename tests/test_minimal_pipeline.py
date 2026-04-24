@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shutil
+import os
+import subprocess
 import sys
 import unittest
 import uuid
@@ -27,7 +29,7 @@ from data.USCountyVaccination.experiment_artifacts import (
     create_config as create_us_county_config,
     save_experiment as save_us_county_experiment,
 )
-from intervention_utils import COUNTERFACTUAL_MANIFEST_NAME, load_saved_intervention_context
+from intervention_utils import load_saved_intervention_context
 from io_utils import io_path
 from loading_utils import (
     OutcomeParameterBundle,
@@ -70,6 +72,7 @@ from posterior_predictive_utils import (
 from report_posterior_predictive import (
     collect_predictive_rows,
     group_and_rank_predictive_rows,
+    refresh_and_write_posterior_predictive_reports,
 )
 from report_parameter_recovery_detailed import (
     collect_fit_rows,
@@ -79,12 +82,12 @@ from report_parameter_recovery_detailed import (
 from run_fit_pipeline import build_fit_config, infer_panel_dimensions, run_fits
 from run_generation_pipeline import run_generation
 from run_intervention_library import run_intervention_library
-from run_posterior_predictive_pipeline import (
-    _index_generation_rows,
-    _resolve_fit_lookup,
-    _resolve_target_pairs,
-    run_posterior_predictive,
+from posterior_predictive_job_utils import (
+    index_generation_rows,
+    resolve_fit_lookup,
+    resolve_target_pairs,
 )
+from run_posterior_predictive import run_posterior_predictive
 from run_uscounty_sensitivity_analysis import (
     materialize_sensitivity_experiments,
     write_sensitivity_fit_spec,
@@ -1797,7 +1800,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             ]
         )
         with self.assertRaisesRegex(ValueError, "has_truth=false"):
-            _resolve_target_pairs(
+            resolve_target_pairs(
                 target_pairs_path,
                 {
                     experiment_root.name: {
@@ -1876,11 +1879,17 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             intervention_spec_path,
             overwrite=True,
         )
-        manifest_path = run_posterior_predictive(
+        row = run_posterior_predictive(
             generation_manifest,
             fit_manifest,
             target_pairs_path,
             predictive_spec_path,
+            experiment_name=experiment_root.name,
+            source_type="fit",
+            variant_name="rank_0",
+            intervention_source="saved_intervention",
+            intervention_name="all_ones_from_s",
+            run_name="default",
             overwrite=True,
         )
 
@@ -1891,8 +1900,10 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             / "all_ones_from_s"
             / "default"
         )
-        self.assertEqual(Path(manifest_path), self.root / COUNTERFACTUAL_MANIFEST_NAME)
-        self.assertTrue((self.root / COUNTERFACTUAL_MANIFEST_NAME).exists())
+        self.assertEqual(
+            Path(str(row["output_path"])).resolve(),
+            counterfactual_root.resolve(),
+        )
         self.assertTrue(
             Path(io_path(counterfactual_root / "counterfactual_summary.csv")).exists()
         )
@@ -2160,9 +2171,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 },
             ]
         )
-        generation_lookup = _index_generation_rows(generation_manifest_path)
-        fit_lookup = _resolve_fit_lookup(fit_manifest_path)
-        resolved = _resolve_target_pairs(
+        generation_lookup = index_generation_rows(generation_manifest_path)
+        fit_lookup = resolve_fit_lookup(fit_manifest_path)
+        resolved = resolve_target_pairs(
             target_pairs_path,
             generation_lookup,
             fit_lookup,
@@ -2184,7 +2195,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             ]
         )
         with self.assertRaises(ValueError):
-            _resolve_target_pairs(target_pairs_path, {}, {})
+            resolve_target_pairs(target_pairs_path, {}, {})
 
     def test_target_pair_resolution_rejects_missing_fit_variant(self) -> None:
         target_pairs_path = self._write_target_pairs(
@@ -2197,7 +2208,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             ]
         )
         with self.assertRaises(ValueError):
-            _resolve_target_pairs(
+            resolve_target_pairs(
                 target_pairs_path,
                 {"exp_a": {"experiment_name": "exp_a", "experiment_path": "unused"}},
                 {},
@@ -2451,13 +2462,33 @@ class PosteriorPredictiveTests(unittest.TestCase):
             overwrite=True,
         )
 
-        manifest_path = run_posterior_predictive(
+        truth_row = run_posterior_predictive(
             generation_manifest,
             fit_manifest,
             target_pairs_path,
             predictive_spec_path,
+            experiment_name="smoke_rank_0",
+            source_type="truth",
+            variant_name="",
+            intervention_source="observed_experiment",
+            intervention_name="",
+            run_name="default",
             overwrite=True,
         )
+        fit_row = run_posterior_predictive(
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_name="smoke_rank_0",
+            source_type="fit",
+            variant_name="rank_0",
+            intervention_source="saved_intervention",
+            intervention_name="full_on_from_s",
+            run_name="default",
+            overwrite=True,
+        )
+        report_outputs = refresh_and_write_posterior_predictive_reports(generation_manifest)
 
         experiment_root = self.root / "generated" / "smoke_rank_0"
         observed_output = (
@@ -2474,14 +2505,18 @@ class PosteriorPredictiveTests(unittest.TestCase):
             / "full_on_from_s"
             / "default"
         )
-        counterfactual_manifest = self.root / "generated" / COUNTERFACTUAL_MANIFEST_NAME
+        predictive_manifest = self.root / "generated" / "posterior_predictive_manifest.csv"
 
         self.assertEqual(
-            Path(manifest_path),
-            self.root / "generated" / "posterior_predictive_manifest.csv",
+            Path(str(truth_row["output_path"])).resolve(),
+            (experiment_root / "posterior_predictive" / "truth" / "default").resolve(),
+        )
+        self.assertEqual(
+            Path(str(fit_row["output_path"])).resolve(),
+            counterfactual_root.resolve(),
         )
         self.assertTrue(observed_output.exists())
-        self.assertTrue(counterfactual_manifest.exists())
+        self.assertTrue(predictive_manifest.exists())
         self.assertTrue((counterfactual_root / "counterfactual_metadata.yaml").exists())
         self.assertTrue(
             (counterfactual_root / "counterfactual_sample_summaries.npz").exists()
@@ -2494,13 +2529,23 @@ class PosteriorPredictiveTests(unittest.TestCase):
             (counterfactual_root / "posterior_predictive_stats.csv").exists()
         )
 
-        with counterfactual_manifest.open("r", encoding="utf-8", newline="") as handle:
+        self.assertEqual(
+            Path(report_outputs["manifest_path"]).resolve(),
+            predictive_manifest.resolve(),
+        )
+        with predictive_manifest.open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["intervention_name"], "full_on_from_s")
-        self.assertEqual(rows[0]["intervention_source"], "saved_intervention")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            sum(row["target_intervention_source"] == "saved_intervention" for row in rows),
+            1,
+        )
+        self.assertEqual(
+            sum(row["target_intervention_source"] == "observed_experiment" for row in rows),
+            1,
+        )
 
-    def test_run_posterior_predictive_pipeline_writes_grouped_reports(self) -> None:
+    def test_run_posterior_predictive_reports_refresh_unified_manifest(self) -> None:
         generation_spec_path = self.root / "generation_spec.yaml"
         fits_spec_path = self.root / "fits_spec.yaml"
         predictive_spec_path = self.root / "posterior_predictive_spec.yaml"
@@ -2618,13 +2663,22 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertEqual(truth_bundle.field_matrix.shape, (4, 6))
         self.assertEqual(fit_bundle.field_matrix.shape, (4, 6))
 
-        predictive_manifest = run_posterior_predictive(
-            generation_manifest,
-            fit_manifest,
-            target_pairs_path,
-            predictive_spec_path,
-            overwrite=True,
-        )
+        for source_type, variant_name in [("truth", ""), ("fit", "rank_0")]:
+            for run_name in ["default", "longer"]:
+                run_posterior_predictive(
+                    generation_manifest,
+                    fit_manifest,
+                    target_pairs_path,
+                    predictive_spec_path,
+                    experiment_name="smoke_rank_0",
+                    source_type=source_type,
+                    variant_name=variant_name,
+                    intervention_source="observed_experiment",
+                    intervention_name="",
+                    run_name=run_name,
+                    overwrite=True,
+                )
+        report_outputs = refresh_and_write_posterior_predictive_reports(generation_manifest)
 
         truth_default_csv = (
             experiment_root
@@ -2684,9 +2738,88 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertEqual(winner_rows[0]["experiment_name"], "smoke_rank_0")
         self.assertIn("coverage_rate", winner_rows[0])
         self.assertEqual(
-            Path(predictive_manifest),
+            Path(report_outputs["manifest_path"]),
             self.root / "generated" / "posterior_predictive_manifest.csv",
         )
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
+    def test_submit_posterior_predictive_jobs_submits_workers_and_report(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        target_pairs_path = self.root / "target_pairs.csv"
+        predictive_spec_path = self.root / "posterior_predictive_spec.yaml"
+        fake_sbatch_path = self.root / "fake_sbatch.sh"
+        fake_counter_path = self.root / "fake_sbatch_counter.txt"
+        fake_log_path = self.root / "fake_sbatch_log.txt"
+
+        target_pairs_path.write_text(
+            "\n".join(
+                [
+                    "experiment_name,source_type,variant_name,intervention_source,intervention_name",
+                    "exp_a,truth,,observed_experiment,",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        predictive_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  num_samples: 2",
+                    "  gibbs_sweeps: 1",
+                    "  seed: 0",
+                    "runs:",
+                    "  - name: default",
+                    "  - name: longer",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fake_sbatch_path.write_text(
+            "\n".join(
+                [
+                    "#!/bin/bash",
+                    "set -euo pipefail",
+                    'count="0"',
+                    'if [[ -f "${FAKE_SBATCH_COUNTER}" ]]; then',
+                    '  count="$(cat "${FAKE_SBATCH_COUNTER}")"',
+                    "fi",
+                    'count="$((count + 1))"',
+                    'printf "%s" "${count}" > "${FAKE_SBATCH_COUNTER}"',
+                    'printf "%s\\n" "$*" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "%s\\n" "job${count}"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fake_sbatch_path.chmod(0o755)
+
+        subprocess.run(
+            [
+                bash_path,
+                "submit_posterior_predictive_jobs.sh",
+            ],
+            check=True,
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "TARGET_PAIRS_PATH": str(target_pairs_path),
+                "POSTERIOR_PREDICTIVE_SPEC_PATH": str(predictive_spec_path),
+                "SBATCH_BIN": str(fake_sbatch_path),
+                "WORKER_SCRIPT": "run_posterior_predictive_job.sh",
+                "FAKE_SBATCH_COUNTER": str(fake_counter_path),
+                "FAKE_SBATCH_LOG": str(fake_log_path),
+            },
+        )
+
+        log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 3)
+        self.assertIn("run_posterior_predictive_job.sh exp_a truth", log_lines[0])
+        self.assertIn("default", log_lines[0])
+        self.assertIn("run_posterior_predictive_job.sh exp_a truth", log_lines[1])
+        self.assertIn("longer", log_lines[1])
+        self.assertIn("--wrap", log_lines[2])
 
 
 if __name__ == "__main__":

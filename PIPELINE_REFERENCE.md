@@ -239,7 +239,7 @@ Typical columns:
 
 Written by:
 
-- `run_posterior_predictive_pipeline.py`
+- `report_posterior_predictive.py`
 
 Default path:
 
@@ -265,7 +265,6 @@ Typical columns:
 - `target_intervention_name`
 - `target_intervention_slug`
 - `latent_rank`
-- `B`
 - `num_samples`
 - `gibbs_sweeps`
 - `seed`
@@ -275,7 +274,7 @@ Typical columns:
 - `num_statistics`
 - `output_path`
 
-This manifest is written only for observed-intervention posterior-predictive targets.
+This unified manifest is rebuilt by scanning completed posterior-predictive and counterfactual output roots. Rows for saved-intervention counterfactual runs leave posterior-predictive ranking metrics blank.
 
 ### Intervention Library Manifest
 
@@ -301,46 +300,6 @@ Typical columns:
 - `activation_scope`
 - `unit_index`
 - `start_step`
-
-### Counterfactual Manifest
-
-Written by:
-
-- `run_posterior_predictive_pipeline.py`
-
-Default path:
-
-- `experiments/SyntheticHybridExperiments/counterfactual_manifest.csv`
-
-Typical columns:
-
-- `experiment_name`
-- `experiment_slug`
-- `descriptor`
-- `experiment_path`
-- `intervention_source`
-- `intervention_name`
-- `intervention_slug`
-- `graph_source`
-- `N`
-- `T`
-- `s`
-- `run_name`
-- `run_slug`
-- `source_type`
-- `source_name`
-- `source_slug`
-- `target_intervention_source`
-- `target_intervention_name`
-- `target_intervention_slug`
-- `latent_rank`
-- `B`
-- `num_samples`
-- `gibbs_sweeps`
-- `seed`
-- `output_path`
-
-This manifest is written only for saved-intervention counterfactual targets.
 
 ## Directory Layout
 
@@ -507,11 +466,11 @@ pixi run python -u report_parameter_recovery_detailed.py \
   --manifest experiments/SyntheticHybridExperiments/fit_manifest.csv
 ```
 
-Regenerate posterior-predictive summaries from an existing predictive manifest:
+Refresh the unified posterior-predictive manifest and grouped summaries:
 
 ```bash
 pixi run python -u report_posterior_predictive.py \
-  --manifest experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
 ```
 
 Build saved interventions:
@@ -523,15 +482,31 @@ pixi run python -u run_intervention_library.py \
   --overwrite
 ```
 
-Run posterior predictive or counterfactual simulations:
+Run one posterior predictive or counterfactual target:
 
 ```bash
-pixi run python -u run_posterior_predictive_pipeline.py \
+pixi run python -u run_posterior_predictive.py \
   --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
   --fit_manifest_path experiments/SyntheticHybridExperiments/fit_manifest.csv \
   --target_pairs_path data/configs/posterior_predictive_target_pairs.csv \
   --spec_path data/configs/posterior_predictive_spec.yaml \
+  --experiment_name synthetic_rank_40_B1 \
+  --source_type fit \
+  --variant_name rank_40_B1 \
+  --intervention_source observed_experiment \
+  --intervention_name observed_experiment \
+  --run_name default \
   --overwrite
+```
+
+Submit all target/run combinations through SLURM and refresh reports afterward:
+
+```bash
+GEN_MANIFEST=experiments/SyntheticHybridExperiments/generation_manifest.csv \
+FIT_MANIFEST=experiments/SyntheticHybridExperiments/fit_manifest.csv \
+TARGET_PAIRS_PATH=data/configs/posterior_predictive_target_pairs.csv \
+POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
+bash submit_posterior_predictive_jobs.sh
 ```
 
 Materialize USCountyVaccination experiments and run the same shared fit/counterfactual path:
@@ -559,10 +534,9 @@ pixi run python -u run_intervention_library.py \
   --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
   --overwrite
 
-pixi run python -u run_posterior_predictive_pipeline.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --fit_manifest_path experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
-  --target_pairs_path data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
-  --overwrite
+GEN_MANIFEST=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
+FIT_MANIFEST=experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
+TARGET_PAIRS_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
+POSTERIOR_PREDICTIVE_SPEC_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
+bash submit_posterior_predictive_jobs.sh
 ```

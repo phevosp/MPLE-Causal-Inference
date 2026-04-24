@@ -1,4 +1,4 @@
-"""Aggregate posterior-predictive simulation results into grouped summaries."""
+"""Refresh posterior-predictive manifests from outputs and write grouped summaries."""
 
 from __future__ import annotations
 
@@ -6,8 +6,15 @@ import argparse
 from collections import defaultdict
 from pathlib import Path
 
+from omegaconf import OmegaConf
+
 from io_utils import _as_float, _fmt, _metric_or_inf, write_csv, write_markdown_table
-from pipeline_specs import read_csv_manifest
+from io_utils import io_path
+from pipeline_specs import read_csv_manifest, write_csv_manifest
+from posterior_predictive_job_utils import (
+    POSTERIOR_PREDICTIVE_MANIFEST_NAME,
+    manifest_row_from_metadata,
+)
 
 
 PER_EXPERIMENT_COLUMNS = [
@@ -51,11 +58,47 @@ WINNER_COLUMNS = [
     "gibbs_sweeps",
     "output_path",
 ]
+MANIFEST_COLUMNS = [
+    "experiment_name",
+    "experiment_slug",
+    "descriptor",
+    "experiment_path",
+    "intervention_source",
+    "graph_source",
+    "N",
+    "T",
+    "s",
+    "run_name",
+    "run_slug",
+    "source_type",
+    "source_name",
+    "source_slug",
+    "target_intervention_source",
+    "target_intervention_name",
+    "target_intervention_slug",
+    "latent_rank",
+    "mean_abs_zscore",
+    "max_abs_zscore",
+    "coverage_rate",
+    "num_statistics",
+    "num_samples",
+    "gibbs_sweeps",
+    "seed",
+    "output_path",
+]
 
 
 def collect_predictive_rows(manifest_path: str | Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for manifest_row in read_csv_manifest(manifest_path):
+        target_intervention_source = (
+            str(
+                manifest_row.get("target_intervention_source", "observed_experiment")
+            ).strip()
+            or "observed_experiment"
+        )
+        if target_intervention_source != "observed_experiment":
+            continue
         row: dict[str, object] = dict(manifest_row)
         for key in [
             "mean_abs_zscore",
@@ -83,6 +126,48 @@ def collect_predictive_rows(manifest_path: str | Path) -> list[dict[str, object]
         )
     )
     return rows
+
+
+def collect_manifest_rows_from_outputs(
+    generation_manifest_path: str | Path,
+) -> tuple[Path, list[dict[str, object]]]:
+    manifest_root = Path(generation_manifest_path).resolve().parent
+    rows: list[dict[str, object]] = []
+    for experiment_row in read_csv_manifest(generation_manifest_path):
+        experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
+        observed_metadata_paths = experiment_root.glob(
+            "posterior_predictive/*/*/posterior_predictive_metadata.yaml"
+        )
+        counterfactual_metadata_paths = experiment_root.glob(
+            "counterfactual/*/*/*/counterfactual_metadata.yaml"
+        )
+        for metadata_path in list(observed_metadata_paths) + list(counterfactual_metadata_paths):
+            with open(io_path(metadata_path), "r", encoding="utf-8") as handle:
+                metadata = OmegaConf.to_container(OmegaConf.load(handle), resolve=True)
+            if not isinstance(metadata, dict):
+                raise ValueError(f"Metadata file {metadata_path} did not contain a mapping.")
+            rows.append(
+                manifest_row_from_metadata(
+                    experiment_row,
+                    metadata,
+                    metadata_path.parent,
+                )
+            )
+    rows.sort(
+        key=lambda row: (
+            str(row.get("experiment_name", "")),
+            str(row.get("target_intervention_source", "")),
+            str(row.get("target_intervention_name", "")),
+            str(row.get("run_name", "")),
+            str(row.get("source_name", "")),
+        )
+    )
+    manifest_path = manifest_root / POSTERIOR_PREDICTIVE_MANIFEST_NAME
+    write_csv_manifest(
+        manifest_path,
+        [{column: row.get(column, "") for column in MANIFEST_COLUMNS} for row in rows],
+    )
+    return manifest_path, rows
 
 
 def ranking_key(row: dict[str, object]) -> tuple[float, float, str, str]:
@@ -192,14 +277,30 @@ def write_posterior_predictive_reports(manifest_path: str | Path) -> dict[str, o
     }
 
 
+def refresh_and_write_posterior_predictive_reports(
+    generation_manifest_path: str | Path,
+) -> dict[str, object]:
+    manifest_path, all_rows = collect_manifest_rows_from_outputs(generation_manifest_path)
+    outputs = {
+        "manifest_path": str(manifest_path),
+        "num_manifest_rows": len(all_rows),
+    }
+    predictive_rows = collect_predictive_rows(manifest_path)
+    if predictive_rows:
+        outputs.update(write_posterior_predictive_reports(manifest_path))
+    return outputs
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Write grouped posterior-predictive summaries from a predictive manifest."
+        description="Refresh posterior-predictive manifest rows from outputs and write grouped summaries."
     )
-    parser.add_argument("--manifest", required=True, type=str)
+    parser.add_argument("--generation_manifest_path", required=True, type=str)
     args = parser.parse_args()
-    outputs = write_posterior_predictive_reports(args.manifest)
-    print(f"Wrote winners summary: {outputs['winners_csv']}")
+    outputs = refresh_and_write_posterior_predictive_reports(
+        args.generation_manifest_path
+    )
+    print(f"Wrote posterior predictive manifest: {outputs['manifest_path']}")
 
 
 if __name__ == "__main__":
