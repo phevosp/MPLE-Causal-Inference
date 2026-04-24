@@ -1,0 +1,153 @@
+2026-04-19 10:41:28 | INFO | Loading data...
+2026-04-19 10:41:28 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26\panel_data.npz
+2026-04-19 10:41:28 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26\x_0.npy
+2026-04-19 10:41:28 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26\z_0.npy
+2026-04-19 10:41:28 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26\fits\rank_10_b2\fit_realized_config.yaml
+2026-04-19 10:41:28 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26
+2026-04-19 10:41:28 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26
+2026-04-19 10:41:28 | INFO | Configured latent rank: 10
+2026-04-19 10:41:28 | INFO | Using a fixed known graph with scalar xi.
+2026-04-19 10:41:28 | INFO | Intervention-process model enabled: False
+2026-04-19 10:41:28 | INFO | Global temperature bound B active: True
+2026-04-19 10:41:28 | INFO | Effective xi bound from interaction constraint: 2.000000
+2026-04-19 10:41:28 | INFO | Beta mask pre-intervention enabled: True
+2026-04-19 10:41:28 | INFO | Fixed scalar parameters: {}
+2026-04-19 10:41:28 | INFO | Optimizer settings: n_starts=5, lbfgs_steps=50000, tol=1e-09, adam_steps=1000, adam_lr=0.01, adam_device=cpu, seed=0
+2026-04-19 10:41:28 | INFO | Optimizer start 1/5 | seed=0 | initial_loss=0.756804
+2026-04-19 10:41:30 | INFO | Start 1 Adam step 0 | Loss: 0.756804
+2026-04-19 10:41:32 | INFO | Start 1 Adam step 100 | Loss: 0.409041
+2026-04-19 10:41:33 | INFO | Start 1 Adam step 200 | Loss: 0.394568
+2026-04-19 10:41:35 | INFO | Start 1 Adam step 300 | Loss: 0.388135
+2026-04-19 10:41:36 | INFO | Start 1 Adam step 400 | Loss: 0.392537
+2026-04-19 10:41:38 | INFO | Start 1 Adam step 500 | Loss: 0.394519
+2026-04-19 10:41:39 | INFO | Start 1 Adam step 600 | Loss: 0.389294
+2026-04-19 10:41:41 | INFO | Start 1 Adam step 700 | Loss: 0.386396
+2026-04-19 10:41:42 | INFO | Start 1 Adam step 800 | Loss: 0.384942
+2026-04-19 10:41:44 | INFO | Start 1 Adam step 900 | Loss: 0.384857
+2026-04-19 10:41:45 | INFO | Start 1 L-BFGS eval 0 | Loss: 0.385932
+2026-04-19 10:41:45 | INFO |   beta: -0.0031,  xi: +1.7764,  eta: +0.2047
+2026-04-19 10:41:49 | INFO | Start 1 L-BFGS eval 100 | Loss: 0.383563
+2026-04-19 10:41:49 | INFO |   beta: -0.0062,  xi: +1.7853,  eta: +0.1918
+2026-04-19 10:41:53 | INFO | Start 1 L-BFGS eval 200 | Loss: 0.383562
+2026-04-19 10:41:53 | INFO |   beta: -0.0062,  xi: +1.7785,  eta: +0.1906
+2026-04-19 10:41:57 | INFO | Start 1 L-BFGS eval 300 | Loss: 0.383547
+2026-04-19 10:41:57 | INFO |   beta: -0.0051,  xi: +1.7667,  eta: +0.2008
+2026-04-19 10:42:01 | INFO | Start 1 L-BFGS eval 400 | Loss: 0.383543
+2026-04-19 10:42:01 | INFO |   beta: -0.0056,  xi: +1.7675,  eta: +0.1950
+2026-04-19 10:42:05 | INFO | Start 1 L-BFGS eval 500 | Loss: 0.383542
+2026-04-19 10:42:05 | INFO |   beta: -0.0061,  xi: +1.7757,  eta: +0.1909
+2026-04-19 10:42:09 | INFO | Start 1 L-BFGS eval 600 | Loss: 0.383496
+2026-04-19 10:42:09 | INFO |   beta: -0.0070,  xi: +1.8103,  eta: +0.1827
+2026-04-19 10:42:14 | INFO | Start 1 L-BFGS eval 700 | Loss: 0.382103
+2026-04-19 10:42:14 | INFO |   beta: +0.0122,  xi: +2.0000,  eta: +0.0927
+2026-04-19 10:42:18 | INFO | Start 1 L-BFGS eval 800 | Loss: 0.378279
+2026-04-19 10:42:18 | INFO |   beta: -0.0120,  xi: +2.0000,  eta: +0.1733
+2026-04-19 10:42:22 | INFO | Start 1 L-BFGS eval 900 | Loss: 0.378217
+2026-04-19 10:42:22 | INFO |   beta: -0.0127,  xi: +2.0000,  eta: +0.1702
+2026-04-19 10:42:26 | INFO | Start 1 L-BFGS eval 1000 | Loss: 0.378215
+2026-04-19 10:42:26 | INFO |   beta: -0.0130,  xi: +2.0000,  eta: +0.1683
+2026-04-19 10:42:30 | INFO | Start 1 L-BFGS eval 1100 | Loss: 0.378261
+2026-04-19 10:42:30 | INFO |   beta: -0.0105,  xi: +2.0000,  eta: +0.1825
+2026-04-19 10:42:34 | INFO | Start 1 L-BFGS eval 1200 | Loss: 0.378215
+2026-04-19 10:42:34 | INFO |   beta: -0.0128,  xi: +2.0000,  eta: +0.1692
+2026-04-19 10:42:38 | INFO | Start 1 L-BFGS eval 1300 | Loss: 0.378193
+2026-04-19 10:42:38 | INFO |   beta: -0.0158,  xi: +2.0000,  eta: +0.1425
+2026-04-19 10:42:42 | INFO | Start 1 L-BFGS eval 1400 | Loss: 0.383738
+2026-04-19 10:42:42 | INFO |   beta: +0.1376,  xi: +1.8583,  eta: +0.3245
+2026-04-19 10:42:45 | INFO | Optimizer start 1/5 complete | final_loss=0.374894 | status=CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-19 10:42:45 | INFO | Optimizer start 2/5 | seed=1 | initial_loss=0.637407
+2026-04-19 10:42:45 | INFO | Start 2 Adam step 0 | Loss: 0.637407
+2026-04-19 10:42:46 | INFO | Start 2 Adam step 100 | Loss: 0.394918
+2026-04-19 10:42:48 | INFO | Start 2 Adam step 200 | Loss: 0.388130
+2026-04-19 10:42:49 | INFO | Start 2 Adam step 300 | Loss: 0.393863
+2026-04-19 10:42:51 | INFO | Start 2 Adam step 400 | Loss: 0.394614
+2026-04-19 10:42:53 | INFO | Start 2 Adam step 500 | Loss: 0.394845
+2026-04-19 10:42:54 | INFO | Start 2 Adam step 600 | Loss: 0.390554
+2026-04-19 10:42:56 | INFO | Start 2 Adam step 700 | Loss: 0.387277
+2026-04-19 10:42:57 | INFO | Start 2 Adam step 800 | Loss: 0.388565
+2026-04-19 10:42:59 | INFO | Start 2 Adam step 900 | Loss: 0.385251
+2026-04-19 10:43:00 | INFO | Start 2 L-BFGS eval 0 | Loss: 0.383310
+2026-04-19 10:43:00 | INFO |   beta: -0.0036,  xi: +1.7822,  eta: +0.2018
+2026-04-19 10:43:05 | INFO | Optimizer start 2/5 complete | final_loss=0.381606 | status=CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-19 10:43:05 | INFO | Optimizer start 3/5 | seed=2 | initial_loss=0.668539
+2026-04-19 10:43:05 | INFO | Start 3 Adam step 0 | Loss: 0.668539
+2026-04-19 10:43:06 | INFO | Start 3 Adam step 100 | Loss: 0.404042
+2026-04-19 10:43:08 | INFO | Start 3 Adam step 200 | Loss: 0.390672
+2026-04-19 10:43:10 | INFO | Start 3 Adam step 300 | Loss: 0.396012
+2026-04-19 10:43:11 | INFO | Start 3 Adam step 400 | Loss: 0.394881
+2026-04-19 10:43:13 | INFO | Start 3 Adam step 500 | Loss: 0.398121
+2026-04-19 10:43:14 | INFO | Start 3 Adam step 600 | Loss: 0.391934
+2026-04-19 10:43:16 | INFO | Start 3 Adam step 700 | Loss: 0.387964
+2026-04-19 10:43:17 | INFO | Start 3 Adam step 800 | Loss: 0.386642
+2026-04-19 10:43:19 | INFO | Start 3 Adam step 900 | Loss: 0.386829
+2026-04-19 10:43:21 | INFO | Start 3 L-BFGS eval 0 | Loss: 0.385875
+2026-04-19 10:43:21 | INFO |   beta: -0.0079,  xi: +1.7887,  eta: +0.1989
+2026-04-19 10:43:25 | INFO | Optimizer start 3/5 complete | final_loss=0.385041 | status=ABNORMAL: 
+2026-04-19 10:43:25 | INFO | Optimizer start 4/5 | seed=3 | initial_loss=0.684006
+2026-04-19 10:43:25 | INFO | Start 4 Adam step 0 | Loss: 0.684006
+2026-04-19 10:43:27 | INFO | Start 4 Adam step 100 | Loss: 0.407094
+2026-04-19 10:43:28 | INFO | Start 4 Adam step 200 | Loss: 0.388185
+2026-04-19 10:43:30 | INFO | Start 4 Adam step 300 | Loss: 0.391510
+2026-04-19 10:43:32 | INFO | Start 4 Adam step 400 | Loss: 0.395943
+2026-04-19 10:43:33 | INFO | Start 4 Adam step 500 | Loss: 0.393563
+2026-04-19 10:43:35 | INFO | Start 4 Adam step 600 | Loss: 0.389678
+2026-04-19 10:43:36 | INFO | Start 4 Adam step 700 | Loss: 0.387730
+2026-04-19 10:43:38 | INFO | Start 4 Adam step 800 | Loss: 0.386878
+2026-04-19 10:43:40 | INFO | Start 4 Adam step 900 | Loss: 0.387574
+2026-04-19 10:43:41 | INFO | Start 4 L-BFGS eval 0 | Loss: 0.386620
+2026-04-19 10:43:41 | INFO |   beta: -0.0057,  xi: +1.8060,  eta: +0.2194
+2026-04-19 10:43:45 | INFO | Optimizer start 4/5 complete | final_loss=0.384496 | status=CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-19 10:43:45 | INFO | Optimizer start 5/5 | seed=4 | initial_loss=0.725580
+2026-04-19 10:43:45 | INFO | Start 5 Adam step 0 | Loss: 0.725580
+2026-04-19 10:43:47 | INFO | Start 5 Adam step 100 | Loss: 0.400485
+2026-04-19 10:43:48 | INFO | Start 5 Adam step 200 | Loss: 0.390658
+2026-04-19 10:43:50 | INFO | Start 5 Adam step 300 | Loss: 0.397959
+2026-04-19 10:43:52 | INFO | Start 5 Adam step 400 | Loss: 0.394751
+2026-04-19 10:43:53 | INFO | Start 5 Adam step 500 | Loss: 0.398834
+2026-04-19 10:43:55 | INFO | Start 5 Adam step 600 | Loss: 0.394185
+2026-04-19 10:43:57 | INFO | Start 5 Adam step 700 | Loss: 0.392885
+2026-04-19 10:43:58 | INFO | Start 5 Adam step 800 | Loss: 0.387930
+2026-04-19 10:44:00 | INFO | Start 5 Adam step 900 | Loss: 0.387642
+2026-04-19 10:44:02 | INFO | Start 5 L-BFGS eval 0 | Loss: 0.384550
+2026-04-19 10:44:02 | INFO |   beta: -0.0110,  xi: +1.7904,  eta: +0.2021
+2026-04-19 10:44:06 | INFO | Start 5 L-BFGS eval 100 | Loss: 0.384106
+2026-04-19 10:44:06 | INFO |   beta: -0.0106,  xi: +1.7704,  eta: +0.2048
+2026-04-19 10:44:11 | INFO | Start 5 L-BFGS eval 200 | Loss: 0.384090
+2026-04-19 10:44:11 | INFO |   beta: -0.0422,  xi: +1.7892,  eta: +0.2163
+2026-04-19 10:44:16 | INFO | Start 5 L-BFGS eval 300 | Loss: 0.382607
+2026-04-19 10:44:16 | INFO |   beta: -0.0670,  xi: +1.6924,  eta: +0.2055
+2026-04-19 10:44:21 | INFO | Start 5 L-BFGS eval 400 | Loss: 0.381787
+2026-04-19 10:44:21 | INFO |   beta: -0.0136,  xi: +1.7981,  eta: +0.1881
+2026-04-19 10:44:26 | INFO | Start 5 L-BFGS eval 500 | Loss: 0.381773
+2026-04-19 10:44:26 | INFO |   beta: -0.0064,  xi: +1.7903,  eta: +0.1938
+2026-04-19 10:44:30 | INFO | Start 5 L-BFGS eval 600 | Loss: 0.381764
+2026-04-19 10:44:30 | INFO |   beta: +0.0014,  xi: +1.7441,  eta: +0.2065
+2026-04-19 10:44:35 | INFO | Start 5 L-BFGS eval 700 | Loss: 0.381686
+2026-04-19 10:44:35 | INFO |   beta: -0.0106,  xi: +1.8995,  eta: +0.1817
+2026-04-19 10:44:39 | INFO | Start 5 L-BFGS eval 800 | Loss: 0.381539
+2026-04-19 10:44:39 | INFO |   beta: -0.0046,  xi: +1.7642,  eta: +0.2064
+2026-04-19 10:44:44 | INFO | Start 5 L-BFGS eval 900 | Loss: 0.381486
+2026-04-19 10:44:44 | INFO |   beta: -0.0105,  xi: +1.7701,  eta: +0.1863
+2026-04-19 10:44:49 | INFO | Start 5 L-BFGS eval 1000 | Loss: 0.381483
+2026-04-19 10:44:49 | INFO |   beta: -0.0130,  xi: +1.8027,  eta: +0.1811
+2026-04-19 10:44:53 | INFO | Start 5 L-BFGS eval 1100 | Loss: 0.383945
+2026-04-19 10:44:53 | INFO |   beta: -0.0057,  xi: +1.4508,  eta: +0.1592
+2026-04-19 10:44:58 | INFO | Start 5 L-BFGS eval 1200 | Loss: 0.381418
+2026-04-19 10:44:58 | INFO |   beta: -0.0074,  xi: +1.7610,  eta: +0.1993
+2026-04-19 10:45:03 | INFO | Start 5 L-BFGS eval 1300 | Loss: 0.381415
+2026-04-19 10:45:03 | INFO |   beta: -0.0078,  xi: +1.7979,  eta: +0.2014
+2026-04-19 10:45:05 | INFO | Optimizer start 5/5 complete | final_loss=0.381380 | status=CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-19 10:45:05 | INFO | Done fitting.
+2026-04-19 10:45:05 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH | best_start=1/5
+2026-04-19 10:45:05 | INFO | Best optimizer start: 1 / 5
+2026-04-19 10:45:05 | INFO | Final Loss: 0.374894
+2026-04-19 10:45:05 | INFO | Estimated Parameters:
+2026-04-19 10:45:05 | INFO |   beta: -0.0151
+2026-04-19 10:45:05 | INFO |   xi: 1.7785
+2026-04-19 10:45:05 | INFO |   eta: 0.1867
+2026-04-19 10:45:05 | INFO | Field and interaction diagnostics:
+2026-04-19 10:45:05 | INFO |   estimated_field_inf_norm: 2.000000
+2026-04-19 10:45:05 | INFO |   estimated_field_rank: 10.000000
+2026-04-19 10:45:05 | INFO |   bound_B: 2.000000
+2026-04-19 10:45:05 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26\fits\rank_10_b2\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26\fits\rank_10_b2\mple_summary.md
+2026-04-19 10:45:05 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\USCountyVaccination_US_sensitivity\outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_01_26\fits\rank_10_b2\mple.log

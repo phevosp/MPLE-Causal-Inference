@@ -1,0 +1,46 @@
+global_params:
+  'N': 3009
+  T: 101
+  s: 39
+  B: 1.0
+  latent_rank: 10
+  basis_params:
+    field_mode: shared_feature_field
+    latent_rank: 10
+  gamma_matrix_generator: real_data
+  x_0_generator: observed
+estimation_params:
+  fit_intervention_model: true
+  beta: 0.0
+  eta: 0.0
+  zeta: 0.0
+  psi: 0.0
+  tau_params: null
+  tau_zero_mean: false
+  tau_smoothness_lambda: 0.0
+  beta_mask_pre_intervention: false
+  beta_mask_rescale: false
+  fixed_scalar_params: {}
+real_data_params:
+  source: USCountyVaccination
+  state: Mainland US counties with total_population >= 2000
+  outcome_code: death_rate_100k_ge_2
+  intervention_code: complete_cov_ge_40
+  lag_code: 2w
+  lag_application: intervention_only
+  network_name: contiguity
+  field_basis_mode: acs_2021
+  field_basis_names:
+  - population_density
+  - senior_population
+  - college_education
+  - poverty_rate
+  - log_population
+  - median_household_income
+  - cdc_svi_2022_overall
+  - usda_ers_rucc_2023
+  model_field_mode: shared_feature_field
+  latent_rank: 10
+  latent_B: 1.0
+  sensitivity_start_date: '2020-06-07'
+  parent_experiment_name: outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity

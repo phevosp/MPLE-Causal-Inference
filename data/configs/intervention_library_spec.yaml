@@ -1,0 +1,14 @@
+base:
+  experiment_name: hybrid_us_county_intervention_uscounty_graph_rank_20
+
+interventions:
+  - name: observed_experiment
+    source_kind: observed_experiment
+
+  - name: all_ones
+    source_kind: full_on
+    activation_scope: all_time
+
+  - name: all_zeros
+    source_kind: full_on
+    activation_scope: no_time

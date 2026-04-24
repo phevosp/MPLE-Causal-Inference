@@ -1,0 +1,40 @@
+2026-04-12 13:33:57 | INFO | Loading data...
+2026-04-12 13:33:57 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\panel_data.npz
+2026-04-12 13:33:57 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\x_0.npy
+2026-04-12 13:33:57 | INFO | Using z_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\z_0.npy
+2026-04-12 13:33:57 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_6_b6_fixed_xi\fit_realized_config.yaml
+2026-04-12 13:33:57 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-12 13:33:57 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40
+2026-04-12 13:33:57 | INFO | Configured latent rank: 6
+2026-04-12 13:33:57 | INFO | Using a fixed known graph with scalar xi.
+2026-04-12 13:33:57 | INFO | Intervention-process model enabled: True
+2026-04-12 13:33:57 | INFO | Global temperature bound B active: True
+2026-04-12 13:33:57 | INFO | Effective xi bound from interaction constraint: 6.000000
+2026-04-12 13:33:57 | INFO | Beta mask pre-intervention enabled: False
+2026-04-12 13:33:57 | INFO | Beta mask rescale enabled: False
+2026-04-12 13:33:57 | INFO | Fixed scalar parameters: {'xi': 0.0}
+2026-04-12 13:33:58 | INFO | Eval 0  |  Loss: 0.754376
+2026-04-12 13:33:58 | INFO |   beta: -0.0150,  eta: -0.0239,  zeta: -0.1255,  psi: -0.0447
+2026-04-12 13:34:08 | INFO | Eval 100  |  Loss: 0.305463
+2026-04-12 13:34:08 | INFO |   beta: +0.5404,  eta: +0.4844,  zeta: +0.0278,  psi: +2.1288
+2026-04-12 13:34:18 | INFO | Eval 200  |  Loss: 0.305302
+2026-04-12 13:34:18 | INFO |   beta: +0.5177,  eta: +0.4952,  zeta: -0.0090,  psi: +2.0778
+2026-04-12 13:34:21 | INFO | Done fitting.
+2026-04-12 13:34:21 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-12 13:34:21 | INFO | Final Loss: 0.305289
+2026-04-12 13:34:21 | INFO | Estimated vs True Parameters:
+2026-04-12 13:34:21 | INFO |   beta: 0.5163 (True: 0.3500) | SQE: 0.027646
+2026-04-12 13:34:21 | INFO |   xi: 0.0000 (True: 0.7500) | SQE: 0.562500
+2026-04-12 13:34:21 | INFO |   eta: 0.4919 (True: 0.4800) | SQE: 0.000142
+2026-04-12 13:34:21 | INFO |   zeta: 0.0309 (True: -0.5500) | SQE: 0.337393
+2026-04-12 13:34:21 | INFO |   psi: 2.0575 (True: 0.8000) | SQE: 1.581367
+2026-04-12 13:34:21 | INFO | Field and interaction diagnostics:
+2026-04-12 13:34:21 | INFO |   field_rmse: 0.002223
+2026-04-12 13:34:21 | INFO |   interaction_fro_error: 7.082783
+2026-04-12 13:34:21 | INFO |   estimated_field_inf_norm: 6.000000
+2026-04-12 13:34:21 | INFO |   estimated_field_rank: 6.000000
+2026-04-12 13:34:21 | INFO |   bound_B: 6.000000
+2026-04-12 13:34:21 | INFO |   true_field_inf_norm: 5.000000
+2026-04-12 13:34:21 | INFO |   true_field_rank: 40.000000
+2026-04-12 13:34:21 | INFO | Saved summary tables to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_6_b6_fixed_xi\mple_summary.csv and C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_6_b6_fixed_xi\mple_summary.md
+2026-04-12 13:34:21 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_uscounty_intervention_uscounty_graph_rank_40\fits\rank_6_b6_fixed_xi\mple.log

@@ -1,25 +1,21 @@
+"""Shared USCountyVaccination constants, specs, paths, and naming helpers."""
+
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy import sparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from data_utils import normalize_sparse_matrix_infinity  # noqa: E402
 
 
 BASE_DIR = Path(__file__).resolve().parent
 RAW_DIR = BASE_DIR / "raw"
 PROCESSED_DIR = BASE_DIR / "processed"
-EXPERIMENT_ROOT = REPO_ROOT / "experiments" / "USCountyVaccination_US"
+EXPERIMENT_ROOT = REPO_ROOT / "experiments" / "USCountyVaccination_US_trimmed"
 
 CORE_START_DATE = pd.Timestamp("2020-01-26")
 CORE_END_DATE = pd.Timestamp("2022-05-15")
@@ -29,7 +25,9 @@ UNIT_LABEL = "US county"
 SOURCE_LABEL = "USCountyVaccination"
 STATE_SCOPE_LABEL = "United States"
 
-NYT_COUNTIES_URL = "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv"
+NYT_COUNTIES_URL = (
+    "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv"
+)
 BANSAL_VACCINATION_URL = (
     "https://media.githubusercontent.com/media/"
     "bansallab/vaccinetracking/main/vacc_data/data_county_timeseries.csv"
@@ -41,11 +39,21 @@ CDC_VACCINATION_URL = (
     "series_complete_yes,series_complete_pop_pct,booster_doses,census2019"
     "&$limit=5000000"
 )
-TIGER_2021_COUNTY_URL = "https://www2.census.gov/geo/tiger/TIGER2021/COUNTY/tl_2021_us_county.zip"
-TIGER_2022_COUNTY_URL = "https://www2.census.gov/geo/tiger/TIGER2022/COUNTY/tl_2022_us_county.zip"
-CDC_SVI_2022_US_COUNTY_URL = "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/SVI_2022_US_county.csv"
-CDC_SVI_2022_PR_COUNTY_URL = "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/PuertoRico_county.csv"
-USDA_ERS_RUCC_2023_URL = "https://www.ers.usda.gov/media/5768/2023-rural-urban-continuum-codes.csv?v=33808"
+TIGER_2021_COUNTY_URL = (
+    "https://www2.census.gov/geo/tiger/TIGER2021/COUNTY/tl_2021_us_county.zip"
+)
+TIGER_2022_COUNTY_URL = (
+    "https://www2.census.gov/geo/tiger/TIGER2022/COUNTY/tl_2022_us_county.zip"
+)
+CDC_SVI_2022_US_COUNTY_URL = (
+    "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/SVI_2022_US_county.csv"
+)
+CDC_SVI_2022_PR_COUNTY_URL = (
+    "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/PuertoRico_county.csv"
+)
+USDA_ERS_RUCC_2023_URL = (
+    "https://www.ers.usda.gov/media/5768/2023-rural-urban-continuum-codes.csv?v=33808"
+)
 
 ACS_2021_COUNTY_ENDPOINTS = {
     "acs5": "https://api.census.gov/data/2021/acs/acs5",
@@ -290,82 +298,17 @@ def standardize_fips(values: pd.Series | np.ndarray) -> pd.Series:
     )
 
 
-def week_end_from_iso(iso_year: int, iso_week: int) -> pd.Timestamp:
-    return pd.Timestamp.fromisocalendar(int(iso_year), int(iso_week), 7)
-
-
-def add_iso_week_window(
-    frame: pd.DataFrame,
-    iso_year_col: str = "iso_year",
-    iso_week_col: str = "iso_week",
-) -> pd.DataFrame:
-    result = frame.copy()
-    result["WeekEndDate"] = pd.to_datetime(
-        [week_end_from_iso(year_value, week_value) for year_value, week_value in zip(result[iso_year_col], result[iso_week_col])]
-    )
-    result["WeekStartDate"] = result["WeekEndDate"] - pd.Timedelta(days=6)
-    return result
-
-
 def lag_code_to_steps(lag_code: str) -> int:
     if not lag_code.endswith("w"):
-        raise ValueError(f"Unsupported lag code '{lag_code}'. Expected codes like 0w or 2w.")
+        raise ValueError(
+            f"Unsupported lag code '{lag_code}'. Expected codes like 0w or 2w."
+        )
     return int(lag_code[:-1])
 
 
-def load_sparse_network_from_edge_list(
-    edge_path: Path,
-    node_order: list[str],
-    source_column: str,
-    target_column: str,
-    weight_column: str | None = None,
-) -> sparse.csr_matrix:
-    edges = pd.read_csv(edge_path, dtype={source_column: str, target_column: str})
-    return build_sparse_network_from_edges(edges, node_order, source_column, target_column, weight_column)
-
-
-def build_sparse_network_from_edges(
-    edges: pd.DataFrame,
-    node_order: list[str],
-    source_column: str,
-    target_column: str,
-    weight_column: str | None = None,
-) -> sparse.csr_matrix:
-    """Build a normalized sparse matrix from an in-memory edge list."""
-    lookup = {node_id: idx for idx, node_id in enumerate(node_order)}
-    rows = edges[source_column].map(lookup).to_numpy()
-    cols = edges[target_column].map(lookup).to_numpy()
-    valid = pd.notna(rows) & pd.notna(cols)
-    rows = rows[valid].astype(int)
-    cols = cols[valid].astype(int)
-    if weight_column is None:
-        data = np.ones(len(rows), dtype=float)
-    else:
-        data = (
-            pd.to_numeric(edges.loc[valid, weight_column], errors="coerce")
-            .fillna(0.0)
-            .to_numpy(dtype=float)
-        )
-    matrix = sparse.coo_matrix((data, (rows, cols)), shape=(len(node_order), len(node_order))).tocsr()
-    matrix = matrix.maximum(matrix.T)
-    matrix.setdiag(0.0)
-    matrix.eliminate_zeros()
-    return normalize_sparse_matrix_infinity(matrix)
-
-
-def sparse_matrix_stats(matrix: sparse.csr_matrix) -> dict[str, float | int]:
-    row_sums = np.asarray(np.abs(matrix).sum(axis=1)).ravel()
-    return {
-        "nnz": int(matrix.nnz),
-        "undirected_edges": int(matrix.nnz // 2),
-        "avg_degree": float(row_sums.mean()) if row_sums.size else 0.0,
-        "max_degree": float(row_sums.max()) if row_sums.size else 0.0,
-        "gamma_inf_norm": float(row_sums.max()) if row_sums.size else 0.0,
-        "gamma_fro_norm": float(np.sqrt(matrix.multiply(matrix).sum())) if matrix.nnz else 0.0,
-    }
-
-
-def experiment_name(outcome_code: str, intervention_code: str, lag_code: str, network_name: str) -> str:
+def experiment_name(
+    outcome_code: str, intervention_code: str, lag_code: str, network_name: str
+) -> str:
     return (
         f"outcome_{outcome_code}"
         f"__intervention_{intervention_code}"

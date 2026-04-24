@@ -1,0 +1,18 @@
+global_params:
+  'N': 3009
+  T: 101
+  s: 39
+  B: 10.0
+  latent_rank: 0
+estimation_params:
+  fit_intervention_model: false
+  beta_mask_pre_intervention: true
+  fixed_scalar_params: {}
+optimizer_params:
+  steps: 50000
+  tol: 1.0e-09
+  seed: 0
+  n_starts: 5
+  adam_steps: 1000
+  adam_lr: 0.01
+  adam_device: cpu

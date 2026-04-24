@@ -1,0 +1,59 @@
+base:
+  experiment_root: experiments/Quickstart
+  manifest_path: experiments/Quickstart/generation_manifest.csv
+  dimensions:
+    N: 30
+    T: 10
+    s: 0
+  generation:
+    gibbs_sweeps: 5
+    seed: 0
+  x0:
+    generator: bernoulli
+    params:
+      p: 0.5
+      fixed_val: null
+  graph:
+    source: generated
+    generator: erdos_renyi
+    params:
+      p: 0.2
+    artifact:
+      gamma_path: null
+      node_index_path: null
+      artifact_dir: null
+      network_name: null
+      trim_scope: null
+  intervention:
+    source: generated
+    artifact:
+      panel_path: null
+      z0_path: null
+      artifact_dir: null
+      shared_panel_dir: null
+      outcome_code: null
+      intervention_code: null
+      lag_code: null
+      trim_scope: null
+  truth:
+    B: 2.0
+    latent_rank: 0
+    field_mode: random_low_rank
+    field_params: {}
+    scalars:
+      beta: 0.5
+      xi: 0.33
+      eta: -0.1
+      zeta: 0
+      psi: 0
+
+experiments:
+  - name: quickstart_rank_2
+    truth:
+      latent_rank: 2
+      B: 1.0
+      field_mode: node_bias_plus_smooth_time_drift
+      field_params:
+        node_bias_scale: 1.0
+        drift_scale: 0.4
+        time_trend_sharpness: 2.0

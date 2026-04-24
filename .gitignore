@@ -217,7 +217,8 @@ experiments/**
 !experiments/**/*.yaml
 !experiments/**/*.md
 !experiments/**/*.log
-!experiments/**/MPLE_experiment_summary.csv
+!experiments/**/**_summary.csv
+experiments/.tmp_*/
 
 # Data
 data/*/processed/

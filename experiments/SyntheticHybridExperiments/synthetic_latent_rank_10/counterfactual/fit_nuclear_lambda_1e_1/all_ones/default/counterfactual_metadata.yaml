@@ -1,0 +1,18 @@
+experiment_name: synthetic_latent_rank_10
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10
+run_name: default
+run_slug: default
+source_type: fit
+source_name: nuclear_lambda_1e_1
+source_slug: fit_nuclear_lambda_1e_1
+intervention_source: saved_intervention
+intervention_name: all_ones
+intervention_slug: all_ones
+latent_rank: 0
+num_samples: 16
+gibbs_sweeps: 10
+seed: 0
+s: 0
+summary:
+  num_samples: 16
+  num_units: 1000

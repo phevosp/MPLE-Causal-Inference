@@ -1,0 +1,4 @@
+matrix_code,matrix_display_name,view_code,view_label,n_weeks,n_counties,leading_singular_value,leading_energy_share,effective_rank_80,effective_rank_90,effective_rank_95,effective_rank_99,elbow_rank,elbow_ratio,low_rank_strength
+binary_death,Binary death-threshold matrix,raw,Raw,48,3213,274.99421377450557,0.4903375454498548,14,24,30,38,1,2.4123295329138075,weak
+binary_death,Binary death-threshold matrix,row_centered,Row-centered,48,3213,131.39297376597523,0.20044661598565058,21,28,33,38,3,1.4258442015281458,weak
+binary_death,Binary death-threshold matrix,row_column_centered,Row-and-column centered,48,3213,96.47593369011025,0.12759853788034198,23,30,34,38,2,1.349391953605174,weak

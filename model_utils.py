@@ -1,472 +1,639 @@
-"""Shared model-building helpers for the conditional MPLE experiments."""
+"""Minimal shared helpers for the latent-only conditional MPLE pipeline."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from scipy import sparse
+from sklearn.datasets import make_low_rank_matrix
 
 
-DEFAULT_NUM_SHARED_FEATURES = 5
-DEFAULT_FIELD_MODE = "uniform"
-DEFAULT_INTERACTION_MODE = "known_graph"
+DEFAULT_LATENT_RANK = 0
+_DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerate
+_RMS_SCALE_FACTOR = 0.4         # targets initial field RMS at _RMS_SCALE_FACTOR * B
+_TAIL_STRENGTH = 0.5            # tail_strength arg for sklearn make_low_rank_matrix
+SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
+SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK = "random_low_rank"
+SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT = (
+    "node_bias_plus_smooth_time_drift"
+)
+VALID_SYNTHETIC_FIELD_MODES = {
+    SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK,
+    SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT,
+}
+OPTIMIZER_MODE_NO_EXTERNAL_FIELD = "no_external_field"
+OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
+OPTIMIZER_MODE_EXACT_RANK_MANIFOLD = "exact_rank_manifold"
+OPTIMIZER_MODE_ALTERNATING_LATENT_RANK = "alternating_latent_rank"
+OPTIMIZER_MODE_CONCURRENT_LATENT_RANK = "concurrent_latent_rank"
+VALID_OPTIMIZER_MODES = {
+    OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+    OPTIMIZER_MODE_NUCLEAR_NORM,
+    OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
+    OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+    OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
+}
 
 
 @dataclass(frozen=True)
-class BasisExpansion:
-    """Container for the field and interaction bases used in one experiment."""
+class ModelArtifacts:
+    """Latent-field artifacts for one experiment."""
 
-    field_basis: np.ndarray
-    interaction_basis: np.ndarray
-    field_names: tuple[str, ...]
-    interaction_names: tuple[str, ...]
-    shared_features: np.ndarray
-    shared_feature_names: tuple[str, ...]
-
-
-def intervention_model_enabled(config) -> bool:
-    """Return whether the MPLE fit should include a model for the intervention process z."""
-    if "estimation_params" not in config:
-        return True
-    estimation_params = config.estimation_params
-    if "fit_intervention_model" not in estimation_params:
-        return True
-    return bool(estimation_params.fit_intervention_model)
+    gamma_matrix: object
+    t_steps: int
+    latent_rank: int = 0
+    optimizer_mode: str = OPTIMIZER_MODE_EXACT_RANK_MANIFOLD
+    field_matrix: np.ndarray | None = None
 
 
-def scalar_parameter_count(fit_intervention_model: bool) -> int:
-    """Return the number of non-basis scalar parameters in the flattened optimizer vector."""
-    return 4 if fit_intervention_model else 2
+def scalar_parameter_names() -> list[str]:
+    return list(SCALAR_PARAMETER_ORDER)
 
 
-def interaction_basis_count(interaction_basis) -> int:
-    """Return the number of interaction templates represented by one basis object."""
-    if sparse.issparse(interaction_basis):
-        return 1
-    basis_array = np.asarray(interaction_basis)
-    if basis_array.ndim == 2:
-        return 1
-    return int(basis_array.shape[0])
+def validate_fixed_scalar_params(
+    fixed_scalar_params: dict[str, float] | None,
+) -> dict[str, float]:
+    fixed_scalar_params = {
+        str(key): float(value) for key, value in (fixed_scalar_params or {}).items()
+    }
+    invalid = sorted(set(fixed_scalar_params) - set(SCALAR_PARAMETER_ORDER))
+    if invalid:
+        raise ValueError(f"Unknown fixed scalar parameter(s): {', '.join(invalid)}.")
+    return fixed_scalar_params
+
+
+def free_scalar_parameter_names(
+    fixed_scalar_params: dict[str, float] | None = None,
+) -> list[str]:
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
+    return [name for name in scalar_parameter_names() if name not in fixed]
 
 
 def interaction_matrix_infinity_norm(matrix) -> float:
-    """Compute the infinity norm of one dense or sparse interaction matrix."""
     if sparse.issparse(matrix):
         row_sums = np.asarray(np.abs(matrix).sum(axis=1)).ravel()
         return float(row_sums.max()) if row_sums.size else 0.0
     return float(np.linalg.norm(np.asarray(matrix, dtype=float), ord=np.inf))
 
 
-def validate_basis_infinity_norms(
-    field_basis: np.ndarray,
-    interaction_basis,
-    tol: float = 1e-8,
-) -> None:
-    """Ensure every nondegenerate basis element has infinity norm one."""
-    field_norms = np.linalg.norm(np.asarray(field_basis, dtype=float), ord=np.inf, axis=1)
-    if sparse.issparse(interaction_basis):
-        interaction_norms = np.array([interaction_matrix_infinity_norm(interaction_basis)])
-    else:
-        interaction_array = np.asarray(interaction_basis, dtype=float)
-        if interaction_array.ndim == 2:
-            interaction_norms = np.array([interaction_matrix_infinity_norm(interaction_array)])
-        else:
-            interaction_norms = np.array(
-                [interaction_matrix_infinity_norm(matrix) for matrix in interaction_array]
-            )
-
-    if np.any(field_norms < tol) or np.any(interaction_norms < tol):
-        raise ValueError("Basis construction produced a degenerate zero template.")
-    if not np.allclose(field_norms, 1.0, atol=tol, rtol=0.0):
-        raise ValueError("Each field basis vector must have infinity norm one.")
-    if not np.allclose(interaction_norms, 1.0, atol=tol, rtol=0.0):
-        raise ValueError("Each interaction basis matrix must have infinity norm one.")
+def get_latent_rank(config) -> int:
+    if "latent_rank" not in config.global_params:
+        return DEFAULT_LATENT_RANK
+    rank = int(config.global_params.latent_rank)
+    if rank < 0:
+        raise ValueError("global_params.latent_rank must be nonnegative.")
+    return rank
 
 
-def _safe_normalize_vector(vector: np.ndarray) -> np.ndarray:
-    """Normalize a vector by infinity norm, returning zeros if it is degenerate."""
-    vector = np.asarray(vector, dtype=float)
-    norm = np.linalg.norm(vector, ord=np.inf)
-    if norm < 1e-12:
-        return np.zeros_like(vector)
-    return vector / norm
+def get_optimizer_mode(config) -> str:
+    global_params = getattr(config, "global_params", None)
+    if global_params is None or "optimizer_mode" not in global_params:
+        if global_params is not None and int(global_params.get("latent_rank", 0)) > 0:
+            return OPTIMIZER_MODE_EXACT_RANK_MANIFOLD
+        return OPTIMIZER_MODE_NO_EXTERNAL_FIELD
+    optimizer_mode = str(global_params.optimizer_mode)
+    if optimizer_mode not in VALID_OPTIMIZER_MODES:
+        raise ValueError(
+            "global_params.optimizer_mode must be one of: "
+            + ", ".join(sorted(VALID_OPTIMIZER_MODES))
+        )
+    return optimizer_mode
 
 
-def _safe_normalize_matrix(matrix: np.ndarray) -> np.ndarray:
-    """Symmetrize, zero the diagonal, and normalize a matrix by infinity norm."""
-    matrix = np.asarray(matrix, dtype=float)
-    matrix = (matrix + matrix.T) / 2.0
-    np.fill_diagonal(matrix, 0.0)
-    norm = np.linalg.norm(matrix, ord=np.inf)
-    if norm < 1e-12:
-        return np.zeros_like(matrix)
-    return matrix / norm
+def uses_full_matrix_parameterization(
+    artifacts: ModelArtifacts,
+) -> bool:
+    return artifacts.optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM
 
 
-def _stack_vector_basis(vectors: list[np.ndarray]) -> np.ndarray:
-    """Stack field templates after infinity-norm normalization without re-scaling them."""
-    if not vectors:
-        return np.empty((0, 0), dtype=float)
-    normalized = [_safe_normalize_vector(vector) for vector in vectors]
-    return np.vstack(normalized)
+def get_B(config) -> float:
+    if "B" not in config.global_params:
+        raise KeyError("global_params.B is required.")
+    return float(config.global_params.B)
 
 
-def _stack_matrix_basis(matrices: list[np.ndarray]) -> np.ndarray:
-    """Stack interaction templates after infinity-norm normalization without re-scaling them."""
-    normalized = [_safe_normalize_matrix(matrix) for matrix in matrices]
-    return np.stack(normalized)
+def get_xi(config) -> float:
+    if "xi" not in config.estimation_params:
+        raise KeyError("estimation_params.xi is required.")
+    return float(config.estimation_params.xi)
 
 
-def _basis_params(config):
-    """Return the basis configuration section, if present."""
-    if "basis_params" in config.global_params:
-        return config.global_params.basis_params
-    return None
+def get_synthetic_field_mode(config) -> str:
+    global_params = getattr(config, "global_params", None)
+    if global_params is None or "field_mode" not in global_params:
+        return SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK
+    field_mode = str(global_params.field_mode).strip()
+    if field_mode not in VALID_SYNTHETIC_FIELD_MODES:
+        raise ValueError(
+            "global_params.field_mode must be one of: "
+            + ", ".join(sorted(VALID_SYNTHETIC_FIELD_MODES))
+        )
+    return field_mode
 
 
-def _get_basis_setting(config, key: str, default):
-    """Read one basis setting with a default fallback."""
-    basis_params = _basis_params(config)
-    if basis_params is None or key not in basis_params:
-        return default
-    return basis_params[key]
+def get_synthetic_field_params(config) -> dict[str, object]:
+    global_params = getattr(config, "global_params", None)
+    if global_params is None or "field_params" not in global_params:
+        return {}
+    field_params = global_params.field_params
+    if field_params is None:
+        return {}
+    if isinstance(field_params, dict):
+        return dict(field_params)
+    return dict(field_params)
 
 
-def _centered_quadratic(feature: np.ndarray) -> np.ndarray:
-    """Return a centered quadratic transform of one shared feature."""
-    squared = np.asarray(feature, dtype=float) ** 2
-    return squared - squared.mean()
+def _normalize_dense_graph(gamma_matrix: np.ndarray) -> np.ndarray:
+    gamma_matrix = np.asarray(gamma_matrix, dtype=float)
+    gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2.0
+    np.fill_diagonal(gamma_matrix, 0.0)
+    norm = float(np.linalg.norm(gamma_matrix, ord=np.inf))
+    if norm < _DEGENERACY_THRESHOLD:
+        return np.zeros_like(gamma_matrix)
+    return gamma_matrix / norm
 
 
-def build_shared_features(config, n_nodes: int) -> tuple[np.ndarray, tuple[str, ...]]:
-    """Generate the shared node features used by both the field and interaction bases."""
-    num_features = int(_get_basis_setting(config, "num_shared_features", DEFAULT_NUM_SHARED_FEATURES))
-    feature_seed = int(
-        _get_basis_setting(config, "shared_feature_seed", config.generation_params.seed)
-    )
-    rng = np.random.default_rng(feature_seed)
-    raw_features = rng.normal(size=(num_features, n_nodes))
-    centered = raw_features - raw_features.mean(axis=1, keepdims=True)
-    shared_features = np.vstack(
-        [_safe_normalize_vector(feature) for feature in centered]
-    )
-    feature_names = tuple(f"feature_{idx + 1}" for idx in range(num_features))
-    return shared_features, feature_names
+def _normalize_sparse_graph(gamma_matrix) -> sparse.csr_matrix:
+    normalized = sparse.csr_matrix(gamma_matrix, dtype=float)
+    normalized = ((normalized + normalized.T) * 0.5).tocsr()
+    normalized.setdiag(0.0)
+    normalized.eliminate_zeros()
+    norm = interaction_matrix_infinity_norm(normalized)
+    if norm < _DEGENERACY_THRESHOLD:
+        return sparse.csr_matrix(normalized.shape, dtype=float)
+    return normalized.multiply(1.0 / norm).tocsr()
 
 
-def _interaction_distance_kernel(
-    feature: np.ndarray,
-    decay: float,
+def normalize_known_graph(gamma_matrix):
+    if sparse.issparse(gamma_matrix):
+        return _normalize_sparse_graph(gamma_matrix)
+    return _normalize_dense_graph(np.asarray(gamma_matrix, dtype=float))
+
+
+def validate_graph_infinity_norm(gamma_matrix, tol: float = 1e-8) -> None:
+    gamma_norm = interaction_matrix_infinity_norm(gamma_matrix)
+    if gamma_norm < tol:
+        raise ValueError("Known graph is degenerate.")
+    if not np.isclose(gamma_norm, 1.0, atol=tol, rtol=0.0):
+        raise ValueError("The known graph must have infinity norm one.")
+
+
+def compose_latent_field_matrix(
+    node_factors: np.ndarray, time_factors: np.ndarray
 ) -> np.ndarray:
-    """Construct a distance-kernel interaction template from one shared feature."""
-    pairwise_distance = np.abs(feature[:, None] - feature[None, :])
-    return np.exp(-decay * pairwise_distance)
+    """Return the (T × N) field matrix as time_factors @ node_factors.T.
 
-
-def _interaction_cross_similarity(feature: np.ndarray) -> np.ndarray:
-    """Construct a simple similarity template from one shared feature."""
-    return np.outer(feature, feature)
-
-
-def build_basis_expansion(config, gamma_matrix: np.ndarray) -> BasisExpansion:
-    """Construct infinity-normalized field and interaction bases from shared features."""
-    n_nodes = gamma_matrix.shape[0]
-    shared_features, shared_feature_names = build_shared_features(config, n_nodes)
-    field_mode = str(_get_basis_setting(config, "field_mode", DEFAULT_FIELD_MODE))
-    interaction_mode = str(
-        _get_basis_setting(config, "interaction_mode", DEFAULT_INTERACTION_MODE)
-    )
-    distance_decay = float(_get_basis_setting(config, "distance_kernel_decay", 3.0))
-
-    field_vectors: list[np.ndarray] = []
-    field_names: list[str] = []
-    if field_mode == "shared_feature_field":
-        for feature_name, feature in zip(shared_feature_names, shared_features):
-            field_vectors.append(feature)
-            field_names.append(f"linear::{feature_name}")
-            field_vectors.append(_centered_quadratic(feature))
-            field_names.append(f"quadratic::{feature_name}")
-    elif field_mode != "uniform":
-        raise ValueError(f"Unknown field_mode '{field_mode}'.")
-
-    interaction_matrices = [gamma_matrix]
-    interaction_names = ["adjacency"]
-    if interaction_mode == "shared_feature_interactions":
-        for feature_name, feature in zip(shared_feature_names, shared_features):
-            interaction_matrices.append(_interaction_distance_kernel(feature, distance_decay))
-            interaction_names.append(f"distance_kernel::{feature_name}")
-            interaction_matrices.append(_interaction_cross_similarity(feature))
-            interaction_names.append(f"cross_similarity::{feature_name}")
-    elif interaction_mode != "known_graph":
-        raise ValueError(f"Unknown interaction_mode '{interaction_mode}'.")
-
-    field_basis = _stack_vector_basis(field_vectors)
-    if field_basis.size == 0:
-        field_basis = np.empty((0, n_nodes), dtype=float)
-    interaction_basis = _stack_matrix_basis(interaction_matrices)
-    validate_basis_infinity_norms(field_basis, interaction_basis)
-
-    return BasisExpansion(
-        field_basis=field_basis,
-        interaction_basis=interaction_basis,
-        field_names=tuple(field_names),
-        interaction_names=tuple(interaction_names),
-        shared_features=shared_features,
-        shared_feature_names=shared_feature_names,
+    Both node_factors (N × r) and time_factors (T × r) share r latent dimensions.
+    The resulting matrix has entry [t, n] = <time_factors[t], node_factors[n]>.
+    """
+    return (
+        np.asarray(time_factors, dtype=float) @ np.asarray(node_factors, dtype=float).T
     )
 
 
-def compose_field(field_coeffs: np.ndarray, field_basis: np.ndarray) -> np.ndarray:
-    """Map field coefficients to the realized node-wise external field."""
-    return np.asarray(field_coeffs, dtype=float) @ np.asarray(field_basis, dtype=float)
+def latent_field_bound_norm(field_matrix: np.ndarray) -> float:
+    """Maximum absolute entry used for the latent-field B constraint."""
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    if field_matrix.size == 0:
+        return 0.0
+    return float(np.max(np.abs(field_matrix)))
 
 
-def compose_interaction_matrix(
-    interaction_coeffs: np.ndarray,
-    interaction_basis,
-):
-    """Map interaction coefficients to the realized symmetric interaction matrix."""
-    coeffs = np.asarray(interaction_coeffs, dtype=float)
-    if sparse.issparse(interaction_basis):
-        if coeffs.shape != (1,):
-            raise ValueError("Sparse interaction bases currently support exactly one template.")
-        interaction_matrix = interaction_basis.multiply(float(coeffs[0])).tocsr()
-        interaction_matrix = (interaction_matrix + interaction_matrix.T) * 0.5
+def zero_latent_field(n_nodes: int, t_steps: int) -> np.ndarray:
+    return np.zeros((t_steps, n_nodes), dtype=float)
+
+
+def _smooth_time_trend(t_steps: int, sharpness: float = 2.0) -> np.ndarray:
+    if t_steps <= 0:
+        raise ValueError("t_steps must be positive.")
+    if t_steps == 1:
+        return np.zeros(1, dtype=float)
+    grid = np.linspace(-1.0, 1.0, int(t_steps), dtype=float)
+    trend = np.tanh(float(sharpness) * grid)
+    trend = trend - float(np.mean(trend))
+    rms = float(np.sqrt(np.mean(trend**2)))
+    if rms < _DEGENERACY_THRESHOLD:
+        return np.zeros_like(trend)
+    return trend / rms
+
+
+def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
+    """Project field_matrix onto its best rank-r approximation via truncated SVD."""
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    max_rank = min(max(int(rank), 0), *field_matrix.shape)
+    if max_rank == 0:
+        return np.zeros_like(field_matrix)
+    u, singular_values, vt = np.linalg.svd(field_matrix, full_matrices=False)
+    return (u[:, :max_rank] * singular_values[:max_rank]) @ vt[:max_rank, :]
+
+
+def scale_latent_field_matrix(
+    field_matrix: np.ndarray, target_rms: float, bound: float
+) -> np.ndarray:
+    """Rescale field_matrix to have RMS ≈ target_rms, then clip to inf-norm ≤ bound.
+
+    Returns the zero matrix if the initial RMS is below _DEGENERACY_THRESHOLD.
+    """
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    rms = float(np.sqrt(np.mean(field_matrix**2)))
+    if rms < _DEGENERACY_THRESHOLD:
+        return np.zeros_like(field_matrix)
+    field_matrix = field_matrix * (target_rms / rms)
+    norm = latent_field_bound_norm(field_matrix)
+    if norm > bound and norm >= 1e-12:
+        field_matrix = field_matrix * (bound / norm)
+    return field_matrix
+
+
+def project_latent_field(
+    node_factors: np.ndarray, time_factors: np.ndarray, bound: float
+) -> tuple[np.ndarray, np.ndarray]:
+    node_factors = np.asarray(node_factors, dtype=float).copy()
+    time_factors = np.asarray(time_factors, dtype=float).copy()
+    field_matrix = compose_latent_field_matrix(node_factors, time_factors)
+    norm = latent_field_bound_norm(field_matrix)
+    if norm <= bound or norm < _DEGENERACY_THRESHOLD:
+        return node_factors, time_factors
+    scale = np.sqrt(bound / norm)
+    return node_factors * scale, time_factors * scale
+
+
+def _sample_random_low_rank_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
+    rank = get_latent_rank(config)
+    if rank == 0:
+        return zero_latent_field(n_nodes, t_steps)
+    field_matrix = make_low_rank_matrix(
+        n_samples=t_steps,
+        n_features=n_nodes,
+        effective_rank=rank,
+        tail_strength=_TAIL_STRENGTH,
+        random_state=int(config.generation_params.seed) + 101,
+    )
+    # Add bias to ensure nonzero mean and rescale to target RMS before truncation.
+    rng = np.random.default_rng(int(config.generation_params.seed) + 202)
+    bias = rng.normal(loc=0.0, scale=get_B(config), size=n_nodes)
+    field_matrix = field_matrix + bias[None, :]
+    field_matrix = np.asarray(field_matrix, dtype=float)
+    target_rms = _RMS_SCALE_FACTOR * get_B(config)
+    field_matrix = truncate_matrix_rank(field_matrix, rank)
+    return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
+
+
+def _sample_node_bias_plus_smooth_time_drift_field(
+    config,
+    n_nodes: int,
+    t_steps: int,
+) -> np.ndarray:
+    field_params = get_synthetic_field_params(config)
+    node_bias_scale = float(field_params.get("node_bias_scale", 1.0))
+    drift_scale = float(field_params.get("drift_scale", 0.5))
+    time_trend_sharpness = float(field_params.get("time_trend_sharpness", 2.0))
+    rng = np.random.default_rng(int(config.generation_params.seed) + 211)
+
+    node_bias = rng.normal(size=n_nodes)
+    drift_loading = rng.normal(size=n_nodes)
+    node_bias_norm = float(np.linalg.norm(node_bias))
+    if node_bias_norm < _DEGENERACY_THRESHOLD:
+        node_bias = np.ones(n_nodes, dtype=float)
+        node_bias_norm = float(np.linalg.norm(node_bias))
+    node_bias = node_bias / node_bias_norm
+
+    drift_norm = float(np.linalg.norm(drift_loading))
+    if drift_norm < _DEGENERACY_THRESHOLD:
+        drift_loading = np.zeros(n_nodes, dtype=float)
+        drift_loading[0] = 1.0
+        drift_norm = 1.0
+    if node_bias_norm >= _DEGENERACY_THRESHOLD:
+        projection = float(np.dot(drift_loading, node_bias))
+        drift_loading = drift_loading - projection * node_bias
+        drift_norm = float(np.linalg.norm(drift_loading))
+        if drift_norm < _DEGENERACY_THRESHOLD:
+            drift_loading = rng.normal(size=n_nodes)
+            projection = float(np.dot(drift_loading, node_bias))
+            drift_loading = drift_loading - projection * node_bias
+            drift_norm = float(np.linalg.norm(drift_loading))
+    if drift_norm < _DEGENERACY_THRESHOLD:
+        drift_loading = np.zeros(n_nodes, dtype=float)
+        drift_loading[min(1, n_nodes - 1)] = 1.0
+        drift_norm = float(np.linalg.norm(drift_loading))
+    drift_loading = drift_loading / drift_norm
+
+    trend = _smooth_time_trend(t_steps, sharpness=time_trend_sharpness)
+    field_matrix = (
+        node_bias_scale * node_bias[None, :]
+        + drift_scale * trend[:, None] * drift_loading[None, :]
+    )
+    target_rms = _RMS_SCALE_FACTOR * get_B(config)
+    return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
+
+
+def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
+    n_nodes = int(config.global_params.N)
+    t_steps = int(config.global_params.T)
+    gamma_matrix = normalize_known_graph(gamma_matrix)
+    validate_graph_infinity_norm(gamma_matrix)
+    field_mode = get_synthetic_field_mode(config)
+    if field_mode == SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK:
+        field_matrix = _sample_random_low_rank_field(config, n_nodes, t_steps)
+        latent_rank = get_latent_rank(config)
+    elif field_mode == SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT:
+        field_matrix = _sample_node_bias_plus_smooth_time_drift_field(
+            config, n_nodes, t_steps
+        )
+        latent_rank = min(2, n_nodes, t_steps)
+    else:
+        raise ValueError(
+            "Unsupported synthetic field_mode: "
+            f"{field_mode}"
+        )
+    return ModelArtifacts(
+        gamma_matrix=gamma_matrix,
+        t_steps=t_steps,
+        latent_rank=int(latent_rank),
+        optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+        field_matrix=field_matrix,
+    )
+
+
+def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
+    gamma_matrix = normalize_known_graph(gamma_matrix)
+    validate_graph_infinity_norm(gamma_matrix)
+    optimizer_mode = get_optimizer_mode(config)
+    latent_rank = get_latent_rank(config)
+    if optimizer_mode in {
+        OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+        OPTIMIZER_MODE_NUCLEAR_NORM,
+    }:
+        latent_rank = 0
+    elif (
+        optimizer_mode in {
+            OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+            OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
+        }
+        and latent_rank <= 0
+    ):
+        raise ValueError(
+            "global_params.latent_rank must be positive for optimizer_mode="
+            f"'{optimizer_mode}'."
+        )
+    elif optimizer_mode == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD and latent_rank <= 0:
+        raise ValueError(
+            "global_params.latent_rank must be positive for optimizer_mode='exact_rank_manifold'."
+        )
+    return ModelArtifacts(
+        gamma_matrix=gamma_matrix,
+        t_steps=int(config.global_params.T),
+        latent_rank=latent_rank,
+        optimizer_mode=optimizer_mode,
+    )
+
+
+def save_field_artifacts(path: str | Path, artifacts: ModelArtifacts) -> None:
+    payload: dict[str, np.ndarray] = {
+        "latent_rank": np.asarray(int(artifacts.latent_rank), dtype=int),
+        "t_steps": np.asarray(int(artifacts.t_steps), dtype=int),
+    }
+    if artifacts.field_matrix is not None:
+        payload["field_matrix"] = np.asarray(artifacts.field_matrix, dtype=float)
+    np.savez(Path(path), **payload)
+
+
+def load_field_artifacts(path: str | Path) -> dict[str, object]:
+    with np.load(Path(path), allow_pickle=False) as data:
+        result: dict[str, object] = {
+            "latent_rank": int(data["latent_rank"]),
+            "t_steps": int(data["t_steps"]),
+        }
+        for key in ["field_matrix"]:
+            if key in data:
+                result[key] = data[key]
+    return result
+
+
+def save_model_artifacts(data_folder: str | Path, artifacts: ModelArtifacts) -> None:
+    data_path = Path(data_folder)
+    data_path.mkdir(parents=True, exist_ok=True)
+    if sparse.issparse(artifacts.gamma_matrix):
+        sparse.save_npz(
+            data_path / "gamma_matrix_sparse.npz",
+            sparse.csr_matrix(artifacts.gamma_matrix),
+        )
+    else:
+        np.save(
+            data_path / "gamma_matrix.npy",
+            np.asarray(artifacts.gamma_matrix, dtype=float),
+        )
+    save_field_artifacts(data_path / "field_artifacts.npz", artifacts)
+
+
+def load_model_artifacts(data_folder: str | Path) -> ModelArtifacts:
+    data_path = Path(data_folder)
+    field_path = data_path / "field_artifacts.npz"
+    if not field_path.exists():
+        raise FileNotFoundError(f"Missing field_artifacts.npz in {data_path}.")
+    gamma_sparse = data_path / "gamma_matrix_sparse.npz"
+    gamma_dense = data_path / "gamma_matrix.npy"
+    if gamma_sparse.exists():
+        gamma_matrix = sparse.load_npz(gamma_sparse).tocsr()
+    elif gamma_dense.exists():
+        gamma_matrix = np.load(gamma_dense)
+    else:
+        raise FileNotFoundError(f"Missing gamma matrix artifact in {data_path}.")
+    payload = load_field_artifacts(field_path)
+    return ModelArtifacts(
+        gamma_matrix=gamma_matrix,
+        t_steps=int(payload["t_steps"]),
+        latent_rank=int(payload.get("latent_rank", 0)),
+        optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+        field_matrix=payload.get("field_matrix"),
+    )
+
+
+def compose_interaction_matrix(xi: float, gamma_matrix):
+    if sparse.issparse(gamma_matrix):
+        interaction_matrix = (
+            sparse.csr_matrix(gamma_matrix, dtype=float).multiply(xi).tocsr()
+        )
+        interaction_matrix = ((interaction_matrix + interaction_matrix.T) * 0.5).tocsr()
         interaction_matrix.setdiag(0.0)
         interaction_matrix.eliminate_zeros()
         return interaction_matrix
-
-    basis_array = np.asarray(interaction_basis, dtype=float)
-    if basis_array.ndim == 2:
-        if coeffs.shape != (1,):
-            raise ValueError("A single dense interaction matrix requires exactly one coefficient.")
-        interaction_matrix = coeffs[0] * basis_array
-        interaction_matrix = (interaction_matrix + interaction_matrix.T) / 2.0
-        np.fill_diagonal(interaction_matrix, 0.0)
-        return interaction_matrix
-
-    interaction_matrix = np.tensordot(
-        coeffs,
-        basis_array,
-        axes=(0, 0),
-    )
+    interaction_matrix = xi * np.asarray(gamma_matrix, dtype=float)
     interaction_matrix = (interaction_matrix + interaction_matrix.T) / 2.0
     np.fill_diagonal(interaction_matrix, 0.0)
     return interaction_matrix
 
 
-def interaction_features(
-    x: np.ndarray,
-    interaction_basis,
-) -> np.ndarray:
-    """Precompute basis-specific interaction features for each time step and node."""
-    if sparse.issparse(interaction_basis):
-        features = np.asarray(x @ interaction_basis.T)
-        return features.reshape(1, x.shape[0], x.shape[1])
-
-    basis_array = np.asarray(interaction_basis, dtype=float)
-    if basis_array.ndim == 2:
-        features = np.asarray(x @ basis_array.T)
-        return features.reshape(1, x.shape[0], x.shape[1])
-
-    return np.einsum("tn,kmn->ktm", x, basis_array, optimize=True)
-
-
-def get_field_coeffs(config) -> np.ndarray:
-    """Load field coefficients from config."""
-    if "field_coefs" not in config.estimation_params:
-        raise KeyError("estimation_params.field_coefs is required.")
-    return np.asarray(config.estimation_params.field_coefs, dtype=float)
-
-
-def get_interaction_coeffs(config) -> np.ndarray:
-    """Load interaction coefficients from config."""
-    if "interaction_coefs" not in config.estimation_params:
-        raise KeyError("estimation_params.interaction_coefs is required.")
-    return np.asarray(config.estimation_params.interaction_coefs, dtype=float)
-
-
-def get_temporal_field(config, t_steps: int) -> np.ndarray:
-    """Load the realized shared time-varying field from config."""
-    estimation_params = config.estimation_params
-
-    if "tau_params" not in estimation_params or estimation_params.tau_params is None:
-        return np.zeros(t_steps, dtype=float)
-
-    tau_params = estimation_params.tau_params
-    mode = str(tau_params.mode)
-
-    if mode == "fixed":
-        tau = np.asarray(tau_params["vector"], dtype=float)
-        if tau.shape != (t_steps,):
-            raise ValueError(
-                "Fixed tau vector must have length equal to global_params.T."
-            )
-        return tau
-
-    if mode == "uniform_random":
-        lower = float(tau_params.lower)
-        upper = float(tau_params.upper)
-        if lower > upper:
-            raise ValueError("tau_params.lower must be less than or equal to upper.")
-        tau_seed = int(getattr(tau_params, "seed", config.generation_params.seed))
-        rng = np.random.default_rng(tau_seed)
-        return rng.uniform(lower, upper, size=t_steps)
-
-    raise ValueError(f"Unknown tau generation mode '{mode}'.")
-
-
-def load_or_build_basis(config, gamma_matrix: np.ndarray) -> BasisExpansion:
-    """Build the configured basis from the current basis configuration."""
-    basis = build_basis_expansion(config, gamma_matrix)
-    validate_basis_infinity_norms(basis.field_basis, basis.interaction_basis)
-    return basis
+def interaction_effect(x: np.ndarray, gamma_matrix) -> np.ndarray:
+    x = np.asarray(x, dtype=float)
+    if sparse.issparse(gamma_matrix):
+        return np.asarray(x @ sparse.csr_matrix(gamma_matrix).T)
+    return x @ np.asarray(gamma_matrix, dtype=float).T
 
 
 def parameter_names(
-    field_names: tuple[str, ...],
-    interaction_names: tuple[str, ...],
-    t_steps: int,
-    fit_intervention_model: bool = True,
+    artifacts: ModelArtifacts,
+    fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[str]:
-    """Create human-readable parameter labels matching the flattened optimizer vector."""
-    field_keys = [f"field::{name}" for name in field_names]
-    temporal_keys = [f"tau::t_{idx}" for idx in range(t_steps)]
-    interaction_keys = [f"interaction::{name}" for name in interaction_names]
-    tail_keys = ["eta", "zeta", "psi"] if fit_intervention_model else ["eta"]
-    return field_keys + temporal_keys + ["beta"] + interaction_keys + tail_keys
-
-
-def pack_true_parameters(
-    config,
-    field_names: tuple[str, ...],
-    interaction_names: tuple[str, ...],
-    fit_intervention_model: bool | None = None,
-) -> np.ndarray:
-    """Pack the true configuration parameters into the optimizer's flat ordering."""
-    if fit_intervention_model is None:
-        fit_intervention_model = intervention_model_enabled(config)
-    field_coeffs = get_field_coeffs(config)
-    tau = get_temporal_field(config, int(config.global_params.T))
-    interaction_coeffs = get_interaction_coeffs(config)
-    if len(field_coeffs) != len(field_names):
-        raise ValueError(
-            "Number of field coefficients does not match the configured field basis."
-        )
-    if len(interaction_coeffs) != len(interaction_names):
-        raise ValueError(
-            "Number of interaction coefficients does not match the configured interaction basis."
-        )
-    return np.concatenate(
-        [
-            field_coeffs,
-            tau,
-            np.array([config.estimation_params.beta], dtype=float),
-            interaction_coeffs,
-            np.array([config.estimation_params.eta], dtype=float),
-            *(
-                [
-                    np.array(
-                        [
-                            config.estimation_params.zeta,
-                            config.estimation_params.psi,
-                        ],
-                        dtype=float,
-                    )
-                ]
-                if fit_intervention_model
-                else []
-            ),
+    n_nodes = artifacts.gamma_matrix.shape[0]
+    if uses_full_matrix_parameterization(artifacts):
+        field_keys = [
+            f"F::time_{time_idx}::node_{node_idx}"
+            for time_idx in range(artifacts.t_steps)
+            for node_idx in range(n_nodes)
         ]
-    )
+    else:
+        field_keys = [
+            f"U::node_{node_idx}::r_{rank_idx}"
+            for node_idx in range(n_nodes)
+            for rank_idx in range(artifacts.latent_rank)
+        ]
+        field_keys.extend(
+            f"V::time_{time_idx}::r_{rank_idx}"
+            for time_idx in range(artifacts.t_steps)
+            for rank_idx in range(artifacts.latent_rank)
+        )
+    return field_keys + free_scalar_parameter_names(fixed_scalar_params)
+
+
+def summarize_theta_for_logging(param_names: list[str], theta: np.ndarray) -> str:
+    scalar_names = set(SCALAR_PARAMETER_ORDER)
+    scalar_parts = [
+        f"{key}: {value:+.4f}"
+        for key, value in zip(param_names, theta)
+        if key in scalar_names
+    ]
+    if scalar_parts:
+        return "  " + ",  ".join(scalar_parts)
+    return "  no free scalar parameters"
 
 
 def unpack_theta(
     theta: np.ndarray,
-    n_field: int,
-    n_interaction: int,
-    t_steps: int,
-    fit_intervention_model: bool = True,
-) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float, float, float]:
-    """Split the optimizer vector into field, treatment, interaction, and temporal blocks."""
-    field_coeffs = np.asarray(theta[:n_field], dtype=float)
-    tau = np.asarray(theta[n_field : n_field + t_steps], dtype=float)
-    beta = float(theta[n_field + t_steps])
-    interaction_start = n_field + t_steps + 1
-    interaction_end = interaction_start + n_interaction
-    interaction_coeffs = np.asarray(theta[interaction_start:interaction_end], dtype=float)
-    tail = np.asarray(theta[interaction_end:], dtype=float)
-    if fit_intervention_model:
-        eta, zeta, psi = tail
+    artifacts: ModelArtifacts,
+    fixed_scalar_params: dict[str, float] | None = None,
+) -> dict[str, object]:
+    theta = np.asarray(theta, dtype=float)
+    n_nodes = artifacts.gamma_matrix.shape[0]
+    t_steps = artifacts.t_steps
+    if uses_full_matrix_parameterization(artifacts):
+        n_field = t_steps * n_nodes
+        n_u = 0
+        n_v = 0
     else:
-        eta = float(tail[0])
-        zeta = 0.0
-        psi = 0.0
-    return field_coeffs, tau, beta, interaction_coeffs, eta, zeta, psi
-
-
-def compose_field_matrix(
-    field_coeffs: np.ndarray,
-    tau: np.ndarray,
-    field_basis: np.ndarray,
-) -> np.ndarray:
-    """Compose the realized T x N external field with node and time components."""
-    static_field = compose_field(field_coeffs, field_basis)
-    return static_field[None, :] + np.asarray(tau, dtype=float)[:, None]
-
-
-def summary_metrics(
-    est_theta: np.ndarray,
-    true_theta: np.ndarray,
-    field_basis: np.ndarray,
-    interaction_basis,
-    fit_intervention_model: bool = True,
-) -> dict[str, float]:
-    """Compute reconstruction metrics for fitted parameters, fields, and interactions."""
-    t_steps = int(
-        len(est_theta)
-        - field_basis.shape[0]
-        - interaction_basis_count(interaction_basis)
-        - scalar_parameter_count(fit_intervention_model)
-    )
-    if t_steps < 0:
-        raise ValueError("Parameter vector is too short for the configured model blocks.")
-    n_field = field_basis.shape[0]
-    n_interaction = interaction_basis_count(interaction_basis)
-    est_field_coeffs, est_tau, _, est_interaction_coeffs, _, _, _ = unpack_theta(
-        est_theta, n_field, n_interaction, t_steps, fit_intervention_model
-    )
-    true_field_coeffs, true_tau, _, true_interaction_coeffs, _, _, _ = unpack_theta(
-        true_theta, n_field, n_interaction, t_steps, fit_intervention_model
-    )
-    est_field = compose_field(est_field_coeffs, field_basis)
-    true_field = compose_field(true_field_coeffs, field_basis)
-    est_field_matrix = compose_field_matrix(est_field_coeffs, est_tau, field_basis)
-    true_field_matrix = compose_field_matrix(true_field_coeffs, true_tau, field_basis)
-    est_interaction = compose_interaction_matrix(
-        est_interaction_coeffs, interaction_basis
-    )
-    true_interaction = compose_interaction_matrix(
-        true_interaction_coeffs, interaction_basis
-    )
-    if sparse.issparse(est_interaction):
-        interaction_error = est_interaction - true_interaction
-        interaction_fro_error = float(
-            np.sqrt(interaction_error.multiply(interaction_error).sum())
+        n_field = 0
+        n_u = n_nodes * artifacts.latent_rank
+        n_v = t_steps * artifacts.latent_rank
+    tail = len(free_scalar_parameter_names(fixed_scalar_params))
+    expected_length = n_field + n_u + n_v + tail
+    if len(theta) != expected_length:
+        raise ValueError(
+            f"Theta length {len(theta)} does not match expected length {expected_length}."
         )
+    if uses_full_matrix_parameterization(artifacts):
+        field_matrix = theta[:n_field].reshape(t_steps, n_nodes)
+        node_factors = np.zeros((n_nodes, 0), dtype=float)
+        time_factors = np.zeros((t_steps, 0), dtype=float)
+        cursor = n_field
     else:
-        interaction_fro_error = float(
-            np.linalg.norm(est_interaction - true_interaction, ord="fro")
-        )
-
+        field_matrix = None
+        node_factors = theta[:n_u].reshape(n_nodes, artifacts.latent_rank)
+        time_factors = theta[n_u : n_u + n_v].reshape(t_steps, artifacts.latent_rank)
+        cursor = n_u + n_v
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
+    scalar_values: dict[str, float] = {}
+    for name in scalar_parameter_names():
+        if name in fixed:
+            scalar_values[name] = float(fixed[name])
+        else:
+            scalar_values[name] = float(theta[cursor])
+            cursor += 1
     return {
-        "field_rmse": float(np.sqrt(np.mean((est_field_matrix - true_field_matrix) ** 2))),
-        "field_l2_error": float(
-            np.linalg.norm((est_field_matrix - true_field_matrix).reshape(-1), ord=2)
-        ),
-        "static_field_rmse": float(np.sqrt(np.mean((est_field - true_field) ** 2))),
-        "tau_rmse": float(np.sqrt(np.mean((est_tau - true_tau) ** 2))),
-        "interaction_fro_error": interaction_fro_error,
-        "parameter_rmse": float(np.sqrt(np.mean((est_theta - true_theta) ** 2))),
+        "node_factors": node_factors,
+        "time_factors": time_factors,
+        "field_matrix": field_matrix,
+        "beta": scalar_values["beta"],
+        "xi": scalar_values["xi"],
+        "eta": scalar_values["eta"],
     }
+
+
+def pack_theta(
+    theta_parts: dict[str, object],
+    artifacts: ModelArtifacts,
+    fixed_scalar_params: dict[str, float] | None = None,
+) -> np.ndarray:
+    if uses_full_matrix_parameterization(artifacts):
+        if theta_parts.get("field_matrix") is None:
+            raise ValueError("Full-matrix parameterization requires field_matrix.")
+        field_block = np.asarray(theta_parts["field_matrix"], dtype=float).reshape(-1)
+    else:
+        if theta_parts["node_factors"] is None or theta_parts["time_factors"] is None:
+            raise ValueError(
+                "Factorized parameterization requires node_factors and time_factors."
+            )
+        field_block = np.concatenate(
+            [
+                np.asarray(theta_parts["node_factors"], dtype=float).reshape(-1),
+                np.asarray(theta_parts["time_factors"], dtype=float).reshape(-1),
+            ]
+        )
+    fixed = validate_fixed_scalar_params(fixed_scalar_params)
+    tail = [
+        np.array([float(theta_parts[name])], dtype=float)
+        for name in scalar_parameter_names()
+        if name not in fixed
+    ]
+    return np.concatenate([field_block, *tail])
+
+
+def compose_field_matrix_from_theta(
+    theta_parts: dict[str, object], artifacts: ModelArtifacts
+) -> np.ndarray:
+    if uses_full_matrix_parameterization(artifacts):
+        return np.asarray(theta_parts["field_matrix"], dtype=float)
+    return compose_latent_field_matrix(
+        theta_parts["node_factors"], theta_parts["time_factors"]
+    )
+
+
+def with_theta_field(
+    artifacts: ModelArtifacts, theta_parts: dict[str, object]
+) -> ModelArtifacts:
+    field_matrix = compose_field_matrix_from_theta(theta_parts, artifacts)
+    return ModelArtifacts(
+        gamma_matrix=artifacts.gamma_matrix,
+        t_steps=artifacts.t_steps,
+        latent_rank=artifacts.latent_rank,
+        optimizer_mode=artifacts.optimizer_mode,
+        field_matrix=field_matrix,
+    )
+
+
+def load_true_parameters(
+    config,
+    artifacts: ModelArtifacts,
+    fixed_scalar_params: dict[str, float] | None = None,
+) -> np.ndarray:
+    if artifacts.field_matrix is None:
+        raise ValueError("Missing latent truth field in field_artifacts.")
+    truth_artifacts = ModelArtifacts(
+        gamma_matrix=artifacts.gamma_matrix,
+        t_steps=artifacts.t_steps,
+        latent_rank=0,
+        optimizer_mode=OPTIMIZER_MODE_NUCLEAR_NORM,
+        field_matrix=artifacts.field_matrix,
+    )
+    theta_parts = {
+        "field_matrix": artifacts.field_matrix,
+        "beta": float(config.estimation_params.beta),
+        "xi": float(get_xi(config)),
+        "eta": float(config.estimation_params.eta),
+    }
+    return pack_theta(
+        theta_parts,
+        truth_artifacts,
+        fixed_scalar_params=fixed_scalar_params,
+    )

@@ -1,0 +1,18 @@
+experiment_name: hybrid_generated_intervention_uscounty_graph_rank_40
+experiment_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticHybridExperiments\hybrid_generated_intervention_uscounty_graph_rank_40
+run_name: default
+run_slug: default
+source_type: truth
+source_name: truth
+source_slug: truth
+latent_rank: 40
+B: 5.0
+fit_intervention_model: true
+num_samples: 64
+gibbs_sweeps: 10
+seed: 0
+summary:
+  mean_abs_zscore: 30.39845555332934
+  max_abs_zscore: 79.40153555046648
+  coverage_rate: 0.375
+  num_statistics: 8
