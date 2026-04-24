@@ -273,9 +273,8 @@ def _sample_random_low_rank_field(config, n_nodes: int, t_steps: int) -> np.ndar
     )
     # Add bias to ensure nonzero mean and rescale to target RMS before truncation.
     rng = np.random.default_rng(int(config.generation_params.seed) + 202)
-    bias = rng.normal(loc=0.0, scale=get_B(config), size=1)[0]
-    column_bias = np.where(np.arange(n_nodes) % 2 == 0, bias, -bias)
-    field_matrix = field_matrix + column_bias[None, :]
+    bias = rng.normal(loc=0.0, scale=get_B(config), size=n_nodes)
+    field_matrix = field_matrix + bias[None, :]
     field_matrix = np.asarray(field_matrix, dtype=float)
     target_rms = _RMS_SCALE_FACTOR * get_B(config)
     field_matrix = truncate_matrix_rank(field_matrix, rank)
