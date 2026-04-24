@@ -213,12 +213,12 @@ __marimo__/
 # Ignore bulky artifacts anywhere under experiments/, but keep the lightweight
 # metadata, summaries, and logs that are useful for review.
 experiments/**
-!experiments/**/
-!experiments/**/*.yaml
-!experiments/**/*.md
-!experiments/**/*.log
-!experiments/**/**_summary.csv
-experiments/.tmp_*/
+# !experiments/**/
+# !experiments/**/*.yaml
+# !experiments/**/*.md
+# !experiments/**/*.log
+# !experiments/**/**_summary.csv
+# experiments/.tmp_*/
 
 # Data
 data/*/processed/
