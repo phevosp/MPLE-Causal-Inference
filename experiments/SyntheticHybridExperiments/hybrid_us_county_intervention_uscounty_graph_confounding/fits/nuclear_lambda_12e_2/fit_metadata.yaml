@@ -2,7 +2,11 @@ variant_name: nuclear_lambda_12e_2
 variant_slug: nuclear_lambda_12e_2
 fits_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/fits_spec.yaml
 experiment_name: hybrid_us_county_intervention_uscounty_graph_confounding
+experiment_slug: hybrid_us_county_intervention_uscounty_graph_confounding
+descriptor: hybrid_us_county_intervention_uscounty_graph_confounding
 experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+intervention_source: fixed_artifact
+graph_source: fixed_artifact
 field_mode: low_rank_plus_early_treatment_confounding
 model_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
 truth_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
@@ -13,6 +17,7 @@ optimizer_mode: nuclear_norm
 lambda_nuclear: 0.12
 lambda_frobenius: 0.0
 lambda_uv_ridge: 0.0
+fixed_scalar_params: {}
 'N': 3009
 T: 120
 s: 55
