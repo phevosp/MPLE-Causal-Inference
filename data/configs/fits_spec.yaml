@@ -79,3 +79,109 @@ variants:
 
   - name: zero_external_field
     optimizer_mode: no_external_field
+
+  - name: nuclear_lambda_6e_2_xi_zero
+    optimizer_mode: nuclear_norm
+    lambda_nuclear: 0.06
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: nuclear_lambda_8e_2_xi_zero
+    optimizer_mode: nuclear_norm
+    lambda_nuclear: 0.08
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: nuclear_lambda_1e_1_xi_zero
+    optimizer_mode: nuclear_norm
+    lambda_nuclear: 0.1
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: nuclear_lambda_12e_2_xi_zero
+    optimizer_mode: nuclear_norm
+    lambda_nuclear: 0.12
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: manifold_rank_2_xi_zero
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 2
+    lambda_frobenius: 0.1
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: manifold_rank_5_xi_zero
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 5
+    lambda_frobenius: 0.3
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: manifold_rank_10_xi_zero
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 10
+    lambda_frobenius: 0.5
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: alternating_rank_10_xi_zero
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 18
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: alternating_rank_5_xi_zero
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 14
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: alternating_rank_2_xi_zero
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 2
+    lambda_uv_ridge: 10
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: concurrent_rank_10_xi_zero
+    optimizer_mode: concurrent_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 18
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: concurrent_rank_2_xi_zero
+    optimizer_mode: concurrent_latent_rank
+    latent_rank: 2
+    lambda_uv_ridge: 10
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: concurrent_rank_5_xi_zero
+    optimizer_mode: concurrent_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 14
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: zero_external_field_xi_zero
+    optimizer_mode: no_external_field
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0

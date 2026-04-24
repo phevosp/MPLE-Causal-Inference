@@ -4,7 +4,7 @@ set -euo pipefail
 
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
-FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
+FIT_OVERWRITE="${FIT_OVERWRITE:-true}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
 WORKER_SCRIPT="${WORKER_SCRIPT:-run_fit_job.sh}"
 WORKER_JOB_NAME="${WORKER_JOB_NAME:-fit}"
