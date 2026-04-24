@@ -19,9 +19,13 @@ SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK = "random_low_rank"
 SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT = (
     "node_bias_plus_smooth_time_drift"
 )
+SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING = (
+    "low_rank_plus_early_treatment_confounding"
+)
 VALID_SYNTHETIC_FIELD_MODES = {
     SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK,
     SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT,
+    SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING,
 }
 OPTIMIZER_MODE_NO_EXTERNAL_FIELD = "no_external_field"
 OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
@@ -261,6 +265,18 @@ def project_latent_field(
 
 
 def _sample_random_low_rank_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
+    return _sample_random_low_rank_field_base(
+        config, n_nodes, t_steps, include_random_bias=True
+    )
+
+
+def _sample_random_low_rank_field_base(
+    config,
+    n_nodes: int,
+    t_steps: int,
+    *,
+    include_random_bias: bool,
+) -> np.ndarray:
     rank = get_latent_rank(config)
     if rank == 0:
         return zero_latent_field(n_nodes, t_steps)
@@ -271,10 +287,11 @@ def _sample_random_low_rank_field(config, n_nodes: int, t_steps: int) -> np.ndar
         tail_strength=_TAIL_STRENGTH,
         random_state=int(config.generation_params.seed) + 101,
     )
-    # Add bias to ensure nonzero mean and rescale to target RMS before truncation.
-    rng = np.random.default_rng(int(config.generation_params.seed) + 202)
-    bias = rng.normal(loc=0.0, scale=get_B(config), size=n_nodes)
-    field_matrix = field_matrix + bias[None, :]
+    if include_random_bias:
+        # Add bias to ensure nonzero mean and rescale to target RMS before truncation.
+        rng = np.random.default_rng(int(config.generation_params.seed) + 202)
+        bias = rng.normal(loc=0.0, scale=get_B(config), size=n_nodes)
+        field_matrix = field_matrix + bias[None, :]
     field_matrix = np.asarray(field_matrix, dtype=float)
     target_rms = _RMS_SCALE_FACTOR * get_B(config)
     field_matrix = truncate_matrix_rank(field_matrix, rank)
@@ -329,6 +346,73 @@ def _sample_node_bias_plus_smooth_time_drift_field(
     return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
 
 
+def _load_fixed_intervention_panel_for_field_mode(config) -> np.ndarray:
+    source = getattr(config.generation_params, "fixed_z_source", None)
+    if source is None:
+        raise ValueError(
+            "generation_params.fixed_z_source is required for "
+            f"field_mode='{SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING}'."
+        )
+    panel_path = Path(str(getattr(source, "panel_path", "")))
+    if not panel_path.exists():
+        raise FileNotFoundError(
+            "fixed_z_source.panel_path must exist for "
+            f"field_mode='{SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING}'."
+        )
+    with np.load(panel_path, allow_pickle=False) as data:
+        if "z" not in data:
+            raise KeyError(f"Fixed-z panel artifact {panel_path} does not contain a 'z' array.")
+        z = np.asarray(data["z"], dtype=float)
+    expected_shape = (int(config.global_params.T), int(config.global_params.N))
+    if z.shape != expected_shape:
+        raise ValueError(
+            f"Fixed-z artifact shape {z.shape} does not match configured (T, N)={expected_shape}."
+        )
+    return z
+
+
+def _sample_low_rank_plus_early_treatment_confounding_field(
+    config,
+    n_nodes: int,
+    t_steps: int,
+) -> tuple[np.ndarray, int]:
+    field_params = get_synthetic_field_params(config)
+    confounding_bias_scale = float(field_params.get("confounding_bias_scale", 1.0))
+    untreated_score_value = float(field_params.get("untreated_score_value", 0.0))
+
+    base_low_rank = _sample_random_low_rank_field_base(
+        config,
+        n_nodes,
+        t_steps,
+        include_random_bias=False,
+    )
+    z = _load_fixed_intervention_panel_for_field_mode(config)
+    treated_mask = np.asarray(z == 1.0, dtype=bool)
+    ever_treated = np.any(treated_mask, axis=0)
+    first_treated = np.full(n_nodes, t_steps, dtype=int)
+    if np.any(ever_treated):
+        first_treated[ever_treated] = np.argmax(treated_mask[:, ever_treated], axis=0)
+
+    earliness_score = np.full(n_nodes, untreated_score_value, dtype=float)
+    if t_steps > 1:
+        earliness_score[ever_treated] = 1.0 - (
+            first_treated[ever_treated].astype(float) / float(t_steps - 1)
+        )
+    else:
+        earliness_score[ever_treated] = 1.0
+
+    confounding_bias = -confounding_bias_scale * earliness_score
+    field_matrix = np.asarray(base_low_rank, dtype=float) + confounding_bias[None, :]
+    target_rms = _RMS_SCALE_FACTOR * get_B(config)
+    field_matrix = scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
+
+    base_rank = int(get_latent_rank(config))
+    realized_rank = min(base_rank + 1, n_nodes, t_steps) if abs(confounding_bias_scale) > _DEGENERACY_THRESHOLD else base_rank
+    if base_rank == 0 and abs(confounding_bias_scale) <= _DEGENERACY_THRESHOLD:
+        realized_rank = 0
+    return field_matrix, int(realized_rank)
+
+
 def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
     n_nodes = int(config.global_params.N)
     t_steps = int(config.global_params.T)
@@ -343,6 +427,10 @@ def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
             config, n_nodes, t_steps
         )
         latent_rank = min(2, n_nodes, t_steps)
+    elif field_mode == SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING:
+        field_matrix, latent_rank = _sample_low_rank_plus_early_treatment_confounding_field(
+            config, n_nodes, t_steps
+        )
     else:
         raise ValueError(
             "Unsupported synthetic field_mode: "

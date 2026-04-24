@@ -10,6 +10,7 @@ import unittest
 import uuid
 import csv
 from pathlib import Path
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -57,6 +58,7 @@ from model_utils import (
     interaction_matrix_infinity_norm,
     latent_field_bound_norm,
     load_model_artifacts,
+    SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING,
     load_true_parameters,
     parameter_names,
     project_latent_field,
@@ -378,6 +380,204 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertAlmostEqual(float(np.mean(trend)), 0.0, places=12)
         self.assertAlmostEqual(float(np.sqrt(np.mean(trend**2))), 1.0, places=12)
         self.assertTrue(np.all(np.diff(trend) >= -1e-12))
+
+    def test_low_rank_plus_early_treatment_confounding_orders_county_bias(self) -> None:
+        config = base_config()
+        config.global_params.B = 1.0
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.global_params.latent_rank = 0
+        config.global_params.field_mode = (
+            SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING
+        )
+        config.global_params.field_params = {
+            "confounding_bias_scale": 1.0,
+            "untreated_score_value": 0.0,
+        }
+        z = np.array(
+            [
+                [-1.0, -1.0, -1.0, -1.0],
+                [1.0, -1.0, -1.0, -1.0],
+                [1.0, 1.0, -1.0, -1.0],
+                [1.0, 1.0, 1.0, -1.0],
+            ],
+            dtype=float,
+        )
+        temp_root = REPO_ROOT / "experiments" / f".tmp_confounding_{uuid.uuid4().hex}"
+        temp_root.mkdir(parents=True, exist_ok=False)
+        try:
+            panel_path = temp_root / "panel_data.npz"
+            z0_path = temp_root / "z_0.npy"
+            np.savez(panel_path, z=z)
+            np.save(z0_path, np.zeros(4, dtype=float))
+            config.generation_params.fixed_z_source = OmegaConf.create(
+                {
+                    "panel_path": str(panel_path),
+                    "z0_path": str(z0_path),
+                }
+            )
+            gamma = np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ]
+            )
+            artifacts = build_synthetic_field(config, gamma)
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+        field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
+        self.assertEqual(field_matrix.shape, (4, 4))
+        self.assertEqual(artifacts.latent_rank, 1)
+        self.assertLessEqual(
+            latent_field_bound_norm(field_matrix),
+            float(config.global_params.B) + 1e-12,
+        )
+        column_means = np.mean(field_matrix, axis=0)
+        self.assertLessEqual(column_means[0], column_means[1] + 1e-12)
+        self.assertLessEqual(column_means[1], column_means[2] + 1e-12)
+        self.assertLessEqual(column_means[2], column_means[3] + 1e-12)
+
+    def test_generation_spec_includes_us_county_confounding_experiment(self) -> None:
+        from pipeline_specs import expand_named_entries
+
+        experiments = expand_named_entries(REPO_ROOT / "data" / "configs" / "generation_spec.yaml", "experiments")
+        confounding_spec = next(
+            experiment
+            for experiment in experiments
+            if experiment["name"] == "hybrid_us_county_intervention_uscounty_graph_confounding"
+        )
+        self.assertEqual(
+            confounding_spec["truth"]["field_mode"],
+            SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING,
+        )
+        self.assertEqual(int(confounding_spec["truth"]["latent_rank"]), 20)
+        self.assertIn("confounding_bias_scale", confounding_spec["truth"]["field_params"])
+
+    def test_generation_pipeline_smoke_with_confounding_field_mode(self) -> None:
+        root = REPO_ROOT / "experiments" / f".tmp_gen_confounding_{uuid.uuid4().hex}"
+        root.mkdir(parents=True, exist_ok=False)
+        try:
+            fixed_panel_path = root / "fixed_panel.npz"
+            fixed_z0_path = root / "fixed_z0.npy"
+            gamma_path = root / "gamma.npy"
+            spec_path = root / "generation_spec.yaml"
+            fits_spec_path = root / "fits_spec.yaml"
+
+            z = np.array(
+                [
+                    [-1.0, -1.0, -1.0, -1.0],
+                    [1.0, -1.0, -1.0, -1.0],
+                    [1.0, 1.0, -1.0, -1.0],
+                    [1.0, 1.0, 1.0, -1.0],
+                ],
+                dtype=float,
+            )
+            gamma = np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ],
+                dtype=float,
+            )
+            np.savez(fixed_panel_path, z=z)
+            np.save(fixed_z0_path, np.zeros(4, dtype=float))
+            np.save(gamma_path, gamma)
+
+            spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        f"  experiment_root: {root.as_posix()}/generated",
+                        f"  manifest_path: {root.as_posix()}/generated/generation_manifest.csv",
+                        "  dimensions:",
+                        "    N: 4",
+                        "    T: 4",
+                        "    s: 0",
+                        "  generation:",
+                        "    gibbs_sweeps: 1",
+                        "    seed: 7",
+                        "  x0:",
+                        "    generator: bernoulli",
+                        "    params:",
+                        "      p: 0.5",
+                        "      fixed_val: null",
+                        "  graph:",
+                        "    source: fixed_artifact",
+                        "    artifact:",
+                        f"      gamma_path: {gamma_path.as_posix()}",
+                        "      node_index_path: null",
+                        f"      artifact_dir: {root.as_posix()}",
+                        "      network_name: test_graph",
+                        "      trim_scope: test",
+                        "  intervention:",
+                        "    source: fixed_artifact",
+                        "    artifact:",
+                        f"      panel_path: {fixed_panel_path.as_posix()}",
+                        f"      z0_path: {fixed_z0_path.as_posix()}",
+                        f"      artifact_dir: {root.as_posix()}",
+                        "      shared_panel_dir: null",
+                        "      outcome_code: null",
+                        "      intervention_code: test_intervention",
+                        "      lag_code: test",
+                        "      trim_scope: test",
+                        "  truth:",
+                        "    B: 1.0",
+                        "    latent_rank: 2",
+                        f"    field_mode: {SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING}",
+                        "    field_params:",
+                        "      confounding_bias_scale: 0.75",
+                        "      untreated_score_value: 0.0",
+                        "    scalars:",
+                        "      beta: 0.2",
+                        "      xi: 0.1",
+                        "      eta: 0.05",
+                        "      zeta: -0.1",
+                        "      psi: 0.2",
+                        "experiments:",
+                        "  - name: confounding_smoke",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            fits_spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        "  fit_root_name: fits",
+                        f"  fit_manifest_path: {root.as_posix()}/generated/fit_manifest.csv",
+                        "  optimizer:",
+                        "    steps: 5",
+                        "    tol: 1.0e-6",
+                        "    seed: 0",
+                        "  B: 1.0",
+                        "  latent_rank: 0",
+                        "  estimation:",
+                        "    fixed_scalar_params: {}",
+                        "variants:",
+                        "  - name: rank_0",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            generation_manifest = run_generation(spec_path, overwrite=True)
+            fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+            experiment_root = root / "generated" / "confounding_smoke"
+
+            self.assertTrue((experiment_root / "panel_data.npz").exists())
+            self.assertTrue((experiment_root / "field_artifacts.npz").exists())
+            self.assertTrue((experiment_root / "fits" / "rank_0" / "mple_summary.csv").exists())
+            self.assertEqual(
+                Path(fit_manifest),
+                root / "generated" / "fit_manifest.csv",
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
     def test_latent_field_projection_bounds_max_entry_not_row_sum(self) -> None:
         node_factors = np.array([[2.0], [2.0]])

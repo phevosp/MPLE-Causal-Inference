@@ -53,8 +53,8 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 
 **Key `generation_spec.yaml` truth fields:**
 
-- `truth.field_mode`: `random_low_rank` or `node_bias_plus_smooth_time_drift`
-- `truth.field_params`: optional tuning knobs for structured fields such as `node_bias_scale`, `drift_scale`, and `time_trend_sharpness`
+- `truth.field_mode`: `random_low_rank`, `node_bias_plus_smooth_time_drift`, or `low_rank_plus_early_treatment_confounding`
+- `truth.field_params`: optional tuning knobs for structured fields such as `node_bias_scale`, `drift_scale`, `time_trend_sharpness`, `confounding_bias_scale`, and `untreated_score_value`
 
 ## Environment
 

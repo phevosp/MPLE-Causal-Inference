@@ -38,7 +38,7 @@ Supported source modes:
 
 - `graph.source: generated | fixed_artifact`
 - `intervention.source: generated | fixed_artifact`
-- `truth.field_mode: random_low_rank | node_bias_plus_smooth_time_drift`
+- `truth.field_mode: random_low_rank | node_bias_plus_smooth_time_drift | low_rank_plus_early_treatment_confounding`
 
 Dimension resolution:
 
