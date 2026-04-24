@@ -1,0 +1,47 @@
+2026-04-24 00:36:43 | INFO | Loading data...
+2026-04-24 00:36:43 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10/panel_data.npz
+2026-04-24 00:36:43 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10/x_0.npy
+2026-04-24 00:36:43 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10/fits/alternating_rank_10/fit_realized_config.yaml
+2026-04-24 00:36:43 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10
+2026-04-24 00:36:43 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10
+2026-04-24 00:36:43 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-24 00:36:43 | INFO | Configured latent rank: 10
+2026-04-24 00:36:43 | INFO | Using a fixed known graph with scalar xi.
+2026-04-24 00:36:43 | INFO | Fit-time hard bounds active: False
+2026-04-24 00:36:43 | INFO | Fixed scalar parameters: {}
+2026-04-24 00:36:43 | INFO | Optimizer settings: steps=10000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=18.0, proximal_lr=1.0
+2026-04-24 00:36:43 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.750652 | initial_penalized=0.770403
+2026-04-24 00:36:43 | INFO | Alternating low-rank iter 0 | Loss: 0.511887 | Penalized: 0.554777
+2026-04-24 00:36:46 | INFO | Alternating low-rank iter 100 | Loss: 0.475926 | Penalized: 0.536321
+2026-04-24 00:36:48 | INFO | Alternating low-rank iter 200 | Loss: 0.475819 | Penalized: 0.536211
+2026-04-24 00:36:51 | INFO | Alternating low-rank iter 300 | Loss: 0.475770 | Penalized: 0.536165
+2026-04-24 00:36:53 | INFO | Alternating low-rank iter 400 | Loss: 0.475746 | Penalized: 0.536146
+2026-04-24 00:36:55 | INFO | Alternating low-rank iter 500 | Loss: 0.475735 | Penalized: 0.536139
+2026-04-24 00:36:58 | INFO | Alternating low-rank iter 600 | Loss: 0.475729 | Penalized: 0.536135
+2026-04-24 00:37:00 | INFO | Alternating low-rank iter 700 | Loss: 0.475725 | Penalized: 0.536134
+2026-04-24 00:37:02 | INFO | Alternating low-rank iter 800 | Loss: 0.475724 | Penalized: 0.536134
+2026-04-24 00:37:05 | INFO | Alternating low-rank iter 900 | Loss: 0.475722 | Penalized: 0.536133
+2026-04-24 00:37:05 | INFO | Done fitting.
+2026-04-24 00:37:05 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-24 00:37:05 | INFO | Best optimizer start: 1 / 1
+2026-04-24 00:37:05 | INFO | Final Loss: 0.475722
+2026-04-24 00:37:05 | INFO | Estimated vs True Parameters:
+2026-04-24 00:37:05 | INFO |   beta: 0.4027 (True: 0.5000) | SQE: 0.009459
+2026-04-24 00:37:05 | INFO |   xi: 0.3984 (True: 0.6000) | SQE: 0.040631
+2026-04-24 00:37:05 | INFO |   eta: 0.0254 (True: -0.1000) | SQE: 0.015715
+2026-04-24 00:37:05 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-24 00:37:05 | INFO |   penalized_objective: 0.536133
+2026-04-24 00:37:05 | INFO |   mple_loss_without_penalty: 0.475722
+2026-04-24 00:37:05 | INFO |   lambda_uv_ridge: 18.000000
+2026-04-24 00:37:05 | INFO |   u_frobenius_norm: 12.954114
+2026-04-24 00:37:05 | INFO |   v_frobenius_norm: 12.954114
+2026-04-24 00:37:05 | INFO |   effective_rank: 1.000000
+2026-04-24 00:37:05 | INFO | Field and interaction diagnostics:
+2026-04-24 00:37:05 | INFO |   field_rmse: 0.289857
+2026-04-24 00:37:05 | INFO |   interaction_fro_error: 0.575516
+2026-04-24 00:37:05 | INFO |   estimated_field_max_abs_entry: 0.879335
+2026-04-24 00:37:05 | INFO |   estimated_field_rank: 1.000000
+2026-04-24 00:37:05 | INFO |   true_field_max_abs_entry: 0.840716
+2026-04-24 00:37:05 | INFO |   true_field_rank: 10.000000
+2026-04-24 00:37:06 | INFO | Saved summary tables to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10/fits/alternating_rank_10/mple_summary.csv and /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10/fits/alternating_rank_10/mple_summary.md
+2026-04-24 00:37:06 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/synthetic_latent_rank_10/fits/alternating_rank_10/mple.log
