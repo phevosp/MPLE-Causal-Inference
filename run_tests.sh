@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mple-tests
-#SBATCH --output=slurm-%j-mple-tests.out
-#SBATCH --error=slurm-%j-mple-tests.err
+#SBATCH --output=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-mple-tests.out
+#SBATCH --error=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-mple-tests.err
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -165,3 +165,6 @@ posterior_predictive_report_job_id="$(submit_posterior_predictive_stage)"
 wait_for_job "${posterior_predictive_report_job_id}" "Posterior predictive"
 
 echo "Job finished at $(date)"
+
+# Ensure the log directory exists
+mkdir -p "slurm-logs/$(date +%Y-%m-%d)"

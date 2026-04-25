@@ -20,6 +20,9 @@ FIT_REPORT_CPUS="${FIT_REPORT_CPUS:-1}"
 FIT_REPORT_MEM="${FIT_REPORT_MEM:-4G}"
 FIT_REPORT_PARTITION="${FIT_REPORT_PARTITION:-mit_normal}"
 
+# Ensure the log directory exists
+mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
+
 pixi run python -u run_fit_pipeline.py \
   --manifest_path "${GENERATION_MANIFEST_PATH}" \
   --fits_spec_path "${FITS_SPEC_PATH}" \

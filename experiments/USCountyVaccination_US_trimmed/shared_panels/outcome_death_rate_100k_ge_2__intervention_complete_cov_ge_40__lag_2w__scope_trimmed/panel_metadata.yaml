@@ -1,0 +1,35 @@
+source: USCountyVaccination
+state: Mainland US counties with total_population >= 2000
+outcome_code: death_rate_100k_ge_2
+outcome_label: death_rate_100k >= 2
+intervention_code: complete_cov_ge_40
+intervention_label: complete_cov >= 40
+intervention_family: core
+lag_code: 2w
+lag_steps: 2
+trim_applied: true
+trim_rule: mainland_us_and_total_population_ge_2000
+trim_scope_label: Mainland US counties with total_population >= 2000
+pre_trim_node_count: 3213
+trimmed_node_count: 3009
+trim_excluded_node_count: 204
+trim_excluded_non_mainland_count: 110
+trim_excluded_population_below_2000_count: 94
+trim_excluded_missing_population_count: 0
+trim_population_min: 2000
+requested_node_count: 3009
+requested_calendar_weeks: 121
+requested_start_date: '2020-01-26'
+requested_end_date: '2022-05-15'
+support_selection_rule: max_complete_suffix_by_node_week_area
+realized_node_count: 3009
+realized_calendar_weeks: 121
+weeks_dropped_due_to_missing_or_lag: 0
+dropped_node_count: 0
+node_count: 3009
+time_steps: 120
+pre_intervention_steps: 58
+realized_week_start_date: '2020-01-20'
+realized_week_end_date: '2022-05-15'
+realized_outcome_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/realized_outcomes/outcome_death_rate_100k_ge_2__scope_trimmed
+realized_intervention_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_40__lag_2w__scope_trimmed

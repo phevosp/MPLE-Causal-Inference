@@ -14,6 +14,9 @@ REPORT_JOB_NAME="${REPORT_JOB_NAME:-posterior-predictive-report}"
 job_ids=()
 FIELD_SEP=$'\x1f'
 
+# Ensure the log directory exists
+mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
+
 while IFS="${FIELD_SEP}" read -r experiment_name source_type variant_name intervention_source intervention_name run_name; do
   submit_output="$(
     GEN_MANIFEST="${GEN_MANIFEST}" \

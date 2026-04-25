@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=fit
-#SBATCH --output=slurm-%j-fit.out
-#SBATCH --error=slurm-%j-fit.err
+#SBATCH --output=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-fit.out
+#SBATCH --error=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-fit.err
 #SBATCH --time=08:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -25,6 +25,9 @@ OVERWRITE_FLAG=()
 if [[ "${FIT_OVERWRITE}" == "true" ]]; then
   OVERWRITE_FLAG=(--overwrite)
 fi
+
+# Ensure the log directory exists
+mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
 
 pixi run python -u run_fit_pipeline.py \
   --manifest_path "${GENERATION_MANIFEST_PATH}" \

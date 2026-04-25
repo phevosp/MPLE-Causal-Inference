@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=generation
-#SBATCH --output=slurm-%j-generation.out
-#SBATCH --error=slurm-%j-generation.err
+#SBATCH --output=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-generation.out
+#SBATCH --error=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-generation.err
 #SBATCH --time=04:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -23,6 +23,9 @@ OVERWRITE_FLAG=()
 if [[ "${GENERATION_OVERWRITE}" == "true" ]]; then
   OVERWRITE_FLAG=(--overwrite)
 fi
+
+# Ensure the log directory exists
+mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
 
 pixi run python -u run_generation_pipeline.py \
   --spec_path "${GENERATION_SPEC_PATH}" \

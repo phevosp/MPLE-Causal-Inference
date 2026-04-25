@@ -1,0 +1,38 @@
+2026-04-25 13:15:21 | INFO | Loading data...
+2026-04-25 13:15:21 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03/panel_data.npz
+2026-04-25 13:15:21 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03/x_0.npy
+2026-04-25 13:15:21 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03/fits/alternating_rank_20_lambda_15/fit_realized_config.yaml
+2026-04-25 13:15:21 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03
+2026-04-25 13:15:21 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03
+2026-04-25 13:15:21 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-25 13:15:21 | INFO | Configured latent rank: 20
+2026-04-25 13:15:21 | INFO | Using a fixed known graph with scalar xi.
+2026-04-25 13:15:21 | INFO | Fit-time hard bounds active: False
+2026-04-25 13:15:21 | INFO | Fixed scalar parameters: {}
+2026-04-25 13:15:21 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=15.0, proximal_lr=1.0
+2026-04-25 13:15:21 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.635265 | initial_penalized=0.678494
+2026-04-25 13:15:21 | INFO | Alternating low-rank iter 0 | Loss: 0.506863 | Penalized: 0.542176
+2026-04-25 13:15:27 | INFO | Alternating low-rank iter 100 | Loss: 0.371374 | Penalized: 0.475181
+2026-04-25 13:15:32 | INFO | Alternating low-rank iter 200 | Loss: 0.370040 | Penalized: 0.474112
+2026-04-25 13:15:38 | INFO | Alternating low-rank iter 300 | Loss: 0.369957 | Penalized: 0.474084
+2026-04-25 13:15:44 | INFO | Alternating low-rank iter 400 | Loss: 0.369945 | Penalized: 0.474084
+2026-04-25 13:15:44 | INFO | Done fitting.
+2026-04-25 13:15:44 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-25 13:15:44 | INFO | Best optimizer start: 1 / 1
+2026-04-25 13:15:44 | INFO | Final Loss: 0.369945
+2026-04-25 13:15:44 | INFO | Estimated Parameters:
+2026-04-25 13:15:44 | INFO |   beta: -0.0351
+2026-04-25 13:15:44 | INFO |   xi: 1.8423
+2026-04-25 13:15:44 | INFO |   eta: 0.2920
+2026-04-25 13:15:44 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-25 13:15:44 | INFO |   penalized_objective: 0.474084
+2026-04-25 13:15:44 | INFO |   mple_loss_without_penalty: 0.369945
+2026-04-25 13:15:44 | INFO |   lambda_uv_ridge: 15.000000
+2026-04-25 13:15:44 | INFO |   u_frobenius_norm: 27.232388
+2026-04-25 13:15:44 | INFO |   v_frobenius_norm: 27.232388
+2026-04-25 13:15:44 | INFO |   effective_rank: 20.000000
+2026-04-25 13:15:44 | INFO | Field and interaction diagnostics:
+2026-04-25 13:15:44 | INFO |   estimated_field_max_abs_entry: 1.636866
+2026-04-25 13:15:44 | INFO |   estimated_field_rank: 20.000000
+2026-04-25 13:15:44 | INFO | Saved summary tables to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03/fits/alternating_rank_20_lambda_15/mple_summary.csv and /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03/fits/alternating_rank_20_lambda_15/mple_summary.md
+2026-04-25 13:15:44 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2021_01_03/fits/alternating_rank_20_lambda_15/mple.log
