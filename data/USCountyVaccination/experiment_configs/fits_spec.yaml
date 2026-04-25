@@ -15,6 +15,7 @@ base:
   estimation:
     fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
     beta_mask_pre_s: true
+    beta_mask_post_e: false
 
 variants:
   - name: nuclear_lambda_6e_2_beta_mask

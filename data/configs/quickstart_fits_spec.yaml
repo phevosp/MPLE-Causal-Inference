@@ -15,6 +15,7 @@ base:
   estimation:
     fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
     beta_mask_pre_s: false
+    beta_mask_post_e: false
 
 variants:
   - name: exact_rank_manifold_rank_2

@@ -24,6 +24,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from data.synthetic_data_generation import derive_pre_intervention_steps
+from intervention_utils import derive_post_intervention_steps
 from pipeline_specs import (
     expand_named_entries,
     read_csv_manifest,
@@ -83,6 +84,7 @@ def infer_panel_dimensions(experiment_path: str | Path) -> dict[str, int]:
         "N": int(x.shape[1]),
         "T": int(x.shape[0]),
         "s": derive_pre_intervention_steps(z),
+        "e": derive_post_intervention_steps(z),
     }
 
 
@@ -154,6 +156,7 @@ def build_fit_config(
             "N": dims["N"],
             "T": dims["T"],
             "s": dims["s"],
+            "e": dims["e"],
             "latent_rank": latent_rank,
             "optimizer_mode": optimizer_mode,
             "lambda_nuclear": lambda_nuclear,
@@ -167,6 +170,9 @@ def build_fit_config(
             ),
             "beta_mask_pre_s": bool(
                 (variant.get("estimation", {}) or {}).get("beta_mask_pre_s", False)
+            ),
+            "beta_mask_post_e": bool(
+                (variant.get("estimation", {}) or {}).get("beta_mask_post_e", False)
             ),
         },
         "optimizer_params": optimizer_config,

@@ -26,6 +26,7 @@ class OutcomeParameterBundle:
     xi: float
     eta: float
     beta_mask_pre_s: bool
+    beta_mask_post_e: bool
     latent_rank: int
     t_steps: int
     field_matrix: np.ndarray
@@ -44,6 +45,7 @@ def load_panel_context_from_artifacts(
     z_0 = np.asarray(np.load(Path(z0_path)), dtype=float)
 
     from data.synthetic_data_generation import derive_pre_intervention_steps
+    from intervention_utils import derive_post_intervention_steps
 
     return {
         "x": x,
@@ -53,6 +55,7 @@ def load_panel_context_from_artifacts(
         "N": int(x.shape[1]),
         "T": int(x.shape[0]),
         "s": derive_pre_intervention_steps(z),
+        "e": derive_post_intervention_steps(z),
     }
 
 
@@ -107,6 +110,17 @@ def _fit_beta_mask_pre_s(fit_root: Path) -> bool:
     return bool(estimation_params.get("beta_mask_pre_s", False))
 
 
+def _fit_beta_mask_post_e(fit_root: Path) -> bool:
+    config_path = fit_root / "fit_realized_config.yaml"
+    if not config_path.exists():
+        return False
+    config = load_yaml_config(config_path)
+    estimation_params = getattr(config, "estimation_params", None)
+    if estimation_params is None:
+        return False
+    return bool(estimation_params.get("beta_mask_post_e", False))
+
+
 def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameterBundle:
     experiment_path = Path(experiment_root)
     config_path = first_existing_path(
@@ -123,6 +137,7 @@ def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameter
         xi=float(config.estimation_params.xi),
         eta=float(config.estimation_params.eta),
         beta_mask_pre_s=False,
+        beta_mask_post_e=False,
         latent_rank=int(artifacts.latent_rank),
         t_steps=int(artifacts.t_steps),
         field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
@@ -139,6 +154,7 @@ def load_fit_parameter_bundle(
     bundle_path = fit_path / "estimated_parameter_bundle.npz"
     gamma_matrix = load_gamma_matrix(experiment_path)
     beta_mask_pre_s = _fit_beta_mask_pre_s(fit_path)
+    beta_mask_post_e = _fit_beta_mask_post_e(fit_path)
 
     if bundle_path.exists():
         with np.load(bundle_path, allow_pickle=False) as data:
@@ -149,6 +165,7 @@ def load_fit_parameter_bundle(
                 xi=float(data["xi"]),
                 eta=float(data["eta"]),
                 beta_mask_pre_s=beta_mask_pre_s,
+                beta_mask_post_e=beta_mask_post_e,
                 latent_rank=int(data["latent_rank"]),
                 t_steps=int(data["t_steps"]),
                 field_matrix=np.asarray(data["field_matrix"], dtype=float),
@@ -174,6 +191,7 @@ def load_fit_parameter_bundle(
         xi=float(estimates["xi"]),
         eta=float(estimates["eta"]),
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
         latent_rank=latent_rank,
         t_steps=t_steps,
         field_matrix=field_matrix,

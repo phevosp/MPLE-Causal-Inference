@@ -27,7 +27,16 @@ class InterventionContext:
     z: np.ndarray
     z_0: np.ndarray
     s: int
+    e: int
     metadata: dict[str, object]
+
+
+def derive_post_intervention_steps(z: np.ndarray) -> int:
+    treated_rows = np.any(np.asarray(z) == 1, axis=1)
+    if not treated_rows.any():
+        return 0
+    last_treatment_idx = int(np.argmax(treated_rows[::-1]))
+    return int(z.shape[0]) - last_treatment_idx
 
 
 def _validate_intervention_panel(z: np.ndarray, z_0: np.ndarray) -> None:
@@ -51,6 +60,7 @@ def save_intervention_artifact(
     z: np.ndarray,
     z_0: np.ndarray,
     s: int,
+    e: int | None = None,
     source_kind: str,
     extra_metadata: dict[str, object] | None = None,
 ) -> Path:
@@ -61,6 +71,8 @@ def save_intervention_artifact(
     artifact_root.mkdir(parents=True, exist_ok=False)
     np.savez(artifact_root / "intervention_panel.npz", z=z)
     np.save(artifact_root / "z_0.npy", z_0)
+    if e is None:
+        e = derive_post_intervention_steps(z)
     metadata = {
         "intervention_name": intervention_name,
         "intervention_slug": slugify(intervention_name),
@@ -68,6 +80,7 @@ def save_intervention_artifact(
         "N": int(z.shape[1]),
         "T": int(z.shape[0]),
         "s": int(s),
+        "e": int(e),
         "source_kind": source_kind,
         **dict(extra_metadata or {}),
     }
@@ -84,7 +97,7 @@ def build_full_on_intervention(
     s: int,
     *,
     activation_scope: str,
-) -> tuple[np.ndarray, np.ndarray, int]:
+) -> tuple[np.ndarray, np.ndarray, int, int]:
     z = -np.ones((int(t_steps), int(n_nodes)), dtype=float)
     z_0 = -np.ones(int(n_nodes), dtype=float)
     scope = str(activation_scope)
@@ -97,7 +110,7 @@ def build_full_on_intervention(
         z[int(s) :, :] = 1.0
     else:
         raise ValueError(f"Unsupported full_on activation_scope '{activation_scope}'.")
-    return z, z_0, derive_pre_intervention_steps(z)
+    return z, z_0, derive_pre_intervention_steps(z), derive_post_intervention_steps(z)
 
 
 def build_single_unit_on_intervention(
@@ -108,7 +121,7 @@ def build_single_unit_on_intervention(
     unit_index: int,
     activation_scope: str,
     start_step: int | None = None,
-) -> tuple[np.ndarray, np.ndarray, int]:
+) -> tuple[np.ndarray, np.ndarray, int, int]:
     if int(unit_index) < 0 or int(unit_index) >= int(n_nodes):
         raise ValueError(
             f"unit_index={unit_index} is out of bounds for N={n_nodes}."
@@ -135,13 +148,15 @@ def build_single_unit_on_intervention(
         raise ValueError(
             f"Unsupported single_unit_on activation_scope '{activation_scope}'."
         )
-    return z, z_0, derive_pre_intervention_steps(z)
+    return z, z_0, derive_pre_intervention_steps(z), derive_post_intervention_steps(z)
 
 
 def load_saved_intervention_context(
     experiment_root: str | Path,
     intervention_name: str,
 ) -> InterventionContext:
+    from data.synthetic_data_generation import derive_pre_intervention_steps
+
     experiment_path = Path(experiment_root)
     intervention_slug = slugify(intervention_name)
     artifact_root = experiment_path / INTERVENTION_LIBRARY_ROOT_NAME / intervention_slug
@@ -171,6 +186,7 @@ def load_saved_intervention_context(
         z=z,
         z_0=z_0,
         s=int(metadata.get("s", derive_pre_intervention_steps(z))),
+        e=int(metadata.get("e", derive_post_intervention_steps(z))),
         metadata=metadata,
     )
 
@@ -196,6 +212,7 @@ def resolve_intervention_context(
             z=np.asarray(resolved_panel_context["z"], dtype=float),
             z_0=np.asarray(resolved_panel_context["z_0"], dtype=float),
             s=int(resolved_panel_context["s"]),
+            e=int(resolved_panel_context.get("e", derive_post_intervention_steps(resolved_panel_context["z"]))),
             metadata={"source_kind": "observed_experiment"},
         )
     if source == "saved_intervention":

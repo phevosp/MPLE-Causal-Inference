@@ -62,7 +62,9 @@ class _FitEvalContext:
     interaction_effect_x: np.ndarray
     outcome_size: float
     s: int
+    e: int
     beta_mask_pre_s: bool
+    beta_mask_post_e: bool
     fixed_scalar_params: dict[str, float]
     free_scalar_names: list[str]
 
@@ -74,17 +76,26 @@ def _build_fit_eval_context(
     interaction_effect_x: np.ndarray,
     fixed_scalar_params: dict[str, float] | None,
     s: int = 0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ) -> _FitEvalContext:
     fixed = validate_fixed_scalar_params(fixed_scalar_params)
     x_array = np.asarray(x, dtype=float)
+    t_steps = x_array.shape[0]
     s_index = int(s)
-    if s_index < 0 or s_index > x_array.shape[0]:
-        raise ValueError(f"s={s_index} must lie in [0, T={x_array.shape[0]}].")
+    if s_index < 0 or s_index > t_steps:
+        raise ValueError(f"s={s_index} must lie in [0, T={t_steps}].")
+    e_index = e if e is not None else t_steps
+    e_index = int(e_index)
+    if e_index < 0 or e_index > t_steps:
+        raise ValueError(f"e={e_index} must lie in [0, T={t_steps}].")
     beta_feature = np.asarray(z, dtype=float)
     beta_feature_masked = beta_feature.copy()
     if bool(beta_mask_pre_s) and s_index > 0:
         beta_feature_masked[:s_index, :] = 0.0
+    if bool(beta_mask_post_e) and e_index < t_steps:
+        beta_feature_masked[e_index:, :] = 0.0
     return _FitEvalContext(
         x=x_array,
         prev_x=np.vstack([np.asarray(x_0, dtype=float), x_array[:-1, :]]),
@@ -93,7 +104,9 @@ def _build_fit_eval_context(
         interaction_effect_x=np.asarray(interaction_effect_x, dtype=float),
         outcome_size=float(x_array.size),
         s=s_index,
+        e=e_index,
         beta_mask_pre_s=bool(beta_mask_pre_s),
+        beta_mask_post_e=bool(beta_mask_post_e),
         fixed_scalar_params=fixed,
         free_scalar_names=free_scalar_parameter_names(fixed),
     )
@@ -285,7 +298,9 @@ def pseudo_nll(
     interaction_effect_x: np.ndarray,
     fixed_scalar_params: dict[str, float] | None = None,
     s: int = 0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ) -> tuple[float, np.ndarray]:
     if x.shape[0] != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
@@ -296,7 +311,9 @@ def pseudo_nll(
         interaction_effect_x,
         fixed_scalar_params,
         s=s,
+        e=e,
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
     )
     theta_parts = unpack_theta(
         theta,
@@ -364,7 +381,9 @@ def _fit_mple_nuclear_norm(
     lambda_nuclear: float,
     proximal_lr: float = 1.0,
     s: int = 0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit via proximal gradient descent with nuclear-norm regularization on the field matrix.
 
@@ -384,7 +403,9 @@ def _fit_mple_nuclear_norm(
         interaction_effect_x,
         fixed_scalar_params,
         s=s,
+        e=e,
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
     )
     n_nodes = int(artifacts.gamma_matrix.shape[0])
     free_scalar_count = len(context.free_scalar_names)
@@ -640,7 +661,9 @@ def _fit_zero_rank_unconstrained(
     theta_init,
     fixed_scalar_params: dict[str, float] | None,
     s: int = 0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     context = _build_fit_eval_context(
         x,
@@ -649,7 +672,9 @@ def _fit_zero_rank_unconstrained(
         interaction_effect_x,
         fixed_scalar_params,
         s=s,
+        e=e,
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -708,7 +733,9 @@ def _fit_mple_low_rank_manifold(
     n_starts: int,
     lambda_frobenius: float,
     s: int = 0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit using Riemannian conjugate gradient on the fixed-rank matrix manifold (pymanopt).
 
@@ -725,7 +752,9 @@ def _fit_mple_low_rank_manifold(
         interaction_effect_x,
         fixed_scalar_params,
         s=s,
+        e=e,
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -1065,7 +1094,9 @@ def _fit_mple_alternative_low_rank(
     n_starts: int,
     lambda_uv_ridge: float,
     s: int = 0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit via alternating gradient updates between U, Vt factors and scalar parameters.
 
@@ -1084,7 +1115,9 @@ def _fit_mple_alternative_low_rank(
         interaction_effect_x,
         fixed_scalar_params,
         s=s,
+        e=e,
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -1429,7 +1462,9 @@ def _fit_mple_concurrent_low_rank(
     n_starts: int,
     lambda_uv_ridge: float,
     s: int = 0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit the factorized U/V formulation with SciPy L-BFGS-B.
 
@@ -1446,7 +1481,9 @@ def _fit_mple_concurrent_low_rank(
         interaction_effect_x,
         fixed_scalar_params,
         s=s,
+        e=e,
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -1684,7 +1721,9 @@ def fit_mple(
     lambda_frobenius: float = 0.0,
     lambda_uv_ridge: float = 0.0,
     proximal_lr: float = 1.0,
+    e: int | None = None,
     beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
 ):
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
@@ -1705,7 +1744,9 @@ def fit_mple(
             theta_init=theta_init,
             fixed_scalar_params=fixed_scalar_params,
             s=s,
+            e=e,
             beta_mask_pre_s=beta_mask_pre_s,
+            beta_mask_post_e=beta_mask_post_e,
         )
         result["optimizer_mode"] = OPTIMIZER_MODE_NO_EXTERNAL_FIELD
         result["optimizer"] = "scipy_bfgs_no_external_field"
@@ -1752,7 +1793,9 @@ def fit_mple(
             lambda_nuclear=lambda_nuclear,
             proximal_lr=proximal_lr,
             s=s,
+            e=e,
             beta_mask_pre_s=beta_mask_pre_s,
+            beta_mask_post_e=beta_mask_post_e,
         )
     if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
         return _fit_mple_alternative_low_rank(
@@ -1771,7 +1814,9 @@ def fit_mple(
             n_starts=n_starts,
             lambda_uv_ridge=lambda_uv_ridge,
             s=s,
+            e=e,
             beta_mask_pre_s=beta_mask_pre_s,
+            beta_mask_post_e=beta_mask_post_e,
         )
     if artifacts.optimizer_mode == OPTIMIZER_MODE_CONCURRENT_LATENT_RANK:
         return _fit_mple_concurrent_low_rank(
@@ -1790,7 +1835,9 @@ def fit_mple(
             n_starts=n_starts,
             lambda_uv_ridge=lambda_uv_ridge,
             s=s,
+            e=e,
             beta_mask_pre_s=beta_mask_pre_s,
+            beta_mask_post_e=beta_mask_post_e,
         )
     if artifacts.optimizer_mode == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD:
         return _fit_mple_low_rank_manifold(
@@ -1809,7 +1856,9 @@ def fit_mple(
             n_starts=n_starts,
             lambda_frobenius=lambda_frobenius,
             s=s,
+            e=e,
             beta_mask_pre_s=beta_mask_pre_s,
+            beta_mask_post_e=beta_mask_post_e,
         )
     raise ValueError(f"Unsupported optimizer_mode: {artifacts.optimizer_mode}")
 
@@ -2170,6 +2219,11 @@ def main() -> None:
         if "estimation_params" in config
         else False
     )
+    beta_mask_post_e = bool(
+        config.estimation_params.get("beta_mask_post_e", False)
+        if "estimation_params" in config
+        else False
+    )
     lambda_nuclear = float(config.global_params.get("lambda_nuclear", 0.0))
     lambda_frobenius = float(config.global_params.get("lambda_frobenius", 0.0))
     lambda_uv_ridge = float(config.global_params.get("lambda_uv_ridge", 0.0))
@@ -2213,6 +2267,7 @@ def main() -> None:
     logger.info("Fit-time hard bounds active: False")
     logger.info("Fixed scalar parameters: %s", fixed_scalar_params or {})
     logger.info("Beta mask before s: %s", beta_mask_pre_s)
+    logger.info("Beta mask after e: %s", beta_mask_post_e)
     logger.info(
         "Optimizer settings: steps=%s, tol=%s, n_starts=%s, seed=%s, "
         "lambda_nuclear=%s, lambda_frobenius=%s, lambda_uv_ridge=%s, proximal_lr=%s",
@@ -2244,7 +2299,9 @@ def main() -> None:
         lambda_frobenius=lambda_frobenius,
         lambda_uv_ridge=lambda_uv_ridge,
         proximal_lr=proximal_lr,
+        e=int(config.global_params.get("e", x.shape[0])),
         beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
     )
 
     logger.info("Done fitting.")

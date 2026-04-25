@@ -19,6 +19,7 @@ def simulate_outcomes_for_bundle(
     gibbs_sweeps: int,
     seed: int,
     s: int = 0,
+    e: int | None = None,
 ) -> np.ndarray:
     rng = np.random.default_rng(seed)
     interaction_matrix = compose_interaction_matrix(bundle.xi, bundle.gamma_matrix)
@@ -32,7 +33,9 @@ def simulate_outcomes_for_bundle(
         rng=rng,
         gibbs_sweeps=int(gibbs_sweeps),
         s=int(s),
+        e=e,
         beta_mask_pre_s=bool(bundle.beta_mask_pre_s),
+        beta_mask_post_e=bool(bundle.beta_mask_post_e),
     )
 
 
