@@ -19,9 +19,6 @@ GEN_REPORT_CPUS="${GEN_REPORT_CPUS:-1}"
 GEN_REPORT_MEM="${GEN_REPORT_MEM:-4G}"
 GEN_REPORT_PARTITION="${GEN_REPORT_PARTITION:-mit_normal}"
 
-# Ensure the log directory exists
-mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
-
 pixi run python -u run_generation_pipeline.py \
   --spec_path "${GENERATION_SPEC_PATH}" \
   --write_requests >/dev/null

@@ -4,7 +4,7 @@ set -euo pipefail
 
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
-FIT_OVERWRITE="${FIT_OVERWRITE:-true}"
+FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
 WORKER_SCRIPT="${WORKER_SCRIPT:-run_fit_job.sh}"
 WORKER_JOB_NAME="${WORKER_JOB_NAME:-fit}"
@@ -19,9 +19,6 @@ FIT_REPORT_TIME="${FIT_REPORT_TIME:-00:30:00}"
 FIT_REPORT_CPUS="${FIT_REPORT_CPUS:-1}"
 FIT_REPORT_MEM="${FIT_REPORT_MEM:-4G}"
 FIT_REPORT_PARTITION="${FIT_REPORT_PARTITION:-mit_normal}"
-
-# Ensure the log directory exists
-mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
 
 pixi run python -u run_fit_pipeline.py \
   --manifest_path "${GENERATION_MANIFEST_PATH}" \

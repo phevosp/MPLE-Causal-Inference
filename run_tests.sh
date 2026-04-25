@@ -1,14 +1,21 @@
 #!/bin/bash
 #SBATCH --job-name=mple-tests
-#SBATCH --output=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-mple-tests.out
-#SBATCH --error=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-mple-tests.err
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
 #SBATCH --partition=mit_normal
+#SBATCH --output=/dev/stdout         # Send SLURM output to stdout (captured by exec below)
+#SBATCH --error=/dev/stderr          # Send SLURM errors to stderr (captured by exec below)
 
 set -euo pipefail
+
+DATE=$(date +%F)
+LOG_DIR="slurm-logs/$DATE"
+mkdir -p "$LOG_DIR"
+OUT_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.out"
+ERR_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.err"
+exec >"$OUT_PATH" 2>"$ERR_PATH"
 
 echo "Job started at $(date)"
 echo "Running on $(hostname)"

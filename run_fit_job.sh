@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=fit
-#SBATCH --output=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-fit.out
-#SBATCH --error=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-fit.err
 #SBATCH --time=08:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
 #SBATCH --partition=mit_normal
+#SBATCH --output=/dev/stdout         # Send SLURM output to stdout (captured by exec below)
+#SBATCH --error=/dev/stderr          # Send SLURM errors to stderr (captured by exec below)
 
 set -euo pipefail
 
@@ -16,7 +16,7 @@ export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
-FIT_OVERWRITE="${FIT_OVERWRITE:-true}"
+FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
 
 EXPERIMENT_SLUG="${1:?missing experiment_slug}"
 VARIANT_SLUG="${2:?missing variant_slug}"
@@ -27,7 +27,12 @@ if [[ "${FIT_OVERWRITE}" == "true" ]]; then
 fi
 
 # Ensure the log directory exists
-mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
+DATE=$(date +%F)
+LOG_DIR="slurm-logs/$DATE"
+mkdir -p "$LOG_DIR"
+OUT_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.out"
+ERR_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.err"
+exec >"$OUT_PATH" 2>"$ERR_PATH"
 
 pixi run python -u run_fit_pipeline.py \
   --manifest_path "${GENERATION_MANIFEST_PATH}" \

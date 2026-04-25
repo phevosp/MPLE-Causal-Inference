@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=generation
-#SBATCH --output=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-generation.out
-#SBATCH --error=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-generation.err
 #SBATCH --time=04:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
 #SBATCH --partition=mit_normal
+#SBATCH --output=/dev/stdout         # Send SLURM output to stdout (captured by exec below)
+#SBATCH --error=/dev/stderr          # Send SLURM errors to stderr (captured by exec below)
 
 set -euo pipefail
 
@@ -24,8 +24,13 @@ if [[ "${GENERATION_OVERWRITE}" == "true" ]]; then
   OVERWRITE_FLAG=(--overwrite)
 fi
 
-# Ensure the log directory exists
-mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
+
+DATE=$(date +%F)
+LOG_DIR="slurm-logs/$DATE"
+mkdir -p "$LOG_DIR"
+OUT_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.out"
+ERR_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.err"
+exec >"$OUT_PATH" 2>"$ERR_PATH"
 
 pixi run python -u run_generation_pipeline.py \
   --spec_path "${GENERATION_SPEC_PATH}" \
