@@ -2303,14 +2303,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             intervention_code="complete_cov_ge_20",
             lag_code="2w",
             network_name="contiguity",
-            field_basis_mode="zero",
-            field_basis_names=(),
-            model_field_mode="uniform",
-            latent_rank=0,
-            latent_B=1.0,
             state_scope_label="Mainland US counties with total_population >= 2000",
-            tau_zero_mean=False,
-            tau_smoothness_lambda=0.0,
         )
         metadata = {
             "source": "USCountyVaccination",
@@ -2580,11 +2573,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             output_root=output_root,
             start_dates=start_dates,
             trim=True,
-            field_mode="additive",
-            latent_rank=10,
-            latent_B=1.0,
-            tau_zero_mean=False,
-            tau_smoothness_lambda=0.0,
         )
 
     def _run_us_county_materializer(
@@ -2672,6 +2660,94 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         self.assertEqual(row["s"], "1")
         self.assertNotIn("requested_start_date", row)
         self.assertNotIn("resolved_start_week_end_date", row)
+        for key in [
+            "field_mode",
+            "field_basis_mode",
+            "field_basis_names",
+            "model_field_mode",
+            "latent_rank",
+            "latent_B",
+            "tau_zero_mean",
+            "tau_smoothness_lambda",
+        ]:
+            self.assertNotIn(key, row)
+
+    def test_us_county_materializer_drops_legacy_field_and_tau_settings(self) -> None:
+        fixture = self._run_us_county_materializer(output_root=self.root / "generated")
+        experiment_root = self.root / "generated" / fixture["base_experiment_name"]
+
+        config = OmegaConf.to_container(
+            OmegaConf.load(experiment_root / "realized_config.yaml"),
+            resolve=True,
+        )
+        metadata = OmegaConf.to_container(
+            OmegaConf.load(experiment_root / "experiment_metadata.yaml"),
+            resolve=True,
+        )
+
+        self.assertEqual(
+            config["global_params"],
+            {
+                "N": 4,
+                "T": 4,
+                "s": 1,
+                "gamma_matrix_generator": "real_data",
+                "x_0_generator": "observed",
+            },
+        )
+        self.assertEqual(
+            config["estimation_params"],
+            {
+                "beta": 0.0,
+                "eta": 0.0,
+                "tau_params": None,
+                "fixed_scalar_params": {},
+            },
+        )
+        self.assertEqual(
+            config["real_data_params"],
+            {
+                "source": "USCountyVaccination",
+                "state": "Mainland US counties with total_population >= 2000",
+                "outcome_code": "death_rate_100k_ge_2",
+                "intervention_code": "complete_cov_ge_20",
+                "lag_code": "2w",
+                "lag_application": "intervention_only",
+                "network_name": "contiguity",
+            },
+        )
+        for key in [
+            "B",
+            "latent_rank",
+            "basis_params",
+            "field_basis_mode",
+            "field_basis_names",
+            "model_field_mode",
+            "latent_B",
+            "tau_zero_mean",
+            "tau_smoothness_lambda",
+        ]:
+            self.assertNotIn(key, config["global_params"])
+            self.assertNotIn(key, config["estimation_params"])
+            self.assertNotIn(key, config["real_data_params"])
+            self.assertNotIn(key, metadata)
+
+    def test_us_county_materializer_rejects_removed_legacy_flags(self) -> None:
+        removed_flags = [
+            "--field_mode",
+            "--latent_rank",
+            "--latent_B",
+            "--tau_zero_mean",
+            "--tau_smoothness_lambda",
+        ]
+        for removed_flag in removed_flags:
+            with self.subTest(flag=removed_flag):
+                argv = ["create_us_county_vaccination_experiments.py", removed_flag]
+                if removed_flag != "--tau_zero_mean":
+                    argv.append("value")
+                with mock.patch.object(sys, "argv", argv):
+                    with self.assertRaises(SystemExit):
+                        uscounty_materializer.parse_args()
 
     def test_us_county_materializer_slices_one_start_date(self) -> None:
         fixture = self._run_us_county_materializer(

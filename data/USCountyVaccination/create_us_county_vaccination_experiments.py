@@ -25,7 +25,6 @@ from experiment_artifacts import (  # noqa: E402
     STATE_SCOPE_LABEL,
     assembled_panel_from_arrays,
     build_experiment_grid,
-    build_field_basis,
     build_node_table,
     compute_binary_summary,
     create_config,
@@ -86,16 +85,6 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="Use trimmed or full-scope realized artifact names.",
     )
-    parser.add_argument(
-        "--field_mode",
-        choices=["additive", "latent_feature_matrix"],
-        default="additive",
-        help="Field parameterization recorded in realized configs.",
-    )
-    parser.add_argument("--latent_rank", type=int, default=10)
-    parser.add_argument("--latent_B", type=float, default=1.0)
-    parser.add_argument("--tau_zero_mean", action="store_true")
-    parser.add_argument("--tau_smoothness_lambda", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -177,12 +166,6 @@ def _sliced_experiment_name(base_name: str, resolved_start_date: str) -> str:
 
 
 def create_experiment_folders(args: argparse.Namespace) -> None:
-    if args.field_mode == "latent_feature_matrix":
-        if args.latent_rank <= 0:
-            raise ValueError("--latent_rank must be positive when --field_mode latent_feature_matrix.")
-        if args.latent_B <= 0.0:
-            raise ValueError("--latent_B must be positive when --field_mode latent_feature_matrix.")
-
     _, features, centroids = load_inputs()
     full_node_table = build_node_table(features, centroids)
     output_root = (WORKFLOW_REPO_ROOT / args.output_root).resolve()
@@ -251,13 +234,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
             .sort_values("fips")
             .reset_index(drop=True)
         )
-        if args.field_mode == "latent_feature_matrix":
-            field_basis_names = ()
-            field_basis_mode = "latent_feature_matrix"
-            model_field_mode = "latent_feature_matrix"
-        else:
-            field_basis, field_basis_names, field_basis_mode = build_field_basis(node_table)
-            model_field_mode = "shared_feature_field" if field_basis.shape[0] > 0 else "uniform"
 
         gamma_matrix, adjacency_edges = subset_network_artifact(network_artifact, realized_node_order)
         stats = sparse_matrix_stats(gamma_matrix)
@@ -326,14 +302,7 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
                 intervention_code=intervention_code,
                 lag_code=lag_code,
                 network_name=network_name,
-                field_basis_mode=field_basis_mode,
-                field_basis_names=field_basis_names,
-                model_field_mode=model_field_mode,
-                latent_rank=int(args.latent_rank),
-                latent_B=float(args.latent_B),
                 state_scope_label=state_scope_label,
-                tau_zero_mean=args.tau_zero_mean,
-                tau_smoothness_lambda=args.tau_smoothness_lambda,
             )
             metadata = {
                 "source": SOURCE_LABEL,
@@ -352,13 +321,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
                 "lag_code": lag_code,
                 "lag_steps": lag_code_to_steps(lag_code),
                 "network_name": network_name,
-                "field_basis_mode": field_basis_mode,
-                "field_basis_names": list(field_basis_names),
-                "model_field_mode": model_field_mode,
-                "latent_rank": int(args.latent_rank) if model_field_mode == "latent_feature_matrix" else None,
-                "latent_B": float(args.latent_B) if model_field_mode == "latent_feature_matrix" else None,
-                "tau_zero_mean": bool(args.tau_zero_mean),
-                "tau_smoothness_lambda": float(args.tau_smoothness_lambda),
                 "shared_panel_dir": str(shared_panel_dir),
                 "shared_panel_path": str(shared_panel_dir / "panel_data.npz"),
                 "shared_x0_path": str(shared_panel_dir / "x_0.npy"),
@@ -468,10 +430,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
                 "lag_code": lag_code,
                 "network_name": network_name,
                 "intervention_family": INTERVENTION_SPECS[intervention_code].family,
-                "field_basis_mode": field_basis_mode,
-                "model_field_mode": model_field_mode,
-                "latent_rank": int(args.latent_rank) if model_field_mode == "latent_feature_matrix" else None,
-                "latent_B": float(args.latent_B) if model_field_mode == "latent_feature_matrix" else None,
                 "trim_applied": bool(shared_metadata.get("trim_applied", args.trim)),
                 "trim_rule": shared_metadata.get("trim_rule", ""),
                 "requested_node_count": int(_metadata_value(shared_metadata, "requested_node_count")),

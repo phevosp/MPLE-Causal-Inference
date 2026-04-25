@@ -32,7 +32,7 @@ from common import (  # noqa: E402
     experiment_name,
     lag_code_to_steps,
 )
-from data_utils import center_and_normalize_vector_infinity, normalize_sparse_matrix_infinity  # noqa: E402
+from data_utils import normalize_sparse_matrix_infinity  # noqa: E402
 from model_utils import ModelArtifacts, save_model_artifacts  # noqa: E402
 
 
@@ -189,66 +189,6 @@ def apply_optional_trim(
             "trim_population_min": 2000,
         },
     )
-
-
-def build_field_basis(node_table: pd.DataFrame) -> tuple[np.ndarray, tuple[str, ...], str]:
-    basis_mode = str(node_table["feature_basis_mode"].iloc[0]) if "feature_basis_mode" in node_table.columns else "unknown"
-    if basis_mode == "zero":
-        return np.empty((0, len(node_table)), dtype=float), (), basis_mode
-
-    required_columns = ["population_density", "log_population"]
-    if basis_mode == "acs_2021":
-        required_columns.extend(
-            [
-                "senior_population",
-                "college_education",
-                "poverty_rate",
-                "median_household_income",
-                "cdc_svi_2022_overall",
-                "usda_ers_rucc_2023",
-            ]
-        )
-    missing_columns = [column for column in required_columns if column not in node_table.columns]
-    if missing_columns:
-        raise KeyError(
-            "Missing required county feature columns: "
-            + ", ".join(missing_columns)
-            + ". Re-run preprocess_us_county_vaccination_data.py to rebuild us_county_feature_basis.csv.gz."
-        )
-
-    feature_specs: list[tuple[str, np.ndarray]] = [
-        ("population_density", pd.to_numeric(node_table["population_density"], errors="coerce").to_numpy(dtype=float)),
-    ]
-    if basis_mode == "acs_2021":
-        feature_specs.extend(
-            [
-                ("senior_population", pd.to_numeric(node_table["senior_population"], errors="coerce").to_numpy(dtype=float)),
-                ("college_education", pd.to_numeric(node_table["college_education"], errors="coerce").to_numpy(dtype=float)),
-                ("poverty_rate", pd.to_numeric(node_table["poverty_rate"], errors="coerce").to_numpy(dtype=float)),
-                ("log_population", pd.to_numeric(node_table["log_population"], errors="coerce").to_numpy(dtype=float)),
-                ("median_household_income", pd.to_numeric(node_table["median_household_income"], errors="coerce").to_numpy(dtype=float)),
-                ("cdc_svi_2022_overall", pd.to_numeric(node_table["cdc_svi_2022_overall"], errors="coerce").to_numpy(dtype=float)),
-                ("usda_ers_rucc_2023", pd.to_numeric(node_table["usda_ers_rucc_2023"], errors="coerce").to_numpy(dtype=float)),
-            ]
-        )
-    else:
-        feature_specs.extend(
-            [
-                ("log_population", pd.to_numeric(node_table["log_population"], errors="coerce").to_numpy(dtype=float)),
-            ]
-        )
-
-    basis_vectors: list[np.ndarray] = []
-    basis_names: list[str] = []
-    for name, raw_values in feature_specs:
-        vector = center_and_normalize_vector_infinity(raw_values)
-        if np.linalg.norm(vector, ord=np.inf) < 1e-12:
-            continue
-        basis_vectors.append(vector)
-        basis_names.append(name)
-    if not basis_vectors:
-        return np.empty((0, len(node_table)), dtype=float), (), "zero"
-    return np.vstack(basis_vectors), tuple(basis_names), basis_mode
 
 
 def load_network_edge_tables(network_names: list[str]) -> dict[str, pd.DataFrame]:
@@ -697,14 +637,7 @@ def create_config(
     intervention_code: str,
     lag_code: str,
     network_name: str,
-    field_basis_mode: str,
-    field_basis_names: tuple[str, ...],
-    model_field_mode: str,
-    latent_rank: int,
-    latent_B: float,
     state_scope_label: str,
-    tau_zero_mean: bool,
-    tau_smoothness_lambda: float,
 ) -> OmegaConf:
     return OmegaConf.create(
         {
@@ -712,12 +645,6 @@ def create_config(
                 "N": int(n_nodes),
                 "T": int(t_steps),
                 "s": int(s),
-                "B": float(latent_B),
-                "latent_rank": int(latent_rank),
-                "basis_params": {
-                    "field_mode": str(model_field_mode),
-                    "latent_rank": int(latent_rank),
-                },
                 "gamma_matrix_generator": "real_data",
                 "x_0_generator": "observed",
             },
@@ -725,8 +652,6 @@ def create_config(
                 "beta": 0.0,
                 "eta": 0.0,
                 "tau_params": None,
-                "tau_zero_mean": bool(tau_zero_mean),
-                "tau_smoothness_lambda": float(tau_smoothness_lambda),
                 "fixed_scalar_params": {},
             },
             "real_data_params": {
@@ -737,11 +662,6 @@ def create_config(
                 "lag_code": lag_code,
                 "lag_application": "intervention_only",
                 "network_name": network_name,
-                "field_basis_mode": field_basis_mode,
-                "field_basis_names": list(field_basis_names),
-                "model_field_mode": model_field_mode,
-                "latent_rank": int(latent_rank),
-                "latent_B": float(latent_B),
             },
         }
     )

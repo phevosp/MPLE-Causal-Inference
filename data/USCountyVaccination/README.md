@@ -265,40 +265,13 @@ The duplicated root-level artifacts are the inputs consumed by:
 - `run_posterior_predictive.py`
 - `report_posterior_predictive.py`
 
-## Field Modes
-
-`create_us_county_vaccination_experiments.py` supports two field parameterizations:
-
-- `--field_mode additive`
-- `--field_mode latent_feature_matrix`
-
-`additive`:
-
-- records a shared-feature-field configuration for downstream MPLE fits
-
-`latent_feature_matrix`:
-
-- disables the additive county basis
-- fits a low-rank latent field instead
-- uses `--latent_rank`
-- uses `--latent_B` as the global bound `B`
-
-For the shared manifest workflow, prefer editing `data/USCountyVaccination/experiment_configs/fits_spec.yaml`. That is the source of truth for MPLE variants run by `run_fit_pipeline.py`.
+USCountyVaccination materialization does not choose a field parameterization. It always writes the same real-data experiment contract with `has_truth: false` and a zero `field_artifacts.npz` compatibility placeholder. For the shared manifest workflow, edit `data/USCountyVaccination/experiment_configs/fits_spec.yaml` to choose MPLE variants such as latent rank and optimizer mode.
 
 ## Runner Flags
 
-Useful experiment-runner flags:
+Useful `create_us_county_vaccination_experiments.py` flags:
 
-- `--run_mple`
 - `--overwrite`
-- `--steps`
-- `--tol`
-- `--seed`
-- `--n_starts`
-- `--adam_steps`
-- `--adam_lr`
-- `--adam_device`
-- `--lambda_nuclear_values`
 - `--max_experiments`
 - `--lags`
 - `--outcomes`
@@ -307,16 +280,6 @@ Useful experiment-runner flags:
 - `--output_root`
 - `--start_dates`
 - `--trim`
-- `--field_mode`
-- `--latent_rank`
-- `--latent_B`
-
-Two additional flags are currently passed through into saved configs and metadata:
-
-- `--tau_zero_mean`
-- `--tau_smoothness_lambda`
-
-At the moment those `tau_*` settings are recorded by the real-data runner, but the current top-level `mple.py` path does not consume them.
 
 ## Fitting Behavior
 
@@ -520,21 +483,6 @@ FIT_MANIFEST=experiments/USCountyVaccination_US_trimmed/fit_manifest.csv \
 TARGET_PAIRS_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_target_pairs.csv \
 POSTERIOR_PREDICTIVE_SPEC_PATH=data/USCountyVaccination/experiment_configs/posterior_predictive_spec.yaml \
 bash submit_posterior_predictive_jobs.sh
-```
-
-Create latent-field experiment configs:
-
-```bash
-pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
-  --trim \
-  --outcomes death_rate_100k_ge_2 \
-  --interventions complete_cov_ge_20 \
-  --lags 2w \
-  --max_experiments 1 \
-  --field_mode latent_feature_matrix \
-  --latent_rank 6 \
-  --latent_B 1.5 \
-  --overwrite
 ```
 
 Materialize multiple network variants into realized artifacts and experiment folders:
