@@ -47,6 +47,7 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 - `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, `alternating_latent_rank`, or `concurrent_latent_rank`.
 - `latent_rank`: must be ≥ 1 for `exact_rank_manifold`, `alternating_latent_rank`, and `concurrent_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
 - `estimation.fixed_scalar_params`: scalars held **fixed** at these values (not initial guesses). Leave as `{}` to estimate all scalars freely.
+- `estimation.beta_mask_pre_s`: if `true`, the fit model masks the `beta * z` term for `t < s`, and fit-based posterior predictive uses the same masked beta effect.
 - `lambda_nuclear`: only active for `nuclear_norm`.
 - `lambda_frobenius`: only active for `exact_rank_manifold`.
 - `lambda_uv_ridge`: only active for `alternating_latent_rank` and `concurrent_latent_rank`.
@@ -162,6 +163,7 @@ Each fit variant controls:
 - `lambda_frobenius` for `exact_rank_manifold`
 - `lambda_uv_ridge` for `alternating_latent_rank` and `concurrent_latent_rank`
 - `estimation.fixed_scalar_params`
+- `estimation.beta_mask_pre_s`
 - optimizer `steps`, `tol`, `seed`, `n_starts`, and `proximal_lr`
 
 Outputs:

@@ -87,6 +87,7 @@ Important keys:
 - `lambda_frobenius`
 - `lambda_uv_ridge`
 - `estimation.fixed_scalar_params`
+- `estimation.beta_mask_pre_s`
 
 ### Fit Requests
 

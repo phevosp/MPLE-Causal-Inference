@@ -196,15 +196,21 @@ def sample_x_t_with_parameters(
     interaction_matrix,
     rng,
     gibbs_sweeps: int,
+    beta_active: np.ndarray | None = None,
 ):
     x_t = x_prev.copy()
     interaction_x_t = np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
+    beta_feature = (
+        np.asarray(z_curr, dtype=float)
+        if beta_active is None
+        else np.asarray(z_curr, dtype=float) * np.asarray(beta_active, dtype=float)
+    )
     for _ in range(int(gibbs_sweeps)):
         for i in rng.permutation(int(x_t.shape[0])):
             old_x_i = x_t[i]
             h_x = (
                 field_t[i]
-                + float(beta) * z_curr[i]
+                + float(beta) * beta_feature[i]
                 + float(eta) * x_prev[i]
                 + interaction_x_t[i]
             )
@@ -227,6 +233,8 @@ def _simulate_panel(
     rng,
     gibbs_sweeps: int,
     z_sampler,
+    s: int = 0,
+    beta_mask_pre_s: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     x_0 = np.asarray(x_0, dtype=float)
     z_0 = np.asarray(z_0, dtype=float)
@@ -248,6 +256,9 @@ def _simulate_panel(
         z_curr = np.asarray(z_sampler(t, x_prev, z_prev), dtype=float)
         if z_curr.shape != (n_nodes,):
             raise ValueError("Each sampled z_t must have shape (N,).")
+        beta_active = np.ones(n_nodes, dtype=float)
+        if bool(beta_mask_pre_s) and t < int(s):
+            beta_active.fill(0.0)
         x_curr = sample_x_t_with_parameters(
             x_prev=x_prev,
             z_curr=z_curr,
@@ -257,6 +268,7 @@ def _simulate_panel(
             interaction_matrix=interaction_matrix,
             rng=rng,
             gibbs_sweeps=int(gibbs_sweeps),
+            beta_active=beta_active,
         )
         z[t, :] = z_curr
         x[t, :] = x_curr
@@ -274,6 +286,8 @@ def simulate_outcomes_given_fixed_interventions(
     eta: float,
     rng,
     gibbs_sweeps: int,
+    s: int = 0,
+    beta_mask_pre_s: bool = False,
 ) -> np.ndarray:
     z = np.asarray(z, dtype=float)
     field_matrix = np.asarray(field_matrix, dtype=float)
@@ -289,6 +303,8 @@ def simulate_outcomes_given_fixed_interventions(
         rng=rng,
         gibbs_sweeps=int(gibbs_sweeps),
         z_sampler=lambda t, _x_prev, _z_prev: z[t, :],
+        s=int(s),
+        beta_mask_pre_s=bool(beta_mask_pre_s),
     )
     return x
 

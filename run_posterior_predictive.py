@@ -113,6 +113,7 @@ def _simulate_target(
             z=intervention_context.z,
             gibbs_sweeps=gibbs_sweeps,
             seed=seed + sample_index,
+            s=int(intervention_context.s),
         )
         if intervention_source == "observed_experiment":
             simulated_stats.append(

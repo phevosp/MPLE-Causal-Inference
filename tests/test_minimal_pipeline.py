@@ -52,9 +52,11 @@ from loading_utils import (
     load_experiment_panel_context,
     load_fit_parameter_bundle,
     load_truth_parameter_bundle,
+    save_estimated_parameter_bundle,
 )
 from mple import (
     _build_fit_eval_context,
+    _compute_h_x,
     _evaluate_factorized_loss,
     _evaluate_full_field_loss,
     _evaluate_scalar_only_loss,
@@ -301,6 +303,7 @@ class MinimalPipelineTests(unittest.TestCase):
             beta=float(config.estimation_params.beta),
             xi=float(config.estimation_params.xi),
             eta=float(config.estimation_params.eta),
+            beta_mask_pre_s=False,
             latent_rank=int(artifacts.latent_rank),
             t_steps=int(config.global_params.T),
             field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
@@ -874,6 +877,201 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
         self.assertTrue(np.allclose(kernel_grad, ref_grad))
 
+    def test_specialized_scalar_only_kernel_matches_masked_pseudo_nll(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=0,
+            optimizer_mode="no_external_field",
+        )
+        theta = np.array([0.3, -0.25, 0.2], dtype=float)
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+
+        ref_loss, ref_grad = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fixed_scalar_params={},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+        kernel_loss, kernel_grad = _evaluate_scalar_only_loss(theta, context)
+
+        self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
+        self.assertTrue(np.allclose(kernel_grad, ref_grad))
+
+    def test_specialized_full_field_kernel_matches_masked_pseudo_nll(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=0,
+            optimizer_mode="nuclear_norm",
+        )
+        theta = np.array(
+            [0.1, -0.2, 0.05, 0.15, -0.1, 0.2, 0.3, -0.25, 0.2],
+            dtype=float,
+        )
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+
+        ref_loss, ref_grad = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fixed_scalar_params={},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+        field_matrix = theta[:6].reshape(3, 2)
+        kernel_loss, residual, scalar_grad = _evaluate_full_field_loss(
+            field_matrix,
+            context,
+            free_scalar_values=theta[6:],
+        )
+        kernel_grad = np.concatenate(
+            [(residual / x.size).reshape(-1), scalar_grad]
+        )
+
+        self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
+        self.assertTrue(np.allclose(kernel_grad, ref_grad))
+
+    def test_specialized_factorized_kernel_matches_masked_pseudo_nll(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=1,
+        )
+        theta = np.array(
+            [0.1, -0.2, 0.05, 0.15, -0.1, 0.3, -0.25, 0.2],
+            dtype=float,
+        )
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+
+        ref_loss, ref_grad = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fixed_scalar_params={},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+        node_factors = theta[:2].reshape(2, 1)
+        time_factors = theta[2:5].reshape(3, 1)
+        kernel_loss, _, time_grad, node_grad, scalar_grad = _evaluate_factorized_loss(
+            time_factors,
+            node_factors,
+            context,
+            free_scalar_values=theta[5:],
+        )
+        kernel_grad = np.concatenate(
+            [node_grad.reshape(-1), time_grad.reshape(-1), scalar_grad]
+        )
+
+        self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
+        self.assertTrue(np.allclose(kernel_grad, ref_grad))
+
+    def test_beta_mask_pre_s_changes_beta_effect_only_after_s(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+
+        h_without_beta = _compute_h_x(
+            np.zeros_like(x),
+            {"beta": 0.0, "xi": 0.0, "eta": 0.0},
+            context,
+        )
+        h_with_beta = _compute_h_x(
+            np.zeros_like(x),
+            {"beta": 2.0, "xi": 0.0, "eta": 0.0},
+            context,
+        )
+
+        self.assertTrue(np.allclose(h_without_beta[:1], h_with_beta[:1]))
+        self.assertFalse(np.allclose(h_without_beta[1:], h_with_beta[1:]))
+
+    def test_beta_mask_pre_s_leaves_xi_and_eta_active_pre_s(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=True,
+        )
+
+        h_without_xi_eta = _compute_h_x(
+            np.zeros_like(x),
+            {"beta": 0.0, "xi": 0.0, "eta": 0.0},
+            context,
+        )
+        h_with_xi_eta = _compute_h_x(
+            np.zeros_like(x),
+            {"beta": 0.0, "xi": 0.5, "eta": -0.75},
+            context,
+        )
+
+        self.assertFalse(np.allclose(h_without_xi_eta[:1], h_with_xi_eta[:1]))
+        self.assertFalse(np.allclose(h_without_xi_eta[1:], h_with_xi_eta[1:]))
+
     def test_pseudo_nll_gradient_matches_outcome_only_loss_scaling(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
@@ -908,6 +1106,58 @@ class MinimalPipelineTests(unittest.TestCase):
             float(finite_difference),
             places=8,
         )
+
+    def test_fit_mple_uses_s_when_beta_mask_pre_s_is_enabled(self) -> None:
+        x = np.ones((2, 2), dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.zeros(2, dtype=float)
+        gamma = np.zeros((2, 2), dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="no_external_field",
+        )
+        fixed_scalars = {"xi": 0.0, "eta": 0.0}
+        param_keys = parameter_names(
+            artifacts,
+            fixed_scalar_params=fixed_scalars,
+        )
+
+        theta_no_mask, _, _ = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=0,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=25,
+            tol=1.0e-8,
+            seed=0,
+            verbose_every=0,
+            fixed_scalar_params=fixed_scalars,
+            beta_mask_pre_s=True,
+        )
+        theta_masked, _, _ = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=param_keys,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=25,
+            tol=1.0e-8,
+            seed=0,
+            verbose_every=0,
+            fixed_scalar_params=fixed_scalars,
+            beta_mask_pre_s=True,
+        )
+
+        self.assertEqual(theta_no_mask.shape, (1,))
+        self.assertEqual(theta_masked.shape, (1,))
+        self.assertGreater(float(theta_masked[0]), float(theta_no_mask[0]))
 
     def test_fit_mple_uses_pymanopt_multistart_for_low_rank(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
@@ -1405,6 +1655,33 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         self.assertEqual(int(fit_config.global_params.latent_rank), 2)
         self.assertAlmostEqual(float(fit_config.global_params.lambda_uv_ridge), 0.25)
+
+    def test_build_fit_config_defaults_beta_mask_pre_s_to_false(self) -> None:
+        variant = {
+            "name": "rank_0",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+            "optimizer_mode": "no_external_field",
+            "latent_rank": 0,
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
+        self.assertFalse(bool(fit_config.estimation_params.beta_mask_pre_s))
+
+    def test_build_fit_config_copies_beta_mask_pre_s(self) -> None:
+        variant = {
+            "name": "rank_0",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+            "optimizer_mode": "no_external_field",
+            "latent_rank": 0,
+            "estimation": {
+                "fixed_scalar_params": {},
+                "beta_mask_pre_s": True,
+            },
+        }
+
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
+        self.assertTrue(bool(fit_config.estimation_params.beta_mask_pre_s))
 
     def test_validate_fits_spec_allows_uv_ridge_for_concurrent_mode(self) -> None:
         spec_root = REPO_ROOT / "experiments" / f".tmp_spec_{uuid.uuid4().hex}"
@@ -3035,6 +3312,97 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertAlmostEqual(stats["lag1_persistence"], 1.0)
         self.assertAlmostEqual(stats["graph_interaction_energy"], 0.0)
         self.assertAlmostEqual(stats["field_alignment"], 1.0)
+
+    def test_load_fit_parameter_bundle_propagates_beta_mask_pre_s(self) -> None:
+        experiment_root = self.root / "exp_bundle"
+        fit_root = experiment_root / "fits" / "rank_0"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_model_artifacts(
+            experiment_root,
+            ModelArtifacts(
+                gamma_matrix=np.zeros((2, 2), dtype=float),
+                t_steps=2,
+                latent_rank=0,
+                field_matrix=np.zeros((2, 2), dtype=float),
+            ),
+        )
+        save_estimated_parameter_bundle(
+            fit_root / "estimated_parameter_bundle.npz",
+            beta=0.5,
+            xi=0.1,
+            eta=-0.2,
+            latent_rank=0,
+            t_steps=2,
+            field_matrix=np.zeros((2, 2), dtype=float),
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "estimation_params": {
+                        "fixed_scalar_params": {},
+                        "beta_mask_pre_s": True,
+                    }
+                }
+            ),
+            fit_root / "fit_realized_config.yaml",
+        )
+
+        bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+        self.assertTrue(bundle.beta_mask_pre_s)
+
+    def test_simulate_outcomes_for_bundle_masks_beta_pre_s(self) -> None:
+        field_matrix = np.zeros((2, 8), dtype=float)
+        gamma_matrix = np.zeros((8, 8), dtype=float)
+        z = np.vstack([np.ones(8, dtype=float), -np.ones(8, dtype=float)])
+        x_0 = np.ones(8, dtype=float)
+        masked_bundle = OutcomeParameterBundle(
+            source_type="fit",
+            source_name="rank_0",
+            beta=12.0,
+            xi=0.0,
+            eta=0.0,
+            beta_mask_pre_s=True,
+            latent_rank=0,
+            t_steps=2,
+            field_matrix=field_matrix,
+            gamma_matrix=gamma_matrix,
+        )
+
+        masked = simulate_outcomes_for_bundle(
+            masked_bundle,
+            x_0=x_0,
+            z=z,
+            gibbs_sweeps=1,
+            seed=0,
+            s=1,
+        )
+        expected_masked = simulate_outcomes_given_fixed_interventions(
+            x_0=x_0,
+            z=z,
+            field_matrix=field_matrix,
+            interaction_matrix=gamma_matrix,
+            beta=12.0,
+            eta=0.0,
+            rng=np.random.default_rng(0),
+            gibbs_sweeps=1,
+            s=1,
+            beta_mask_pre_s=True,
+        )
+        unmasked = simulate_outcomes_given_fixed_interventions(
+            x_0=x_0,
+            z=z,
+            field_matrix=field_matrix,
+            interaction_matrix=gamma_matrix,
+            beta=12.0,
+            eta=0.0,
+            rng=np.random.default_rng(0),
+            gibbs_sweeps=1,
+            s=1,
+            beta_mask_pre_s=False,
+        )
+
+        self.assertTrue(np.array_equal(masked, expected_masked))
+        self.assertFalse(np.array_equal(masked, unmasked))
 
     def test_predictive_summary_prefers_lower_mean_abs_zscore(self) -> None:
         manifest_path = self._write_manifest(

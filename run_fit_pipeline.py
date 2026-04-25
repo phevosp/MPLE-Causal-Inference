@@ -165,6 +165,9 @@ def build_fit_config(
                 (variant.get("estimation", {}) or {}).get("fixed_scalar_params", {})
                 or {}
             ),
+            "beta_mask_pre_s": bool(
+                (variant.get("estimation", {}) or {}).get("beta_mask_pre_s", False)
+            ),
         },
         "optimizer_params": optimizer_config,
     }

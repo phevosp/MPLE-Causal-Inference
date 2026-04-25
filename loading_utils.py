@@ -25,6 +25,7 @@ class OutcomeParameterBundle:
     beta: float
     xi: float
     eta: float
+    beta_mask_pre_s: bool
     latent_rank: int
     t_steps: int
     field_matrix: np.ndarray
@@ -95,6 +96,17 @@ def _load_scalar_estimates_from_summary(summary_path: Path) -> dict[str, float]:
     return estimates
 
 
+def _fit_beta_mask_pre_s(fit_root: Path) -> bool:
+    config_path = fit_root / "fit_realized_config.yaml"
+    if not config_path.exists():
+        return False
+    config = load_yaml_config(config_path)
+    estimation_params = getattr(config, "estimation_params", None)
+    if estimation_params is None:
+        return False
+    return bool(estimation_params.get("beta_mask_pre_s", False))
+
+
 def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameterBundle:
     experiment_path = Path(experiment_root)
     config_path = first_existing_path(
@@ -110,6 +122,7 @@ def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameter
         beta=float(config.estimation_params.beta),
         xi=float(config.estimation_params.xi),
         eta=float(config.estimation_params.eta),
+        beta_mask_pre_s=False,
         latent_rank=int(artifacts.latent_rank),
         t_steps=int(artifacts.t_steps),
         field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
@@ -125,6 +138,7 @@ def load_fit_parameter_bundle(
     experiment_path = Path(experiment_root)
     bundle_path = fit_path / "estimated_parameter_bundle.npz"
     gamma_matrix = load_gamma_matrix(experiment_path)
+    beta_mask_pre_s = _fit_beta_mask_pre_s(fit_path)
 
     if bundle_path.exists():
         with np.load(bundle_path, allow_pickle=False) as data:
@@ -134,6 +148,7 @@ def load_fit_parameter_bundle(
                 beta=float(data["beta"]),
                 xi=float(data["xi"]),
                 eta=float(data["eta"]),
+                beta_mask_pre_s=beta_mask_pre_s,
                 latent_rank=int(data["latent_rank"]),
                 t_steps=int(data["t_steps"]),
                 field_matrix=np.asarray(data["field_matrix"], dtype=float),
@@ -158,6 +173,7 @@ def load_fit_parameter_bundle(
         beta=float(estimates["beta"]),
         xi=float(estimates["xi"]),
         eta=float(estimates["eta"]),
+        beta_mask_pre_s=beta_mask_pre_s,
         latent_rank=latent_rank,
         t_steps=t_steps,
         field_matrix=field_matrix,
