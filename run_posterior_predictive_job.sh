@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=posterior-predictive
-#SBATCH --output=slurm-%j-posterior-predictive.out
-#SBATCH --error=slurm-%j-posterior-predictive.err
+#SBATCH --output=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-posterior-predictive.out
+#SBATCH --error=slurm-logs/$(date +%Y-%m-%d)/slurm-%j-posterior-predictive.err
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -31,6 +31,9 @@ OVERWRITE_FLAG=()
 if [[ "${POSTERIOR_PREDICTIVE_OVERWRITE}" == "true" ]]; then
   OVERWRITE_FLAG=(--overwrite)
 fi
+
+# Ensure the log directory exists
+mkdir -p "slurm-logs/$(date +%Y-%m-%d)"
 
 pixi run python -u run_posterior_predictive.py \
   --generation_manifest_path "${GEN_MANIFEST}" \

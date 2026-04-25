@@ -1,0 +1,93 @@
+2026-04-25 13:31:20 | INFO | Loading data...
+2026-04-25 13:31:20 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01/panel_data.npz
+2026-04-25 13:31:20 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01/x_0.npy
+2026-04-25 13:31:20 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01/fits/nuclear_lambda_6e_2/fit_realized_config.yaml
+2026-04-25 13:31:20 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01
+2026-04-25 13:31:20 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01
+2026-04-25 13:31:20 | INFO | Configured optimizer mode: nuclear_norm
+2026-04-25 13:31:20 | INFO | Configured latent rank: 0
+2026-04-25 13:31:20 | INFO | Using a fixed known graph with scalar xi.
+2026-04-25 13:31:20 | INFO | Fit-time hard bounds active: False
+2026-04-25 13:31:20 | INFO | Fixed scalar parameters: {}
+2026-04-25 13:31:20 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.06, lambda_frobenius=0.0, lambda_uv_ridge=0.0, proximal_lr=1.0
+2026-04-25 13:31:20 | INFO | Nuclear prox iter 0 | Loss: 0.553463 | Penalized: 0.617548 | nuclear_norm: 628.291976 | normalized_nuclear_norm: 1.068074
+2026-04-25 13:31:20 | INFO |   beta: +0.2217,  xi: +0.2524,  eta: +0.4566
+2026-04-25 13:31:24 | INFO | Nuclear prox iter 100 | Loss: 0.491078 | Penalized: 0.553402 | nuclear_norm: 611.034757 | normalized_nuclear_norm: 1.038738
+2026-04-25 13:31:24 | INFO |   beta: +0.0542,  xi: +1.8979,  eta: +0.3278
+2026-04-25 13:31:28 | INFO | Nuclear prox iter 200 | Loss: 0.483820 | Penalized: 0.541536 | nuclear_norm: 565.851319 | normalized_nuclear_norm: 0.961927
+2026-04-25 13:31:28 | INFO |   beta: +0.0542,  xi: +1.8954,  eta: +0.3275
+2026-04-25 13:31:32 | INFO | Nuclear prox iter 300 | Loss: 0.472988 | Penalized: 0.524471 | nuclear_norm: 504.744539 | normalized_nuclear_norm: 0.858048
+2026-04-25 13:31:32 | INFO |   beta: +0.0542,  xi: +1.8929,  eta: +0.3272
+2026-04-25 13:31:36 | INFO | Nuclear prox iter 400 | Loss: 0.460218 | Penalized: 0.505995 | nuclear_norm: 448.800381 | normalized_nuclear_norm: 0.762945
+2026-04-25 13:31:36 | INFO |   beta: +0.0541,  xi: +1.8907,  eta: +0.3268
+2026-04-25 13:31:40 | INFO | Nuclear prox iter 500 | Loss: 0.447485 | Penalized: 0.490622 | nuclear_norm: 422.915696 | normalized_nuclear_norm: 0.718942
+2026-04-25 13:31:40 | INFO |   beta: +0.0541,  xi: +1.8895,  eta: +0.3266
+2026-04-25 13:31:44 | INFO | Nuclear prox iter 600 | Loss: 0.436291 | Penalized: 0.481032 | nuclear_norm: 438.649009 | normalized_nuclear_norm: 0.745688
+2026-04-25 13:31:45 | INFO |   beta: +0.0541,  xi: +1.8893,  eta: +0.3266
+2026-04-25 13:31:49 | INFO | Nuclear prox iter 700 | Loss: 0.426948 | Penalized: 0.476651 | nuclear_norm: 487.298718 | normalized_nuclear_norm: 0.828391
+2026-04-25 13:31:49 | INFO |   beta: +0.0541,  xi: +1.8895,  eta: +0.3269
+2026-04-25 13:31:53 | INFO | Nuclear prox iter 800 | Loss: 0.418843 | Penalized: 0.474477 | nuclear_norm: 545.440017 | normalized_nuclear_norm: 0.927229
+2026-04-25 13:31:53 | INFO |   beta: +0.0541,  xi: +1.8898,  eta: +0.3274
+2026-04-25 13:31:57 | INFO | Nuclear prox iter 900 | Loss: 0.411278 | Penalized: 0.472241 | nuclear_norm: 597.692875 | normalized_nuclear_norm: 1.016057
+2026-04-25 13:31:57 | INFO |   beta: +0.0540,  xi: +1.8901,  eta: +0.3280
+2026-04-25 13:32:01 | INFO | Nuclear prox iter 1000 | Loss: 0.403904 | Penalized: 0.469850 | nuclear_norm: 646.546941 | normalized_nuclear_norm: 1.099107
+2026-04-25 13:32:01 | INFO |   beta: +0.0539,  xi: +1.8904,  eta: +0.3287
+2026-04-25 13:32:05 | INFO | Nuclear prox iter 1100 | Loss: 0.396680 | Penalized: 0.467073 | nuclear_norm: 690.148716 | normalized_nuclear_norm: 1.173229
+2026-04-25 13:32:05 | INFO |   beta: +0.0537,  xi: +1.8908,  eta: +0.3294
+2026-04-25 13:32:09 | INFO | Nuclear prox iter 1200 | Loss: 0.389689 | Penalized: 0.464657 | nuclear_norm: 734.999019 | normalized_nuclear_norm: 1.249473
+2026-04-25 13:32:09 | INFO |   beta: +0.0535,  xi: +1.8914,  eta: +0.3302
+2026-04-25 13:32:13 | INFO | Nuclear prox iter 1300 | Loss: 0.382797 | Penalized: 0.462331 | nuclear_norm: 779.757114 | normalized_nuclear_norm: 1.325560
+2026-04-25 13:32:13 | INFO |   beta: +0.0534,  xi: +1.8925,  eta: +0.3311
+2026-04-25 13:32:17 | INFO | Nuclear prox iter 1400 | Loss: 0.375946 | Penalized: 0.460337 | nuclear_norm: 827.381589 | normalized_nuclear_norm: 1.406520
+2026-04-25 13:32:17 | INFO |   beta: +0.0532,  xi: +1.8942,  eta: +0.3320
+2026-04-25 13:32:21 | INFO | Nuclear prox iter 1500 | Loss: 0.369245 | Penalized: 0.458473 | nuclear_norm: 874.806532 | normalized_nuclear_norm: 1.487141
+2026-04-25 13:32:21 | INFO |   beta: +0.0530,  xi: +1.8964,  eta: +0.3329
+2026-04-25 13:32:25 | INFO | Nuclear prox iter 1600 | Loss: 0.362820 | Penalized: 0.456873 | nuclear_norm: 922.102818 | normalized_nuclear_norm: 1.567543
+2026-04-25 13:32:25 | INFO |   beta: +0.0528,  xi: +1.8989,  eta: +0.3339
+2026-04-25 13:32:28 | INFO | Nuclear prox iter 1700 | Loss: 0.356688 | Penalized: 0.455402 | nuclear_norm: 967.805694 | normalized_nuclear_norm: 1.645236
+2026-04-25 13:32:28 | INFO |   beta: +0.0525,  xi: +1.9017,  eta: +0.3350
+2026-04-25 13:32:32 | INFO | Nuclear prox iter 1800 | Loss: 0.350848 | Penalized: 0.454165 | nuclear_norm: 1012.938857 | normalized_nuclear_norm: 1.721961
+2026-04-25 13:32:32 | INFO |   beta: +0.0523,  xi: +1.9050,  eta: +0.3360
+2026-04-25 13:32:36 | INFO | Nuclear prox iter 1900 | Loss: 0.345325 | Penalized: 0.453115 | nuclear_norm: 1056.787033 | normalized_nuclear_norm: 1.796501
+2026-04-25 13:32:36 | INFO |   beta: +0.0521,  xi: +1.9086,  eta: +0.3369
+2026-04-25 13:32:40 | INFO | Nuclear prox iter 2000 | Loss: 0.340142 | Penalized: 0.452236 | nuclear_norm: 1098.984557 | normalized_nuclear_norm: 1.868235
+2026-04-25 13:32:40 | INFO |   beta: +0.0518,  xi: +1.9125,  eta: +0.3378
+2026-04-25 13:32:44 | INFO | Nuclear prox iter 2100 | Loss: 0.335366 | Penalized: 0.451532 | nuclear_norm: 1138.903701 | normalized_nuclear_norm: 1.936096
+2026-04-25 13:32:44 | INFO |   beta: +0.0516,  xi: +1.9164,  eta: +0.3387
+2026-04-25 13:32:48 | INFO | Nuclear prox iter 2200 | Loss: 0.331008 | Penalized: 0.450976 | nuclear_norm: 1176.182844 | normalized_nuclear_norm: 1.999470
+2026-04-25 13:32:48 | INFO |   beta: +0.0513,  xi: +1.9203,  eta: +0.3394
+2026-04-25 13:32:52 | INFO | Nuclear prox iter 2300 | Loss: 0.327023 | Penalized: 0.450531 | nuclear_norm: 1210.883598 | normalized_nuclear_norm: 2.058460
+2026-04-25 13:32:52 | INFO |   beta: +0.0511,  xi: +1.9242,  eta: +0.3400
+2026-04-25 13:32:56 | INFO | Nuclear prox iter 2400 | Loss: 0.323425 | Penalized: 0.450212 | nuclear_norm: 1243.030786 | normalized_nuclear_norm: 2.113109
+2026-04-25 13:32:56 | INFO |   beta: +0.0509,  xi: +1.9280,  eta: +0.3406
+2026-04-25 13:33:00 | INFO | Nuclear prox iter 2500 | Loss: 0.320204 | Penalized: 0.449983 | nuclear_norm: 1272.369223 | normalized_nuclear_norm: 2.162983
+2026-04-25 13:33:00 | INFO |   beta: +0.0506,  xi: +1.9316,  eta: +0.3410
+2026-04-25 13:33:03 | INFO | Nuclear prox iter 2600 | Loss: 0.317427 | Penalized: 0.449833 | nuclear_norm: 1298.121148 | normalized_nuclear_norm: 2.206761
+2026-04-25 13:33:03 | INFO |   beta: +0.0504,  xi: +1.9348,  eta: +0.3412
+2026-04-25 13:33:07 | INFO | Nuclear prox iter 2700 | Loss: 0.315039 | Penalized: 0.449746 | nuclear_norm: 1320.684356 | normalized_nuclear_norm: 2.245117
+2026-04-25 13:33:07 | INFO |   beta: +0.0502,  xi: +1.9378,  eta: +0.3413
+2026-04-25 13:33:11 | INFO | Nuclear prox iter 2800 | Loss: 0.313060 | Penalized: 0.449698 | nuclear_norm: 1339.620509 | normalized_nuclear_norm: 2.277308
+2026-04-25 13:33:11 | INFO |   beta: +0.0499,  xi: +1.9403,  eta: +0.3413
+2026-04-25 13:33:15 | INFO | Nuclear prox iter 2900 | Loss: 0.311374 | Penalized: 0.449680 | nuclear_norm: 1355.968007 | normalized_nuclear_norm: 2.305098
+2026-04-25 13:33:15 | INFO |   beta: +0.0497,  xi: +1.9425,  eta: +0.3411
+2026-04-25 13:33:17 | INFO | Done fitting.
+2026-04-25 13:33:17 | INFO | Optimizer status: CONVERGED: proximal objective tolerance reached
+2026-04-25 13:33:17 | INFO | Best optimizer start: 1 / 1
+2026-04-25 13:33:17 | INFO | Final Loss: 0.310757
+2026-04-25 13:33:17 | INFO | Estimated Parameters:
+2026-04-25 13:33:17 | INFO |   beta: 0.0496
+2026-04-25 13:33:17 | INFO |   xi: 1.9433
+2026-04-25 13:33:17 | INFO |   eta: 0.3409
+2026-04-25 13:33:17 | INFO | Nuclear-norm optimizer diagnostics:
+2026-04-25 13:33:17 | INFO |   penalized_objective: 0.449682
+2026-04-25 13:33:17 | INFO |   mple_loss_without_penalty: 0.310757
+2026-04-25 13:33:17 | INFO |   nuclear_norm: 1362.044939
+2026-04-25 13:33:17 | INFO |   normalized_nuclear_norm: 2.315429
+2026-04-25 13:33:17 | INFO |   nuclear_norm_normalizer: 588.247397
+2026-04-25 13:33:17 | INFO |   effective_rank: 112.000000
+2026-04-25 13:33:17 | INFO |   proximal_iterations: 2944
+2026-04-25 13:33:17 | INFO | Field and interaction diagnostics:
+2026-04-25 13:33:17 | INFO |   estimated_field_max_abs_entry: 1.488517
+2026-04-25 13:33:17 | INFO |   estimated_field_rank: 112.000000
+2026-04-25 13:33:17 | INFO | Saved summary tables to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01/fits/nuclear_lambda_6e_2/mple_summary.csv and /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01/fits/nuclear_lambda_6e_2/mple_summary.md
+2026-04-25 13:33:17 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity__start_2020_03_01/fits/nuclear_lambda_6e_2/mple.log
