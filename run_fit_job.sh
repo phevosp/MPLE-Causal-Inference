@@ -16,7 +16,7 @@ export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
-FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
+FIT_OVERWRITE="${FIT_OVERWRITE:-true}"
 
 EXPERIMENT_SLUG="${1:?missing experiment_slug}"
 VARIANT_SLUG="${2:?missing variant_slug}"

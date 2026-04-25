@@ -153,9 +153,9 @@ submit_posterior_predictive_stage() {
 # generation_barrier_job_id="$(submit_generation_stage)"
 # wait_for_job "${generation_barrier_job_id}" "Generation"
 
-echo "Submitting fit jobs..."
-fit_barrier_job_id="$(submit_fit_stage)"
-wait_for_job "${fit_barrier_job_id}" "Fit"
+# echo "Submitting fit jobs..."
+# fit_barrier_job_id="$(submit_fit_stage)"
+# wait_for_job "${fit_barrier_job_id}" "Fit"
 
 # echo "Running intervention library..."
 # run_intervention_stage
