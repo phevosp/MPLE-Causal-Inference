@@ -159,6 +159,19 @@ The support-selection rule recorded in metadata is:
 
 - `max_complete_suffix_by_node_week_area`
 
+Optional start-date slicing is built into this step. Pass one or more `--start_dates YYYY-MM-DD` values to materialize only sliced experiments. Each requested date resolves to the first available modeled `WeekEndDate >= requested date`, and the resulting experiment names are suffixed as `__start_YYYY_MM_DD`.
+
+Example:
+
+```bash
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --start_dates 2020-09-06 2021-01-03 \
+  --overwrite
+```
+
 ### 4. Run MPLE Fits
 
 Use the shared fit runner:
@@ -292,6 +305,7 @@ Useful experiment-runner flags:
 - `--interventions`
 - `--networks`
 - `--output_root`
+- `--start_dates`
 - `--trim`
 - `--field_mode`
 - `--latent_rank`
@@ -350,57 +364,26 @@ The included intervention-library template materializes:
 
 Saved interventions use the model's internal `-1/+1` coding. Posterior predictive targets for USCountyVaccination should use `source_type=fit`; `source_type=truth` is rejected because real-data experiments set `has_truth: false`.
 
-## Start-Week, Rank, And B Sensitivity
+## Optional Start-Date Slicing
 
-Use `run_uscounty_sensitivity_analysis.py` to sweep:
+If you want to run the applied pipeline from later calendar weeks, create sliced experiment roots directly during materialization with `--start_dates` and then use the normal shared fit/intervention/posterior-predictive stages on the resulting `generation_manifest.csv`.
 
-- start week, by slicing existing USCounty experiment panels into derived experiment folders
-- latent field rank, through generated fit variants
-- global parameter bound `B`, through generated fit variants
+Slicing behavior:
 
-Materialize derived experiments and write the generated fit spec without launching MPLE:
+- requested dates are interpreted as ISO `YYYY-MM-DD`
+- each date resolves forward to the first available modeled `WeekEndDate >= requested date`
+- slicing fails if the request is after the final available modeled week
+- slicing also fails if it would leave zero transition weeks to fit
+- sliced experiment names are suffixed as `__start_YYYY_MM_DD`
 
-```bash
-pixi run python run_uscounty_sensitivity_analysis.py \
-  --source_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --output_root experiments/USCountyVaccination_US_sensitivity \
-  --experiment_names outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity \
-  --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
-  --latent_ranks 0 10 20 40 \
-  --B_values 0.5 1 2 5 \
-  --overwrite
-```
+Each sliced experiment records:
 
-Run the same sweep and fit every derived experiment/variant pair:
+- `requested_start_date`
+- `resolved_start_week_end_date`
+- `start_index`
+- `dropped_transition_weeks_for_start`
 
-```bash
-pixi run python run_uscounty_sensitivity_analysis.py \
-  --source_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --output_root experiments/USCountyVaccination_US_sensitivity \
-  --experiment_names outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity \
-  --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
-  --latent_ranks 0 10 20 40 \
-  --B_values 0.5 1 2 5 \
-  --lambda_nuclear_values 0.0001 0.0003 0.001 0.003 0.01 \
-  --n_starts 5 \
-  --adam_steps 1000 \
-  --overwrite \
-  --run_fits
-```
-
-Outputs are written under the chosen sensitivity root:
-
-- `generation_manifest.csv`
-- `fits_sensitivity_spec.yaml`
-- `fit_manifest.csv` after `--run_fits`
-- `sensitivity_summary.csv`
-- `sensitivity_summary.md`
-
-Because these are real-data experiments without known truth, `sensitivity_summary.csv` ranks rows by lowest MPLE `final_loss`. For additional model-checking, use the winning sensitivity fits as inputs to the existing posterior-predictive or counterfactual workflow.
-
-For non-convex latent fits, the sensitivity runner defaults to multi-start plus a two-stage optimizer: PyTorch Adam first, then L-BFGS-B. Each fit writes `optimizer_start_summary.csv`, which is useful for checking whether several starts found similar beta estimates or whether one basin dominated.
-
-When `--lambda_nuclear_values` is supplied, the sensitivity runner also creates convex-relaxation variants with `field_mode: nuclear_norm`. These optimize the full latent field with a nuclear-norm penalty and report the penalized objective, nuclear norm, and effective rank in `mple_summary.csv`.
+This keeps start-date control inside the standard US county materialization path instead of using a separate sensitivity runner.
 
 ## Processed Outputs
 

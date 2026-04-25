@@ -38,7 +38,7 @@ All pipeline YAML specs use a `base + named entries` pattern: every named entry 
 | Directory | Used by |
 | --- | --- |
 | `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive.py`, `report_posterior_predictive.py`) |
-| `data/USCountyVaccination/experiment_configs/` | Real-data pipeline and `run_uscounty_sensitivity_analysis.py` |
+| `data/USCountyVaccination/experiment_configs/` | Real-data pipeline |
 
 Both directories contain identically named files (`fits_spec.yaml`, etc.) for their respective workflows. Updating fitting behavior requires editing both files independently.
 
@@ -85,7 +85,6 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census, CDC SVI, USDA ERS sources | cached raw inputs |
 | Real-data preprocessing and realization | `data/USCountyVaccination/preprocess_us_county_vaccination_data.py` | cached raw inputs | processed panels, `realized_*`, `shared_panels` |
 | Real-data experiment materialization | `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | `realized_*`, `shared_panels` | shared-compatible experiment folders, `generation_manifest.csv` |
-| Real-data sensitivity sweep | `run_uscounty_sensitivity_analysis.py` | USCounty generation manifest, start dates, latent ranks, `B` values | sliced experiment folders, sensitivity fit spec, fit manifest, sensitivity summary |
 
 ## Synthetic And Hybrid Pipeline
 
@@ -527,6 +526,17 @@ pixi run python data/USCountyVaccination/create_us_county_vaccination_experiment
   --overwrite
 ```
 
+To materialize trimmed experiments starting from one or more later modeled weeks, pass `--start_dates`. Each requested date rounds forward to the first available `WeekEndDate >= requested date`, and each resolved slice gets its own `__start_YYYY_MM_DD` experiment root:
+
+```bash
+pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
+  --trim \
+  --output_root experiments/USCountyVaccination_US_trimmed \
+  --outcomes death_rate_100k_ge_2 \
+  --start_dates 2020-09-06 2021-01-03 \
+  --overwrite
+```
+
 Then run the shared workflow:
 
 ```bash
@@ -544,21 +554,3 @@ bash submit_posterior_predictive_jobs.sh
 ```
 
 The full US county workflow is documented in [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md).
-
-Start-week, latent-rank, and `B` sensitivity for USCountyVaccination is handled by:
-
-```bash
-pixi run python run_uscounty_sensitivity_analysis.py \
-  --source_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --output_root experiments/USCountyVaccination_US_sensitivity \
-  --experiment_names outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_40__lag_2w__contiguity \
-  --start_dates 2020-01-26 2020-03-01 2020-06-07 2020-09-06 2021-01-03 \
-  --latent_ranks 0 10 20 40 \
-  --B_values 0.5 1 2 5 \
-  --lambda_nuclear_values 0.0001 0.0003 0.001 0.003 0.01 \
-  --n_starts 5 \
-  --overwrite \
-  --run_fits
-```
-
-This writes `sensitivity_summary.csv` and `sensitivity_summary.md` ranked by MPLE final loss.

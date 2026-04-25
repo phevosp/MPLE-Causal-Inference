@@ -21,7 +21,7 @@ data/USCountyVaccination/load_raw_data.py
 data/USCountyVaccination/preprocess_us_county_vaccination_data.py
 data/USCountyVaccination/create_us_county_vaccination_experiments.py
 ```
-Sensitivity sweeps use `run_uscounty_sensitivity_analysis.py`, which wraps stages 2 and 5.
+`create_us_county_vaccination_experiments.py` also supports optional `--start_dates` slicing for materializing later-start real-data experiments directly into the shared pipeline.
 
 ## Config System
 
@@ -40,7 +40,7 @@ Each entry is deep-merged with `base`; entries inherit all base fields they don'
 | Directory | Used by |
 |---|---|
 | `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, etc.) |
-| `data/USCountyVaccination/experiment_configs/` | Real-data pipeline and `run_uscounty_sensitivity_analysis.py` |
+| `data/USCountyVaccination/experiment_configs/` | Real-data pipeline |
 
 ## Optimizer Modes (`optimizer_mode` in fits_spec.yaml)
 

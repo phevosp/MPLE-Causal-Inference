@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import shutil
 import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 import uuid
 import csv
 from pathlib import Path
@@ -26,9 +28,22 @@ from data.synthetic_data_generation import (
     load_fixed_intervention_artifacts,
     simulate_outcomes_given_fixed_interventions,
 )
+from data.USCountyVaccination import (
+    create_us_county_vaccination_experiments as uscounty_materializer,
+)
 from data.USCountyVaccination.experiment_artifacts import (
+    RealizedBinaryArtifact,
+    RealizedNetworkArtifact,
+    assembled_panel_from_arrays,
     create_config as create_us_county_config,
+    realized_intervention_name,
+    realized_network_name,
+    realized_outcome_name,
     save_experiment as save_us_county_experiment,
+    shared_panel_name,
+    write_realized_binary_artifact,
+    write_realized_network_artifact,
+    write_shared_panel_artifacts,
 )
 from intervention_utils import load_saved_intervention_context
 from io_utils import io_path
@@ -102,10 +117,6 @@ from posterior_predictive_job_utils import (
     resolve_target_pairs,
 )
 from run_posterior_predictive import run_posterior_predictive
-from run_uscounty_sensitivity_analysis import (
-    materialize_sensitivity_experiments,
-    write_sensitivity_fit_spec,
-)
 
 
 def base_config() -> object:
@@ -2196,7 +2207,7 @@ class PipelineStageRequestTests(unittest.TestCase):
 
 class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = REPO_ROOT / "experiments" / f".tmp_uscounty_{uuid.uuid4().hex}"
+        self.root = REPO_ROOT / f".tmp_uc_{uuid.uuid4().hex[:8]}"
         self.root.mkdir(parents=True, exist_ok=True)
 
     def tearDown(self) -> None:
@@ -2352,6 +2363,246 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             writer.writerow(row)
         return experiment_root, manifest_path
 
+    def _write_us_county_realized_artifacts(self, output_root: Path) -> dict[str, object]:
+        node_order = ["01001", "01003", "01005", "01007"]
+        features = pd.DataFrame(
+            {
+                "fips": node_order,
+                "county": ["a", "b", "c", "d"],
+                "state_name": ["Alabama"] * 4,
+                "STATEFP": ["01"] * 4,
+                "feature_basis_mode": ["zero"] * 4,
+                "total_population": [10000, 12000, 14000, 16000],
+            }
+        )
+        centroids = pd.DataFrame(
+            {
+                "fips": node_order,
+                "county": ["a", "b", "c", "d"],
+                "state_name": ["Alabama"] * 4,
+                "longitude": [-86.0, -86.5, -87.0, -87.5],
+                "latitude": [32.5, 32.6, 32.7, 32.8],
+            }
+        )
+        node_table = pd.DataFrame(
+            {
+                "fips": node_order,
+                "node_index": [0, 1, 2, 3],
+                "county": ["a", "b", "c", "d"],
+                "state_name": ["Alabama"] * 4,
+            }
+        )
+        time_index = pd.DataFrame(
+            {
+                "WeekStartDate": pd.date_range("2021-01-03", periods=5, freq="W-SUN"),
+                "WeekEndDate": pd.date_range("2021-01-09", periods=5, freq="W-SAT"),
+                "iso_year": [2021] * 5,
+                "iso_week": [1, 2, 3, 4, 5],
+                "model_index": [0, 1, 2, 3, 4],
+            }
+        )
+        x = np.array(
+            [
+                [-1, 1, -1, 1],
+                [1, 1, -1, -1],
+                [1, -1, 1, -1],
+                [-1, -1, 1, 1],
+            ],
+            dtype=np.int8,
+        )
+        z = np.array(
+            [
+                [-1, -1, -1, -1],
+                [1, -1, 1, -1],
+                [1, 1, 1, -1],
+                [1, 1, 1, 1],
+            ],
+            dtype=np.int8,
+        )
+        x_0 = np.array([-1, -1, 1, 1], dtype=np.int8)
+        z_0 = np.array([-1, -1, -1, -1], dtype=np.int8)
+        gamma = sparse.csr_matrix(
+            np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ],
+                dtype=float,
+            )
+            / 2.0
+        )
+        adjacency_edges = pd.DataFrame(
+            {
+                "fips": ["01001", "01003", "01003", "01005", "01005", "01007"],
+                "neighbor_fips": ["01003", "01001", "01005", "01003", "01007", "01005"],
+            }
+        )
+        panel = assembled_panel_from_arrays(
+            x=x,
+            z=z,
+            x_0=x_0,
+            z_0=z_0,
+            time_index=time_index,
+            node_order=node_order,
+            outcome_code="death_rate_100k_ge_2",
+            intervention_code="complete_cov_ge_20",
+        )
+        trim_label = "mainland_us_and_total_population_ge_2000"
+        state_label = "Mainland US counties with total_population >= 2000"
+        write_realized_binary_artifact(
+            output_root
+            / "realized_outcomes"
+            / realized_outcome_name("death_rate_100k_ge_2", True),
+            RealizedBinaryArtifact(
+                code="death_rate_100k_ge_2",
+                panel_key="x",
+                values=x,
+                initial_values=x_0,
+                observed_mask=np.ones_like(x, dtype=bool),
+                initial_observed_mask=np.ones_like(x_0, dtype=bool),
+                node_order=node_order,
+                time_index=time_index,
+                artifact_dir=output_root
+                / "realized_outcomes"
+                / realized_outcome_name("death_rate_100k_ge_2", True),
+                metadata={
+                    "outcome_code": "death_rate_100k_ge_2",
+                    "trim_applied": True,
+                    "trim_rule": trim_label,
+                },
+            ),
+        )
+        write_realized_binary_artifact(
+            output_root
+            / "realized_interventions"
+            / realized_intervention_name("complete_cov_ge_20", "2w", True),
+            RealizedBinaryArtifact(
+                code="complete_cov_ge_20",
+                panel_key="z",
+                values=z,
+                initial_values=z_0,
+                observed_mask=np.ones_like(z, dtype=bool),
+                initial_observed_mask=np.ones_like(z_0, dtype=bool),
+                node_order=node_order,
+                time_index=time_index,
+                artifact_dir=output_root
+                / "realized_interventions"
+                / realized_intervention_name("complete_cov_ge_20", "2w", True),
+                metadata={
+                    "intervention_code": "complete_cov_ge_20",
+                    "lag_code": "2w",
+                    "trim_applied": True,
+                    "trim_rule": trim_label,
+                },
+            ),
+        )
+        write_realized_network_artifact(
+            output_root
+            / "realized_networks"
+            / realized_network_name("contiguity", True),
+            RealizedNetworkArtifact(
+                network_name="contiguity",
+                gamma_matrix=gamma,
+                adjacency_edges=adjacency_edges,
+                node_order=node_order,
+                artifact_dir=output_root
+                / "realized_networks"
+                / realized_network_name("contiguity", True),
+                metadata={"network_name": "contiguity", "trim_applied": True},
+            ),
+        )
+        write_shared_panel_artifacts(
+            output_root
+            / "shared_panels"
+            / shared_panel_name(
+                "death_rate_100k_ge_2",
+                "complete_cov_ge_20",
+                "2w",
+                True,
+            ),
+            panel=panel,
+            node_table=node_table,
+            time_index=time_index,
+            x=x,
+            z=z,
+            x_0=x_0,
+            z_0=z_0,
+            metadata={
+                "source": "USCountyVaccination",
+                "state": state_label,
+                "outcome_code": "death_rate_100k_ge_2",
+                "intervention_code": "complete_cov_ge_20",
+                "lag_code": "2w",
+                "trim_applied": True,
+                "trim_rule": trim_label,
+                "requested_node_count": 4,
+                "dropped_node_count": 0,
+                "requested_calendar_weeks": 5,
+                "realized_calendar_weeks": 5,
+                "weeks_dropped_due_to_missing_or_lag": 0,
+                "support_selection_rule": "max_complete_suffix_by_node_week_area",
+                "requested_start_date": "2021-01-09",
+                "realized_week_start_date": "2021-01-03",
+                "realized_week_end_date": "2021-02-06",
+                "time_steps": 4,
+                "pre_intervention_steps": 1,
+            },
+        )
+        return {
+            "features": features,
+            "centroids": centroids,
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "z_0": z_0,
+            "time_index": time_index,
+            "base_experiment_name": (
+                "outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20"
+                "__lag_2w__contiguity"
+            ),
+        }
+
+    def _materializer_args(
+        self,
+        output_root: Path,
+        *,
+        start_dates: list[str] | None = None,
+    ) -> argparse.Namespace:
+        return argparse.Namespace(
+            overwrite=True,
+            max_experiments=None,
+            lags=["2w"],
+            outcomes=["death_rate_100k_ge_2"],
+            interventions=["complete_cov_ge_20"],
+            networks=["contiguity"],
+            output_root=output_root,
+            start_dates=start_dates,
+            trim=True,
+            field_mode="additive",
+            latent_rank=10,
+            latent_B=1.0,
+            tau_zero_mean=False,
+            tau_smoothness_lambda=0.0,
+        )
+
+    def _run_us_county_materializer(
+        self,
+        *,
+        output_root: Path,
+        start_dates: list[str] | None = None,
+    ) -> dict[str, object]:
+        fixture = self._write_us_county_realized_artifacts(output_root)
+        args = self._materializer_args(output_root, start_dates=start_dates)
+        with mock.patch.object(
+            uscounty_materializer,
+            "load_inputs",
+            return_value=(pd.DataFrame(), fixture["features"], fixture["centroids"]),
+        ):
+            uscounty_materializer.create_experiment_folders(args)
+        return fixture
+
     def test_us_county_experiment_root_matches_shared_artifact_contract(self) -> None:
         experiment_root, manifest_path = self._write_us_county_experiment()
 
@@ -2378,51 +2629,155 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         ]:
             self.assertIn(key, manifest_row)
 
-    def test_us_county_sensitivity_materializes_start_week_slices(self) -> None:
-        _, manifest_path = self._write_us_county_experiment()
-        output_root = self.root / "sensitivity"
-
-        sensitivity_manifest = materialize_sensitivity_experiments(
-            source_manifest_path=manifest_path,
-            output_root=output_root,
-            start_dates=["2021-01-23"],
-            overwrite=True,
+    def test_us_county_start_index_exact_match(self) -> None:
+        fixture = self._write_us_county_realized_artifacts(self.root)
+        time_index = fixture["time_index"]
+        start_index, resolved = uscounty_materializer._resolve_start_index(
+            time_index, "2021-01-23"
         )
-        fit_spec_path = write_sensitivity_fit_spec(
-            output_root=output_root,
-            latent_ranks=[0, 2],
-            b_values=[1.0, 5.0],
-            steps=3,
-            tol=1.0e-6,
-            seed=9,
-            lambda_nuclear_values=[0.01],
-        )
+        self.assertEqual(start_index, 2)
+        self.assertEqual(resolved, "2021-01-23")
 
-        with sensitivity_manifest.open("r", encoding="utf-8", newline="") as handle:
+    def test_us_county_start_index_rounds_forward(self) -> None:
+        fixture = self._write_us_county_realized_artifacts(self.root)
+        time_index = fixture["time_index"]
+        start_index, resolved = uscounty_materializer._resolve_start_index(
+            time_index, "2021-01-18"
+        )
+        self.assertEqual(start_index, 2)
+        self.assertEqual(resolved, "2021-01-23")
+
+    def test_us_county_start_index_rejects_after_last_week(self) -> None:
+        fixture = self._write_us_county_realized_artifacts(self.root)
+        time_index = fixture["time_index"]
+        with self.assertRaisesRegex(ValueError, "after the last available week"):
+            uscounty_materializer._resolve_start_index(time_index, "2021-02-20")
+
+    def test_us_county_start_index_rejects_no_transition_week(self) -> None:
+        fixture = self._write_us_county_realized_artifacts(self.root)
+        time_index = fixture["time_index"]
+        with self.assertRaisesRegex(ValueError, "leaves no transition weeks to fit"):
+            uscounty_materializer._resolve_start_index(time_index, "2021-02-06")
+
+    def test_us_county_materializer_preserves_unsliced_behavior(self) -> None:
+        fixture = self._run_us_county_materializer(output_root=self.root / "generated")
+        manifest_path = self.root / "generated" / "generation_manifest.csv"
+        with manifest_path.open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["T"], "2")
-        self.assertEqual(rows[0]["s"], "0")
-        self.assertEqual(rows[0]["sensitivity_start_index"], "2")
-        self.assertEqual(rows[0]["sensitivity_start_week_end_date"], "2021-01-23")
 
-        derived_root = Path(rows[0]["experiment_path"])
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["experiment_name"], fixture["base_experiment_name"])
+        self.assertEqual(row["T"], "4")
+        self.assertEqual(row["s"], "1")
+        self.assertNotIn("requested_start_date", row)
+        self.assertNotIn("resolved_start_week_end_date", row)
+
+    def test_us_county_materializer_slices_one_start_date(self) -> None:
+        fixture = self._run_us_county_materializer(
+            output_root=self.root / "generated",
+            start_dates=["2021-01-23"],
+        )
+        manifest_path = self.root / "generated" / "generation_manifest.csv"
+        with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(
+            row["experiment_name"],
+            fixture["base_experiment_name"] + "__start_2021_01_23",
+        )
+        self.assertEqual(row["T"], "2")
+        self.assertEqual(row["s"], "0")
+        self.assertEqual(row["requested_start_date"], "2021-01-23")
+        self.assertEqual(row["resolved_start_week_end_date"], "2021-01-23")
+        self.assertEqual(row["start_index"], "2")
+        self.assertEqual(row["dropped_transition_weeks_for_start"], "2")
+
+        derived_root = Path(row["experiment_path"])
         self.assertTrue((derived_root / "panel_data.npz").exists())
+        self.assertTrue((derived_root / "x_0.npy").exists())
+        self.assertTrue((derived_root / "z_0.npy").exists())
+        self.assertTrue((derived_root / "time_index.csv").exists())
         self.assertTrue(
             np.array_equal(
                 np.load(derived_root / "x_0.npy"),
                 np.array([1, 1, -1, -1], dtype=np.int8),
             )
         )
+        self.assertTrue(
+            np.array_equal(
+                np.load(derived_root / "z_0.npy"),
+                np.array([1, -1, 1, -1], dtype=np.int8),
+            )
+        )
         derived_dims = infer_panel_dimensions(derived_root)
         self.assertEqual(derived_dims, {"N": 4, "T": 2, "s": 0})
 
-        fit_spec = OmegaConf.load(fit_spec_path)
-        self.assertEqual(len(fit_spec.variants), 6)
-        self.assertEqual(fit_spec.base.optimizer.steps, 3)
-        self.assertEqual(fit_spec.base.optimizer.n_starts, 1)
-        self.assertEqual(fit_spec.variants[-1].optimizer_mode, "nuclear_norm")
-        self.assertAlmostEqual(float(fit_spec.variants[-1].lambda_nuclear), 0.01)
+        metadata = OmegaConf.to_container(
+            OmegaConf.load(derived_root / "experiment_metadata.yaml"),
+            resolve=True,
+        )
+        self.assertEqual(metadata["requested_start_date"], "2021-01-23")
+        self.assertEqual(metadata["resolved_start_week_end_date"], "2021-01-23")
+        self.assertEqual(int(metadata["start_index"]), 2)
+        self.assertEqual(int(metadata["dropped_transition_weeks_for_start"]), 2)
+
+    def test_us_county_materializer_slices_multiple_start_dates(self) -> None:
+        fixture = self._run_us_county_materializer(
+            output_root=self.root / "generated",
+            start_dates=["2021-01-16", "2021-01-23"],
+        )
+        manifest_path = self.root / "generated" / "generation_manifest.csv"
+        with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+
+        self.assertEqual(len(rows), 2)
+        names = {row["experiment_name"] for row in rows}
+        self.assertEqual(
+            names,
+            {
+                fixture["base_experiment_name"] + "__start_2021_01_16",
+                fixture["base_experiment_name"] + "__start_2021_01_23",
+            },
+        )
+
+    def test_us_county_sliced_experiment_roots_work_with_fit_pipeline(self) -> None:
+        fixture = self._run_us_county_materializer(
+            output_root=self.root / "generated",
+            start_dates=["2021-01-23"],
+        )
+        manifest_path = self.root / "generated" / "generation_manifest.csv"
+        fits_spec_path = self.root / "fits_spec.yaml"
+        fits_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  fit_root_name: fits",
+                    f"  fit_manifest_path: {self.root.as_posix()}/fit_manifest.csv",
+                    "  optimizer:",
+                    "    steps: 5",
+                    "    tol: 1.0e-6",
+                    "    seed: 0",
+                    "  B: 1.0",
+                    "  latent_rank: 0",
+                    "  estimation:",
+                    "    fixed_scalar_params: {}",
+                    "variants:",
+                    "  - name: rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        fit_manifest = run_fits(manifest_path, fits_spec_path, overwrite=True)
+        fit_rows = read_csv_manifest(fit_manifest)
+        self.assertEqual(len(fit_rows), 1)
+        self.assertEqual(
+            fit_rows[0]["experiment_name"],
+            fixture["base_experiment_name"] + "__start_2021_01_23",
+        )
 
     def test_us_county_truth_targets_are_rejected(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
