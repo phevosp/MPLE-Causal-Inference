@@ -45,6 +45,32 @@ PER_EXPERIMENT_COLUMNS = [
     "true_field_max_abs_entry",
     "true_field_rank",
 ]
+_PER_EXPERIMENT_COLUMNS_NO_TRUTH = [
+    "experiment_name",
+    "descriptor",
+    "variant_name",
+    "variant_slug",
+    "optimizer_mode",
+    "field_mode",
+    "latent_rank",
+    "lambda_nuclear",
+    "lambda_frobenius",
+    "lambda_uv_ridge",
+    "fixed_scalar_params",
+    "ranking_mode",
+    "rank_in_experiment",
+    "is_best",
+    "total_recovery_rmse",
+    "final_loss",
+    "field_rmse",
+    "interaction_fro_error",
+    "optimizer_status",
+    "beta_estimate",
+    "xi_estimate",
+    "eta_estimate",
+    "estimated_field_max_abs_entry",
+    "estimated_field_rank",
+]
 WINNER_COLUMNS = [
     "experiment_name",
     "descriptor",
@@ -69,6 +95,10 @@ WINNER_COLUMNS = [
     "interaction_fro_error",
     "optimizer_status",
 ]
+
+
+def _per_experiment_columns(has_truth: bool) -> list[str]:
+    return PER_EXPERIMENT_COLUMNS if has_truth else _PER_EXPERIMENT_COLUMNS_NO_TRUTH
 
 
 def total_recovery_rmse(row: dict[str, object]) -> float | None:
@@ -192,6 +222,7 @@ def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | 
     for scalar_name in SCALAR_NAMES:
         est = scalar_value(summary_entries, scalar_name, "estimate")
         true = scalar_value(summary_entries, scalar_name, "true")
+        row[f"{scalar_name}_estimate"] = est
         row[f"{scalar_name}_abs_error"] = (
             abs(est - true) if est is not None and true is not None else None
         )
@@ -215,7 +246,11 @@ def collect_fit_rows(manifest_path: str | Path) -> list[dict[str, object]]:
 
 
 def _group_has_truth(rows: list[dict[str, object]]) -> bool:
-    return any(row.get("field_rmse") is not None for row in rows)
+    return any(
+        row.get("field_rmse") is not None
+        or any(row.get(f"{s}_abs_error") is not None for s in SCALAR_NAMES)
+        for row in rows
+    )
 
 
 def ranking_key(row: dict[str, object], use_truth_metrics: bool) -> tuple[float, ...]:
@@ -278,10 +313,12 @@ def write_per_experiment_summary(
     experiment_path: str | Path,
     rows: list[dict[str, object]],
 ) -> tuple[Path, Path]:
+    has_truth = _group_has_truth(rows)
+    columns = _per_experiment_columns(has_truth)
     experiment_root = Path(experiment_path)
     csv_path = experiment_root / "fit_summary.csv"
     md_path = experiment_root / "fit_summary.md"
-    write_csv(csv_path, rows, PER_EXPERIMENT_COLUMNS)
+    write_csv(csv_path, rows, columns)
     best_row = next(row for row in rows if row.get("is_best"))
     with md_path.open("w", encoding="utf-8") as handle:
         handle.write(
@@ -291,7 +328,7 @@ def write_per_experiment_summary(
             f"- Best variant: `{best_row.get('variant_name', '')}`\n"
             f"- Ranking mode: `{best_row.get('ranking_mode', '')}`\n\n"
         )
-        write_markdown_table(handle, rows, PER_EXPERIMENT_COLUMNS)
+        write_markdown_table(handle, rows, columns)
     return csv_path, md_path
 
 
