@@ -9,7 +9,7 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
-from io_utils import _as_float, _metric_or_inf, write_csv, write_markdown_table
+from io_utils import _as_float, _metric_or_inf, write_csv
 from io_utils import io_path
 from pipeline_specs import read_csv_manifest, write_csv_manifest
 from posterior_predictive_job_utils import (
@@ -303,15 +303,10 @@ def write_intervention_summaries(
 
     outputs: dict[str, dict[str, str]] = {}
     for slug, group_rows in grouped.items():
-        intervention_name = str(group_rows[0].get("target_intervention_name", slug))
         built_rows = [_build_intervention_row(r) for r in group_rows]
         csv_path = summary_dir / f"{slug}.csv"
-        md_path = summary_dir / f"{slug}.md"
         write_csv(csv_path, built_rows, INTERVENTION_SUMMARY_COLUMNS)
-        with md_path.open("w", encoding="utf-8") as handle:
-            handle.write(f"# Intervention Summary: {intervention_name}\n\n")
-            write_markdown_table(handle, built_rows, INTERVENTION_SUMMARY_COLUMNS)
-        outputs[slug] = {"csv": str(csv_path), "md": str(md_path)}
+        outputs[slug] = {"csv": str(csv_path)}
     return outputs
 
 

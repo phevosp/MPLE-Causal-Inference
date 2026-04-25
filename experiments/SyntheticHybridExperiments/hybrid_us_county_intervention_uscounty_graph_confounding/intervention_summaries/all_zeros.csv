@@ -1,0 +1,12 @@
+source_type,source_name,source_slug,run_name,run_slug,num_samples,gibbs_sweeps,s,overall_mean_magnetization_mean,overall_mean_magnetization_std,overall_mean_magnetization_q025,overall_mean_magnetization_q500,overall_mean_magnetization_q975,post_intervention_mean_magnetization_mean,post_intervention_mean_magnetization_std,post_intervention_mean_magnetization_q025,post_intervention_mean_magnetization_q500,post_intervention_mean_magnetization_q975
+fit,alternating_rank_10,fit_alternating_rank_10,default,default,16,10,120,0.2256082447103135,0.0030490258662415563,0.2207717126398582,0.2260634762379528,0.2313780879583472,,,,,
+fit,alternating_rank_10_xi_zero,fit_alternating_rank_10_xi_zero,default,default,16,10,120,0.11495340367785532,0.00215496104255531,0.11143375429267752,0.11472249916915919,0.11838304530851888,,,,,
+fit,alternating_rank_2,fit_alternating_rank_2,default,default,16,10,120,0.15916071230752188,0.0035731231197691834,0.15371939736346515,0.1588318378198737,0.16602553450758833,,,,,
+fit,alternating_rank_2_xi_zero,fit_alternating_rank_2_xi_zero,default,default,16,10,120,0.08091385565525647,0.002322701818600824,0.07803395369447214,0.08059709759610059,0.08517087626010855,,,,,
+fit,alternating_rank_5,fit_alternating_rank_5,default,default,16,10,120,0.19177883017613825,0.0034142124086333873,0.18626897086518224,0.19156973523872828,0.19799421180901738,,,,,
+fit,alternating_rank_5_xi_zero,fit_alternating_rank_5_xi_zero,default,default,16,10,120,0.09846363686717624,0.0020578908062417406,0.09475739448321702,0.09872881355932203,0.10178630774343636,,,,,
+fit,nuclear_lambda_8e_2,fit_nuclear_lambda_8e_2,default,default,16,10,120,0.2738603633543813,0.0031277932059463774,0.26801055167829846,0.2736346516007533,0.27893610834164173,,,,,
+fit,nuclear_lambda_8e_2_xi_zero,fit_nuclear_lambda_8e_2_xi_zero,default,default,16,10,120,0.13442069624459954,0.002206367538041594,0.1308518887781101,0.13417525202171265,0.13808297330231528,,,,,
+truth,truth,truth,default,default,16,10,120,0.0860702614379085,0.002452866562990301,0.08267281488866733,0.08557383405339536,0.09071604630552786,,,,,
+fit,zero_external_field,fit_zero_external_field,default,default,16,10,120,0.3972405699567963,0.0038342151804346652,0.39197961670543924,0.39685388279605627,0.40394164728038107,,,,,
+fit,zero_external_field_xi_zero,fit_zero_external_field_xi_zero,default,default,16,10,120,0.3166265093608065,0.0019577420894248713,0.31393112329677636,0.31628171042428266,0.31946383073003215,,,,,
