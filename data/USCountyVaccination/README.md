@@ -358,7 +358,6 @@ Key processed files under `data/USCountyVaccination/processed/`:
 - `us_county_weekly_panel.csv.gz`
 - `us_county_binary_panel.csv.gz`
 - `us_county_binary_threshold_diagnostics.csv`
-- `us_county_binary_threshold_diagnostics.md`
 - `us_county_feature_basis.csv.gz`
 - `us_county_feature_dictionary.csv`
 - `us_counties.gpkg`

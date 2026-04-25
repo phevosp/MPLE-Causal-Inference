@@ -361,9 +361,7 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/
   field_artifacts.npz
   gamma_matrix.npy | gamma_matrix_sparse.npz
   fit_summary.csv
-  fit_summary.md
   posterior_predictive_summary.csv
-  posterior_predictive_summary.md
   fits/
   intervention_library/
   posterior_predictive/
@@ -402,7 +400,6 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/fits/<variant_slug>/
   fit_metadata.yaml
   mple.log
   mple_summary.csv
-  mple_summary.md
   estimated_field_artifacts.npz
   estimated_parameter_bundle.npz
   estimated_interaction_matrix.npy | estimated_interaction_matrix_sparse.npz
@@ -416,7 +413,6 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/fits/<variant_slug>/
 experiments/SyntheticHybridExperiments/<experiment_slug>/posterior_predictive/<source_slug>/<run_slug>/
   posterior_predictive_metadata.yaml
   posterior_predictive_stats.csv
-  posterior_predictive_stats.md
 ```
 
 `source_slug` is:
@@ -459,13 +455,13 @@ Full simulated `x` panels are not saved for counterfactual runs.
 
 Fit reports:
 
-- per experiment: `fit_summary.csv`, `fit_summary.md`
-- cross experiment: `best_fit_by_experiment.csv`, `best_fit_by_experiment.md`
+- per experiment: `fit_summary.csv`
+- cross experiment: `best_fit_by_experiment.csv`
 
 Posterior-predictive reports:
 
-- per experiment: `posterior_predictive_summary.csv`, `posterior_predictive_summary.md`
-- cross experiment: `best_posterior_predictive_by_experiment.csv`, `best_posterior_predictive_by_experiment.md`
+- per experiment: `posterior_predictive_summary.csv`
+- cross experiment: `best_posterior_predictive_by_experiment.csv`
 
 Counterfactual runs write scenario-specific summary CSVs under each counterfactual output root. They do not participate in posterior-predictive ranking reports.
 

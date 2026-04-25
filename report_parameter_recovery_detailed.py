@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from io_utils import _as_float, _metric_or_inf, write_csv, write_markdown_table
+from io_utils import _as_float, _metric_or_inf, write_csv
 from model_utils import latent_field_bound_norm
 from pipeline_specs import read_csv_manifest
 
@@ -312,41 +312,23 @@ def group_and_rank_fit_rows(
 def write_per_experiment_summary(
     experiment_path: str | Path,
     rows: list[dict[str, object]],
-) -> tuple[Path, Path]:
+) -> Path:
     has_truth = _group_has_truth(rows)
     columns = _per_experiment_columns(has_truth)
     experiment_root = Path(experiment_path)
     csv_path = experiment_root / "fit_summary.csv"
-    md_path = experiment_root / "fit_summary.md"
     write_csv(csv_path, rows, columns)
-    best_row = next(row for row in rows if row.get("is_best"))
-    with md_path.open("w", encoding="utf-8") as handle:
-        handle.write(
-            f"# Fit Summary: {best_row.get('experiment_name', experiment_root.name)}\n\n"
-        )
-        handle.write(
-            f"- Best variant: `{best_row.get('variant_name', '')}`\n"
-            f"- Ranking mode: `{best_row.get('ranking_mode', '')}`\n\n"
-        )
-        write_markdown_table(handle, rows, columns)
-    return csv_path, md_path
+    return csv_path
 
 
 def write_cross_experiment_summary(
     manifest_path: str | Path,
     winner_rows: list[dict[str, object]],
-) -> tuple[Path, Path]:
+) -> Path:
     manifest_root = Path(manifest_path).resolve().parent
     csv_path = manifest_root / "best_fit_by_experiment.csv"
-    md_path = manifest_root / "best_fit_by_experiment.md"
     write_csv(csv_path, winner_rows, WINNER_COLUMNS)
-    with md_path.open("w", encoding="utf-8") as handle:
-        handle.write("# Best Fit By Experiment\n\n")
-        handle.write(
-            "Each row is the top-ranked MPLE variant within one generated experiment.\n\n"
-        )
-        write_markdown_table(handle, winner_rows, WINNER_COLUMNS)
-    return csv_path, md_path
+    return csv_path
 
 
 def write_fit_reports(manifest_path: str | Path) -> dict[str, object]:
@@ -357,16 +339,14 @@ def write_fit_reports(manifest_path: str | Path) -> dict[str, object]:
     ranked_groups, winners = group_and_rank_fit_rows(rows)
     per_experiment_outputs: dict[str, dict[str, str]] = {}
     for experiment_path, ranked_rows in ranked_groups.items():
-        csv_path, md_path = write_per_experiment_summary(experiment_path, ranked_rows)
+        csv_path = write_per_experiment_summary(experiment_path, ranked_rows)
         per_experiment_outputs[experiment_path] = {
             "csv": str(csv_path),
-            "md": str(md_path),
         }
-    winners_csv, winners_md = write_cross_experiment_summary(manifest_path, winners)
+    winners_csv = write_cross_experiment_summary(manifest_path, winners)
     return {
         "per_experiment": per_experiment_outputs,
         "winners_csv": str(winners_csv),
-        "winners_md": str(winners_md),
     }
 
 

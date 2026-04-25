@@ -48,7 +48,6 @@ from data_utils import (  # noqa: E402
 WEEKLY_PANEL_PATH = PROCESSED_DIR / "us_county_weekly_panel.csv.gz"
 BINARY_PANEL_PATH = PROCESSED_DIR / "us_county_binary_panel.csv.gz"
 DIAGNOSTICS_CSV_PATH = PROCESSED_DIR / "us_county_binary_threshold_diagnostics.csv"
-DIAGNOSTICS_MD_PATH = PROCESSED_DIR / "us_county_binary_threshold_diagnostics.md"
 
 
 def week_end_from_iso(iso_year: int, iso_week: int) -> pd.Timestamp:
@@ -854,40 +853,6 @@ def summarize_binary(
     }
 
 
-def write_binary_markdown_summary(rows: list[dict[str, object]]) -> None:
-    headers = [
-        "definition_type",
-        "column",
-        "label",
-        "eligible_rows",
-        "eligible_share",
-        "positive_share",
-        "transition_rate",
-        "counties_with_both_states",
-        "counties_constant",
-        "eligible_start_date",
-        "eligible_end_date",
-    ]
-    with DIAGNOSTICS_MD_PATH.open("w", encoding="utf-8") as handle:
-        handle.write("# US County Vaccination Binary Definitions\n\n")
-        handle.write(
-            "This table summarizes the fixed county-week binary outcome and intervention "
-            "definitions used by the nationwide US county vaccination experiments. "
-            "Here `+1` denotes the above-threshold state and `-1` denotes the below-threshold state.\n\n"
-        )
-        handle.write("| " + " | ".join(headers) + " |\n")
-        handle.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
-        for row in rows:
-            rendered: list[str] = []
-            for key in headers:
-                value = row[key]
-                if isinstance(value, float):
-                    rendered.append(f"{value:.4f}")
-                else:
-                    rendered.append("" if pd.isna(value) else str(value))
-            handle.write("| " + " | ".join(rendered) + " |\n")
-
-
 def build_binary_panel() -> None:
     if not WEEKLY_PANEL_PATH.exists():
         raise FileNotFoundError(
@@ -927,4 +892,3 @@ def build_binary_panel() -> None:
         writer = csv.DictWriter(handle, fieldnames=list(diagnostic_rows[0].keys()))
         writer.writeheader()
         writer.writerows(diagnostic_rows)
-    write_binary_markdown_summary(diagnostic_rows)

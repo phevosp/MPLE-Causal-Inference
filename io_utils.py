@@ -77,26 +77,13 @@ def _fmt(value: object) -> str:
     return str(value)
 
 
-def write_markdown_table(
-    handle, rows: list[dict[str, object]], columns: list[str]
-) -> None:
-    handle.write("| " + " | ".join(columns) + " |\n")
-    handle.write("| " + " | ".join(["---"] * len(columns)) + " |\n")
-    for row in rows:
-        handle.write(
-            "| " + " | ".join(_fmt(row.get(column, "")) for column in columns) + " |\n"
-        )
-    handle.write("\n")
-
-
 def write_predictive_stats_tables(
     output_root: str | Path,
     stat_rows: list[dict[str, object]],
-) -> tuple[Path, Path]:
+) -> Path:
     output_path = Path(output_root)
     output_path.mkdir(parents=True, exist_ok=True)
     csv_path = output_path / "posterior_predictive_stats.csv"
-    md_path = output_path / "posterior_predictive_stats.md"
     columns = [
         "statistic",
         "observed_value",
@@ -110,9 +97,7 @@ def write_predictive_stats_tables(
         "in_95_interval",
     ]
     write_csv(csv_path, stat_rows, columns)
-    with md_path.open("w", encoding="utf-8") as handle:
-        write_markdown_table(handle, stat_rows, columns)
-    return csv_path, md_path
+    return csv_path
 
 
 def _finite_summary(values: np.ndarray) -> dict[str, object]:

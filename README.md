@@ -171,8 +171,8 @@ Outputs:
 - `experiments/SyntheticHybridExperiments/fit_requests.csv`
 - `experiments/SyntheticHybridExperiments/fit_manifest.csv`
 - `fits/<variant_slug>/` under each experiment root
-- per-experiment `fit_summary.csv` and `fit_summary.md`
-- cross-experiment `best_fit_by_experiment.csv` and `best_fit_by_experiment.md`
+- per-experiment `fit_summary.csv`
+- cross-experiment `best_fit_by_experiment.csv`
 
 Batch submission command:
 
@@ -283,8 +283,8 @@ Unified outputs:
 - `experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv`
 - `posterior_predictive/<source_slug>/<run_slug>/...` under each experiment root
 - `counterfactual/<source_slug>/<intervention_slug>/<run_slug>/...` under each experiment root
-- per-experiment `posterior_predictive_summary.csv` and `posterior_predictive_summary.md`
-- cross-experiment `best_posterior_predictive_by_experiment.csv` and `best_posterior_predictive_by_experiment.md`
+- per-experiment `posterior_predictive_summary.csv`
+- cross-experiment `best_posterior_predictive_by_experiment.csv`
 - `counterfactual_sample_summaries.npz`
 - `counterfactual_summary.csv`
 - `counterfactual_unit_summary.csv`
@@ -327,7 +327,6 @@ Each fit folder additionally writes:
 - `fit_metadata.yaml`
 - `mple.log`
 - `mple_summary.csv`
-- `mple_summary.md`
 - `estimated_field_artifacts.npz`
 - `estimated_parameter_bundle.npz`
 - `estimated_interaction_matrix.npy` or `estimated_interaction_matrix_sparse.npz`
@@ -340,7 +339,6 @@ When truth is available, fit folders also write:
 Each posterior-predictive run writes:
 
 - `posterior_predictive_stats.csv`
-- `posterior_predictive_stats.md`
 - `posterior_predictive_metadata.yaml`
 
 Each saved intervention writes:

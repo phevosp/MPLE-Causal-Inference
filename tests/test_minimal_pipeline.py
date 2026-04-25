@@ -2019,14 +2019,10 @@ class FitReportingTests(unittest.TestCase):
 
         experiment_root = self.root / "generated" / "smoke_rank_0"
         fit_summary_csv = experiment_root / "fit_summary.csv"
-        fit_summary_md = experiment_root / "fit_summary.md"
         winners_csv = self.root / "generated" / "best_fit_by_experiment.csv"
-        winners_md = self.root / "generated" / "best_fit_by_experiment.md"
 
         self.assertTrue(fit_summary_csv.exists())
-        self.assertTrue(fit_summary_md.exists())
         self.assertTrue(winners_csv.exists())
-        self.assertTrue(winners_md.exists())
 
         with fit_summary_csv.open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
@@ -4144,12 +4140,8 @@ class PosteriorPredictiveTests(unittest.TestCase):
             / "posterior_predictive_stats.csv"
         )
         summary_csv = experiment_root / "posterior_predictive_summary.csv"
-        summary_md = experiment_root / "posterior_predictive_summary.md"
         winners_csv = (
             self.root / "generated" / "best_posterior_predictive_by_experiment.csv"
-        )
-        winners_md = (
-            self.root / "generated" / "best_posterior_predictive_by_experiment.md"
         )
 
         self.assertTrue(truth_default_csv.exists())
@@ -4157,9 +4149,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertTrue(fit_default_csv.exists())
         self.assertTrue(fit_longer_csv.exists())
         self.assertTrue(summary_csv.exists())
-        self.assertTrue(summary_md.exists())
         self.assertTrue(winners_csv.exists())
-        self.assertTrue(winners_md.exists())
 
         with summary_csv.open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))

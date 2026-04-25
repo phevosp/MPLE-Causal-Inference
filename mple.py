@@ -1975,7 +1975,6 @@ def write_summary_table(
     fixed_scalar_params: dict[str, float] | None = None,
 ):
     csv_path = Path(f"{summary_stem}.csv")
-    md_path = Path(f"{summary_stem}.md")
     rows = scalar_summary_rows(
         est_theta,
         artifacts,
@@ -2008,13 +2007,6 @@ def write_summary_table(
         )
         writer.writeheader()
         writer.writerows(rows)
-    with md_path.open("w", encoding="utf-8") as handle:
-        handle.write("| category | name | estimate | true | squared_error |\n")
-        handle.write("| --- | --- | ---: | ---: | ---: |\n")
-        for row in rows:
-            handle.write(
-                f"| {row['category']} | {row['name']} | {_fmt(row['estimate'])} | {_fmt(row['true'])} | {_fmt(row['squared_error'])} |\n"
-            )
 
 
 def write_optimizer_start_summary(path: str | Path, result: OptimizeResult) -> None:
@@ -2413,9 +2405,8 @@ def main() -> None:
         fixed_scalar_params=fixed_scalar_params,
     )
     logger.info(
-        "Saved summary tables to %s and %s",
+        "Saved summary table to %s",
         Path(args.data_folder) / "mple_summary.csv",
-        Path(args.data_folder) / "mple_summary.md",
     )
     logger.info("Log saved to %s", log_file)
 
