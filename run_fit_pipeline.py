@@ -92,6 +92,7 @@ def build_fit_config(
     variant: dict[str, Any],
     dims: dict[str, int],
 ) -> object:
+    estimation = dict(variant.get("estimation", {}) or {})
     optimizer = dict(variant.get("optimizer", {}) or {})
     optimizer_mode = str(variant.get("optimizer_mode", "no_external_field"))
     if optimizer_mode not in {
@@ -164,16 +165,13 @@ def build_fit_config(
             "lambda_uv_ridge": lambda_uv_ridge,
         },
         "estimation_params": {
-            "fixed_scalar_params": dict(
-                (variant.get("estimation", {}) or {}).get("fixed_scalar_params", {})
-                or {}
+            "fixed_scalar_params": dict(estimation.get("fixed_scalar_params", {}) or {}),
+            "warm_start_fixed_scalars": dict(
+                estimation.get("warm_start_fixed_scalars", {}) or {}
             ),
-            "beta_mask_pre_s": bool(
-                (variant.get("estimation", {}) or {}).get("beta_mask_pre_s", False)
-            ),
-            "beta_mask_post_e": bool(
-                (variant.get("estimation", {}) or {}).get("beta_mask_post_e", False)
-            ),
+            "warm_start_steps": int(estimation.get("warm_start_steps", 0)),
+            "beta_mask_pre_s": bool(estimation.get("beta_mask_pre_s", False)),
+            "beta_mask_post_e": bool(estimation.get("beta_mask_post_e", False)),
         },
         "optimizer_params": optimizer_config,
     }

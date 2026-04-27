@@ -1684,6 +1684,46 @@ class MinimalPipelineTests(unittest.TestCase):
         fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
         self.assertTrue(bool(fit_config.estimation_params.beta_mask_pre_s))
 
+    def test_build_fit_config_defaults_warm_start_settings(self) -> None:
+        variant = {
+            "name": "rank_0",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+            "optimizer_mode": "no_external_field",
+            "latent_rank": 0,
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 2})
+        self.assertEqual(
+            OmegaConf.to_container(
+                fit_config.estimation_params.warm_start_fixed_scalars, resolve=True
+            ),
+            {},
+        )
+        self.assertEqual(int(fit_config.estimation_params.warm_start_steps), 0)
+
+    def test_build_fit_config_copies_warm_start_settings(self) -> None:
+        variant = {
+            "name": "rank_0",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+            "optimizer_mode": "no_external_field",
+            "latent_rank": 0,
+            "estimation": {
+                "fixed_scalar_params": {},
+                "warm_start_fixed_scalars": {"xi": 0.0},
+                "warm_start_steps": 5000,
+            },
+        }
+
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 2})
+        self.assertEqual(
+            OmegaConf.to_container(
+                fit_config.estimation_params.warm_start_fixed_scalars, resolve=True
+            ),
+            {"xi": 0.0},
+        )
+        self.assertEqual(int(fit_config.estimation_params.warm_start_steps), 5000)
+
     def test_validate_fits_spec_allows_uv_ridge_for_concurrent_mode(self) -> None:
         spec_root = REPO_ROOT / "experiments" / f".tmp_spec_{uuid.uuid4().hex}"
         spec_root.mkdir(parents=True, exist_ok=True)
