@@ -1,0 +1,39 @@
+2026-04-25 19:24:20 | INFO | Loading data...
+2026-04-25 19:24:20 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_06_07/panel_data.npz
+2026-04-25 19:24:20 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_06_07/x_0.npy
+2026-04-25 19:24:20 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_06_07/fits/alternating_rank_2_lambda_10_beta_mask_pre_and_post/fit_realized_config.yaml
+2026-04-25 19:24:20 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_06_07
+2026-04-25 19:24:20 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_06_07
+2026-04-25 19:24:20 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-25 19:24:20 | INFO | Configured latent rank: 2
+2026-04-25 19:24:20 | INFO | Using a fixed known graph with scalar xi.
+2026-04-25 19:24:20 | INFO | Fit-time hard bounds active: False
+2026-04-25 19:24:20 | INFO | Fixed scalar parameters: {}
+2026-04-25 19:24:20 | INFO | Beta mask before s: True
+2026-04-25 19:24:20 | INFO | Beta mask after e: True
+2026-04-25 19:24:20 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=10.0, proximal_lr=1.0
+2026-04-25 19:24:20 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.740962 | initial_penalized=0.742990
+2026-04-25 19:24:21 | INFO | Alternating low-rank iter 0 | Loss: 0.528044 | Penalized: 0.540835
+2026-04-25 19:24:31 | INFO | Alternating low-rank iter 100 | Loss: 0.466494 | Penalized: 0.486146
+2026-04-25 19:24:42 | INFO | Alternating low-rank iter 200 | Loss: 0.466666 | Penalized: 0.485875
+2026-04-25 19:24:52 | INFO | Alternating low-rank iter 300 | Loss: 0.466709 | Penalized: 0.485871
+2026-04-25 19:24:54 | INFO | Done fitting.
+2026-04-25 19:24:54 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-25 19:24:54 | INFO | Best optimizer start: 1 / 1
+2026-04-25 19:24:54 | INFO | Final Loss: 0.466711
+2026-04-25 19:24:54 | INFO | Estimated Parameters:
+2026-04-25 19:24:54 | INFO |   beta: -0.0161
+2026-04-25 19:24:54 | INFO |   xi: 1.7167
+2026-04-25 19:24:54 | INFO |   eta: 0.1745
+2026-04-25 19:24:54 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-25 19:24:54 | INFO |   penalized_objective: 0.485871
+2026-04-25 19:24:54 | INFO |   mple_loss_without_penalty: 0.466711
+2026-04-25 19:24:54 | INFO |   lambda_uv_ridge: 10.000000
+2026-04-25 19:24:54 | INFO |   u_frobenius_norm: 17.063154
+2026-04-25 19:24:54 | INFO |   v_frobenius_norm: 17.063159
+2026-04-25 19:24:54 | INFO |   effective_rank: 2.000000
+2026-04-25 19:24:54 | INFO | Field and interaction diagnostics:
+2026-04-25 19:24:54 | INFO |   estimated_field_max_abs_entry: 1.600652
+2026-04-25 19:24:54 | INFO |   estimated_field_rank: 2.000000
+2026-04-25 19:24:54 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_06_07/fits/alternating_rank_2_lambda_10_beta_mask_pre_and_post/mple_summary.csv
+2026-04-25 19:24:54 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination_US_trimmed/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_06_07/fits/alternating_rank_2_lambda_10_beta_mask_pre_and_post/mple.log
