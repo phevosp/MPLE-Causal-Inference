@@ -32,11 +32,25 @@ class InterventionContext:
 
 
 def derive_post_intervention_steps(z: np.ndarray) -> int:
-    treated_rows = np.any(np.asarray(z) == 1, axis=1)
-    if not treated_rows.any():
+    # e = first time step AFTER the last unit transitions from untreated (-1) to treated (+1)
+    # Find when each unit first gets treated (first occurrence of z=1 for that unit)
+    z_array = np.asarray(z)
+    T, N = z_array.shape
+
+    # Find first treatment time for each unit
+    first_treatment_per_unit = np.full(N, T, dtype=int)
+    for n in range(N):
+        treated_times = np.where(z_array[:, n] == 1)[0]
+        if len(treated_times) > 0:
+            first_treatment_per_unit[n] = treated_times[0]
+
+    # If no units are ever treated, e=0
+    if np.all(first_treatment_per_unit >= T):
         return 0
-    last_treatment_idx = int(np.argmax(treated_rows[::-1]))
-    return int(z.shape[0]) - last_treatment_idx
+
+    # e = time of last unit's first treatment + 1
+    last_unit_first_treatment = np.max(first_treatment_per_unit[first_treatment_per_unit < T])
+    return int(last_unit_first_treatment + 1)
 
 
 def _validate_intervention_panel(z: np.ndarray, z_0: np.ndarray) -> None:
