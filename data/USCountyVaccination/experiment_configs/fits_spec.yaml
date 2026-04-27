@@ -14,6 +14,8 @@ base:
   lambda_uv_ridge: 0.0
   estimation:
     fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
+    warm_start_fixed_scalars: {}  # scalars additionally fixed during warm start only
+    warm_start_steps: 0  # 0 = no warm start
     beta_mask_pre_s: true
     beta_mask_post_e: true
 

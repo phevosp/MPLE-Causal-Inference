@@ -1701,6 +1701,59 @@ def _fit_mple_concurrent_low_rank(
     return best_theta, best_mple_history, best_result
 
 
+def _apply_warm_start(
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    s: int,
+    param_names: list[str],
+    artifacts: ModelArtifacts,
+    interaction_effect_x: np.ndarray,
+    warm_start_steps: int,
+    seed: int,
+    verbose_every: int,
+    tol: float,
+    logger,
+    theta_init,
+    fixed_scalar_params: dict[str, float],
+    warm_start_fixed_scalars: dict[str, float],
+    lambda_nuclear: float,
+    lambda_frobenius: float,
+    lambda_uv_ridge: float,
+    proximal_lr: float,
+    e: int | None,
+    beta_mask_pre_s: bool,
+    beta_mask_post_e: bool,
+) -> np.ndarray:
+    phase1_fixed = {**fixed_scalar_params, **warm_start_fixed_scalars}
+    phase1_theta, _, _ = fit_mple(
+        x,
+        z,
+        x_0=x_0,
+        s=s,
+        param_names=param_names,
+        artifacts=artifacts,
+        interaction_effect_x=interaction_effect_x,
+        steps=warm_start_steps,
+        seed=seed,
+        verbose_every=verbose_every,
+        tol=tol,
+        logger=logger,
+        theta_init=theta_init,
+        fixed_scalar_params=phase1_fixed,
+        n_starts=1,
+        lambda_nuclear=lambda_nuclear,
+        lambda_frobenius=lambda_frobenius,
+        lambda_uv_ridge=lambda_uv_ridge,
+        proximal_lr=proximal_lr,
+        e=e,
+        beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
+    )
+    theta_parts = unpack_theta(phase1_theta, artifacts, fixed_scalar_params=phase1_fixed)
+    return pack_theta(theta_parts, artifacts, fixed_scalar_params=fixed_scalar_params)
+
+
 def fit_mple(
     x: np.ndarray,
     z: np.ndarray,
@@ -1724,6 +1777,8 @@ def fit_mple(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    warm_start_fixed_scalars: dict[str, float] | None = None,
+    warm_start_steps: int = 0,
 ):
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
@@ -1731,6 +1786,33 @@ def fit_mple(
     t_steps = x.shape[0]
     if t_steps != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
+
+    if warm_start_fixed_scalars and int(warm_start_steps) > 0:
+        theta_init = _apply_warm_start(
+            x,
+            z,
+            x_0,
+            s,
+            param_names,
+            artifacts,
+            interaction_effect_x,
+            int(warm_start_steps),
+            seed,
+            verbose_every,
+            tol,
+            logger,
+            theta_init,
+            validate_fixed_scalar_params(fixed_scalar_params),
+            validate_fixed_scalar_params(warm_start_fixed_scalars),
+            lambda_nuclear,
+            lambda_frobenius,
+            lambda_uv_ridge,
+            proximal_lr,
+            e,
+            beta_mask_pre_s,
+            beta_mask_post_e,
+        )
+
     if artifacts.optimizer_mode == OPTIMIZER_MODE_NO_EXTERNAL_FIELD:
         theta_hat, history, result = _fit_zero_rank_unconstrained(
             x,
@@ -2224,6 +2306,21 @@ def main() -> None:
         if "estimation_params" in config
         else False
     )
+    warm_start_fixed_scalars = validate_fixed_scalar_params(
+        (
+            OmegaConf.to_container(
+                config.estimation_params.get("warm_start_fixed_scalars", {}),
+                resolve=True,
+            )
+            if "estimation_params" in config
+            else {}
+        )
+    )
+    warm_start_steps = int(
+        config.estimation_params.get("warm_start_steps", 0)
+        if "estimation_params" in config
+        else 0
+    )
     lambda_nuclear = float(config.global_params.get("lambda_nuclear", 0.0))
     lambda_frobenius = float(config.global_params.get("lambda_frobenius", 0.0))
     lambda_uv_ridge = float(config.global_params.get("lambda_uv_ridge", 0.0))
@@ -2266,6 +2363,7 @@ def main() -> None:
     logger.info("Using a fixed known graph with scalar xi.")
     logger.info("Fit-time hard bounds active: False")
     logger.info("Fixed scalar parameters: %s", fixed_scalar_params or {})
+    logger.info("Warm-start fixed scalars: %s for %s steps", warm_start_fixed_scalars or {}, warm_start_steps)
     logger.info("Beta mask before s: %s with s=%s", beta_mask_pre_s, config.global_params.s)
     logger.info("Beta mask after e: %s with e=%s", beta_mask_post_e, config.global_params.e)
     logger.info(
@@ -2302,6 +2400,8 @@ def main() -> None:
         e=int(config.global_params.get("e", x.shape[0])),
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
+        warm_start_fixed_scalars=warm_start_fixed_scalars,
+        warm_start_steps=warm_start_steps,
     )
 
     logger.info("Done fitting.")
