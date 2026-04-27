@@ -2266,8 +2266,8 @@ def main() -> None:
     logger.info("Using a fixed known graph with scalar xi.")
     logger.info("Fit-time hard bounds active: False")
     logger.info("Fixed scalar parameters: %s", fixed_scalar_params or {})
-    logger.info("Beta mask before s: %s", beta_mask_pre_s)
-    logger.info("Beta mask after e: %s", beta_mask_post_e)
+    logger.info("Beta mask before s: %s with s=%s", beta_mask_pre_s, config.global_params.s)
+    logger.info("Beta mask after e: %s with e=%s", beta_mask_post_e, config.global_params.e)
     logger.info(
         "Optimizer settings: steps=%s, tol=%s, n_starts=%s, seed=%s, "
         "lambda_nuclear=%s, lambda_frobenius=%s, lambda_uv_ridge=%s, proximal_lr=%s",
