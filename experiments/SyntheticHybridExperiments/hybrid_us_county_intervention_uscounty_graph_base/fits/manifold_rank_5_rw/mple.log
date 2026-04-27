@@ -1,0 +1,83 @@
+2026-04-27 12:50:31 | INFO | Loading data...
+2026-04-27 12:50:31 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_base/panel_data.npz
+2026-04-27 12:50:31 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_base/x_0.npy
+2026-04-27 12:50:31 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_base/fits/manifold_rank_5_rw/fit_realized_config.yaml
+2026-04-27 12:50:31 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_base
+2026-04-27 12:50:31 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_base
+2026-04-27 12:50:31 | INFO | Configured optimizer mode: exact_rank_manifold
+2026-04-27 12:50:31 | INFO | Configured latent rank: 5
+2026-04-27 12:50:31 | INFO | Using a fixed known graph with scalar xi.
+2026-04-27 12:50:31 | INFO | Fit-time hard bounds active: False
+2026-04-27 12:50:31 | INFO | Fixed scalar parameters: {}
+2026-04-27 12:50:31 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-27 12:50:31 | INFO | Beta mask before s: False with s=55
+2026-04-27 12:50:31 | INFO | Beta mask after e: False with e=120
+2026-04-27 12:50:31 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.1, lambda_uv_ridge=0.0, proximal_lr=1.0
+2026-04-27 12:50:31 | INFO | Pymanopt start 1/1 | seed=0 | initialization=random | initial_loss=0.770161 | initial_penalized=0.770162
+2026-04-27 12:50:32 | INFO | Pymanopt eval 0 | Loss: 0.770161 | Penalized: 0.770162
+2026-04-27 12:50:34 | INFO | Pymanopt eval 100 | Loss: 0.513988 | Penalized: 0.514014
+2026-04-27 12:50:37 | INFO | Pymanopt eval 200 | Loss: 0.503285 | Penalized: 0.504367
+2026-04-27 12:50:40 | INFO | Pymanopt eval 300 | Loss: 0.496297 | Penalized: 0.498518
+2026-04-27 12:50:43 | INFO | Pymanopt eval 400 | Loss: 0.495981 | Penalized: 0.498253
+2026-04-27 12:50:46 | INFO | Pymanopt eval 500 | Loss: 0.495073 | Penalized: 0.497582
+2026-04-27 12:50:48 | INFO | Pymanopt eval 600 | Loss: 0.495067 | Penalized: 0.497577
+2026-04-27 12:50:51 | INFO | Pymanopt eval 700 | Loss: 0.493905 | Penalized: 0.496725
+2026-04-27 12:50:54 | INFO | Pymanopt eval 800 | Loss: 0.493845 | Penalized: 0.496668
+2026-04-27 12:50:57 | INFO | Pymanopt eval 900 | Loss: 0.493825 | Penalized: 0.496647
+2026-04-27 12:51:00 | INFO | Pymanopt eval 1000 | Loss: 0.493818 | Penalized: 0.496641
+2026-04-27 12:51:02 | INFO | Pymanopt eval 1100 | Loss: 0.492833 | Penalized: 0.495835
+2026-04-27 12:51:05 | INFO | Pymanopt eval 1200 | Loss: 0.492392 | Penalized: 0.495409
+2026-04-27 12:51:08 | INFO | Pymanopt eval 1300 | Loss: 0.492378 | Penalized: 0.495397
+2026-04-27 12:51:11 | INFO | Pymanopt eval 1400 | Loss: 0.492375 | Penalized: 0.495393
+2026-04-27 12:51:13 | INFO | Pymanopt eval 1500 | Loss: 0.491267 | Penalized: 0.494566
+2026-04-27 12:51:16 | INFO | Pymanopt eval 1600 | Loss: 0.491085 | Penalized: 0.494346
+2026-04-27 12:51:19 | INFO | Pymanopt eval 1700 | Loss: 0.491085 | Penalized: 0.494345
+2026-04-27 12:51:22 | INFO | Pymanopt eval 1800 | Loss: 0.490471 | Penalized: 0.493802
+2026-04-27 12:51:24 | INFO | Pymanopt eval 1900 | Loss: 0.490440 | Penalized: 0.493770
+2026-04-27 12:51:27 | INFO | Pymanopt eval 2000 | Loss: 0.490423 | Penalized: 0.493752
+2026-04-27 12:51:30 | INFO | Pymanopt eval 2100 | Loss: 0.490220 | Penalized: 0.493561
+2026-04-27 12:51:33 | INFO | Pymanopt eval 2200 | Loss: 0.490164 | Penalized: 0.493505
+2026-04-27 12:51:35 | INFO | Pymanopt eval 2300 | Loss: 0.490161 | Penalized: 0.493501
+2026-04-27 12:51:38 | INFO | Pymanopt eval 2400 | Loss: 0.490095 | Penalized: 0.493439
+2026-04-27 12:51:41 | INFO | Pymanopt eval 2500 | Loss: 0.490091 | Penalized: 0.493435
+2026-04-27 12:51:43 | INFO | Pymanopt eval 2600 | Loss: 0.490067 | Penalized: 0.493413
+2026-04-27 12:51:46 | INFO | Pymanopt eval 2700 | Loss: 0.490006 | Penalized: 0.493359
+2026-04-27 12:51:49 | INFO | Pymanopt eval 2800 | Loss: 0.489126 | Penalized: 0.492898
+2026-04-27 12:51:52 | INFO | Pymanopt eval 2900 | Loss: 0.489124 | Penalized: 0.492893
+2026-04-27 12:51:55 | INFO | Pymanopt eval 3000 | Loss: 0.489174 | Penalized: 0.492850
+2026-04-27 12:51:57 | INFO | Pymanopt eval 3100 | Loss: 0.489184 | Penalized: 0.492842
+2026-04-27 12:52:00 | INFO | Pymanopt eval 3200 | Loss: 0.489246 | Penalized: 0.492799
+2026-04-27 12:52:03 | INFO | Pymanopt eval 3300 | Loss: 0.489249 | Penalized: 0.492795
+2026-04-27 12:52:06 | INFO | Pymanopt eval 3400 | Loss: 0.489368 | Penalized: 0.492645
+2026-04-27 12:52:09 | INFO | Pymanopt eval 3500 | Loss: 0.489367 | Penalized: 0.492644
+2026-04-27 12:52:11 | INFO | Pymanopt eval 3600 | Loss: 0.489248 | Penalized: 0.492627
+2026-04-27 12:52:14 | INFO | Pymanopt eval 3700 | Loss: 0.489175 | Penalized: 0.492594
+2026-04-27 12:52:17 | INFO | Pymanopt eval 3800 | Loss: 0.489080 | Penalized: 0.492558
+2026-04-27 12:52:20 | INFO | Pymanopt eval 3900 | Loss: 0.488920 | Penalized: 0.492459
+2026-04-27 12:52:21 | INFO | Pymanopt start 1/1 complete | final_loss=0.488907 | penalized=0.492448 | status=Terminated - min grad norm reached after 1398 iterations, 109.22 seconds.
+2026-04-27 12:52:21 | INFO | Done fitting.
+2026-04-27 12:52:21 | INFO | Optimizer status: Terminated - min grad norm reached after 1398 iterations, 109.22 seconds. | best_start=1/1
+2026-04-27 12:52:21 | INFO | Best optimizer start: 1 / 1
+2026-04-27 12:52:21 | INFO | Final Loss: 0.488907
+2026-04-27 12:52:21 | INFO | Estimated vs True Parameters:
+2026-04-27 12:52:21 | INFO |   beta: -0.3104 (True: -0.3000) | SQE: 0.000108
+2026-04-27 12:52:21 | INFO |   xi: 0.8958 (True: 0.8000) | SQE: 0.009181
+2026-04-27 12:52:21 | INFO |   eta: 0.3093 (True: 0.3000) | SQE: 0.000087
+2026-04-27 12:52:21 | INFO | Low-rank Frobenius optimizer diagnostics:
+2026-04-27 12:52:21 | INFO |   penalized_objective: 0.492448
+2026-04-27 12:52:21 | INFO |   mple_loss_without_penalty: 0.488907
+2026-04-27 12:52:21 | INFO |   lambda_frobenius: 0.100000
+2026-04-27 12:52:21 | INFO |   frobenius_norm: 159.908323
+2026-04-27 12:52:21 | INFO |   normalized_frobenius_norm: 0.266115
+2026-04-27 12:52:21 | INFO |   squared_normalized_frobenius_norm: 0.070817
+2026-04-27 12:52:21 | INFO |   frobenius_norm_normalizer: 600.899326
+2026-04-27 12:52:21 | INFO |   frobenius_penalty_normalizer: 361080.000000
+2026-04-27 12:52:21 | INFO | Field and interaction diagnostics:
+2026-04-27 12:52:21 | INFO |   field_rmse: 0.266115
+2026-04-27 12:52:21 | INFO |   interaction_fro_error: 0.904875
+2026-04-27 12:52:21 | INFO |   estimated_field_max_abs_entry: 2.573146
+2026-04-27 12:52:21 | INFO |   estimated_field_rank: 5.000000
+2026-04-27 12:52:21 | INFO |   true_field_max_abs_entry: 0.000000
+2026-04-27 12:52:21 | INFO |   true_field_rank: 0.000000
+2026-04-27 12:52:21 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_base/fits/manifold_rank_5_rw/mple_summary.csv
+2026-04-27 12:52:21 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_base/fits/manifold_rank_5_rw/mple.log

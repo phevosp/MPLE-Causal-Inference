@@ -1,0 +1,43 @@
+2026-04-27 12:33:36 | INFO | Loading data...
+2026-04-27 12:33:36 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/panel_data.npz
+2026-04-27 12:33:36 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/x_0.npy
+2026-04-27 12:33:36 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/fits/concurrent_rank_5_ws_xi_zero/fit_realized_config.yaml
+2026-04-27 12:33:36 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+2026-04-27 12:33:36 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+2026-04-27 12:33:36 | INFO | Configured optimizer mode: concurrent_latent_rank
+2026-04-27 12:33:36 | INFO | Configured latent rank: 5
+2026-04-27 12:33:36 | INFO | Using a fixed known graph with scalar xi.
+2026-04-27 12:33:36 | INFO | Fit-time hard bounds active: False
+2026-04-27 12:33:36 | INFO | Fixed scalar parameters: {}
+2026-04-27 12:33:36 | INFO | Warm-start fixed scalars: {'xi': 0.0} for 5000 steps
+2026-04-27 12:33:36 | INFO | Beta mask before s: False with s=55
+2026-04-27 12:33:36 | INFO | Beta mask after e: False with e=120
+2026-04-27 12:33:36 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=14.0, proximal_lr=1.0
+2026-04-27 12:33:36 | INFO | Concurrent low-rank start 1/1 | seed=0 | initial_loss=0.772778 | initial_penalized=0.778818
+2026-04-27 12:33:49 | INFO | Concurrent low-rank start 1 finished | final_loss=0.532139 | final_penalized=0.558015 | nit=734
+2026-04-27 12:33:50 | INFO | Concurrent low-rank start 1/1 | seed=0 | initial_loss=0.532139 | initial_penalized=0.558015
+2026-04-27 12:33:53 | INFO | Concurrent low-rank start 1 finished | final_loss=0.525108 | final_penalized=0.546072 | nit=188
+2026-04-27 12:33:53 | INFO | Done fitting.
+2026-04-27 12:33:53 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-27 12:33:53 | INFO | Best optimizer start: 1 / 1
+2026-04-27 12:33:53 | INFO | Final Loss: 0.525108
+2026-04-27 12:33:53 | INFO | Estimated vs True Parameters:
+2026-04-27 12:33:53 | INFO |   beta: -0.2129 (True: -0.3000) | SQE: 0.007589
+2026-04-27 12:33:53 | INFO |   xi: 1.0255 (True: 0.8000) | SQE: 0.050828
+2026-04-27 12:33:53 | INFO |   eta: 0.2896 (True: 0.3000) | SQE: 0.000109
+2026-04-27 12:33:53 | INFO | Concurrent low-rank optimizer diagnostics:
+2026-04-27 12:33:53 | INFO |   penalized_objective: 0.546072
+2026-04-27 12:33:53 | INFO |   mple_loss_without_penalty: 0.525108
+2026-04-27 12:33:53 | INFO |   lambda_uv_ridge: 14.000000
+2026-04-27 12:33:53 | INFO |   u_frobenius_norm: 16.445841
+2026-04-27 12:33:53 | INFO |   v_frobenius_norm: 16.438000
+2026-04-27 12:33:53 | INFO |   effective_rank: 5.000000
+2026-04-27 12:33:53 | INFO | Field and interaction diagnostics:
+2026-04-27 12:33:53 | INFO |   field_rmse: 0.347867
+2026-04-27 12:33:53 | INFO |   interaction_fro_error: 2.129095
+2026-04-27 12:33:53 | INFO |   estimated_field_max_abs_entry: 1.289526
+2026-04-27 12:33:53 | INFO |   estimated_field_rank: 5.000000
+2026-04-27 12:33:53 | INFO |   true_field_max_abs_entry: 2.000000
+2026-04-27 12:33:53 | INFO |   true_field_rank: 21.000000
+2026-04-27 12:33:53 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/fits/concurrent_rank_5_ws_xi_zero/mple_summary.csv
+2026-04-27 12:33:53 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/fits/concurrent_rank_5_ws_xi_zero/mple.log

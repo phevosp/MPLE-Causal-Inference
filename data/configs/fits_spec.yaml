@@ -14,73 +14,123 @@ base:
   lambda_uv_ridge: 0.0
   estimation:
     fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
-    warm_start_fixed_scalars: # scalars additionally fixed during warm start only
-      xi: 0.0  
-    warm_start_steps: 5000  # 0 = no warm start
     beta_mask_pre_s: false
     beta_mask_post_e: false
 
 variants:
-  - name: nuclear_lambda_6e_2_ws_xi_zero
-    optimizer_mode: nuclear_norm
-    lambda_nuclear: 0.06
-
-  - name: nuclear_lambda_8e_2_ws_xi_zero
-    optimizer_mode: nuclear_norm
-    lambda_nuclear: 0.08
-
-  - name: nuclear_lambda_1e_1_ws_xi_zero
-    optimizer_mode: nuclear_norm
-    lambda_nuclear: 0.1
-
-  - name: nuclear_lambda_12e_2_ws_xi_zero
-    optimizer_mode: nuclear_norm
-    lambda_nuclear: 0.12
-
-  - name: manifold_rank_2_ws_xi_zero
+  - name: manifold_rank_2_rw
     optimizer_mode: exact_rank_manifold
     latent_rank: 2
+    lambda_frobenius: 0.05
+
+  - name: manifold_rank_5_rw
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 5
     lambda_frobenius: 0.1
 
-  - name: manifold_rank_5_ws_xi_zero
-    optimizer_mode: exact_rank_manifold
-    latent_rank: 5
-    lambda_frobenius: 0.3
-
-  - name: manifold_rank_10_ws_xi_zero
+  - name: manifold_rank_10_rw
     optimizer_mode: exact_rank_manifold
     latent_rank: 10
-    lambda_frobenius: 0.5
+    lambda_frobenius: 0.1
 
-  - name: alternating_rank_10_ws_xi_zero
+  - name: alternating_rank_10_rw
     optimizer_mode: alternating_latent_rank
     latent_rank: 10
-    lambda_uv_ridge: 18
+    lambda_uv_ridge: 9
 
-  - name: alternating_rank_5_ws_xi_zero
+  - name: alternating_rank_5_rw
     optimizer_mode: alternating_latent_rank
     latent_rank: 5
-    lambda_uv_ridge: 14
+    lambda_uv_ridge: 7
 
-  - name: alternating_rank_2_ws_xi_zero
+  - name: alternating_rank_2_rw
     optimizer_mode: alternating_latent_rank
     latent_rank: 2
-    lambda_uv_ridge: 10
+    lambda_uv_ridge: 5
 
-  - name: concurrent_rank_10_ws_xi_zero
+  - name: concurrent_rank_10_rw
     optimizer_mode: concurrent_latent_rank
     latent_rank: 10
-    lambda_uv_ridge: 18
+    lambda_uv_ridge: 9
 
-  - name: concurrent_rank_2_ws_xi_zero
+  - name: concurrent_rank_2_rw
     optimizer_mode: concurrent_latent_rank
     latent_rank: 2
-    lambda_uv_ridge: 10
+    lambda_uv_ridge: 5
 
-  - name: concurrent_rank_5_ws_xi_zero
+  - name: concurrent_rank_5_rw
     optimizer_mode: concurrent_latent_rank
     latent_rank: 5
-    lambda_uv_ridge: 14
+    lambda_uv_ridge: 7
 
-  - name: zero_external_field_ws_xi_zero
-    optimizer_mode: no_external_field
+  - name: manifold_rank_2_rw_fixed_beta
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 2
+    lambda_frobenius: 0.05
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: manifold_rank_5_rw_fixed_beta
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 5
+    lambda_frobenius: 0.1
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: manifold_rank_10_rw_fixed_beta
+    optimizer_mode: exact_rank_manifold
+    latent_rank: 10
+    lambda_frobenius: 0.1
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: alternating_rank_10_rw_fixed_beta
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 9
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: alternating_rank_5_rw_fixed_beta
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 7
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: alternating_rank_2_rw_fixed_beta
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 2
+    lambda_uv_ridge: 5
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: concurrent_rank_10_rw_fixed_beta
+    optimizer_mode: concurrent_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 9
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: concurrent_rank_2_rw_fixed_beta
+    optimizer_mode: concurrent_latent_rank
+    latent_rank: 2
+    lambda_uv_ridge: 5
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
+
+  - name: concurrent_rank_5_rw_fixed_beta
+    optimizer_mode: concurrent_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 7
+    estimation:
+      fixed_scalar_params:
+        beta: -0.3
