@@ -292,6 +292,8 @@ Unified outputs:
 
 Counterfactual rows are included in the unified `posterior_predictive_manifest.csv`, but they do not write `posterior_predictive_stats.csv` and are excluded from posterior-predictive ranking.
 
+Saved-intervention `intervention_summaries/<intervention_slug>.csv` files now include truth-referenced counterfactual comparison columns when a matching `truth` row exists for the same run. These reports compare overall, post-intervention, and unit-level mean magnetization summaries against the saved truth row, but they do not report time-level errors because current counterfactual artifacts do not store per-time summaries.
+
 Example counterfactual target-pairs file:
 
 ```csv

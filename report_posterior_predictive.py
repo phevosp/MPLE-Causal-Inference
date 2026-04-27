@@ -7,6 +7,7 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 from omegaconf import OmegaConf
 
 from io_utils import _as_float, _metric_or_inf, write_csv
@@ -106,6 +107,47 @@ INTERVENTION_SUMMARY_COLUMNS = [
     "post_intervention_mean_magnetization_q025",
     "post_intervention_mean_magnetization_q500",
     "post_intervention_mean_magnetization_q975",
+    "truth_overall_mean_magnetization_abs_error",
+    "truth_post_intervention_mean_magnetization_abs_error",
+    "truth_overall_mean_in_95_interval",
+    "truth_post_intervention_mean_in_95_interval",
+    "truth_unit_mean_abs_error_mean",
+    "truth_unit_mean_squared_error_mean",
+    "truth_unit_mean_rmse",
+    "truth_unit_mean_max_abs_error",
+    "truth_unit_mean_correlation",
+    "truth_unit_mean_95_interval_coverage_rate",
+    "truth_rank_in_run",
+    "truth_is_best",
+]
+
+_INTERVENTION_METRIC_COLUMNS = [
+    "overall_mean_magnetization_mean",
+    "overall_mean_magnetization_std",
+    "overall_mean_magnetization_q025",
+    "overall_mean_magnetization_q500",
+    "overall_mean_magnetization_q975",
+    "post_intervention_mean_magnetization_mean",
+    "post_intervention_mean_magnetization_std",
+    "post_intervention_mean_magnetization_q025",
+    "post_intervention_mean_magnetization_q500",
+    "post_intervention_mean_magnetization_q975",
+]
+_TRUTH_COMPARISON_COLUMNS = [
+    "truth_overall_mean_magnetization_abs_error",
+    "truth_post_intervention_mean_magnetization_abs_error",
+    "truth_overall_mean_in_95_interval",
+    "truth_post_intervention_mean_in_95_interval",
+    "truth_unit_mean_abs_error_mean",
+    "truth_unit_mean_squared_error_mean",
+    "truth_unit_mean_rmse",
+    "truth_unit_mean_max_abs_error",
+    "truth_unit_mean_correlation",
+    "truth_unit_mean_95_interval_coverage_rate",
+]
+_TRUTH_RANKING_COLUMNS = [
+    "truth_rank_in_run",
+    "truth_is_best",
 ]
 
 
@@ -209,7 +251,7 @@ def _read_magnetization_stats(
         csv_path = output_path / "counterfactual_summary.csv"
 
     if not csv_path.exists():
-        return {col: None for col in INTERVENTION_SUMMARY_COLUMNS if "_" in col and col not in ("source_type", "source_name", "source_slug", "run_name", "run_slug", "num_samples", "gibbs_sweeps", "s")}
+        return {col: None for col in _INTERVENTION_METRIC_COLUMNS}
 
     stats: dict[str, float | None] = {}
     with csv_path.open("r", encoding="utf-8", newline="") as handle:
@@ -229,17 +271,248 @@ def _read_magnetization_stats(
                 stats["post_intervention_mean_magnetization_q500"] = _as_float(row.get("q500"))
                 stats["post_intervention_mean_magnetization_q975"] = _as_float(row.get("q975"))
 
-    for col in INTERVENTION_SUMMARY_COLUMNS:
-        if "_" in col and col not in ("source_type", "source_name", "source_slug", "run_name", "run_slug", "num_samples", "gibbs_sweeps", "s"):
-            if col not in stats:
-                stats[col] = None
+    for col in _INTERVENTION_METRIC_COLUMNS:
+        if col not in stats:
+            stats[col] = None
     return stats
+
+
+def _read_counterfactual_unit_summary(
+    output_path: Path,
+    intervention_source: str,
+) -> dict[str, np.ndarray | None]:
+    if intervention_source == "observed_experiment":
+        return {
+            "unit_mean_sample_mean": None,
+            "unit_mean_q025": None,
+            "unit_mean_q975": None,
+        }
+    csv_path = output_path / "counterfactual_unit_summary.csv"
+    if not csv_path.exists():
+        return {
+            "unit_mean_sample_mean": None,
+            "unit_mean_q025": None,
+            "unit_mean_q975": None,
+        }
+
+    sample_means: list[float] = []
+    q025_values: list[float] = []
+    q975_values: list[float] = []
+    with csv_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            sample_mean = _as_float(row.get("sample_mean"))
+            q025 = _as_float(row.get("q025"))
+            q975 = _as_float(row.get("q975"))
+            sample_means.append(np.nan if sample_mean is None else float(sample_mean))
+            q025_values.append(np.nan if q025 is None else float(q025))
+            q975_values.append(np.nan if q975 is None else float(q975))
+    return {
+        "unit_mean_sample_mean": np.asarray(sample_means, dtype=float),
+        "unit_mean_q025": np.asarray(q025_values, dtype=float),
+        "unit_mean_q975": np.asarray(q975_values, dtype=float),
+    }
+
+
+def _blank_truth_metrics() -> dict[str, object]:
+    return {column: "" for column in [*_TRUTH_COMPARISON_COLUMNS, *_TRUTH_RANKING_COLUMNS]}
+
+
+def _interval_contains(
+    value: object,
+    lower: object,
+    upper: object,
+) -> float | None:
+    parsed_value = _as_float(value)
+    parsed_lower = _as_float(lower)
+    parsed_upper = _as_float(upper)
+    if parsed_value is None or parsed_lower is None or parsed_upper is None:
+        return None
+    return float(parsed_lower <= parsed_value <= parsed_upper)
+
+
+def _safe_correlation(
+    left: np.ndarray,
+    right: np.ndarray,
+) -> float | None:
+    left = np.asarray(left, dtype=float)
+    right = np.asarray(right, dtype=float)
+    valid = np.isfinite(left) & np.isfinite(right)
+    if not np.any(valid):
+        return None
+    left_valid = left[valid]
+    right_valid = right[valid]
+    left_centered = left_valid - float(np.mean(left_valid))
+    right_centered = right_valid - float(np.mean(right_valid))
+    left_scale = float(np.linalg.norm(left_centered))
+    right_scale = float(np.linalg.norm(right_centered))
+    if left_scale < 1e-12 or right_scale < 1e-12:
+        return 1.0 if np.allclose(left_valid, right_valid, atol=1e-12, rtol=0.0) else 0.0
+    return float((left_centered @ right_centered) / (left_scale * right_scale))
+
+
+def _compute_truth_metrics(
+    candidate_row: dict[str, object],
+    truth_row: dict[str, object],
+) -> dict[str, object]:
+    metrics: dict[str, object] = {
+        "truth_overall_mean_magnetization_abs_error": None,
+        "truth_post_intervention_mean_magnetization_abs_error": None,
+        "truth_overall_mean_in_95_interval": None,
+        "truth_post_intervention_mean_in_95_interval": None,
+        "truth_unit_mean_abs_error_mean": None,
+        "truth_unit_mean_squared_error_mean": None,
+        "truth_unit_mean_rmse": None,
+        "truth_unit_mean_max_abs_error": None,
+        "truth_unit_mean_correlation": None,
+        "truth_unit_mean_95_interval_coverage_rate": None,
+    }
+    overall_mean = _as_float(candidate_row.get("overall_mean_magnetization_mean"))
+    truth_overall_mean = _as_float(truth_row.get("overall_mean_magnetization_mean"))
+    if overall_mean is not None and truth_overall_mean is not None:
+        metrics["truth_overall_mean_magnetization_abs_error"] = abs(
+            overall_mean - truth_overall_mean
+        )
+    metrics["truth_overall_mean_in_95_interval"] = _interval_contains(
+        truth_row.get("overall_mean_magnetization_mean"),
+        candidate_row.get("overall_mean_magnetization_q025"),
+        candidate_row.get("overall_mean_magnetization_q975"),
+    )
+
+    post_mean = _as_float(candidate_row.get("post_intervention_mean_magnetization_mean"))
+    truth_post_mean = _as_float(truth_row.get("post_intervention_mean_magnetization_mean"))
+    if post_mean is not None and truth_post_mean is not None:
+        metrics["truth_post_intervention_mean_magnetization_abs_error"] = abs(
+            post_mean - truth_post_mean
+        )
+    metrics["truth_post_intervention_mean_in_95_interval"] = _interval_contains(
+        truth_row.get("post_intervention_mean_magnetization_mean"),
+        candidate_row.get("post_intervention_mean_magnetization_q025"),
+        candidate_row.get("post_intervention_mean_magnetization_q975"),
+    )
+
+    candidate_unit_means = candidate_row.get("unit_mean_sample_mean")
+    truth_unit_means = truth_row.get("unit_mean_sample_mean")
+    if (
+        isinstance(candidate_unit_means, np.ndarray)
+        and isinstance(truth_unit_means, np.ndarray)
+        and candidate_unit_means.shape == truth_unit_means.shape
+    ):
+        valid = np.isfinite(candidate_unit_means) & np.isfinite(truth_unit_means)
+        if np.any(valid):
+            abs_errors = np.abs(candidate_unit_means[valid] - truth_unit_means[valid])
+            squared_errors = abs_errors**2
+            metrics["truth_unit_mean_abs_error_mean"] = float(np.mean(abs_errors))
+            metrics["truth_unit_mean_squared_error_mean"] = float(np.mean(squared_errors))
+            metrics["truth_unit_mean_rmse"] = float(np.sqrt(np.mean(squared_errors)))
+            metrics["truth_unit_mean_max_abs_error"] = float(np.max(abs_errors))
+            metrics["truth_unit_mean_correlation"] = _safe_correlation(
+                candidate_unit_means[valid],
+                truth_unit_means[valid],
+            )
+
+    candidate_q025 = candidate_row.get("unit_mean_q025")
+    candidate_q975 = candidate_row.get("unit_mean_q975")
+    if (
+        isinstance(candidate_q025, np.ndarray)
+        and isinstance(candidate_q975, np.ndarray)
+        and isinstance(truth_unit_means, np.ndarray)
+        and candidate_q025.shape == candidate_q975.shape == truth_unit_means.shape
+    ):
+        valid = (
+            np.isfinite(candidate_q025)
+            & np.isfinite(candidate_q975)
+            & np.isfinite(truth_unit_means)
+        )
+        if np.any(valid):
+            covered = (
+                (candidate_q025[valid] <= truth_unit_means[valid])
+                & (truth_unit_means[valid] <= candidate_q975[valid])
+            )
+            metrics["truth_unit_mean_95_interval_coverage_rate"] = float(
+                np.mean(covered)
+            )
+    return metrics
+
+
+def _truth_row_self_metrics(truth_row: dict[str, object]) -> dict[str, object]:
+    metrics: dict[str, object] = {
+        "truth_overall_mean_magnetization_abs_error": 0.0,
+        "truth_post_intervention_mean_magnetization_abs_error": None,
+        "truth_overall_mean_in_95_interval": None,
+        "truth_post_intervention_mean_in_95_interval": None,
+        "truth_unit_mean_abs_error_mean": None,
+        "truth_unit_mean_squared_error_mean": None,
+        "truth_unit_mean_rmse": None,
+        "truth_unit_mean_max_abs_error": None,
+        "truth_unit_mean_correlation": None,
+        "truth_unit_mean_95_interval_coverage_rate": None,
+    }
+    if _as_float(truth_row.get("overall_mean_magnetization_mean")) is not None:
+        metrics["truth_overall_mean_in_95_interval"] = 1.0
+    if _as_float(truth_row.get("post_intervention_mean_magnetization_mean")) is not None:
+        metrics["truth_post_intervention_mean_magnetization_abs_error"] = 0.0
+        metrics["truth_post_intervention_mean_in_95_interval"] = 1.0
+    truth_unit_means = truth_row.get("unit_mean_sample_mean")
+    if isinstance(truth_unit_means, np.ndarray) and np.isfinite(truth_unit_means).any():
+        metrics["truth_unit_mean_abs_error_mean"] = 0.0
+        metrics["truth_unit_mean_squared_error_mean"] = 0.0
+        metrics["truth_unit_mean_rmse"] = 0.0
+        metrics["truth_unit_mean_max_abs_error"] = 0.0
+        metrics["truth_unit_mean_correlation"] = 1.0
+        metrics["truth_unit_mean_95_interval_coverage_rate"] = 1.0
+    return metrics
+
+
+def _truth_ranking_key(row: dict[str, object]) -> tuple[float, float, float, float, str]:
+    return (
+        _metric_or_inf(row.get("truth_unit_mean_squared_error_mean")),
+        _metric_or_inf(row.get("truth_unit_mean_max_abs_error")),
+        _metric_or_inf(row.get("truth_overall_mean_magnetization_abs_error")),
+        _metric_or_inf(row.get("truth_post_intervention_mean_magnetization_abs_error")),
+        str(row.get("source_name", "")),
+    )
+
+
+def _apply_truth_metrics_and_ranking(
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    rows_by_run: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        rows_by_run[str(row.get("run_slug", ""))].append(row)
+
+    enriched_rows: list[dict[str, object]] = []
+    for _, run_rows in rows_by_run.items():
+        truth_rows = [row for row in run_rows if str(row.get("source_type", "")) == "truth"]
+        truth_row = truth_rows[0] if len(truth_rows) == 1 else None
+        can_compare = (
+            truth_row is not None
+            and str(truth_row.get("target_intervention_source", "")) == "saved_intervention"
+        )
+        comparable_rows: list[dict[str, object]] = []
+        for row in run_rows:
+            enriched = dict(row)
+            enriched.update(_blank_truth_metrics())
+            if can_compare:
+                if str(enriched.get("source_type", "")) == "truth":
+                    enriched.update(_truth_row_self_metrics(enriched))
+                elif str(enriched.get("target_intervention_source", "")) == "saved_intervention":
+                    enriched.update(_compute_truth_metrics(enriched, truth_row))
+                    comparable_rows.append(enriched)
+            enriched_rows.append(enriched)
+        if comparable_rows:
+            ordered = sorted(comparable_rows, key=_truth_ranking_key)
+            for index, row in enumerate(ordered, start=1):
+                row["truth_rank_in_run"] = index
+                row["truth_is_best"] = index == 1
+    return enriched_rows
 
 
 def _build_intervention_row(manifest_row: dict[str, object]) -> dict[str, object]:
     output_path = Path(str(manifest_row.get("output_path", "")))
     intervention_source = str(manifest_row.get("target_intervention_source", ""))
     stats = _read_magnetization_stats(output_path, intervention_source)
+    unit_stats = _read_counterfactual_unit_summary(output_path, intervention_source)
     return {
         "source_type": manifest_row.get("source_type", ""),
         "source_name": manifest_row.get("source_name", ""),
@@ -249,7 +522,9 @@ def _build_intervention_row(manifest_row: dict[str, object]) -> dict[str, object
         "num_samples": manifest_row.get("num_samples", ""),
         "gibbs_sweeps": manifest_row.get("gibbs_sweeps", ""),
         "s": manifest_row.get("s", ""),
+        "target_intervention_source": intervention_source,
         **stats,
+        **unit_stats,
     }
 
 
@@ -304,6 +579,9 @@ def write_intervention_summaries(
     outputs: dict[str, dict[str, str]] = {}
     for slug, group_rows in grouped.items():
         built_rows = [_build_intervention_row(r) for r in group_rows]
+        # Time-level counterfactual error is intentionally unavailable here because
+        # current saved counterfactual artifacts do not store per-time summaries.
+        built_rows = _apply_truth_metrics_and_ranking(built_rows)
         csv_path = summary_dir / f"{slug}.csv"
         write_csv(csv_path, built_rows, INTERVENTION_SUMMARY_COLUMNS)
         outputs[slug] = {"csv": str(csv_path)}

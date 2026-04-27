@@ -92,6 +92,7 @@ from report_posterior_predictive import (
     collect_predictive_rows,
     group_and_rank_predictive_rows,
     refresh_and_write_posterior_predictive_reports,
+    write_intervention_summaries,
 )
 from report_parameter_recovery_detailed import (
     collect_fit_rows,
@@ -3287,6 +3288,149 @@ class PosteriorPredictiveTests(unittest.TestCase):
             writer.writerows(rows)
         return target_pairs_path
 
+    def _write_counterfactual_summary_outputs(
+        self,
+        output_root: Path,
+        *,
+        overall_mean: float | None,
+        overall_q025: float | None,
+        overall_q500: float | None,
+        overall_q975: float | None,
+        post_mean: float | None,
+        post_q025: float | None,
+        post_q500: float | None,
+        post_q975: float | None,
+        unit_means: list[float],
+        unit_q025: list[float],
+        unit_q975: list[float],
+    ) -> None:
+        output_root.mkdir(parents=True, exist_ok=True)
+        summary_rows = [
+            {
+                "statistic": "overall_mean_magnetization",
+                "sample_mean": overall_mean,
+                "sample_std": 0.0 if overall_mean is not None else "",
+                "q025": overall_q025,
+                "q500": overall_q500,
+                "q975": overall_q975,
+                "num_finite_samples": 4 if overall_mean is not None else 0,
+            },
+            {
+                "statistic": "post_intervention_mean_magnetization",
+                "sample_mean": post_mean,
+                "sample_std": 0.0 if post_mean is not None else "",
+                "q025": post_q025,
+                "q500": post_q500,
+                "q975": post_q975,
+                "num_finite_samples": 4 if post_mean is not None else 0,
+            },
+        ]
+        with (output_root / "counterfactual_summary.csv").open(
+            "w", encoding="utf-8", newline=""
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "statistic",
+                    "sample_mean",
+                    "sample_std",
+                    "q025",
+                    "q500",
+                    "q975",
+                    "num_finite_samples",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(summary_rows)
+
+        unit_rows = [
+            {
+                "unit_index": unit_index,
+                "sample_mean": mean,
+                "sample_std": 0.0,
+                "q025": q025,
+                "q500": mean,
+                "q975": q975,
+                "num_finite_samples": 4,
+            }
+            for unit_index, (mean, q025, q975) in enumerate(
+                zip(unit_means, unit_q025, unit_q975)
+            )
+        ]
+        with (output_root / "counterfactual_unit_summary.csv").open(
+            "w", encoding="utf-8", newline=""
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "unit_index",
+                    "sample_mean",
+                    "sample_std",
+                    "q025",
+                    "q500",
+                    "q975",
+                    "num_finite_samples",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(unit_rows)
+
+    def _write_predictive_stats_output(
+        self,
+        output_root: Path,
+        *,
+        overall_mean: float,
+        post_mean: float,
+    ) -> None:
+        output_root.mkdir(parents=True, exist_ok=True)
+        with (output_root / "posterior_predictive_stats.csv").open(
+            "w", encoding="utf-8", newline=""
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "statistic",
+                    "observed_value",
+                    "sample_mean",
+                    "sample_std",
+                    "z_score",
+                    "tail_probability",
+                    "q025",
+                    "q500",
+                    "q975",
+                    "in_95_interval",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(
+                [
+                    {
+                        "statistic": "overall_mean_magnetization",
+                        "observed_value": overall_mean,
+                        "sample_mean": overall_mean,
+                        "sample_std": 0.0,
+                        "z_score": 0.0,
+                        "tail_probability": 1.0,
+                        "q025": overall_mean,
+                        "q500": overall_mean,
+                        "q975": overall_mean,
+                        "in_95_interval": True,
+                    },
+                    {
+                        "statistic": "post_intervention_mean_magnetization",
+                        "observed_value": post_mean,
+                        "sample_mean": post_mean,
+                        "sample_std": 0.0,
+                        "z_score": 0.0,
+                        "tail_probability": 1.0,
+                        "q025": post_mean,
+                        "q500": post_mean,
+                        "q975": post_mean,
+                        "in_95_interval": True,
+                    },
+                ]
+            )
+
     def test_compute_panel_statistics_is_hand_checkable(self) -> None:
         x = np.ones((3, 2), dtype=float)
         z = np.array([[1.0, -1.0], [1.0, -1.0], [1.0, -1.0]], dtype=float)
@@ -3558,6 +3702,229 @@ class PosteriorPredictiveTests(unittest.TestCase):
         ranked = grouped[str((self.root / "exp_tie").resolve())]
         self.assertEqual(ranked[0]["source_name"], "variant_better_max")
         self.assertEqual(ranked[0]["rank_in_experiment"], 1)
+
+    def test_write_intervention_summaries_adds_truth_metrics_and_ranking(self) -> None:
+        experiment_root = self.root / "exp_counterfactual"
+        truth_root = (
+            experiment_root / "counterfactual" / "truth" / "all_zeros" / "default"
+        )
+        better_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_better"
+            / "all_zeros"
+            / "default"
+        )
+        worse_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_worse"
+            / "all_zeros"
+            / "default"
+        )
+        self._write_counterfactual_summary_outputs(
+            truth_root,
+            overall_mean=0.20,
+            overall_q025=0.15,
+            overall_q500=0.20,
+            overall_q975=0.25,
+            post_mean=0.55,
+            post_q025=0.45,
+            post_q500=0.55,
+            post_q975=0.65,
+            unit_means=[0.10, 0.60, -0.20],
+            unit_q025=[-0.05, 0.40, -0.35],
+            unit_q975=[0.25, 0.80, -0.05],
+        )
+        self._write_counterfactual_summary_outputs(
+            better_root,
+            overall_mean=0.23,
+            overall_q025=0.18,
+            overall_q500=0.23,
+            overall_q975=0.28,
+            post_mean=0.52,
+            post_q025=0.42,
+            post_q500=0.52,
+            post_q975=0.62,
+            unit_means=[0.12, 0.58, -0.18],
+            unit_q025=[-0.02, 0.38, -0.30],
+            unit_q975=[0.26, 0.78, -0.06],
+        )
+        self._write_counterfactual_summary_outputs(
+            worse_root,
+            overall_mean=0.38,
+            overall_q025=0.32,
+            overall_q500=0.38,
+            overall_q975=0.44,
+            post_mean=0.82,
+            post_q025=0.72,
+            post_q500=0.82,
+            post_q975=0.92,
+            unit_means=[0.75, -0.10, 0.35],
+            unit_q025=[0.55, -0.30, 0.15],
+            unit_q975=[0.95, 0.10, 0.55],
+        )
+
+        manifest_rows = [
+            {
+                "source_type": "truth",
+                "source_name": "truth",
+                "source_slug": "truth",
+                "run_name": "default",
+                "run_slug": "default",
+                "num_samples": 4,
+                "gibbs_sweeps": 1,
+                "s": 2,
+                "target_intervention_source": "saved_intervention",
+                "target_intervention_slug": "all_zeros",
+                "output_path": str(truth_root.resolve()),
+            },
+            {
+                "source_type": "fit",
+                "source_name": "better_fit",
+                "source_slug": "fit_better",
+                "run_name": "default",
+                "run_slug": "default",
+                "num_samples": 4,
+                "gibbs_sweeps": 1,
+                "s": 2,
+                "target_intervention_source": "saved_intervention",
+                "target_intervention_slug": "all_zeros",
+                "output_path": str(better_root.resolve()),
+            },
+            {
+                "source_type": "fit",
+                "source_name": "worse_fit",
+                "source_slug": "fit_worse",
+                "run_name": "default",
+                "run_slug": "default",
+                "num_samples": 4,
+                "gibbs_sweeps": 1,
+                "s": 2,
+                "target_intervention_source": "saved_intervention",
+                "target_intervention_slug": "all_zeros",
+                "output_path": str(worse_root.resolve()),
+            },
+        ]
+
+        write_intervention_summaries(experiment_root, manifest_rows)
+
+        summary_path = experiment_root / "intervention_summaries" / "all_zeros.csv"
+        with summary_path.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 3)
+        by_name = {row["source_name"]: row for row in rows}
+
+        self.assertIn("truth_unit_mean_squared_error_mean", rows[0])
+        self.assertNotIn("truth_time_mean_abs_error", rows[0])
+        self.assertEqual(float(by_name["truth"]["truth_unit_mean_squared_error_mean"]), 0.0)
+        self.assertEqual(float(by_name["truth"]["truth_overall_mean_magnetization_abs_error"]), 0.0)
+        self.assertEqual(by_name["truth"]["truth_rank_in_run"], "")
+        self.assertEqual(by_name["truth"]["truth_is_best"], "")
+
+        better_mse = float(by_name["better_fit"]["truth_unit_mean_squared_error_mean"])
+        worse_mse = float(by_name["worse_fit"]["truth_unit_mean_squared_error_mean"])
+        self.assertLess(better_mse, worse_mse)
+        self.assertEqual(by_name["better_fit"]["truth_rank_in_run"], "1")
+        self.assertEqual(by_name["better_fit"]["truth_is_best"], "True")
+        self.assertEqual(by_name["worse_fit"]["truth_rank_in_run"], "2")
+        self.assertEqual(by_name["worse_fit"]["truth_is_best"], "False")
+        self.assertGreater(
+            float(by_name["better_fit"]["truth_unit_mean_95_interval_coverage_rate"]),
+            float(by_name["worse_fit"]["truth_unit_mean_95_interval_coverage_rate"]),
+        )
+
+    def test_write_intervention_summaries_leaves_truth_metrics_blank_without_truth_row(
+        self,
+    ) -> None:
+        experiment_root = self.root / "exp_missing_truth"
+        fit_root = (
+            experiment_root / "counterfactual" / "fit_rank_0" / "all_zeros" / "default"
+        )
+        self._write_counterfactual_summary_outputs(
+            fit_root,
+            overall_mean=0.10,
+            overall_q025=0.05,
+            overall_q500=0.10,
+            overall_q975=0.15,
+            post_mean=0.20,
+            post_q025=0.10,
+            post_q500=0.20,
+            post_q975=0.30,
+            unit_means=[0.10, 0.20],
+            unit_q025=[0.0, 0.10],
+            unit_q975=[0.20, 0.30],
+        )
+
+        write_intervention_summaries(
+            experiment_root,
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_0",
+                    "source_slug": "fit_rank_0",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "num_samples": 4,
+                    "gibbs_sweeps": 1,
+                    "s": 1,
+                    "target_intervention_source": "saved_intervention",
+                    "target_intervention_slug": "all_zeros",
+                    "output_path": str(fit_root.resolve()),
+                }
+            ],
+        )
+
+        summary_path = experiment_root / "intervention_summaries" / "all_zeros.csv"
+        with summary_path.open("r", encoding="utf-8", newline="") as handle:
+            row = next(csv.DictReader(handle))
+        self.assertEqual(row["truth_unit_mean_squared_error_mean"], "")
+        self.assertEqual(row["truth_rank_in_run"], "")
+        self.assertEqual(row["truth_is_best"], "")
+
+    def test_write_intervention_summaries_keeps_observed_experiment_truth_fields_blank(
+        self,
+    ) -> None:
+        experiment_root = self.root / "exp_observed"
+        observed_root = (
+            experiment_root
+            / "posterior_predictive"
+            / "fit_rank_0"
+            / "default"
+        )
+        self._write_predictive_stats_output(
+            observed_root,
+            overall_mean=0.15,
+            post_mean=0.25,
+        )
+
+        write_intervention_summaries(
+            experiment_root,
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_0",
+                    "source_slug": "fit_rank_0",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "num_samples": 4,
+                    "gibbs_sweeps": 1,
+                    "s": 1,
+                    "target_intervention_source": "observed_experiment",
+                    "target_intervention_slug": "observed_experiment",
+                    "output_path": str(observed_root.resolve()),
+                }
+            ],
+        )
+
+        summary_path = (
+            experiment_root / "intervention_summaries" / "observed_experiment.csv"
+        )
+        with summary_path.open("r", encoding="utf-8", newline="") as handle:
+            row = next(csv.DictReader(handle))
+        self.assertEqual(row["overall_mean_magnetization_mean"], "0.15")
+        self.assertEqual(row["truth_unit_mean_squared_error_mean"], "")
+        self.assertEqual(row["truth_rank_in_run"], "")
 
     def test_target_pair_resolution_validates_truth_and_fit_rows(self) -> None:
         generation_manifest_path = self.root / "generation_manifest.csv"
