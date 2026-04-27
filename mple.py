@@ -2309,16 +2309,18 @@ def main() -> None:
     warm_start_fixed_scalars = validate_fixed_scalar_params(
         (
             OmegaConf.to_container(
-                config.estimation_params.get("warm_start_fixed_scalars", {}),
+                config.estimation_params.warm_start_fixed_scalars,
                 resolve=True,
             )
             if "estimation_params" in config
+            and "warm_start_fixed_scalars" in config.estimation_params
             else {}
         )
     )
     warm_start_steps = int(
-        config.estimation_params.get("warm_start_steps", 0)
+        config.estimation_params.warm_start_steps
         if "estimation_params" in config
+        and "warm_start_steps" in config.estimation_params
         else 0
     )
     lambda_nuclear = float(config.global_params.get("lambda_nuclear", 0.0))
