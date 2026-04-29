@@ -281,6 +281,46 @@ def sample_spectral_low_rank_structure(
     )
 
 
+def leading_svd_low_rank_structure(
+    matrix: np.ndarray,
+    rank: int,
+) -> SpectralLowRankStructure:
+    matrix = np.asarray(matrix, dtype=float)
+    if matrix.ndim != 2:
+        raise ValueError("matrix must have shape (T, N).")
+    rank = int(rank)
+    t_steps, n_nodes = matrix.shape
+    if rank < 0:
+        raise ValueError("rank must be nonnegative.")
+    if rank > min(t_steps, n_nodes):
+        raise ValueError(
+            f"rank={rank} exceeds min(T, N)={min(t_steps, n_nodes)} for SVD truncation."
+        )
+    if rank == 0:
+        return SpectralLowRankStructure(
+            node_factors=np.zeros((n_nodes, 0), dtype=float),
+            time_factors=np.zeros((t_steps, 0), dtype=float),
+            singular_values=np.zeros(0, dtype=float),
+            matrix=np.zeros_like(matrix, dtype=float),
+        )
+    time_factors, singular_values, node_factors_t = np.linalg.svd(
+        matrix,
+        full_matrices=False,
+    )
+    truncated_time_factors = np.asarray(time_factors[:, :rank], dtype=float)
+    truncated_singular_values = np.asarray(singular_values[:rank], dtype=float)
+    truncated_node_factors = np.asarray(node_factors_t[:rank, :].T, dtype=float)
+    truncated_matrix = (
+        truncated_time_factors * truncated_singular_values[None, :]
+    ) @ truncated_node_factors.T
+    return SpectralLowRankStructure(
+        node_factors=truncated_node_factors,
+        time_factors=truncated_time_factors,
+        singular_values=truncated_singular_values,
+        matrix=np.asarray(truncated_matrix, dtype=float),
+    )
+
+
 def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
     """Project field_matrix onto its best rank-r approximation via truncated SVD."""
     field_matrix = np.asarray(field_matrix, dtype=float)
@@ -380,7 +420,8 @@ def _sample_confounded_low_rank_field(
 ) -> tuple[np.ndarray, int]:
     if intervention_structure is None:
         raise ValueError(
-            "field_mode='confounded_low_rank' requires generated low-rank intervention factors."
+            "field_mode='confounded_low_rank' requires low-rank intervention factors, "
+            "either generated directly or derived from a fixed intervention panel."
         )
     singular_values = _resolve_generation_field_singular_values(
         config,
@@ -390,7 +431,7 @@ def _sample_confounded_low_rank_field(
     if singular_values.size != shared_rank:
         raise ValueError(
             "global_params.field_params.singular_values must have the same length as the "
-            "generated intervention singular values for field_mode='confounded_low_rank'."
+            "shared intervention low-rank basis for field_mode='confounded_low_rank'."
         )
     field_matrix = (
         intervention_structure.time_factors * singular_values[None, :]

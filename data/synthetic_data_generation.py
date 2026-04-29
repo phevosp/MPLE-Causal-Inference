@@ -22,6 +22,7 @@ from model_utils import (
     get_xi,
     get_synthetic_field_mode,
     interaction_matrix_infinity_norm,
+    leading_svd_low_rank_structure,
     parse_singular_values,
     sample_spectral_low_rank_structure,
     save_model_artifacts,
@@ -247,6 +248,23 @@ def sample_low_rank_probability_interventions(
         probability_matrix=probability_matrix,
         z=z,
         z_0=z_0,
+    )
+
+
+def derive_fixed_intervention_structure_for_field(
+    config,
+    fixed_z: np.ndarray,
+) -> SpectralLowRankStructure:
+    field_params = getattr(config.global_params, "field_params", {}) or {}
+    if not isinstance(field_params, dict):
+        field_params = dict(field_params)
+    field_singular_values = parse_singular_values(
+        field_params.get("singular_values"),
+        context="global_params.field_params.singular_values",
+    )
+    return leading_svd_low_rank_structure(
+        np.asarray(fixed_z, dtype=float),
+        int(field_singular_values.size),
     )
 
 
@@ -526,6 +544,11 @@ def materialize_generation_experiment(
     intervention_structure: SpectralLowRankStructure | None = None
     if intervention_mode(config) == "fixed_z":
         fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
+        if get_synthetic_field_mode(config) == "confounded_low_rank":
+            intervention_structure = derive_fixed_intervention_structure_for_field(
+                config,
+                fixed_z,
+            )
         print("Loaded fixed intervention path.")
     elif intervention_mode(config) == "low_rank_probability":
         intervention_generation_artifacts = sample_low_rank_probability_interventions(

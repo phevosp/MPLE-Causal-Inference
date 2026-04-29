@@ -531,6 +531,109 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(field_matrix.shape, (4, 4))
         self.assertTrue(np.allclose(field_matrix, expected_field))
 
+    def test_generation_pipeline_confounded_low_rank_reuses_fixed_intervention_svd(self) -> None:
+        root = REPO_ROOT / "experiments" / f".tmp_fixed_z_confounding_{uuid.uuid4().hex}"
+        root.mkdir(parents=True, exist_ok=False)
+        try:
+            gamma = np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ],
+                dtype=float,
+            )
+            fixed_z = np.array(
+                [
+                    [1.0, 1.0, -1.0, -1.0],
+                    [1.0, -1.0, 1.0, -1.0],
+                    [-1.0, 1.0, -1.0, 1.0],
+                    [-1.0, -1.0, 1.0, 1.0],
+                ],
+                dtype=float,
+            )
+            z_0 = -np.ones(4, dtype=float)
+            gamma_path = root / "gamma.npy"
+            panel_path = root / "panel_data.npz"
+            z0_path = root / "z_0.npy"
+            spec_path = root / "generation_spec.yaml"
+            np.save(gamma_path, gamma)
+            np.savez(panel_path, x=np.zeros_like(fixed_z), z=fixed_z)
+            np.save(z0_path, z_0)
+
+            spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        f"  experiment_root: {root.as_posix()}/generated",
+                        f"  manifest_path: {root.as_posix()}/generated/generation_manifest.csv",
+                        "  dimensions:",
+                        "    N: 4",
+                        "    T: 4",
+                        "  generation:",
+                        "    gibbs_sweeps: 1",
+                        "    seed: 7",
+                        "  x0:",
+                        "    generator: bernoulli",
+                        "    params:",
+                        "      p: 0.5",
+                        "      fixed_val: null",
+                        "  graph:",
+                        "    source: fixed_artifact",
+                        "    artifact:",
+                        f"      gamma_path: {gamma_path.as_posix()}",
+                        "      node_index_path: null",
+                        f"      artifact_dir: {root.as_posix()}",
+                        "      network_name: test_graph",
+                        "      trim_scope: test",
+                        "  intervention:",
+                        "    source: fixed_artifact",
+                        "    artifact:",
+                        f"      panel_path: {panel_path.as_posix()}",
+                        f"      z0_path: {z0_path.as_posix()}",
+                        f"      artifact_dir: {root.as_posix()}",
+                        "      shared_panel_dir: null",
+                        "      outcome_code: null",
+                        "      intervention_code: null",
+                        "      lag_code: null",
+                        "      trim_scope: test",
+                        "  truth:",
+                        "    B: 1.5",
+                        f"    field_mode: {SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK}",
+                        "    field_params:",
+                        "      singular_values: [1.0, 0.5]",
+                        "      target_rms_fraction: 0.2",
+                        "    scalars:",
+                        "      beta: 0.2",
+                        "      xi: 0.1",
+                        "      eta: 0.05",
+                        "      zeta: -0.1",
+                        "      psi: 0.2",
+                        "experiments:",
+                        "  - name: fixed_z_confounding_smoke",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            run_generation(spec_path, overwrite=True)
+            experiment_root = root / "generated" / "fixed_z_confounding_smoke"
+            with np.load(experiment_root / "field_artifacts.npz", allow_pickle=False) as data:
+                field_matrix = np.asarray(data["field_matrix"], dtype=float)
+
+            u, _, vt = np.linalg.svd(fixed_z, full_matrices=False)
+            expected_unscaled = (u[:, :2] * np.array([1.0, 0.5], dtype=float)[None, :]) @ vt[:2, :]
+            expected_field = normalize_matrix_max_abs(expected_unscaled, max_abs=1.0)
+            expected_field = expected_field * (
+                (0.2 * 1.5) / float(np.sqrt(np.mean(expected_field**2)))
+            )
+
+            self.assertTrue((experiment_root / "panel_data.npz").exists())
+            self.assertTrue(np.allclose(field_matrix, expected_field))
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
     def test_generation_spec_includes_confounded_low_rank_example(self) -> None:
         from pipeline_specs import expand_named_entries
 
@@ -538,7 +641,7 @@ class MinimalPipelineTests(unittest.TestCase):
         confounding_spec = next(
             experiment
             for experiment in experiments
-            if experiment["name"] == "spectral_low_rank_5_confounding"
+            if experiment["name"] == "confounding_weak"
         )
         self.assertEqual(
             confounding_spec["truth"]["field_mode"],
