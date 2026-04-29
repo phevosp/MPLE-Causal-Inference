@@ -1,0 +1,63 @@
+2026-04-29 10:26:57 | INFO | Loading data...
+2026-04-29 10:26:57 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/panel_data.npz
+2026-04-29 10:26:57 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/x_0.npy
+2026-04-29 10:26:57 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/fits/alternating_rank_10_uv_1_e2/fit_realized_config.yaml
+2026-04-29 10:26:57 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+2026-04-29 10:26:57 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+2026-04-29 10:26:57 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-29 10:26:57 | INFO | Configured latent rank: 10
+2026-04-29 10:26:57 | INFO | Using a fixed known graph with scalar xi.
+2026-04-29 10:26:57 | INFO | Fit-time hard bounds active: False
+2026-04-29 10:26:57 | INFO | Fixed scalar parameters: {}
+2026-04-29 10:26:57 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-29 10:26:57 | INFO | Beta mask before s: False with s=55
+2026-04-29 10:26:57 | INFO | Beta mask after e: False with e=120
+2026-04-29 10:26:57 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-04-29 10:26:57 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.01, v_column_l2_max=1.0, proximal_lr=1.0
+2026-04-29 10:26:57 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.766729 | initial_penalized=0.766730
+2026-04-29 10:26:57 | INFO | Alternating low-rank iter 0 | Loss: 0.524332 | Penalized: 0.524844
+2026-04-29 10:27:10 | INFO | Alternating low-rank iter 100 | Loss: 0.471279 | Penalized: 0.478754
+2026-04-29 10:27:25 | INFO | Alternating low-rank iter 200 | Loss: 0.469792 | Penalized: 0.477810
+2026-04-29 10:27:39 | INFO | Alternating low-rank iter 300 | Loss: 0.469488 | Penalized: 0.477648
+2026-04-29 10:27:53 | INFO | Alternating low-rank iter 400 | Loss: 0.469440 | Penalized: 0.477624
+2026-04-29 10:28:06 | INFO | Alternating low-rank iter 500 | Loss: 0.469377 | Penalized: 0.477597
+2026-04-29 10:28:20 | INFO | Alternating low-rank iter 600 | Loss: 0.469332 | Penalized: 0.477580
+2026-04-29 10:28:33 | INFO | Alternating low-rank iter 700 | Loss: 0.469327 | Penalized: 0.477578
+2026-04-29 10:28:45 | INFO | Alternating low-rank iter 800 | Loss: 0.469325 | Penalized: 0.477577
+2026-04-29 10:28:58 | INFO | Alternating low-rank iter 900 | Loss: 0.469323 | Penalized: 0.477576
+2026-04-29 10:29:10 | INFO | Alternating low-rank iter 1000 | Loss: 0.469322 | Penalized: 0.477575
+2026-04-29 10:29:22 | INFO | Alternating low-rank iter 1100 | Loss: 0.469321 | Penalized: 0.477574
+2026-04-29 10:29:34 | INFO | Alternating low-rank iter 1200 | Loss: 0.469319 | Penalized: 0.477574
+2026-04-29 10:29:46 | INFO | Alternating low-rank iter 1300 | Loss: 0.469318 | Penalized: 0.477573
+2026-04-29 10:29:58 | INFO | Alternating low-rank iter 1400 | Loss: 0.469317 | Penalized: 0.477573
+2026-04-29 10:30:10 | INFO | Alternating low-rank iter 1500 | Loss: 0.469317 | Penalized: 0.477573
+2026-04-29 10:30:22 | INFO | Alternating low-rank iter 1600 | Loss: 0.469316 | Penalized: 0.477572
+2026-04-29 10:30:34 | INFO | Alternating low-rank iter 1700 | Loss: 0.469315 | Penalized: 0.477572
+2026-04-29 10:30:46 | INFO | Alternating low-rank iter 1800 | Loss: 0.469315 | Penalized: 0.477572
+2026-04-29 10:30:58 | INFO | Alternating low-rank iter 1900 | Loss: 0.469314 | Penalized: 0.477572
+2026-04-29 10:31:10 | INFO | Alternating low-rank iter 2000 | Loss: 0.469314 | Penalized: 0.477571
+2026-04-29 10:31:22 | INFO | Alternating low-rank iter 2100 | Loss: 0.469314 | Penalized: 0.477571
+2026-04-29 10:31:27 | INFO | Done fitting.
+2026-04-29 10:31:27 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-29 10:31:27 | INFO | Best optimizer start: 1 / 1
+2026-04-29 10:31:27 | INFO | Final Loss: 0.469314
+2026-04-29 10:31:27 | INFO | Estimated vs True Parameters:
+2026-04-29 10:31:27 | INFO |   beta: -0.2867 (True: -0.3000) | SQE: 0.000178
+2026-04-29 10:31:27 | INFO |   xi: 0.8919 (True: 0.8000) | SQE: 0.008454
+2026-04-29 10:31:27 | INFO |   eta: 0.2623 (True: 0.3000) | SQE: 0.001419
+2026-04-29 10:31:27 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-29 10:31:27 | INFO |   penalized_objective: 0.477571
+2026-04-29 10:31:27 | INFO |   mple_loss_without_penalty: 0.469314
+2026-04-29 10:31:27 | INFO |   lambda_uv_ridge: 0.010000
+2026-04-29 10:31:27 | INFO |   u_frobenius_norm: 546.037054
+2026-04-29 10:31:27 | INFO |   v_frobenius_norm: 3.162278
+2026-04-29 10:31:27 | INFO |   effective_rank: 10.000000
+2026-04-29 10:31:27 | INFO | Field and interaction diagnostics:
+2026-04-29 10:31:27 | INFO |   field_rmse: 0.893337
+2026-04-29 10:31:27 | INFO |   interaction_fro_error: 0.868312
+2026-04-29 10:31:28 | INFO |   estimated_field_max_abs_entry: 12.063004
+2026-04-29 10:31:28 | INFO |   estimated_field_rank: 10.000000
+2026-04-29 10:31:28 | INFO |   true_field_max_abs_entry: 2.000000
+2026-04-29 10:31:28 | INFO |   true_field_rank: 21.000000
+2026-04-29 10:31:28 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/fits/alternating_rank_10_uv_1_e2/mple_summary.csv
+2026-04-29 10:31:28 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/fits/alternating_rank_10_uv_1_e2/mple.log

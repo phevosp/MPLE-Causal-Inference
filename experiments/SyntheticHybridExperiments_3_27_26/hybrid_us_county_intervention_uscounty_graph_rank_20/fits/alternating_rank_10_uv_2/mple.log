@@ -1,0 +1,46 @@
+2026-04-29 10:02:58 | INFO | Loading data...
+2026-04-29 10:02:58 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/panel_data.npz
+2026-04-29 10:02:58 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/x_0.npy
+2026-04-29 10:02:58 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/alternating_rank_10_uv_2/fit_realized_config.yaml
+2026-04-29 10:02:58 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20
+2026-04-29 10:02:58 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20
+2026-04-29 10:02:58 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-29 10:02:58 | INFO | Configured latent rank: 10
+2026-04-29 10:02:58 | INFO | Using a fixed known graph with scalar xi.
+2026-04-29 10:02:58 | INFO | Fit-time hard bounds active: False
+2026-04-29 10:02:58 | INFO | Fixed scalar parameters: {}
+2026-04-29 10:02:58 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-29 10:02:58 | INFO | Beta mask before s: False with s=55
+2026-04-29 10:02:58 | INFO | Beta mask after e: False with e=120
+2026-04-29 10:02:58 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-04-29 10:02:58 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=2.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-04-29 10:02:58 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.780312 | initial_penalized=0.780433
+2026-04-29 10:02:58 | INFO | Alternating low-rank iter 0 | Loss: 0.485320 | Penalized: 0.501570
+2026-04-29 10:03:13 | INFO | Alternating low-rank iter 100 | Loss: 0.478656 | Penalized: 0.494678
+2026-04-29 10:03:29 | INFO | Alternating low-rank iter 200 | Loss: 0.478341 | Penalized: 0.494400
+2026-04-29 10:03:44 | INFO | Alternating low-rank iter 300 | Loss: 0.478305 | Penalized: 0.494381
+2026-04-29 10:04:00 | INFO | Alternating low-rank iter 400 | Loss: 0.478299 | Penalized: 0.494379
+2026-04-29 10:04:06 | INFO | Done fitting.
+2026-04-29 10:04:06 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-29 10:04:06 | INFO | Best optimizer start: 1 / 1
+2026-04-29 10:04:06 | INFO | Final Loss: 0.478299
+2026-04-29 10:04:06 | INFO | Estimated vs True Parameters:
+2026-04-29 10:04:06 | INFO |   beta: -0.2349 (True: -0.3000) | SQE: 0.004244
+2026-04-29 10:04:06 | INFO |   xi: 0.7284 (True: 0.8000) | SQE: 0.005128
+2026-04-29 10:04:06 | INFO |   eta: 0.3646 (True: 0.3000) | SQE: 0.004179
+2026-04-29 10:04:06 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-29 10:04:06 | INFO |   penalized_objective: 0.494379
+2026-04-29 10:04:06 | INFO |   mple_loss_without_penalty: 0.478299
+2026-04-29 10:04:06 | INFO |   lambda_uv_ridge: 2.000000
+2026-04-29 10:04:06 | INFO |   u_frobenius_norm: 53.788454
+2026-04-29 10:04:06 | INFO |   v_frobenius_norm: 3.162278
+2026-04-29 10:04:06 | INFO |   effective_rank: 1.000000
+2026-04-29 10:04:06 | INFO | Field and interaction diagnostics:
+2026-04-29 10:04:06 | INFO |   field_rmse: 0.275703
+2026-04-29 10:04:06 | INFO |   interaction_fro_error: 0.676260
+2026-04-29 10:04:06 | INFO |   estimated_field_max_abs_entry: 0.793193
+2026-04-29 10:04:06 | INFO |   estimated_field_rank: 1.000000
+2026-04-29 10:04:06 | INFO |   true_field_max_abs_entry: 2.000000
+2026-04-29 10:04:06 | INFO |   true_field_rank: 20.000000
+2026-04-29 10:04:06 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/alternating_rank_10_uv_2/mple_summary.csv
+2026-04-29 10:04:06 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/alternating_rank_10_uv_2/mple.log

@@ -1,0 +1,33 @@
+2026-04-29 11:52:06 | INFO | Loading data...
+2026-04-29 11:52:06 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank_5_confounding/panel_data.npz
+2026-04-29 11:52:06 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank_5_confounding/x_0.npy
+2026-04-29 11:52:06 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank_5_confounding/fits/zero_external_field/fit_realized_config.yaml
+2026-04-29 11:52:06 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank_5_confounding
+2026-04-29 11:52:06 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank_5_confounding
+2026-04-29 11:52:06 | INFO | Configured optimizer mode: no_external_field
+2026-04-29 11:52:06 | INFO | Configured latent rank: 0
+2026-04-29 11:52:06 | INFO | Using a fixed known graph with scalar xi.
+2026-04-29 11:52:06 | INFO | Fit-time hard bounds active: False
+2026-04-29 11:52:06 | INFO | Fixed scalar parameters: {}
+2026-04-29 11:52:06 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-29 11:52:06 | INFO | Beta mask before s: False with s=0
+2026-04-29 11:52:06 | INFO | Beta mask after e: False with e=12
+2026-04-29 11:52:06 | INFO | Ignoring v_column_l2_max=1.0 for optimizer_mode=no_external_field
+2026-04-29 11:52:06 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-04-29 11:52:06 | INFO | Done fitting.
+2026-04-29 11:52:06 | INFO | Optimizer status: Optimization terminated successfully.
+2026-04-29 11:52:06 | INFO | Best optimizer start: 1 / 1
+2026-04-29 11:52:06 | INFO | Final Loss: 0.621852
+2026-04-29 11:52:06 | INFO | Estimated vs True Parameters:
+2026-04-29 11:52:06 | INFO |   beta: -0.2720 (True: -0.3000) | SQE: 0.000785
+2026-04-29 11:52:06 | INFO |   xi: 0.9430 (True: 0.8000) | SQE: 0.020451
+2026-04-29 11:52:06 | INFO |   eta: 0.2910 (True: 0.3000) | SQE: 0.000081
+2026-04-29 11:52:06 | INFO | Field and interaction diagnostics:
+2026-04-29 11:52:06 | INFO |   field_rmse: 0.253370
+2026-04-29 11:52:06 | INFO |   interaction_fro_error: 0.408302
+2026-04-29 11:52:06 | INFO |   estimated_field_max_abs_entry: 0.000000
+2026-04-29 11:52:06 | INFO |   estimated_field_rank: 0.000000
+2026-04-29 11:52:06 | INFO |   true_field_max_abs_entry: 2.000000
+2026-04-29 11:52:06 | INFO |   true_field_rank: 5.000000
+2026-04-29 11:52:06 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank_5_confounding/fits/zero_external_field/mple_summary.csv
+2026-04-29 11:52:06 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank_5_confounding/fits/zero_external_field/mple.log
