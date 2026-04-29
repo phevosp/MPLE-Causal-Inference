@@ -19,35 +19,47 @@ base:
     beta_mask_post_e: false
 
 variants:
-  - name: alternating_rank_5_uv_1_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 5
-    lambda_uv_ridge: .01
-
-  - name: alternating_rank_5_uv_5_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 5
-    lambda_uv_ridge: .05
-
-  - name: alternating_rank_5_uv_1_e1
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 5
-    lambda_uv_ridge: .1
-
   - name: alternating_rank_5_uv_5_e1
     optimizer_mode: alternating_latent_rank
     latent_rank: 5
     lambda_uv_ridge: .5
+
+  - name: alternating_rank_5_uv_6_e1
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 0.6
+
+  - name: alternating_rank_5_uv_7_e1
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 0.7
+
+  - name: alternating_rank_5_uv_8_e1
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 0.8    
+
+  - name: alternating_rank_5_uv_9_e1
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 0.9
 
   - name: alternating_rank_5_uv_1
     optimizer_mode: alternating_latent_rank
     latent_rank: 5
     lambda_uv_ridge: 1
 
-  - name: alternating_rank_5_uv_1p5
+  - name: alternating_rank_5_uv_1p1
     optimizer_mode: alternating_latent_rank
     latent_rank: 5
-    lambda_uv_ridge: 1.5
+    lambda_uv_ridge: 1.1
 
-  - name: zero_external_field
-    optimizer_mode: no_external_field
+  - name: alternating_rank_5_uv_1p2
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 1.2
+
+  - name: alternating_rank_5_uv_1p3
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 5
+    lambda_uv_ridge: 1.3 
