@@ -17,6 +17,26 @@ from pipeline_specs import read_csv_manifest
 
 SCALAR_NAMES = ("beta", "xi", "eta")
 METRIC_NAMES = ("final_loss", "field_rmse", "interaction_fro_error")
+SINGULAR_VALUE_TOP_K = 5
+
+
+def _sv_columns(prefix: str) -> list[str]:
+    return [f"{prefix}_sv_{index}" for index in range(1, SINGULAR_VALUE_TOP_K + 1)]
+
+
+def _field_diagnostic_columns(prefix: str) -> list[str]:
+    return [
+        f"{prefix}_field_max_abs_entry",
+        f"{prefix}_field_rank",
+        f"{prefix}_field_frobenius_norm",
+        f"{prefix}_field_nuclear_norm",
+        f"{prefix}_singular_value_count",
+        f"{prefix}_u_frobenius_norm",
+        f"{prefix}_v_frobenius_norm",
+        *_sv_columns(prefix),
+    ]
+
+
 PER_EXPERIMENT_COLUMNS = [
     "experiment_name",
     "descriptor",
@@ -40,10 +60,8 @@ PER_EXPERIMENT_COLUMNS = [
     "beta_abs_error",
     "xi_abs_error",
     "eta_abs_error",
-    "estimated_field_max_abs_entry",
-    "estimated_field_rank",
-    "true_field_max_abs_entry",
-    "true_field_rank",
+    *_field_diagnostic_columns("estimated"),
+    *_field_diagnostic_columns("true"),
 ]
 _PER_EXPERIMENT_COLUMNS_NO_TRUTH = [
     "experiment_name",
@@ -68,8 +86,7 @@ _PER_EXPERIMENT_COLUMNS_NO_TRUTH = [
     "beta_estimate",
     "xi_estimate",
     "eta_estimate",
-    "estimated_field_max_abs_entry",
-    "estimated_field_rank",
+    *_field_diagnostic_columns("estimated"),
 ]
 WINNER_COLUMNS = [
     "experiment_name",
@@ -94,6 +111,8 @@ WINNER_COLUMNS = [
     "field_rmse",
     "interaction_fro_error",
     "optimizer_status",
+    *_field_diagnostic_columns("estimated"),
+    *_field_diagnostic_columns("true"),
 ]
 
 
@@ -152,6 +171,24 @@ def scalar_value(
     return summary_entries.get(name, {}).get(key)
 
 
+def svd_field_diagnostics(prefix: str, field_matrix: np.ndarray) -> dict[str, object]:
+    singular_values = np.linalg.svd(field_matrix, compute_uv=False)
+    rank = int(np.linalg.matrix_rank(field_matrix))
+    row: dict[str, object] = {
+        f"{prefix}_field_max_abs_entry": latent_field_bound_norm(field_matrix),
+        f"{prefix}_field_rank": rank,
+        f"{prefix}_field_frobenius_norm": float(np.linalg.norm(field_matrix, ord="fro")),
+        f"{prefix}_field_nuclear_norm": float(np.sum(singular_values)),
+        f"{prefix}_singular_value_count": rank,
+        f"{prefix}_u_frobenius_norm": float(np.sqrt(rank)),
+        f"{prefix}_v_frobenius_norm": float(np.sqrt(rank)),
+    }
+    for index, column in enumerate(_sv_columns(prefix)):
+        if index < rank:
+            row[column] = float(singular_values[index])
+    return row
+
+
 def latent_diagnostics(folder: Path) -> dict[str, object]:
     estimated_field = load_field_matrix(folder / "estimated_field_artifacts.npz")
     true_field = load_field_matrix(folder / "true_field_artifacts.npz")
@@ -175,13 +212,9 @@ def latent_diagnostics(folder: Path) -> dict[str, object]:
         if true_value is not None:
             row["true_field_max_abs_entry"] = true_value
         return row
-    row: dict[str, object] = {
-        "estimated_field_max_abs_entry": latent_field_bound_norm(estimated_field),
-        "estimated_field_rank": int(np.linalg.matrix_rank(estimated_field)),
-    }
+    row = svd_field_diagnostics("estimated", estimated_field)
     if true_field is not None:
-        row["true_field_max_abs_entry"] = latent_field_bound_norm(true_field)
-        row["true_field_rank"] = int(np.linalg.matrix_rank(true_field))
+        row.update(svd_field_diagnostics("true", true_field))
     return row
 
 

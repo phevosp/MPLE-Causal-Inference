@@ -538,7 +538,7 @@ class MinimalPipelineTests(unittest.TestCase):
         confounding_spec = next(
             experiment
             for experiment in experiments
-            if experiment["name"] == "spectral_low_rank_confounding"
+            if experiment["name"] == "spectral_low_rank_5_confounding"
         )
         self.assertEqual(
             confounding_spec["truth"]["field_mode"],
@@ -744,9 +744,52 @@ class MinimalPipelineTests(unittest.TestCase):
             np.savez(fit_root / "true_field_artifacts.npz", field_matrix=true_field)
 
             row = latent_diagnostics(fit_root)
+            estimated_singular_values = np.linalg.svd(
+                estimated_field, compute_uv=False
+            )
+            true_singular_values = np.linalg.svd(true_field, compute_uv=False)
 
             self.assertEqual(row["estimated_field_max_abs_entry"], 2.0)
+            self.assertEqual(row["estimated_field_rank"], 1)
+            self.assertAlmostEqual(
+                float(row["estimated_field_frobenius_norm"]),
+                float(np.linalg.norm(estimated_field, ord="fro")),
+            )
+            self.assertAlmostEqual(
+                float(row["estimated_field_nuclear_norm"]),
+                float(np.sum(estimated_singular_values)),
+            )
+            self.assertEqual(row["estimated_singular_value_count"], 1)
+            self.assertAlmostEqual(float(row["estimated_u_frobenius_norm"]), 1.0)
+            self.assertAlmostEqual(float(row["estimated_v_frobenius_norm"]), 1.0)
+            self.assertAlmostEqual(
+                float(row["estimated_sv_1"]), float(estimated_singular_values[0])
+            )
+            self.assertNotIn("estimated_sv_2", row)
             self.assertEqual(row["true_field_max_abs_entry"], 0.75)
+            self.assertEqual(row["true_field_rank"], int(np.linalg.matrix_rank(true_field)))
+            self.assertAlmostEqual(
+                float(row["true_field_frobenius_norm"]),
+                float(np.linalg.norm(true_field, ord="fro")),
+            )
+            self.assertAlmostEqual(
+                float(row["true_field_nuclear_norm"]),
+                float(np.sum(true_singular_values)),
+            )
+            self.assertEqual(
+                row["true_singular_value_count"], int(np.linalg.matrix_rank(true_field))
+            )
+            self.assertAlmostEqual(
+                float(row["true_u_frobenius_norm"]),
+                float(np.sqrt(np.linalg.matrix_rank(true_field))),
+            )
+            self.assertAlmostEqual(
+                float(row["true_v_frobenius_norm"]),
+                float(np.sqrt(np.linalg.matrix_rank(true_field))),
+            )
+            self.assertAlmostEqual(float(row["true_sv_1"]), float(true_singular_values[0]))
+            self.assertAlmostEqual(float(row["true_sv_2"]), float(true_singular_values[1]))
+            self.assertNotIn("true_sv_3", row)
             self.assertNotIn("estimated_field_inf_norm", row)
             self.assertNotIn("true_field_inf_norm", row)
             self.assertGreater(float(np.linalg.norm(estimated_field, ord=np.inf)), 2.0)
@@ -774,6 +817,10 @@ class MinimalPipelineTests(unittest.TestCase):
 
             self.assertEqual(row["estimated_field_max_abs_entry"], 1.25)
             self.assertEqual(row["true_field_max_abs_entry"], 0.75)
+            self.assertNotIn("estimated_field_frobenius_norm", row)
+            self.assertNotIn("true_field_frobenius_norm", row)
+            self.assertNotIn("estimated_sv_1", row)
+            self.assertNotIn("true_sv_1", row)
         finally:
             shutil.rmtree(fit_root, ignore_errors=True)
 
@@ -2324,6 +2371,14 @@ class FitReportingTests(unittest.TestCase):
         self.assertIn("lambda_uv_ridge", rows[0])
         self.assertIn("estimated_field_max_abs_entry", rows[0])
         self.assertIn("true_field_max_abs_entry", rows[0])
+        self.assertIn("estimated_field_frobenius_norm", rows[0])
+        self.assertIn("true_field_frobenius_norm", rows[0])
+        self.assertIn("estimated_field_nuclear_norm", rows[0])
+        self.assertIn("true_field_nuclear_norm", rows[0])
+        self.assertIn("estimated_singular_value_count", rows[0])
+        self.assertIn("true_singular_value_count", rows[0])
+        self.assertIn("estimated_sv_1", rows[0])
+        self.assertIn("true_sv_1", rows[0])
         self.assertNotIn("estimated_field_inf_norm", rows[0])
         self.assertNotIn("true_field_inf_norm", rows[0])
         nuclear_root = experiment_root / "fits" / "nuclear_lambda_1e_2_b1"
@@ -2339,6 +2394,10 @@ class FitReportingTests(unittest.TestCase):
         self.assertIn("optimizer_mode", winner_rows[0])
         self.assertIn("lambda_frobenius", winner_rows[0])
         self.assertIn("lambda_uv_ridge", winner_rows[0])
+        self.assertIn("estimated_field_frobenius_norm", winner_rows[0])
+        self.assertIn("true_field_frobenius_norm", winner_rows[0])
+        self.assertIn("estimated_sv_1", winner_rows[0])
+        self.assertIn("true_sv_1", winner_rows[0])
         self.assertEqual(
             Path(fit_manifest), self.root / "generated" / "fit_manifest.csv"
         )
