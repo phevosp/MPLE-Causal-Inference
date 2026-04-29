@@ -1,0 +1,80 @@
+2026-04-29 10:18:59 | INFO | Loading data...
+2026-04-29 10:18:59 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/panel_data.npz
+2026-04-29 10:18:59 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/x_0.npy
+2026-04-29 10:18:59 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/alternating_rank_10_uv_1_e1/fit_realized_config.yaml
+2026-04-29 10:18:59 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20
+2026-04-29 10:18:59 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20
+2026-04-29 10:18:59 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-29 10:18:59 | INFO | Configured latent rank: 10
+2026-04-29 10:18:59 | INFO | Using a fixed known graph with scalar xi.
+2026-04-29 10:18:59 | INFO | Fit-time hard bounds active: False
+2026-04-29 10:18:59 | INFO | Fixed scalar parameters: {}
+2026-04-29 10:18:59 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-29 10:18:59 | INFO | Beta mask before s: False with s=55
+2026-04-29 10:18:59 | INFO | Beta mask after e: False with e=120
+2026-04-29 10:18:59 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-04-29 10:18:59 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.1, v_column_l2_max=1.0, proximal_lr=1.0
+2026-04-29 10:18:59 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.780312 | initial_penalized=0.780318
+2026-04-29 10:18:59 | INFO | Alternating low-rank iter 0 | Loss: 0.465483 | Penalized: 0.468519
+2026-04-29 10:19:11 | INFO | Alternating low-rank iter 100 | Loss: 0.419972 | Penalized: 0.437817
+2026-04-29 10:19:23 | INFO | Alternating low-rank iter 200 | Loss: 0.419021 | Penalized: 0.437050
+2026-04-29 10:19:34 | INFO | Alternating low-rank iter 300 | Loss: 0.418797 | Penalized: 0.436906
+2026-04-29 10:19:45 | INFO | Alternating low-rank iter 400 | Loss: 0.418714 | Penalized: 0.436860
+2026-04-29 10:19:56 | INFO | Alternating low-rank iter 500 | Loss: 0.418676 | Penalized: 0.436837
+2026-04-29 10:20:06 | INFO | Alternating low-rank iter 600 | Loss: 0.418657 | Penalized: 0.436824
+2026-04-29 10:20:16 | INFO | Alternating low-rank iter 700 | Loss: 0.418646 | Penalized: 0.436816
+2026-04-29 10:20:26 | INFO | Alternating low-rank iter 800 | Loss: 0.418641 | Penalized: 0.436812
+2026-04-29 10:20:36 | INFO | Alternating low-rank iter 900 | Loss: 0.418638 | Penalized: 0.436809
+2026-04-29 10:20:46 | INFO | Alternating low-rank iter 1000 | Loss: 0.418636 | Penalized: 0.436808
+2026-04-29 10:20:56 | INFO | Alternating low-rank iter 1100 | Loss: 0.418636 | Penalized: 0.436807
+2026-04-29 10:21:06 | INFO | Alternating low-rank iter 1200 | Loss: 0.418635 | Penalized: 0.436806
+2026-04-29 10:21:17 | INFO | Alternating low-rank iter 1300 | Loss: 0.418635 | Penalized: 0.436805
+2026-04-29 10:21:27 | INFO | Alternating low-rank iter 1400 | Loss: 0.418635 | Penalized: 0.436805
+2026-04-29 10:21:37 | INFO | Alternating low-rank iter 1500 | Loss: 0.418635 | Penalized: 0.436804
+2026-04-29 10:21:47 | INFO | Alternating low-rank iter 1600 | Loss: 0.418635 | Penalized: 0.436803
+2026-04-29 10:21:57 | INFO | Alternating low-rank iter 1700 | Loss: 0.418636 | Penalized: 0.436803
+2026-04-29 10:22:07 | INFO | Alternating low-rank iter 1800 | Loss: 0.418636 | Penalized: 0.436802
+2026-04-29 10:22:20 | INFO | Alternating low-rank iter 1900 | Loss: 0.418636 | Penalized: 0.436802
+2026-04-29 10:22:32 | INFO | Alternating low-rank iter 2000 | Loss: 0.418637 | Penalized: 0.436801
+2026-04-29 10:22:44 | INFO | Alternating low-rank iter 2100 | Loss: 0.418637 | Penalized: 0.436801
+2026-04-29 10:22:57 | INFO | Alternating low-rank iter 2200 | Loss: 0.418637 | Penalized: 0.436801
+2026-04-29 10:23:09 | INFO | Alternating low-rank iter 2300 | Loss: 0.418637 | Penalized: 0.436800
+2026-04-29 10:23:21 | INFO | Alternating low-rank iter 2400 | Loss: 0.418638 | Penalized: 0.436800
+2026-04-29 10:23:34 | INFO | Alternating low-rank iter 2500 | Loss: 0.418638 | Penalized: 0.436800
+2026-04-29 10:23:46 | INFO | Alternating low-rank iter 2600 | Loss: 0.418638 | Penalized: 0.436800
+2026-04-29 10:23:58 | INFO | Alternating low-rank iter 2700 | Loss: 0.418638 | Penalized: 0.436799
+2026-04-29 10:24:10 | INFO | Alternating low-rank iter 2800 | Loss: 0.418638 | Penalized: 0.436799
+2026-04-29 10:24:23 | INFO | Alternating low-rank iter 2900 | Loss: 0.418638 | Penalized: 0.436799
+2026-04-29 10:24:35 | INFO | Alternating low-rank iter 3000 | Loss: 0.418637 | Penalized: 0.436799
+2026-04-29 10:24:47 | INFO | Alternating low-rank iter 3100 | Loss: 0.418637 | Penalized: 0.436799
+2026-04-29 10:24:59 | INFO | Alternating low-rank iter 3200 | Loss: 0.418637 | Penalized: 0.436799
+2026-04-29 10:25:12 | INFO | Alternating low-rank iter 3300 | Loss: 0.418637 | Penalized: 0.436798
+2026-04-29 10:25:24 | INFO | Alternating low-rank iter 3400 | Loss: 0.418636 | Penalized: 0.436798
+2026-04-29 10:25:36 | INFO | Alternating low-rank iter 3500 | Loss: 0.418636 | Penalized: 0.436798
+2026-04-29 10:25:49 | INFO | Alternating low-rank iter 3600 | Loss: 0.418635 | Penalized: 0.436798
+2026-04-29 10:26:01 | INFO | Alternating low-rank iter 3700 | Loss: 0.418635 | Penalized: 0.436798
+2026-04-29 10:26:13 | INFO | Alternating low-rank iter 3800 | Loss: 0.418635 | Penalized: 0.436798
+2026-04-29 10:26:17 | INFO | Done fitting.
+2026-04-29 10:26:17 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-29 10:26:17 | INFO | Best optimizer start: 1 / 1
+2026-04-29 10:26:17 | INFO | Final Loss: 0.418635
+2026-04-29 10:26:17 | INFO | Estimated vs True Parameters:
+2026-04-29 10:26:17 | INFO |   beta: -0.2983 (True: -0.3000) | SQE: 0.000003
+2026-04-29 10:26:17 | INFO |   xi: 0.8398 (True: 0.8000) | SQE: 0.001584
+2026-04-29 10:26:17 | INFO |   eta: 0.3414 (True: 0.3000) | SQE: 0.001717
+2026-04-29 10:26:17 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-29 10:26:17 | INFO |   penalized_objective: 0.436798
+2026-04-29 10:26:17 | INFO |   mple_loss_without_penalty: 0.418635
+2026-04-29 10:26:17 | INFO |   lambda_uv_ridge: 0.100000
+2026-04-29 10:26:17 | INFO |   u_frobenius_norm: 256.073801
+2026-04-29 10:26:17 | INFO |   v_frobenius_norm: 3.162278
+2026-04-29 10:26:17 | INFO |   effective_rank: 10.000000
+2026-04-29 10:26:17 | INFO | Field and interaction diagnostics:
+2026-04-29 10:26:17 | INFO |   field_rmse: 0.311046
+2026-04-29 10:26:17 | INFO |   interaction_fro_error: 0.375843
+2026-04-29 10:26:17 | INFO |   estimated_field_max_abs_entry: 2.523486
+2026-04-29 10:26:17 | INFO |   estimated_field_rank: 10.000000
+2026-04-29 10:26:17 | INFO |   true_field_max_abs_entry: 2.000000
+2026-04-29 10:26:17 | INFO |   true_field_rank: 20.000000
+2026-04-29 10:26:17 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/alternating_rank_10_uv_1_e1/mple_summary.csv
+2026-04-29 10:26:17 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/alternating_rank_10_uv_1_e1/mple.log
