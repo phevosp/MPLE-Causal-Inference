@@ -364,7 +364,7 @@ class MinimalPipelineTests(unittest.TestCase):
         field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
         self.assertEqual(field_matrix.shape, (3, 4))
         self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
-        self.assertLessEqual(latent_field_bound_norm(field_matrix), 1.0 + 1e-8)
+        self.assertGreater(float(np.sqrt(np.mean(field_matrix**2))), 0.0)
 
     def test_generated_latent_field_uses_target_rms_scaling(self) -> None:
         config = base_config()
@@ -384,13 +384,34 @@ class MinimalPipelineTests(unittest.TestCase):
         target_rms = 0.4 * float(config.global_params.B)
 
         self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
-        self.assertLessEqual(
+        self.assertAlmostEqual(
             float(np.sqrt(np.mean(field_matrix**2))),
-            target_rms + 1e-12,
+            target_rms,
+            places=12,
         )
-        self.assertLessEqual(
-            latent_field_bound_norm(field_matrix),
-            float(config.global_params.B) + 1e-12,
+
+    def test_generated_latent_field_honors_custom_target_rms_fraction(self) -> None:
+        config = base_config()
+        config.global_params.B = 2.0
+        config.global_params.field_params = {
+            "singular_values": [1.0, 0.7],
+            "target_rms_fraction": 0.15,
+        }
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+
+        artifacts = build_synthetic_field(config, gamma)
+        field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
+        self.assertAlmostEqual(
+            float(np.sqrt(np.mean(field_matrix**2))),
+            0.3,
+            places=12,
         )
 
     def test_low_rank_probability_interventions_produce_valid_probabilities(self) -> None:
@@ -505,14 +526,9 @@ class MinimalPipelineTests(unittest.TestCase):
             (0.4 * float(config.global_params.B))
             / float(np.sqrt(np.mean(expected_field**2)))
         )
-        if latent_field_bound_norm(expected_field) > float(config.global_params.B):
-            expected_field = expected_field * (
-                float(config.global_params.B) / latent_field_bound_norm(expected_field)
-            )
 
         self.assertEqual(field_artifacts.latent_rank, 2)
         self.assertEqual(field_matrix.shape, (4, 4))
-        self.assertLessEqual(latent_field_bound_norm(field_matrix), 1.0 + 1e-12)
         self.assertTrue(np.allclose(field_matrix, expected_field))
 
     def test_generation_spec_includes_confounded_low_rank_example(self) -> None:

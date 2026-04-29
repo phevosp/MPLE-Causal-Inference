@@ -11,7 +11,7 @@ from scipy import sparse
 
 DEFAULT_LATENT_RANK = 0
 _DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerate
-_RMS_SCALE_FACTOR = 0.4         # targets initial field RMS at _RMS_SCALE_FACTOR * B
+_DEFAULT_FIELD_RMS_FRACTION = 0.4
 SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
 SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK = "random_low_rank"
 SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK = "confounded_low_rank"
@@ -292,21 +292,20 @@ def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
 
 
 def scale_latent_field_matrix(
-    field_matrix: np.ndarray, target_rms: float, bound: float
+    field_matrix: np.ndarray,
+    target_rms: float,
 ) -> np.ndarray:
-    """Rescale field_matrix to have RMS ≈ target_rms, then clip to inf-norm ≤ bound.
+    """Rescale field_matrix to have RMS ≈ target_rms.
 
     Returns the zero matrix if the initial RMS is below _DEGENERACY_THRESHOLD.
     """
     field_matrix = np.asarray(field_matrix, dtype=float)
+    if target_rms < 0.0:
+        raise ValueError("target_rms must be nonnegative.")
     rms = float(np.sqrt(np.mean(field_matrix**2)))
     if rms < _DEGENERACY_THRESHOLD:
         return np.zeros_like(field_matrix)
-    field_matrix = field_matrix * (target_rms / rms)
-    norm = latent_field_bound_norm(field_matrix)
-    if norm > bound and norm >= 1e-12:
-        field_matrix = field_matrix * (bound / norm)
-    return field_matrix
+    return field_matrix * (target_rms / rms)
 
 
 def project_latent_field(
@@ -339,10 +338,22 @@ def _resolve_generation_field_singular_values(
     return singular_values
 
 
+def _resolve_generation_field_rms_fraction(config) -> float:
+    field_params = get_synthetic_field_params(config)
+    fraction = float(
+        field_params.get("target_rms_fraction", _DEFAULT_FIELD_RMS_FRACTION)
+    )
+    if fraction < 0.0:
+        raise ValueError(
+            "global_params.field_params.target_rms_fraction must be nonnegative."
+        )
+    return fraction
+
+
 def _scale_spectral_field(field_matrix: np.ndarray, config) -> np.ndarray:
     field_matrix = normalize_matrix_max_abs(field_matrix, max_abs=1.0)
-    target_rms = _RMS_SCALE_FACTOR * get_B(config)
-    return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
+    target_rms = _resolve_generation_field_rms_fraction(config) * get_B(config)
+    return scale_latent_field_matrix(field_matrix, target_rms)
 
 
 def _sample_random_low_rank_field(

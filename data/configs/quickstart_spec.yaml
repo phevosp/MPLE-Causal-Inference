@@ -43,6 +43,7 @@ base:
     field_mode: random_low_rank
     field_params:
       singular_values: []
+      target_rms_fraction: 0.4
     scalars:
       beta: 0.5
       xi: 0.33
@@ -57,3 +58,4 @@ experiments:
       field_mode: random_low_rank
       field_params:
         singular_values: [1.0, 0.7]
+        target_rms_fraction: 0.4
