@@ -1,0 +1,41 @@
+2026-04-27 13:03:32 | INFO | Loading data...
+2026-04-27 13:03:32 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/panel_data.npz
+2026-04-27 13:03:32 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/x_0.npy
+2026-04-27 13:03:32 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/concurrent_rank_5_rw_fixed_beta/fit_realized_config.yaml
+2026-04-27 13:03:32 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20
+2026-04-27 13:03:32 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20
+2026-04-27 13:03:32 | INFO | Configured optimizer mode: concurrent_latent_rank
+2026-04-27 13:03:32 | INFO | Configured latent rank: 5
+2026-04-27 13:03:32 | INFO | Using a fixed known graph with scalar xi.
+2026-04-27 13:03:32 | INFO | Fit-time hard bounds active: False
+2026-04-27 13:03:32 | INFO | Fixed scalar parameters: {'beta': -0.3}
+2026-04-27 13:03:32 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-27 13:03:32 | INFO | Beta mask before s: False with s=55
+2026-04-27 13:03:32 | INFO | Beta mask after e: False with e=120
+2026-04-27 13:03:32 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=7.0, proximal_lr=1.0
+2026-04-27 13:03:32 | INFO | Concurrent low-rank start 1/1 | seed=0 | initial_loss=0.696212 | initial_penalized=0.699232
+2026-04-27 13:03:46 | INFO | Concurrent low-rank start 1 finished | final_loss=0.442939 | final_penalized=0.464095 | nit=675
+2026-04-27 13:03:46 | INFO | Done fitting.
+2026-04-27 13:03:46 | INFO | Optimizer status: CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH
+2026-04-27 13:03:46 | INFO | Best optimizer start: 1 / 1
+2026-04-27 13:03:46 | INFO | Final Loss: 0.442939
+2026-04-27 13:03:46 | INFO | Estimated vs True Parameters:
+2026-04-27 13:03:46 | INFO |   beta: -0.3000 (True: -0.3000) | SQE: 0.000000
+2026-04-27 13:03:46 | INFO |   xi: 0.8138 (True: 0.8000) | SQE: 0.000189
+2026-04-27 13:03:46 | INFO |   eta: 0.3155 (True: 0.3000) | SQE: 0.000240
+2026-04-27 13:03:46 | INFO | Concurrent low-rank optimizer diagnostics:
+2026-04-27 13:03:46 | INFO |   penalized_objective: 0.464095
+2026-04-27 13:03:46 | INFO |   mple_loss_without_penalty: 0.442939
+2026-04-27 13:03:46 | INFO |   lambda_uv_ridge: 7.000000
+2026-04-27 13:03:46 | INFO |   u_frobenius_norm: 23.359209
+2026-04-27 13:03:46 | INFO |   v_frobenius_norm: 23.359136
+2026-04-27 13:03:46 | INFO |   effective_rank: 5.000000
+2026-04-27 13:03:46 | INFO | Field and interaction diagnostics:
+2026-04-27 13:03:46 | INFO |   field_rmse: 0.237810
+2026-04-27 13:03:46 | INFO |   interaction_fro_error: 0.129916
+2026-04-27 13:03:47 | INFO |   estimated_field_max_abs_entry: 2.477090
+2026-04-27 13:03:47 | INFO |   estimated_field_rank: 5.000000
+2026-04-27 13:03:47 | INFO |   true_field_max_abs_entry: 2.000000
+2026-04-27 13:03:47 | INFO |   true_field_rank: 20.000000
+2026-04-27 13:03:47 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/concurrent_rank_5_rw_fixed_beta/mple_summary.csv
+2026-04-27 13:03:47 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_rank_20/fits/concurrent_rank_5_rw_fixed_beta/mple.log

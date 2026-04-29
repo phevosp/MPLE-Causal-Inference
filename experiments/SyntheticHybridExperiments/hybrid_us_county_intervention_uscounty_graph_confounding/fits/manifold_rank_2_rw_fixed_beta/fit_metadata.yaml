@@ -1,0 +1,25 @@
+variant_name: manifold_rank_2_rw_fixed_beta
+variant_slug: manifold_rank_2_rw_fixed_beta
+fits_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/fits_spec.yaml
+experiment_name: hybrid_us_county_intervention_uscounty_graph_confounding
+experiment_slug: hybrid_us_county_intervention_uscounty_graph_confounding
+descriptor: hybrid_us_county_intervention_uscounty_graph_confounding
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+intervention_source: fixed_artifact
+graph_source: fixed_artifact
+field_mode: low_rank_plus_early_treatment_confounding
+model_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+truth_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding
+panel_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/panel_data.npz
+x0_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/hybrid_us_county_intervention_uscounty_graph_confounding/x_0.npy
+latent_rank: 2
+optimizer_mode: exact_rank_manifold
+lambda_nuclear: 0.0
+lambda_frobenius: 0.05
+lambda_uv_ridge: 0.0
+fixed_scalar_params:
+  beta: -0.3
+'N': 3009
+T: 120
+s: 55
+e: 120
