@@ -60,6 +60,7 @@ from mple import (
     _evaluate_factorized_loss,
     _evaluate_full_field_loss,
     _evaluate_scalar_only_loss,
+    _project_node_factor_columns_to_l2_ball,
     fit_mple,
     pseudo_nll,
 )
@@ -1484,6 +1485,99 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertGreaterEqual(len(history), 2)
         self.assertLessEqual(history[-1], history[0])
 
+    def test_project_node_factor_columns_to_l2_ball(self) -> None:
+        node_factors = np.array(
+            [
+                [0.3, 3.0, 0.0],
+                [0.4, 4.0, 0.0],
+            ],
+            dtype=float,
+        )
+
+        projected = _project_node_factor_columns_to_l2_ball(node_factors, 1.0)
+        column_norms = np.linalg.norm(projected, axis=0)
+
+        np.testing.assert_allclose(projected[:, 0], node_factors[:, 0])
+        np.testing.assert_allclose(column_norms[1], 1.0)
+        np.testing.assert_allclose(projected[:, 2], 0.0)
+
+    def test_alternating_low_rank_enforces_v_column_l2_max(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_latent_rank",
+        )
+        theta_hat, loss_history, result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=parameter_names(artifacts),
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=4,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.1,
+            v_column_l2_max=1.0,
+        )
+        theta_parts = unpack_theta(theta_hat, artifacts)
+        column_norms = np.linalg.norm(
+            np.asarray(theta_parts["node_factors"], dtype=float),
+            axis=0,
+        )
+
+        self.assertTrue(np.isfinite(loss_history[-1]))
+        self.assertTrue(np.isfinite(float(result["final_penalized_objective"])))
+        self.assertTrue(np.all(column_norms <= 1.0 + 1e-12))
+
+    def test_alternating_low_rank_omitted_v_column_l2_max_matches_none(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_latent_rank",
+        )
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "s": 1,
+            "param_names": parameter_names(artifacts),
+            "artifacts": artifacts,
+            "interaction_effect_x": interaction_effect(x, gamma),
+            "steps": 4,
+            "tol": 1.0e-8,
+            "seed": 7,
+            "verbose_every": 0,
+            "n_starts": 1,
+            "lambda_uv_ridge": 0.1,
+        }
+
+        theta_default, history_default, result_default = fit_mple(**common_kwargs)
+        theta_none, history_none, result_none = fit_mple(
+            **common_kwargs,
+            v_column_l2_max=None,
+        )
+
+        np.testing.assert_allclose(theta_default, theta_none)
+        np.testing.assert_allclose(history_default, history_none)
+        self.assertAlmostEqual(
+            float(result_default["final_penalized_objective"]),
+            float(result_none["final_penalized_objective"]),
+        )
+
     def test_build_fit_model_artifacts_rejects_nonpositive_alternative_rank(
         self,
     ) -> None:
@@ -1657,6 +1751,20 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(int(fit_config.global_params.latent_rank), 2)
         self.assertAlmostEqual(float(fit_config.global_params.lambda_uv_ridge), 0.25)
 
+    def test_build_fit_config_rejects_nonpositive_v_column_l2_max(self) -> None:
+        variant = {
+            "name": "alternating_rank_1_bad_v_constraint",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+            "optimizer_mode": "alternating_latent_rank",
+            "latent_rank": 1,
+            "v_column_l2_max": 0.0,
+            "B": 1.0,
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "v_column_l2_max"):
+            build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 2})
+
     def test_build_fit_config_defaults_beta_mask_pre_s_to_false(self) -> None:
         variant = {
             "name": "rank_0",
@@ -1757,6 +1865,38 @@ class MinimalPipelineTests(unittest.TestCase):
                 encoding="utf-8",
             )
             validate_fits_spec(spec_path)
+        finally:
+            shutil.rmtree(spec_root, ignore_errors=True)
+
+    def test_validate_fits_spec_rejects_nonpositive_v_column_l2_max(self) -> None:
+        spec_root = REPO_ROOT / "experiments" / f".tmp_spec_{uuid.uuid4().hex}"
+        spec_root.mkdir(parents=True, exist_ok=True)
+        spec_path = spec_root / "fits_spec.yaml"
+        try:
+            spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        "  fit_root_name: fits",
+                        "  fit_manifest_path: tmp.csv",
+                        "  optimizer:",
+                        "    steps: 5",
+                        "    tol: 1.0e-6",
+                        "    seed: 0",
+                        "  B: 1.0",
+                        "  latent_rank: 1",
+                        "  optimizer_mode: alternating_latent_rank",
+                        "  estimation:",
+                        "    fixed_scalar_params: {}",
+                        "variants:",
+                        "  - name: alternating_rank_1_bad_v_constraint",
+                        "    v_column_l2_max: 0.0",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "v_column_l2_max"):
+                validate_fits_spec(spec_path)
         finally:
             shutil.rmtree(spec_root, ignore_errors=True)
 

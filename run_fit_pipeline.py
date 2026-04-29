@@ -129,6 +129,12 @@ def build_fit_config(
     lambda_uv_ridge = float(variant.get("lambda_uv_ridge", 0.0))
     if lambda_uv_ridge < 0.0:
         raise ValueError("lambda_uv_ridge must be nonnegative.")
+    raw_v_column_l2_max = variant.get("v_column_l2_max", None)
+    v_column_l2_max = (
+        None if raw_v_column_l2_max is None else float(raw_v_column_l2_max)
+    )
+    if v_column_l2_max is not None and v_column_l2_max <= 0.0:
+        raise ValueError("v_column_l2_max must be positive.")
     if optimizer_mode != "nuclear_norm" and lambda_nuclear != 0.0:
         raise ValueError("lambda_nuclear is only valid for optimizer_mode='nuclear_norm'.")
     if optimizer_mode != "exact_rank_manifold" and lambda_frobenius != 0.0:
@@ -163,6 +169,7 @@ def build_fit_config(
             "lambda_nuclear": lambda_nuclear,
             "lambda_frobenius": lambda_frobenius,
             "lambda_uv_ridge": lambda_uv_ridge,
+            "v_column_l2_max": v_column_l2_max,
         },
         "estimation_params": {
             "fixed_scalar_params": dict(estimation.get("fixed_scalar_params", {}) or {}),

@@ -70,6 +70,7 @@ Each entry is deep-merged with `base`; entries inherit all base fields they don'
 - `estimation.fixed_scalar_params` — scalars **fixed at these values**, not initial guesses. Empty dict `{}` means all scalars are estimated freely.
 - `lambda_frobenius` — only active for `exact_rank_manifold` mode.
 - `lambda_uv_ridge` — only active for `alternating_latent_rank` and `concurrent_latent_rank` modes.
+- `v_column_l2_max` — optional alternating-only per-column `V` constraint `||v_k||_2 <= c`; ignored by `concurrent_latent_rank`.
 - `optimizer_mode: no_external_field` → scalar-only model (no latent field).
 
 ## Manifest Flow

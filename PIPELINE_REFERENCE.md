@@ -86,6 +86,7 @@ Important keys:
 - `lambda_nuclear`
 - `lambda_frobenius`
 - `lambda_uv_ridge`
+- `v_column_l2_max`
 - `estimation.fixed_scalar_params`
 - `estimation.beta_mask_pre_s`
 

@@ -146,6 +146,14 @@ def validate_fits_spec(spec_path: str | Path) -> None:
                 raise ValueError(
                     f"Variant '{name}': {param} must be non-negative (got {val})."
                 )
+        if (
+            variant.get("v_column_l2_max", None) is not None
+            and float(variant["v_column_l2_max"]) <= 0.0
+        ):
+            raise ValueError(
+                f"Variant '{name}': v_column_l2_max must be positive "
+                f"(got {variant['v_column_l2_max']})."
+            )
         if mode != "nuclear_norm" and float(variant.get("lambda_nuclear", 0.0)) != 0.0:
             raise ValueError(
                 f"Variant '{name}': lambda_nuclear is only valid for optimizer_mode='nuclear_norm'."

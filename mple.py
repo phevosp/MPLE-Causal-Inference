@@ -248,6 +248,27 @@ def _evaluate_factorized_loss_with_offset(
     return smooth_loss, residual, time_gradient, node_gradient
 
 
+def _project_node_factor_columns_to_l2_ball(
+    node_factors: np.ndarray,
+    v_column_l2_max: float,
+) -> np.ndarray:
+    projected = np.array(node_factors, dtype=float, copy=True)
+    if projected.ndim != 2:
+        raise ValueError("node_factors must be a 2D array.")
+    radius = float(v_column_l2_max)
+    if radius <= 0.0:
+        raise ValueError("v_column_l2_max must be positive.")
+    if projected.size == 0:
+        return projected
+    column_norms = np.linalg.norm(projected, axis=0)
+    active_columns = column_norms > radius
+    if np.any(active_columns):
+        projected[:, active_columns] *= (
+            radius / column_norms[active_columns]
+        )[None, :]
+    return projected
+
+
 def _prox_threshold_field_matrix(
     field_matrix: np.ndarray,
     threshold: float,
@@ -1093,6 +1114,7 @@ def _fit_mple_alternative_low_rank(
     fixed_scalar_params: dict[str, float] | None,
     n_starts: int,
     lambda_uv_ridge: float,
+    v_column_l2_max: float | None,
     s: int = 0,
     e: int | None = None,
     beta_mask_pre_s: bool = False,
@@ -1107,6 +1129,8 @@ def _fit_mple_alternative_low_rank(
     """
     if lambda_uv_ridge < 0.0:
         raise ValueError("lambda_uv_ridge must be nonnegative.")
+    if v_column_l2_max is not None and float(v_column_l2_max) <= 0.0:
+        raise ValueError("v_column_l2_max must be positive.")
 
     context = _build_fit_eval_context(
         x,
@@ -1125,6 +1149,9 @@ def _fit_mple_alternative_low_rank(
     rank = int(artifacts.latent_rank)
     t_steps = int(artifacts.t_steps)
     n_nodes = int(artifacts.gamma_matrix.shape[0])
+    projected_v_column_l2_max = (
+        None if v_column_l2_max is None else float(v_column_l2_max)
+    )
     base_theta_init = (
         None if theta_init is None else np.asarray(theta_init, dtype=float)
     )
@@ -1244,14 +1271,26 @@ def _fit_mple_alternative_low_rank(
                 artifacts,
                 fixed_scalar_params=fixed,
             )
+            node_factors = np.asarray(theta_parts["node_factors"], dtype=float)
+            if projected_v_column_l2_max is not None:
+                node_factors = _project_node_factor_columns_to_l2_ball(
+                    node_factors,
+                    projected_v_column_l2_max,
+                )
             return (
                 np.asarray(theta_parts["time_factors"], dtype=float),
-                np.asarray(theta_parts["node_factors"], dtype=float),
+                node_factors,
                 np.asarray([theta_parts[name] for name in free_names], dtype=float),
+            )
+        node_factors = rng.normal(0.0, 0.1, size=(n_nodes, rank))
+        if projected_v_column_l2_max is not None:
+            node_factors = _project_node_factor_columns_to_l2_ball(
+                node_factors,
+                projected_v_column_l2_max,
             )
         return (
             rng.normal(0.0, 0.1, size=(t_steps, rank)),
-            rng.normal(0.0, 0.1, size=(n_nodes, rank)),
+            node_factors,
             rng.normal(0.0, 0.1, size=len(free_names)),
         )
 
@@ -1345,6 +1384,11 @@ def _fit_mple_alternative_low_rank(
                 node_factors = (
                     node_factors - factor_step_size(time_factors) * node_gradient
                 )
+                if projected_v_column_l2_max is not None:
+                    node_factors = _project_node_factor_columns_to_l2_ball(
+                        node_factors,
+                        projected_v_column_l2_max,
+                    )
                 cost_evaluations += 1
 
             (
@@ -1720,6 +1764,7 @@ def _apply_warm_start(
     lambda_nuclear: float,
     lambda_frobenius: float,
     lambda_uv_ridge: float,
+    v_column_l2_max: float | None,
     proximal_lr: float,
     e: int | None,
     beta_mask_pre_s: bool,
@@ -1745,6 +1790,7 @@ def _apply_warm_start(
         lambda_nuclear=lambda_nuclear,
         lambda_frobenius=lambda_frobenius,
         lambda_uv_ridge=lambda_uv_ridge,
+        v_column_l2_max=v_column_l2_max,
         proximal_lr=proximal_lr,
         e=e,
         beta_mask_pre_s=beta_mask_pre_s,
@@ -1773,6 +1819,7 @@ def fit_mple(
     lambda_nuclear: float = 0.0,
     lambda_frobenius: float = 0.0,
     lambda_uv_ridge: float = 0.0,
+    v_column_l2_max: float | None = None,
     proximal_lr: float = 1.0,
     e: int | None = None,
     beta_mask_pre_s: bool = False,
@@ -1782,6 +1829,8 @@ def fit_mple(
 ):
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
+    if v_column_l2_max is not None and float(v_column_l2_max) <= 0.0:
+        raise ValueError("v_column_l2_max must be positive.")
 
     t_steps = x.shape[0]
     if t_steps != artifacts.t_steps:
@@ -1807,6 +1856,7 @@ def fit_mple(
             lambda_nuclear,
             lambda_frobenius,
             lambda_uv_ridge,
+            v_column_l2_max,
             proximal_lr,
             e,
             beta_mask_pre_s,
@@ -1895,6 +1945,7 @@ def fit_mple(
             fixed_scalar_params=fixed_scalar_params,
             n_starts=n_starts,
             lambda_uv_ridge=lambda_uv_ridge,
+            v_column_l2_max=v_column_l2_max,
             s=s,
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
@@ -2326,6 +2377,12 @@ def main() -> None:
     lambda_nuclear = float(config.global_params.get("lambda_nuclear", 0.0))
     lambda_frobenius = float(config.global_params.get("lambda_frobenius", 0.0))
     lambda_uv_ridge = float(config.global_params.get("lambda_uv_ridge", 0.0))
+    raw_v_column_l2_max = config.global_params.get("v_column_l2_max", None)
+    v_column_l2_max = (
+        None
+        if raw_v_column_l2_max is None
+        else float(raw_v_column_l2_max)
+    )
     optimizer_params = (
         config.optimizer_params
         if "optimizer_params" in config
@@ -2365,12 +2422,29 @@ def main() -> None:
     logger.info("Using a fixed known graph with scalar xi.")
     logger.info("Fit-time hard bounds active: False")
     logger.info("Fixed scalar parameters: %s", fixed_scalar_params or {})
-    logger.info("Warm-start fixed scalars: %s for %s steps", warm_start_fixed_scalars or {}, warm_start_steps)
+    logger.info(
+        "Warm-start fixed scalars: %s for %s steps",
+        warm_start_fixed_scalars or {},
+        warm_start_steps,
+    )
     logger.info("Beta mask before s: %s with s=%s", beta_mask_pre_s, config.global_params.s)
     logger.info("Beta mask after e: %s with e=%s", beta_mask_post_e, config.global_params.e)
+    if v_column_l2_max is not None:
+        if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
+            logger.info(
+                "Alternating V-column L2-ball constraint active with radius %s",
+                v_column_l2_max,
+            )
+        else:
+            logger.info(
+                "Ignoring v_column_l2_max=%s for optimizer_mode=%s",
+                v_column_l2_max,
+                artifacts.optimizer_mode,
+            )
     logger.info(
         "Optimizer settings: steps=%s, tol=%s, n_starts=%s, seed=%s, "
-        "lambda_nuclear=%s, lambda_frobenius=%s, lambda_uv_ridge=%s, proximal_lr=%s",
+        "lambda_nuclear=%s, lambda_frobenius=%s, lambda_uv_ridge=%s, "
+        "v_column_l2_max=%s, proximal_lr=%s",
         steps,
         tol,
         n_starts,
@@ -2378,6 +2452,7 @@ def main() -> None:
         lambda_nuclear,
         lambda_frobenius,
         lambda_uv_ridge,
+        v_column_l2_max,
         proximal_lr,
     )
 
@@ -2398,6 +2473,7 @@ def main() -> None:
         lambda_nuclear=lambda_nuclear,
         lambda_frobenius=lambda_frobenius,
         lambda_uv_ridge=lambda_uv_ridge,
+        v_column_l2_max=v_column_l2_max,
         proximal_lr=proximal_lr,
         e=int(config.global_params.get("e", x.shape[0])),
         beta_mask_pre_s=beta_mask_pre_s,
