@@ -332,11 +332,6 @@ def _resolve_generation_field_singular_values(
         field_params.get("singular_values"),
         context="global_params.field_params.singular_values",
     )
-    if singular_values.size == 0 and get_latent_rank(config) > 0:
-        raise ValueError(
-            "global_params.field_params.singular_values is required when "
-            "truth.latent_rank is positive for low-rank field generation."
-        )
     if singular_values.size == 0 and not allow_empty:
         raise ValueError(
             "global_params.field_params.singular_values must be provided for this field mode."

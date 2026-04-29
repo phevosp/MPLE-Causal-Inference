@@ -543,7 +543,6 @@ def materialize_generation_experiment(
     print(
         "Building latent field artifacts with"
         f" field_mode={get_synthetic_field_mode(config)} and"
-        f" latent_rank={int(config.global_params.latent_rank)} and"
         f" B={float(config.global_params.B):.4f}."
     )
     artifacts = build_synthetic_field(
@@ -551,7 +550,6 @@ def materialize_generation_experiment(
         gamma_matrix,
         intervention_structure=intervention_structure,
     )
-    config.global_params.latent_rank = int(artifacts.latent_rank)
 
     x, z, z_0 = generate_data(
         config,

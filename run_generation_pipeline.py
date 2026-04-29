@@ -196,6 +196,11 @@ def translate_generation_spec(spec: dict[str, Any]):
     """Translate an experiment spec into a config dict for generation."""
     dims = resolve_dimensions(spec)
     truth = dict(spec.get("truth", {}) or {})
+    if "latent_rank" in truth:
+        raise ValueError(
+            "truth.latent_rank has been removed from generation specs; "
+            "use truth.field_params.singular_values to define the external-field rank."
+        )
     scalars = dict(truth.get("scalars", {}) or {})
     field_mode = str(truth.get("field_mode", "random_low_rank"))
     field_params = dict(truth.get("field_params", {}) or {})
@@ -232,10 +237,6 @@ def translate_generation_spec(spec: dict[str, Any]):
     else:
         raise ValueError(f"Unknown intervention source '{intervention_source}'.")
 
-    latent_rank = int(truth.get("latent_rank", 0))
-    if latent_rank < 0:
-        raise ValueError("truth.latent_rank must be nonnegative.")
-
     config = OmegaConf.create(
         {
             "global_params": {
@@ -251,7 +252,6 @@ def translate_generation_spec(spec: dict[str, Any]):
                     "trim_scope": graph_artifact.get("trim_scope"),
                 },
                 "x_0_generator": str(x0["generator"]),
-                "latent_rank": latent_rank,
                 "field_mode": field_mode,
                 "field_params": field_params,
                 "gamma_matrix_params": gamma_matrix_params,
@@ -293,6 +293,8 @@ def manifest_row_for_experiment(
     dims: dict[str, int],
     metadata: dict[str, object],
 ) -> dict[str, object]:
+    field_params = dict(spec.get("truth", {}).get("field_params", {}) or {})
+    singular_values = np.asarray(field_params.get("singular_values", []) or [], dtype=float).reshape(-1)
     return {
         "experiment_name": spec["name"],
         "experiment_slug": slugify(spec["name"]),
@@ -307,9 +309,7 @@ def manifest_row_for_experiment(
         "has_truth": True,
         "field_mode": str(metadata.get("field_mode", "random_low_rank")),
         "latent_rank": int(
-            metadata.get(
-                "latent_rank", spec.get("truth", {}).get("latent_rank", 0)
-            )
+            metadata.get("latent_rank", singular_values.size)
         ),
     }
 

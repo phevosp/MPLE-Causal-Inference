@@ -133,7 +133,6 @@ def base_config() -> object:
                 "N": 4,
                 "T": 3,
                 "B": 1.0,
-                "latent_rank": 0,
                 "field_params": {},
             },
             "estimation_params": {
@@ -351,7 +350,6 @@ class MinimalPipelineTests(unittest.TestCase):
 
     def test_positive_rank_latent_field_is_realized(self) -> None:
         config = base_config()
-        config.global_params.latent_rank = 2
         config.global_params.field_params = {"singular_values": [1.0, 0.7]}
         gamma = np.array(
             [
@@ -370,7 +368,6 @@ class MinimalPipelineTests(unittest.TestCase):
 
     def test_generated_latent_field_uses_target_rms_scaling(self) -> None:
         config = base_config()
-        config.global_params.latent_rank = 2
         config.global_params.B = 0.5
         config.global_params.field_params = {"singular_values": [1.0, 0.7]}
         gamma = np.array(
@@ -537,6 +534,61 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         self.assertIn("singular_values", confounding_spec["truth"]["field_params"])
 
+    def test_generation_spec_rejects_removed_truth_latent_rank(self) -> None:
+        spec_path = REPO_ROOT / "experiments" / f".tmp_removed_truth_rank_{uuid.uuid4().hex}.yaml"
+        try:
+            spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        f"  experiment_root: {(REPO_ROOT / 'experiments').as_posix()}/tmp_removed_truth_rank",
+                        f"  manifest_path: {(REPO_ROOT / 'experiments').as_posix()}/tmp_removed_truth_rank/generation_manifest.csv",
+                        "  dimensions:",
+                        "    N: 4",
+                        "    T: 3",
+                        "  generation:",
+                        "    gibbs_sweeps: 1",
+                        "    seed: 0",
+                        "  x0:",
+                        "    generator: bernoulli",
+                        "    params:",
+                        "      p: 0.5",
+                        "      fixed_val: null",
+                        "  graph:",
+                        "    source: generated",
+                        "    generator: empty",
+                        "    params: {}",
+                        "    artifact: {}",
+                        "  intervention:",
+                        "    source: generated",
+                        "    generator: low_rank_probability",
+                        "    params:",
+                        "      singular_values: []",
+                        "      probability_amplitude: 0.5",
+                        "    artifact: {}",
+                        "  truth:",
+                        "    B: 1.0",
+                        "    latent_rank: 2",
+                        "    field_mode: random_low_rank",
+                        "    field_params:",
+                        "      singular_values: [1.0, 0.7]",
+                        "    scalars:",
+                        "      beta: 0.0",
+                        "      xi: 0.0",
+                        "      eta: 0.0",
+                        "      zeta: 0.0",
+                        "      psi: 0.0",
+                        "experiments:",
+                        "  - name: bad_truth_rank",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "truth.latent_rank has been removed"):
+                run_generation(spec_path, overwrite=True)
+        finally:
+            spec_path.unlink(missing_ok=True)
+
     def test_generation_pipeline_smoke_with_confounding_field_mode(self) -> None:
         root = REPO_ROOT / "experiments" / f".tmp_gen_confounding_{uuid.uuid4().hex}"
         root.mkdir(parents=True, exist_ok=False)
@@ -597,7 +649,6 @@ class MinimalPipelineTests(unittest.TestCase):
                         "      trim_scope: null",
                         "  truth:",
                         "    B: 1.0",
-                        "    latent_rank: 2",
                         f"    field_mode: {SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK}",
                         "    field_params:",
                         "      singular_values: [1.0, 0.5]",
@@ -2191,7 +2242,6 @@ class FitReportingTests(unittest.TestCase):
                     "      trim_scope: null",
                     "  truth:",
                     "    B: 1.0",
-                    "    latent_rank: 0",
                     "    scalars:",
                     "      beta: 0.2",
                     "      xi: 0.1",
@@ -2331,7 +2381,6 @@ class PipelineStageRequestTests(unittest.TestCase):
                 },
                 "truth": {
                     "B": 1.0,
-                    "latent_rank": 0,
                     "field_mode": "random_low_rank",
                     "field_params": {},
                     "scalars": {
@@ -2425,7 +2474,6 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "exp_rank_2",
                     "truth": {
-                        "latent_rank": 2,
                         "field_mode": "random_low_rank",
                         "field_params": {"singular_values": [1.0, 0.7]},
                     },
@@ -4285,7 +4333,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "      trim_scope: null",
                     "  truth:",
                     "    B: 1.0",
-                    "    latent_rank: 0",
                     "    scalars:",
                     "      beta: 0.2",
                     "      xi: 0.1",
@@ -4395,7 +4442,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "      trim_scope: null",
                     "  truth:",
                     "    B: 1.0",
-                    "    latent_rank: 0",
                     "    scalars:",
                     "      beta: 0.2",
                     "      xi: 0.1",
@@ -4602,7 +4648,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "      trim_scope: null",
                     "  truth:",
                     "    B: 1.0",
-                    "    latent_rank: 0",
                     "    scalars:",
                     "      beta: 0.2",
                     "      xi: 0.1",

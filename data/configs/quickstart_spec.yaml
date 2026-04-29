@@ -40,7 +40,6 @@ base:
       trim_scope: null
   truth:
     B: 2.0
-    latent_rank: 0
     field_mode: random_low_rank
     field_params:
       singular_values: []
@@ -54,7 +53,6 @@ base:
 experiments:
   - name: quickstart_rank_2
     truth:
-      latent_rank: 2
       B: 1.0
       field_mode: random_low_rank
       field_params:

@@ -29,7 +29,6 @@ Important keys:
 - `intervention.generator` and `intervention.params` for generated interventions
 - `intervention.artifact.*` for fixed intervention artifacts
 - `truth.B`
-- `truth.latent_rank`
 - `truth.field_mode`
 - `truth.field_params`
 - `truth.scalars.beta`, `xi`, `eta`

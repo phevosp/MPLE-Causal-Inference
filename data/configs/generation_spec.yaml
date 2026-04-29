@@ -40,7 +40,6 @@ base:
       trim_scope: null
   truth:
     B: 2.0
-    latent_rank: 0
     field_mode: random_low_rank
     field_params:
       singular_values: [1.0, 0.7, 0.49]

@@ -112,7 +112,6 @@ What generation resolves:
 - `dimensions.N` and `dimensions.T`
 - outcome truth scalars `beta`, `xi`, `eta`
 - generation-only intervention scalars `zeta`, `psi`
-- `truth.latent_rank`
 - `truth.field_mode`
 - graph source
 - intervention source
