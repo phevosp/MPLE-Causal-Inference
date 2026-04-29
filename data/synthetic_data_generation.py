@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import networkx as nx
@@ -15,11 +16,14 @@ if str(REPO_ROOT) not in sys.path:
 
 from model_utils import (
     ModelArtifacts,
+    SpectralLowRankStructure,
     build_synthetic_field,
     compose_interaction_matrix,
     get_xi,
     get_synthetic_field_mode,
     interaction_matrix_infinity_norm,
+    parse_singular_values,
+    sample_spectral_low_rank_structure,
     save_model_artifacts,
 )
 
@@ -27,6 +31,15 @@ from model_utils import (
 def slugify(text: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "_", text.strip().lower()).strip("_")
     return slug or "experiment"
+
+
+@dataclass(frozen=True)
+class InterventionGenerationArtifacts:
+    low_rank_structure: SpectralLowRankStructure
+    score_matrix: np.ndarray
+    probability_matrix: np.ndarray
+    z: np.ndarray
+    z_0: np.ndarray
 
 
 def spin_sample_from_field(h, rng):
@@ -118,7 +131,18 @@ def realize_generation_inputs(config):
 
 
 def intervention_mode(config) -> str:
-    return str(getattr(config.generation_params, "intervention_mode", "generated_z"))
+    return str(
+        getattr(config.generation_params, "intervention_mode", "low_rank_probability")
+    )
+
+
+def intervention_params(config) -> dict[str, object]:
+    params = getattr(config.generation_params, "intervention_params", {})
+    if params is None:
+        return {}
+    if isinstance(params, dict):
+        return dict(params)
+    return dict(params)
 
 
 def load_fixed_intervention_artifacts(
@@ -182,9 +206,48 @@ def derive_pre_intervention_steps(z: np.ndarray) -> int:
     return int(np.argmax(treated_rows)) if treated_rows.any() else int(z.shape[0])
 
 
-def sample_z_t(x_prev, z_prev, config, rng):
-    h_z = config.estimation_params.zeta * x_prev + config.estimation_params.psi * z_prev
-    return spin_sample_from_field(h_z, rng)
+def sample_low_rank_probability_interventions(
+    config,
+) -> InterventionGenerationArtifacts:
+    params = intervention_params(config)
+    singular_values = parse_singular_values(
+        params.get("singular_values"),
+        context="generation_params.intervention_params.singular_values",
+    )
+    amplitude = float(params.get("probability_amplitude", 0.5))
+    if amplitude < 0.0 or amplitude > 0.5:
+        raise ValueError(
+            "generation_params.intervention_params.probability_amplitude must lie in [0, 0.5]."
+        )
+
+    structure = sample_spectral_low_rank_structure(
+        int(config.global_params.N),
+        int(config.global_params.T),
+        singular_values,
+        np.random.default_rng(int(config.generation_params.seed) + 307),
+    )
+    score_matrix = np.asarray(structure.matrix, dtype=float)
+    max_abs = float(np.max(np.abs(score_matrix))) if score_matrix.size else 0.0
+    if max_abs > 0.0:
+        score_matrix = score_matrix / max_abs
+    else:
+        score_matrix = np.zeros_like(score_matrix)
+    probability_matrix = 0.5 + amplitude * score_matrix
+    probability_matrix = np.clip(probability_matrix, 0.0, 1.0)
+    z_rng = np.random.default_rng(int(config.generation_params.seed) + 401)
+    z = np.where(
+        z_rng.random(probability_matrix.shape) < probability_matrix,
+        1.0,
+        -1.0,
+    )
+    z_0 = np.zeros(int(config.global_params.N), dtype=float)
+    return InterventionGenerationArtifacts(
+        low_rank_structure=structure,
+        score_matrix=score_matrix,
+        probability_matrix=probability_matrix,
+        z=z,
+        z_0=z_0,
+    )
 
 
 def sample_x_t_with_parameters(
@@ -336,7 +399,7 @@ def generate_data(
         raise ValueError(f"z_0 shape {resolved_z_0.shape} does not match N={n_nodes}.")
     print(
         "Generating panel data with"
-        f" T={t_steps}, N={n_nodes}, s={int(config.global_params.s)},"
+        f" T={t_steps}, N={n_nodes},"
         f" intervention_mode={intervention_mode(config)},"
         f" gibbs_sweeps={int(config.generation_params.gibbs_sweeps)}"
     )
@@ -347,19 +410,6 @@ def generate_data(
     beta = float(config.estimation_params.beta)
     eta = float(config.estimation_params.eta)
     gibbs_sweeps = int(config.generation_params.gibbs_sweeps)
-
-    def simulate(z_sampler):
-        return _simulate_panel(
-            x_0=np.asarray(x_0, dtype=float),
-            z_0=resolved_z_0,
-            field_matrix=field_matrix,
-            interaction_matrix=interaction_matrix,
-            beta=beta,
-            eta=eta,
-            rng=rng,
-            gibbs_sweeps=gibbs_sweeps,
-            z_sampler=z_sampler,
-        )
 
     mode = intervention_mode(config)
     if mode == "fixed_z":
@@ -373,19 +423,39 @@ def generate_data(
                 f"fixed_z shape {z.shape} does not match configured (T, N)=({t_steps}, {n_nodes})."
             )
         print("Using saved intervention panel z.")
-        x, z = simulate(lambda t, _x_prev, _z_prev: z[t, :])
+        x = simulate_outcomes_given_fixed_interventions(
+            x_0=np.asarray(x_0, dtype=float),
+            z=z,
+            field_matrix=field_matrix,
+            interaction_matrix=interaction_matrix,
+            beta=beta,
+            eta=eta,
+            rng=rng,
+            gibbs_sweeps=gibbs_sweeps,
+        )
         return x, z, resolved_z_0
 
-    if mode != "generated_z":
+    if mode != "low_rank_probability":
         raise ValueError(f"Invalid intervention_mode: {mode}")
-
-    print("Sampling intervention process z and outcomes x.")
-    x, z = simulate(
-        z_sampler=lambda t, x_prev, z_prev: (
-            sample_z_t(x_prev, z_prev, config, rng)
-            if t >= int(config.global_params.s)
-            else -np.ones_like(x_prev)
-        )
+    if fixed_z is None:
+        intervention_artifacts = sample_low_rank_probability_interventions(config)
+        z = np.asarray(intervention_artifacts.z, dtype=float)
+        resolved_z_0 = np.asarray(intervention_artifacts.z_0, dtype=float)
+    else:
+        z = np.asarray(fixed_z, dtype=float)
+        if z.shape != (t_steps, n_nodes):
+            raise ValueError(
+                f"fixed_z shape {z.shape} does not match configured (T, N)=({t_steps}, {n_nodes})."
+            )
+    x = simulate_outcomes_given_fixed_interventions(
+        x_0=np.asarray(x_0, dtype=float),
+        z=z,
+        field_matrix=field_matrix,
+        interaction_matrix=interaction_matrix,
+        beta=beta,
+        eta=eta,
+        rng=rng,
+        gibbs_sweeps=gibbs_sweeps,
     )
     return x, z, resolved_z_0
 
@@ -399,6 +469,7 @@ def save_artifacts(
     z_0: np.ndarray,
     x: np.ndarray,
     z: np.ndarray,
+    intervention_generation_artifacts: InterventionGenerationArtifacts | None = None,
     config_filename: str = "realized_config.yaml",
 ) -> None:
     print(f"Saving experiment artifacts to {data_folder}...")
@@ -409,6 +480,30 @@ def save_artifacts(
     np.save(data_folder / "x_0.npy", x_0)
     np.save(data_folder / "z_0.npy", z_0)
     save_model_artifacts(data_folder, artifacts)
+    if intervention_generation_artifacts is not None:
+        np.savez(
+            data_folder / "intervention_generation_artifacts.npz",
+            node_factors=np.asarray(
+                intervention_generation_artifacts.low_rank_structure.node_factors,
+                dtype=float,
+            ),
+            time_factors=np.asarray(
+                intervention_generation_artifacts.low_rank_structure.time_factors,
+                dtype=float,
+            ),
+            singular_values=np.asarray(
+                intervention_generation_artifacts.low_rank_structure.singular_values,
+                dtype=float,
+            ),
+            score_matrix=np.asarray(
+                intervention_generation_artifacts.score_matrix, dtype=float
+            ),
+            probability_matrix=np.asarray(
+                intervention_generation_artifacts.probability_matrix, dtype=float
+            ),
+            z=np.asarray(intervention_generation_artifacts.z, dtype=float),
+            z_0=np.asarray(intervention_generation_artifacts.z_0, dtype=float),
+        )
     print("Finished saving generation artifacts.")
 
 
@@ -425,27 +520,38 @@ def materialize_generation_experiment(
     config, gamma_matrix, x_0, rng, fixed_gamma_metadata = realize_generation_inputs(
         config
     )
+
+    fixed_z_metadata: dict[str, str] = {}
+    intervention_generation_artifacts: InterventionGenerationArtifacts | None = None
+    intervention_structure: SpectralLowRankStructure | None = None
+    if intervention_mode(config) == "fixed_z":
+        fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
+        print("Loaded fixed intervention path.")
+    elif intervention_mode(config) == "low_rank_probability":
+        intervention_generation_artifacts = sample_low_rank_probability_interventions(
+            config
+        )
+        intervention_structure = intervention_generation_artifacts.low_rank_structure
+        fixed_z = np.asarray(intervention_generation_artifacts.z, dtype=float)
+        z_0 = np.asarray(intervention_generation_artifacts.z_0, dtype=float)
+        print("Generated interventions from a low-rank probability matrix.")
+    else:
+        fixed_z = None
+        z_0 = np.zeros(int(config.global_params.N), dtype=float)
+        print("Using default generated intervention setup with z_0 initialized to zeros.")
+
     print(
         "Building latent field artifacts with"
         f" field_mode={get_synthetic_field_mode(config)} and"
         f" latent_rank={int(config.global_params.latent_rank)} and"
         f" B={float(config.global_params.B):.4f}."
     )
-    artifacts = build_synthetic_field(config, gamma_matrix)
+    artifacts = build_synthetic_field(
+        config,
+        gamma_matrix,
+        intervention_structure=intervention_structure,
+    )
     config.global_params.latent_rank = int(artifacts.latent_rank)
-
-    fixed_z_metadata: dict[str, str] = {}
-    if intervention_mode(config) == "fixed_z":
-        fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
-        config.global_params.s = derive_pre_intervention_steps(fixed_z)
-        print(
-            "Derived pre-intervention length from fixed z:"
-            f" s={int(config.global_params.s)}."
-        )
-    else:
-        fixed_z = None
-        z_0 = np.zeros(int(config.global_params.N), dtype=float)
-        print("Using generated intervention path with z_0 initialized to zeros.")
 
     x, z, z_0 = generate_data(
         config,
@@ -486,6 +592,7 @@ def materialize_generation_experiment(
         z_0,
         x,
         z,
+        intervention_generation_artifacts=intervention_generation_artifacts,
         config_filename=config_filename,
     )
     print(f"Finished experiment '{descriptor}'.")

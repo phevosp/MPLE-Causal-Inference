@@ -23,7 +23,6 @@ from omegaconf import OmegaConf
 from scipy import sparse
 
 from data.synthetic_data_generation import (
-    derive_pre_intervention_steps,
     materialize_generation_experiment,
 )
 from pipeline_specs import (
@@ -127,11 +126,11 @@ def _maybe_load_fixed_graph_shape(spec: dict[str, Any]) -> int | None:
 
 def _maybe_load_fixed_intervention_shape(
     spec: dict[str, Any],
-) -> tuple[int | None, int | None, int | None]:
+) -> tuple[int | None, int | None]:
     """Load shape of fixed intervention panel, if source is fixed artifact"""
     intervention = spec.get("intervention", {})
     if intervention.get("source", "generated") != "fixed_artifact":
-        return None, None, None
+        return None, None
     artifact = intervention.get("artifact", {})
     panel_path = Path(str(artifact.get("panel_path", "")))
     z0_path = Path(str(artifact.get("z0_path", "")))
@@ -156,14 +155,14 @@ def _maybe_load_fixed_intervention_shape(
         raise ValueError(
             f"Fixed z_0 shape {z_0.shape} does not match panel width {z.shape[1]}."
         )
-    return int(z.shape[1]), int(z.shape[0]), derive_pre_intervention_steps(z)
+    return int(z.shape[1]), int(z.shape[0])
 
 
 def resolve_dimensions(spec: dict[str, Any]) -> dict[str, int]:
-    """Resolve dimensions N, T, s for an experiment spec, checking for consistency across sources."""
+    """Resolve dimensions N and T for an experiment spec."""
     dims = dict(spec.get("dimensions", {}) or {})
     graph_n = _maybe_load_fixed_graph_shape(spec)
-    z_n, z_t, z_s = _maybe_load_fixed_intervention_shape(spec)
+    z_n, z_t = _maybe_load_fixed_intervention_shape(spec)
     fixed_n_candidates = [value for value in [graph_n, z_n] if value is not None]
     if fixed_n_candidates and len(set(int(value) for value in fixed_n_candidates)) != 1:
         raise ValueError(
@@ -190,16 +189,7 @@ def resolve_dimensions(spec: dict[str, Any]) -> dict[str, int]:
             f"Experiment '{spec['name']}' must define T or provide a fixed intervention source."
         )
 
-    intervention_source = spec.get("intervention", {}).get("source", "generated")
-    if intervention_source == "fixed_artifact":
-        s_value = int(z_s)
-    else:
-        if dims.get("s") is None:
-            raise ValueError(
-                f"Experiment '{spec['name']}' must define s when intervention source is generated."
-            )
-        s_value = int(dims["s"])
-    return {"N": n_value, "T": t_value, "s": s_value}
+    return {"N": n_value, "T": t_value}
 
 
 def translate_generation_spec(spec: dict[str, Any]):
@@ -227,8 +217,16 @@ def translate_generation_spec(spec: dict[str, Any]):
 
     intervention_source = str(intervention.get("source", "generated"))
     intervention_artifact = dict(intervention.get("artifact", {}) or {})
+    intervention_generator = str(
+        intervention.get("generator", "low_rank_probability")
+    ).strip()
+    intervention_params = dict(intervention.get("params", {}) or {})
     if intervention_source == "generated":
-        intervention_mode = "generated_z"
+        if intervention_generator != "low_rank_probability":
+            raise ValueError(
+                "Generated interventions only support intervention.generator='low_rank_probability'."
+            )
+        intervention_mode = "low_rank_probability"
     elif intervention_source == "fixed_artifact":
         intervention_mode = "fixed_z"
     else:
@@ -243,7 +241,6 @@ def translate_generation_spec(spec: dict[str, Any]):
             "global_params": {
                 "N": dims["N"],
                 "T": dims["T"],
-                "s": dims["s"],
                 "B": float(truth["B"]),
                 "gamma_matrix_generator": gamma_matrix_generator,
                 "fixed_gamma_source": {
@@ -271,6 +268,8 @@ def translate_generation_spec(spec: dict[str, Any]):
                 "seed": int(generation["seed"]),
                 "gibbs_sweeps": int(generation["gibbs_sweeps"]),
                 "intervention_mode": intervention_mode,
+                "intervention_generator": intervention_generator,
+                "intervention_params": intervention_params,
                 "fixed_z_source": {
                     "panel_path": intervention_artifact.get("panel_path"),
                     "z0_path": intervention_artifact.get("z0_path"),
@@ -305,7 +304,6 @@ def manifest_row_for_experiment(
         "graph_source": str(spec.get("graph", {}).get("source", "generated")),
         "N": dims["N"],
         "T": dims["T"],
-        "s": dims["s"],
         "has_truth": True,
         "field_mode": str(metadata.get("field_mode", "random_low_rank")),
         "latent_rank": int(
@@ -391,7 +389,6 @@ def _manifest_row_from_completed_experiment(
         "graph_source": str(metadata.get("graph_source", "")),
         "N": int(x.shape[1]),
         "T": int(x.shape[0]),
-        "s": int(derive_pre_intervention_steps(z)),
         "has_truth": bool(metadata.get("has_truth", True)),
         "field_mode": str(metadata.get("field_mode", "random_low_rank")),
         "latent_rank": latent_rank,

@@ -166,8 +166,8 @@ def _sliced_experiment_name(base_name: str, resolved_start_date: str) -> str:
 
 
 def create_experiment_folders(args: argparse.Namespace) -> None:
-    _, features, centroids = load_inputs()
-    full_node_table = build_node_table(features, centroids)
+    _, node_geography, centroids = load_inputs()
+    full_node_table = build_node_table(node_geography, centroids)
     output_root = (WORKFLOW_REPO_ROOT / args.output_root).resolve()
     realized_outcome_root = output_root / "realized_outcomes"
     realized_intervention_root = output_root / "realized_interventions"
@@ -292,12 +292,9 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
             if experiment_dir.exists() and args.overwrite:
                 shutil.rmtree(experiment_dir)
 
-            treated_rows = np.any(experiment_z == 1, axis=1)
-            s = int(np.argmax(treated_rows)) if treated_rows.any() else int(experiment_z.shape[0])
             config = create_config(
                 n_nodes=len(realized_node_order),
                 t_steps=experiment_x.shape[0],
-                s=s,
                 outcome_code=outcome_code,
                 intervention_code=intervention_code,
                 lag_code=lag_code,
@@ -334,7 +331,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
                 **stats,
             }
             metadata["time_steps"] = int(experiment_x.shape[0])
-            metadata["pre_intervention_steps"] = int(s)
             if requested_start_date is not None:
                 metadata.update(
                     {
@@ -423,7 +419,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
                 "graph_source": network_name,
                 "N": int(len(realized_node_order)),
                 "T": int(experiment_x.shape[0]),
-                "s": int(s),
                 "has_truth": False,
                 "outcome_code": outcome_code,
                 "intervention_code": intervention_code,
@@ -436,7 +431,6 @@ def create_experiment_folders(args: argparse.Namespace) -> None:
                 "node_count": int(len(realized_node_order)),
                 "dropped_node_count": int(_metadata_value(shared_metadata, "dropped_node_count")),
                 "time_steps": int(experiment_x.shape[0]),
-                "pre_intervention_steps": int(s),
                 "realized_start_date": experiment_time_index["WeekEndDate"].min().date().isoformat(),
                 "realized_end_date": experiment_time_index["WeekEndDate"].max().date().isoformat(),
                 "requested_calendar_weeks": int(_metadata_value(shared_metadata, "requested_calendar_weeks")),

@@ -82,7 +82,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--reuse_processed_tables", action="store_true")
     parser.add_argument("--reuse_processed_networks", action="store_true")
-    parser.add_argument("--reuse_processed_features", action="store_true")
     return parser.parse_args()
 
 
@@ -91,7 +90,6 @@ def _processed_args(args: argparse.Namespace) -> argparse.Namespace:
         vaccination_source=args.vaccination_source,
         reuse_processed_tables=args.reuse_processed_tables,
         reuse_processed_networks=args.reuse_processed_networks,
-        reuse_processed_features=args.reuse_processed_features,
     )
 
 
@@ -99,10 +97,10 @@ def materialize_realized_artifacts(args: argparse.Namespace) -> None:
     build_processed_outputs(_processed_args(args))
     build_binary_panel()
 
-    panel, features, centroids = load_inputs()
-    full_node_table = build_node_table(features, centroids)
+    panel, node_geography, centroids = load_inputs()
+    full_node_table = build_node_table(node_geography, centroids)
     if set(full_node_table["fips"].astype(str)) != set(centroids["fips"].astype(str)):
-        raise ValueError("Feature basis and centroid county coverage do not match.")
+        raise ValueError("Node geography and centroid county coverage do not match.")
     full_node_table, panel, trim_metadata = apply_optional_trim(full_node_table, panel, args.trim)
     full_node_order = full_node_table["fips"].astype(str).tolist()
 
@@ -206,8 +204,6 @@ def materialize_realized_artifacts(args: argparse.Namespace) -> None:
             .sort_values("fips")
             .reset_index(drop=True)
         )
-        treated_rows = np.any(z == 1, axis=1)
-        s = int(np.argmax(treated_rows)) if treated_rows.any() else int(z.shape[0])
         shared_panel_dir = shared_panel_root / shared_panel_name(
             outcome_code=outcome_code,
             intervention_code=intervention_code,
@@ -228,7 +224,6 @@ def materialize_realized_artifacts(args: argparse.Namespace) -> None:
             **support_metadata,
             "node_count": int(len(realized_node_order)),
             "time_steps": int(x.shape[0]),
-            "pre_intervention_steps": int(s),
             "realized_week_start_date": time_index["WeekStartDate"].min().date().isoformat(),
             "realized_week_end_date": time_index["WeekEndDate"].max().date().isoformat(),
             "realized_outcome_dir": str(outcome_artifact.artifact_dir),

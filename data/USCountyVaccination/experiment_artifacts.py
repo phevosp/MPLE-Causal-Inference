@@ -108,9 +108,9 @@ class RealizedNetworkArtifact:
 
 def load_inputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     binary_panel_path = PROCESSED_DIR / "us_county_binary_panel.csv.gz"
-    feature_path = PROCESSED_DIR / "us_county_feature_basis.csv.gz"
+    node_geography_path = PROCESSED_DIR / "us_county_node_geography.csv.gz"
     centroid_path = PROCESSED_DIR / "us_county_centroids.csv"
-    required = [binary_panel_path, feature_path, centroid_path]
+    required = [binary_panel_path, node_geography_path, centroid_path]
     missing = [path.name for path in required if not path.exists()]
     if missing:
         raise FileNotFoundError(
@@ -119,13 +119,13 @@ def load_inputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             + ". Run preprocess_us_county_vaccination_data.py first."
         )
     panel = pd.read_csv(binary_panel_path, dtype={"fips": str}, parse_dates=["WeekStartDate", "WeekEndDate"])
-    features = pd.read_csv(feature_path, dtype={"fips": str})
+    node_geography = pd.read_csv(node_geography_path, dtype={"fips": str})
     centroids = pd.read_csv(centroid_path, dtype={"fips": str})
-    return panel, features, centroids
+    return panel, node_geography, centroids
 
 
-def build_node_table(features: pd.DataFrame, centroids: pd.DataFrame) -> pd.DataFrame:
-    node_table = features.merge(
+def build_node_table(node_geography: pd.DataFrame, centroids: pd.DataFrame) -> pd.DataFrame:
+    node_table = node_geography.merge(
         centroids,
         on=["fips", "county", "state_name"],
         how="left",
@@ -632,7 +632,6 @@ def compute_binary_summary(panel: pd.DataFrame) -> pd.DataFrame:
 def create_config(
     n_nodes: int,
     t_steps: int,
-    s: int,
     outcome_code: str,
     intervention_code: str,
     lag_code: str,
@@ -644,7 +643,6 @@ def create_config(
             "global_params": {
                 "N": int(n_nodes),
                 "T": int(t_steps),
-                "s": int(s),
                 "gamma_matrix_generator": "real_data",
                 "x_0_generator": "observed",
             },

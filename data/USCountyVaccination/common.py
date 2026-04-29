@@ -45,22 +45,6 @@ TIGER_2021_COUNTY_URL = (
 TIGER_2022_COUNTY_URL = (
     "https://www2.census.gov/geo/tiger/TIGER2022/COUNTY/tl_2022_us_county.zip"
 )
-CDC_SVI_2022_US_COUNTY_URL = (
-    "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/SVI_2022_US_county.csv"
-)
-CDC_SVI_2022_PR_COUNTY_URL = (
-    "https://svi.cdc.gov/Documents/Data/2022/csv/states_counties/PuertoRico_county.csv"
-)
-USDA_ERS_RUCC_2023_URL = (
-    "https://www.ers.usda.gov/media/5768/2023-rural-urban-continuum-codes.csv?v=33808"
-)
-
-ACS_2021_COUNTY_ENDPOINTS = {
-    "acs5": "https://api.census.gov/data/2021/acs/acs5",
-    "subject": "https://api.census.gov/data/2021/acs/acs5/subject",
-    "profile": "https://api.census.gov/data/2021/acs/acs5/profile",
-}
-
 DEFAULT_NETWORKS = ("contiguity", "knn_8", "distance_kernel_8")
 
 
@@ -282,7 +266,6 @@ def ensure_directories() -> dict[str, Path]:
         "raw_nyt": RAW_DIR / "nyt",
         "raw_vaccination": RAW_DIR / "vaccination",
         "raw_geography": RAW_DIR / "geography",
-        "raw_features": RAW_DIR / "features",
     }
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=True)

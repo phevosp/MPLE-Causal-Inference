@@ -53,10 +53,13 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 - `lambda_uv_ridge`: only active for `alternating_latent_rank` and `concurrent_latent_rank`.
 - `v_column_l2_max`: optional per-column `||v_k||_2 <= c` constraint for `alternating_latent_rank`; ignored by `concurrent_latent_rank`.
 
-**Key `generation_spec.yaml` truth fields:**
+**Key `generation_spec.yaml` fields:**
 
-- `truth.field_mode`: `random_low_rank`, `node_bias_plus_smooth_time_drift`, or `low_rank_plus_early_treatment_confounding`
-- `truth.field_params`: optional tuning knobs for structured fields such as `node_bias_scale`, `drift_scale`, `time_trend_sharpness`, `confounding_bias_scale`, and `untreated_score_value`
+- `intervention.generator`: use `low_rank_probability` to sample `z` independently from a spectral low-rank probability matrix
+- `intervention.params.singular_values`: explicit singular values for the intervention low-rank generator
+- `intervention.params.probability_amplitude`: maps normalized low-rank scores to probabilities via `p = 0.5 + amplitude * score`
+- `truth.field_mode`: `random_low_rank` or `confounded_low_rank`
+- `truth.field_params.singular_values`: explicit singular values for spectral low-rank field generation
 
 ## Environment
 
@@ -84,7 +87,7 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | MPLE variant fitting | `run_fit_pipeline.py`, `submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
 | Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
 | Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `report_posterior_predictive.py`, `submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
-| Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census, CDC SVI, USDA ERS sources | cached raw inputs |
+| Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census geography sources | cached raw inputs |
 | Real-data preprocessing and realization | `data/USCountyVaccination/preprocess_us_county_vaccination_data.py` | cached raw inputs | processed panels, `realized_*`, `shared_panels` |
 | Real-data experiment materialization | `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | `realized_*`, `shared_panels` | shared-compatible experiment folders, `generation_manifest.csv` |
 
@@ -106,7 +109,7 @@ pixi run python -u run_generation_pipeline.py --spec_path data/configs/generatio
 
 What generation resolves:
 
-- `dimensions.N`, `dimensions.T`, and `dimensions.s`
+- `dimensions.N` and `dimensions.T`
 - outcome truth scalars `beta`, `xi`, `eta`
 - generation-only intervention scalars `zeta`, `psi`
 - `truth.latent_rank`

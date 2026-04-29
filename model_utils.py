@@ -7,25 +7,17 @@ from pathlib import Path
 
 import numpy as np
 from scipy import sparse
-from sklearn.datasets import make_low_rank_matrix
 
 
 DEFAULT_LATENT_RANK = 0
 _DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerate
 _RMS_SCALE_FACTOR = 0.4         # targets initial field RMS at _RMS_SCALE_FACTOR * B
-_TAIL_STRENGTH = 0.5            # tail_strength arg for sklearn make_low_rank_matrix
 SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
 SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK = "random_low_rank"
-SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT = (
-    "node_bias_plus_smooth_time_drift"
-)
-SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING = (
-    "low_rank_plus_early_treatment_confounding"
-)
+SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK = "confounded_low_rank"
 VALID_SYNTHETIC_FIELD_MODES = {
     SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK,
-    SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT,
-    SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING,
+    SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK,
 }
 OPTIMIZER_MODE_NO_EXTERNAL_FIELD = "no_external_field"
 OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
@@ -50,6 +42,16 @@ class ModelArtifacts:
     latent_rank: int = 0
     optimizer_mode: str = OPTIMIZER_MODE_EXACT_RANK_MANIFOLD
     field_matrix: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class SpectralLowRankStructure:
+    """Low-rank matrix structure with canonical panel orientation (T, N)."""
+
+    node_factors: np.ndarray
+    time_factors: np.ndarray
+    singular_values: np.ndarray
+    matrix: np.ndarray
 
 
 def scalar_parameter_names() -> list[str]:
@@ -149,6 +151,21 @@ def get_synthetic_field_params(config) -> dict[str, object]:
     return dict(field_params)
 
 
+def parse_singular_values(
+    raw_values: object | None,
+    *,
+    context: str,
+) -> np.ndarray:
+    if raw_values is None:
+        return np.zeros(0, dtype=float)
+    values = np.asarray(raw_values, dtype=float).reshape(-1)
+    if np.any(~np.isfinite(values)):
+        raise ValueError(f"{context} must contain only finite numbers.")
+    if np.any(values < 0.0):
+        raise ValueError(f"{context} must be nonnegative.")
+    return values
+
+
 def _normalize_dense_graph(gamma_matrix: np.ndarray) -> np.ndarray:
     gamma_matrix = np.asarray(gamma_matrix, dtype=float)
     gamma_matrix = (gamma_matrix + gamma_matrix.T) / 2.0
@@ -209,18 +226,59 @@ def zero_latent_field(n_nodes: int, t_steps: int) -> np.ndarray:
     return np.zeros((t_steps, n_nodes), dtype=float)
 
 
-def _smooth_time_trend(t_steps: int, sharpness: float = 2.0) -> np.ndarray:
-    if t_steps <= 0:
-        raise ValueError("t_steps must be positive.")
-    if t_steps == 1:
-        return np.zeros(1, dtype=float)
-    grid = np.linspace(-1.0, 1.0, int(t_steps), dtype=float)
-    trend = np.tanh(float(sharpness) * grid)
-    trend = trend - float(np.mean(trend))
-    rms = float(np.sqrt(np.mean(trend**2)))
-    if rms < _DEGENERACY_THRESHOLD:
-        return np.zeros_like(trend)
-    return trend / rms
+def _orthonormal_gaussian_factors(
+    n_rows: int,
+    rank: int,
+    rng,
+) -> np.ndarray:
+    if rank < 0:
+        raise ValueError("rank must be nonnegative.")
+    if rank == 0:
+        return np.zeros((n_rows, 0), dtype=float)
+    if rank > n_rows:
+        raise ValueError(f"rank={rank} exceeds available dimension {n_rows}.")
+    q, _ = np.linalg.qr(rng.normal(size=(n_rows, rank)), mode="reduced")
+    return np.asarray(q[:, :rank], dtype=float)
+
+
+def normalize_matrix_max_abs(
+    matrix: np.ndarray,
+    *,
+    max_abs: float = 1.0,
+) -> np.ndarray:
+    matrix = np.asarray(matrix, dtype=float)
+    if max_abs < 0.0:
+        raise ValueError("max_abs must be nonnegative.")
+    current = latent_field_bound_norm(matrix)
+    if current < _DEGENERACY_THRESHOLD or max_abs == 0.0:
+        return np.zeros_like(matrix)
+    return matrix * (float(max_abs) / current)
+
+
+def sample_spectral_low_rank_structure(
+    n_nodes: int,
+    t_steps: int,
+    singular_values: np.ndarray,
+    rng,
+) -> SpectralLowRankStructure:
+    singular_values = np.asarray(singular_values, dtype=float).reshape(-1)
+    rank = int(singular_values.size)
+    if rank > min(int(n_nodes), int(t_steps)):
+        raise ValueError(
+            f"rank={rank} exceeds min(N, T)={min(int(n_nodes), int(t_steps))}."
+        )
+    node_factors = _orthonormal_gaussian_factors(int(n_nodes), rank, rng)
+    time_factors = _orthonormal_gaussian_factors(int(t_steps), rank, rng)
+    if rank == 0:
+        matrix = zero_latent_field(int(n_nodes), int(t_steps))
+    else:
+        matrix = (time_factors * singular_values[None, :]) @ node_factors.T
+    return SpectralLowRankStructure(
+        node_factors=node_factors,
+        time_factors=time_factors,
+        singular_values=singular_values,
+        matrix=np.asarray(matrix, dtype=float),
+    )
 
 
 def truncate_matrix_rank(field_matrix: np.ndarray, rank: int) -> np.ndarray:
@@ -264,172 +322,95 @@ def project_latent_field(
     return node_factors * scale, time_factors * scale
 
 
-def _sample_random_low_rank_field(config, n_nodes: int, t_steps: int) -> np.ndarray:
-    return _sample_random_low_rank_field_base(
-        config, n_nodes, t_steps, include_random_bias=True
-    )
-
-
-def _sample_random_low_rank_field_base(
+def _resolve_generation_field_singular_values(
     config,
-    n_nodes: int,
-    t_steps: int,
     *,
-    include_random_bias: bool,
-) -> np.ndarray:
-    rank = get_latent_rank(config)
-    if rank == 0:
-        return zero_latent_field(n_nodes, t_steps)
-    field_matrix = make_low_rank_matrix(
-        n_samples=t_steps,
-        n_features=n_nodes,
-        effective_rank=rank,
-        tail_strength=_TAIL_STRENGTH,
-        random_state=int(config.generation_params.seed) + 101,
-    )
-    if include_random_bias:
-        # Add bias to ensure nonzero mean and rescale to target RMS before truncation.
-        rng = np.random.default_rng(int(config.generation_params.seed) + 202)
-        bias = rng.normal(loc=0.0, scale=get_B(config), size=n_nodes)
-        field_matrix = field_matrix + bias[None, :]
-    field_matrix = np.asarray(field_matrix, dtype=float)
-    target_rms = _RMS_SCALE_FACTOR * get_B(config)
-    field_matrix = truncate_matrix_rank(field_matrix, rank)
-    return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
-
-
-def _sample_node_bias_plus_smooth_time_drift_field(
-    config,
-    n_nodes: int,
-    t_steps: int,
+    allow_empty: bool = True,
 ) -> np.ndarray:
     field_params = get_synthetic_field_params(config)
-    node_bias_scale = float(field_params.get("node_bias_scale", 1.0))
-    drift_scale = float(field_params.get("drift_scale", 0.5))
-    time_trend_sharpness = float(field_params.get("time_trend_sharpness", 2.0))
-    rng = np.random.default_rng(int(config.generation_params.seed) + 211)
-
-    node_bias = rng.normal(size=n_nodes)
-    drift_loading = rng.normal(size=n_nodes)
-    node_bias_norm = float(np.linalg.norm(node_bias))
-    if node_bias_norm < _DEGENERACY_THRESHOLD:
-        node_bias = np.ones(n_nodes, dtype=float)
-        node_bias_norm = float(np.linalg.norm(node_bias))
-    node_bias = node_bias / node_bias_norm
-
-    drift_norm = float(np.linalg.norm(drift_loading))
-    if drift_norm < _DEGENERACY_THRESHOLD:
-        drift_loading = np.zeros(n_nodes, dtype=float)
-        drift_loading[0] = 1.0
-        drift_norm = 1.0
-    if node_bias_norm >= _DEGENERACY_THRESHOLD:
-        projection = float(np.dot(drift_loading, node_bias))
-        drift_loading = drift_loading - projection * node_bias
-        drift_norm = float(np.linalg.norm(drift_loading))
-        if drift_norm < _DEGENERACY_THRESHOLD:
-            drift_loading = rng.normal(size=n_nodes)
-            projection = float(np.dot(drift_loading, node_bias))
-            drift_loading = drift_loading - projection * node_bias
-            drift_norm = float(np.linalg.norm(drift_loading))
-    if drift_norm < _DEGENERACY_THRESHOLD:
-        drift_loading = np.zeros(n_nodes, dtype=float)
-        drift_loading[min(1, n_nodes - 1)] = 1.0
-        drift_norm = float(np.linalg.norm(drift_loading))
-    drift_loading = drift_loading / drift_norm
-
-    trend = _smooth_time_trend(t_steps, sharpness=time_trend_sharpness)
-    field_matrix = (
-        node_bias_scale * node_bias[None, :]
-        + drift_scale * trend[:, None] * drift_loading[None, :]
+    singular_values = parse_singular_values(
+        field_params.get("singular_values"),
+        context="global_params.field_params.singular_values",
     )
+    if singular_values.size == 0 and get_latent_rank(config) > 0:
+        raise ValueError(
+            "global_params.field_params.singular_values is required when "
+            "truth.latent_rank is positive for low-rank field generation."
+        )
+    if singular_values.size == 0 and not allow_empty:
+        raise ValueError(
+            "global_params.field_params.singular_values must be provided for this field mode."
+        )
+    return singular_values
+
+
+def _scale_spectral_field(field_matrix: np.ndarray, config) -> np.ndarray:
+    field_matrix = normalize_matrix_max_abs(field_matrix, max_abs=1.0)
     target_rms = _RMS_SCALE_FACTOR * get_B(config)
     return scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
 
 
-def _load_fixed_intervention_panel_for_field_mode(config) -> np.ndarray:
-    source = getattr(config.generation_params, "fixed_z_source", None)
-    if source is None:
-        raise ValueError(
-            "generation_params.fixed_z_source is required for "
-            f"field_mode='{SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING}'."
-        )
-    panel_path = Path(str(getattr(source, "panel_path", "")))
-    if not panel_path.exists():
-        raise FileNotFoundError(
-            "fixed_z_source.panel_path must exist for "
-            f"field_mode='{SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING}'."
-        )
-    with np.load(panel_path, allow_pickle=False) as data:
-        if "z" not in data:
-            raise KeyError(f"Fixed-z panel artifact {panel_path} does not contain a 'z' array.")
-        z = np.asarray(data["z"], dtype=float)
-    expected_shape = (int(config.global_params.T), int(config.global_params.N))
-    if z.shape != expected_shape:
-        raise ValueError(
-            f"Fixed-z artifact shape {z.shape} does not match configured (T, N)={expected_shape}."
-        )
-    return z
-
-
-def _sample_low_rank_plus_early_treatment_confounding_field(
+def _sample_random_low_rank_field(
     config,
     n_nodes: int,
     t_steps: int,
 ) -> tuple[np.ndarray, int]:
-    field_params = get_synthetic_field_params(config)
-    confounding_bias_scale = float(field_params.get("confounding_bias_scale", 1.0))
-    untreated_score_value = float(field_params.get("untreated_score_value", 0.0))
-
-    base_low_rank = _sample_random_low_rank_field_base(
-        config,
+    singular_values = _resolve_generation_field_singular_values(config)
+    if singular_values.size == 0:
+        return zero_latent_field(n_nodes, t_steps), 0
+    structure = sample_spectral_low_rank_structure(
         n_nodes,
         t_steps,
-        include_random_bias=False,
+        singular_values,
+        np.random.default_rng(int(config.generation_params.seed) + 101),
     )
-    z = _load_fixed_intervention_panel_for_field_mode(config)
-    treated_mask = np.asarray(z == 1.0, dtype=bool)
-    ever_treated = np.any(treated_mask, axis=0)
-    first_treated = np.full(n_nodes, t_steps, dtype=int)
-    if np.any(ever_treated):
-        first_treated[ever_treated] = np.argmax(treated_mask[:, ever_treated], axis=0)
+    field_matrix = _scale_spectral_field(structure.matrix, config)
+    return field_matrix, int(singular_values.size)
 
-    earliness_score = np.full(n_nodes, untreated_score_value, dtype=float)
-    if t_steps > 1:
-        earliness_score[ever_treated] = 1.0 - (
-            first_treated[ever_treated].astype(float) / float(t_steps - 1)
+
+def _sample_confounded_low_rank_field(
+    config,
+    intervention_structure: SpectralLowRankStructure | None,
+) -> tuple[np.ndarray, int]:
+    if intervention_structure is None:
+        raise ValueError(
+            "field_mode='confounded_low_rank' requires generated low-rank intervention factors."
         )
-    else:
-        earliness_score[ever_treated] = 1.0
+    singular_values = _resolve_generation_field_singular_values(
+        config,
+        allow_empty=False,
+    )
+    shared_rank = int(intervention_structure.singular_values.size)
+    if singular_values.size != shared_rank:
+        raise ValueError(
+            "global_params.field_params.singular_values must have the same length as the "
+            "generated intervention singular values for field_mode='confounded_low_rank'."
+        )
+    field_matrix = (
+        intervention_structure.time_factors * singular_values[None, :]
+    ) @ intervention_structure.node_factors.T
+    field_matrix = _scale_spectral_field(field_matrix, config)
+    return field_matrix, shared_rank
 
-    confounding_bias = -confounding_bias_scale * earliness_score
-    field_matrix = np.asarray(base_low_rank, dtype=float) + confounding_bias[None, :]
-    target_rms = _RMS_SCALE_FACTOR * get_B(config)
-    field_matrix = scale_latent_field_matrix(field_matrix, target_rms, get_B(config))
 
-    base_rank = int(get_latent_rank(config))
-    realized_rank = min(base_rank + 1, n_nodes, t_steps) if abs(confounding_bias_scale) > _DEGENERACY_THRESHOLD else base_rank
-    if base_rank == 0 and abs(confounding_bias_scale) <= _DEGENERACY_THRESHOLD:
-        realized_rank = 0
-    return field_matrix, int(realized_rank)
-
-
-def build_synthetic_field(config, gamma_matrix) -> ModelArtifacts:
+def build_synthetic_field(
+    config,
+    gamma_matrix,
+    intervention_structure: SpectralLowRankStructure | None = None,
+) -> ModelArtifacts:
     n_nodes = int(config.global_params.N)
     t_steps = int(config.global_params.T)
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
     field_mode = get_synthetic_field_mode(config)
     if field_mode == SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK:
-        field_matrix = _sample_random_low_rank_field(config, n_nodes, t_steps)
-        latent_rank = get_latent_rank(config)
-    elif field_mode == SYNTHETIC_FIELD_MODE_NODE_BIAS_PLUS_SMOOTH_TIME_DRIFT:
-        field_matrix = _sample_node_bias_plus_smooth_time_drift_field(
+        field_matrix, latent_rank = _sample_random_low_rank_field(
             config, n_nodes, t_steps
         )
-        latent_rank = min(2, n_nodes, t_steps)
-    elif field_mode == SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING:
-        field_matrix, latent_rank = _sample_low_rank_plus_early_treatment_confounding_field(
-            config, n_nodes, t_steps
+    elif field_mode == SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK:
+        field_matrix, latent_rank = _sample_confounded_low_rank_field(
+            config,
+            intervention_structure,
         )
     else:
         raise ValueError(

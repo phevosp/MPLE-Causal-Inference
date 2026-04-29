@@ -67,9 +67,6 @@ Use `--no-trim` to materialize the full county support instead.
 - CDC county vaccination dataset `8xkx-amqh`
 - Bansal Lab county vaccination time series used as a fill source in the default CDC-first workflow
 - Census TIGER county shapefiles
-- Census ACS 2021 county APIs
-- CDC/ATSDR SVI 2022 county files
-- USDA ERS RUCC 2023 county file
 
 The concrete URLs live in `data/USCountyVaccination/common.py`.
 
@@ -95,7 +92,7 @@ Default command:
 pixi run python data/USCountyVaccination/load_raw_data.py
 ```
 
-This downloads or reuses raw NYT, CDC, Bansal, Census TIGER, CDC SVI, and USDA ERS files under `data/USCountyVaccination/raw/`.
+This downloads or reuses raw NYT, CDC, Bansal, and Census TIGER files under `data/USCountyVaccination/raw/`.
 
 ### 2. Preprocess And Realize Artifacts
 
@@ -128,7 +125,6 @@ Important flags:
 - `--vaccination_source cdc|bansal`
 - `--reuse_processed_tables`
 - `--reuse_processed_networks`
-- `--reuse_processed_features`
 - `--outcomes`
 - `--interventions`
 - `--lags`
@@ -358,8 +354,7 @@ Key processed files under `data/USCountyVaccination/processed/`:
 - `us_county_weekly_panel.csv.gz`
 - `us_county_binary_panel.csv.gz`
 - `us_county_binary_threshold_diagnostics.csv`
-- `us_county_feature_basis.csv.gz`
-- `us_county_feature_dictionary.csv`
+- `us_county_node_geography.csv.gz`
 - `us_counties.gpkg`
 - `us_county_centroids.csv`
 - `us_county_contiguity_adjacency.csv.gz`

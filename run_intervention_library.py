@@ -52,10 +52,11 @@ def _materialize_saved_intervention(
         z = panel_context["z"]
         z_0 = panel_context["z_0"]
         s_value = int(panel_context["s"])
+        e_value = int(panel_context["e"])
         extra_metadata = {}
     elif source_kind == "full_on":
         activation_scope = str(entry["activation_scope"]).strip().lower()
-        z, z_0, s_value = build_full_on_intervention(
+        z, z_0, s_value, e_value = build_full_on_intervention(
             int(panel_context["N"]),
             int(panel_context["T"]),
             int(panel_context["s"]),
@@ -66,7 +67,7 @@ def _materialize_saved_intervention(
         activation_scope = str(entry["activation_scope"]).strip().lower()
         unit_index = int(entry["unit_index"])
         start_step = entry.get("start_step")
-        z, z_0, s_value = build_single_unit_on_intervention(
+        z, z_0, s_value, e_value = build_single_unit_on_intervention(
             int(panel_context["N"]),
             int(panel_context["T"]),
             int(panel_context["s"]),
@@ -98,6 +99,7 @@ def _materialize_saved_intervention(
         z=z,
         z_0=z_0,
         s=int(s_value),
+        e=int(e_value),
         source_kind=source_kind,
         extra_metadata=extra_metadata,
     )
@@ -110,6 +112,7 @@ def _materialize_saved_intervention(
         "N": int(panel_context["N"]),
         "T": int(panel_context["T"]),
         "s": int(s_value),
+        "e": int(e_value),
         "output_path": str(output_root),
         "activation_scope": extra_metadata.get("activation_scope", ""),
         "unit_index": extra_metadata.get("unit_index", ""),

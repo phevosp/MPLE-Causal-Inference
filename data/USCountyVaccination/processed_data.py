@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import csv
 import sys
-import warnings
 from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import requests
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -19,10 +17,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import (  # noqa: E402
-    ACS_2021_COUNTY_ENDPOINTS,
     BANSAL_VACCINATION_URL,
-    CDC_SVI_2022_PR_COUNTY_URL,
-    CDC_SVI_2022_US_COUNTY_URL,
     CDC_VACCINATION_URL,
     CORE_END_DATE,
     CORE_START_DATE,
@@ -32,7 +27,6 @@ from common import (  # noqa: E402
     TIGER_2021_COUNTY_URL,
     TIGER_2022_COUNTY_URL,
     UNIT_LABEL,
-    USDA_ERS_RUCC_2023_URL,
     dump_json,
     ensure_directories,
     standardize_fips,
@@ -68,21 +62,6 @@ def add_iso_week_window(
     )
     result["WeekStartDate"] = result["WeekEndDate"] - pd.Timedelta(days=6)
     return result
-
-
-def fetch_json_table(
-    url: str,
-    params: dict[str, str] | None = None,
-    empty_columns: list[str] | None = None,
-) -> pd.DataFrame:
-    response = requests.get(url, params=params, timeout=180)
-    response.raise_for_status()
-    if response.status_code == 204 or not response.text.strip():
-        if empty_columns is None:
-            raise ValueError(f"Empty response from {url} for params={params}.")
-        return pd.DataFrame(columns=empty_columns)
-    payload = response.json()
-    return pd.DataFrame(payload[1:], columns=payload[0])
 
 
 def load_or_download_nyt(paths: dict[str, Path]) -> pd.DataFrame:
@@ -274,18 +253,13 @@ def combine_cdc_with_bansal_fill(
     return combined, "cdc_with_bansal_fill"
 
 
-def build_population_lookup(vaccination_weekly: pd.DataFrame, feature_frame: pd.DataFrame | None = None) -> pd.DataFrame:
+def build_population_lookup(vaccination_weekly: pd.DataFrame) -> pd.DataFrame:
     population = (
         vaccination_weekly[["fips", "population"]]
         .dropna(subset=["population"])
         .sort_values(["fips", "population"], ascending=[True, False])
         .drop_duplicates("fips")
     )
-    if feature_frame is not None and "total_population" in feature_frame.columns:
-        fallback = feature_frame[["fips", "total_population"]].rename(columns={"total_population": "population"})
-        population = fallback.merge(population, on="fips", how="left", suffixes=("_acs", "_vacc"))
-        population["population"] = population["population_vacc"].fillna(population["population_acs"])
-        population = population[["fips", "population"]]
     return population.drop_duplicates("fips")
 
 
@@ -320,248 +294,6 @@ def aggregate_nyt_weekly(nyt_daily: pd.DataFrame, population_lookup: pd.DataFram
         (weekly["WeekEndDate"] >= CORE_START_DATE) & (weekly["WeekEndDate"] <= CORE_END_DATE)
     ].copy()
     return weekly.sort_values(["fips", "WeekEndDate"]).reset_index(drop=True)
-
-
-def fetch_acs_features(state_fips_list: list[str]) -> pd.DataFrame:
-    rows: list[pd.DataFrame] = []
-    for state_fips in state_fips_list:
-        acs = fetch_json_table(
-            ACS_2021_COUNTY_ENDPOINTS["acs5"],
-            params={
-                "get": "NAME,B01003_001E,B19013_001E",
-                "for": "county:*",
-                "in": f"state:{state_fips}",
-            },
-            empty_columns=["NAME", "B01003_001E", "B19013_001E", "state", "county"],
-        ).rename(
-            columns={
-                "NAME": "county_label",
-                "B01003_001E": "total_population",
-                "B19013_001E": "median_household_income",
-            }
-        )
-        subject = fetch_json_table(
-            ACS_2021_COUNTY_ENDPOINTS["subject"],
-            params={
-                "get": "NAME,S1701_C03_001E",
-                "for": "county:*",
-                "in": f"state:{state_fips}",
-            },
-            empty_columns=["NAME", "S1701_C03_001E", "state", "county"],
-        ).rename(columns={"S1701_C03_001E": "poverty_rate"})
-        profile = fetch_json_table(
-            ACS_2021_COUNTY_ENDPOINTS["profile"],
-            params={
-                "get": "NAME,DP05_0024PE,DP02_0068PE",
-                "for": "county:*",
-                "in": f"state:{state_fips}",
-            },
-            empty_columns=["NAME", "DP05_0024PE", "DP02_0068PE", "state", "county"],
-        ).rename(
-            columns={
-                "DP05_0024PE": "senior_population",
-                "DP02_0068PE": "college_education",
-            }
-        )
-        merged = acs.merge(subject[["state", "county", "poverty_rate"]], on=["state", "county"], how="left")
-        merged = merged.merge(
-            profile[["state", "county", "senior_population", "college_education"]],
-            on=["state", "county"],
-            how="left",
-        )
-        rows.append(merged)
-
-    merged = pd.concat(rows, ignore_index=True)
-    merged["fips"] = merged["state"].astype(str).str.zfill(2) + merged["county"].astype(str).str.zfill(3)
-    numeric_columns = [
-        "total_population",
-        "median_household_income",
-        "poverty_rate",
-        "senior_population",
-        "college_education",
-    ]
-    for column in numeric_columns:
-        merged[column] = pd.to_numeric(merged[column], errors="coerce")
-    return merged[
-        [
-            "fips",
-            "total_population",
-            "median_household_income",
-            "poverty_rate",
-            "senior_population",
-            "college_education",
-        ]
-    ].sort_values("fips").reset_index(drop=True)
-
-
-def load_cdc_svi_2022_features(paths: dict[str, Path]) -> pd.DataFrame:
-    us_path = paths["raw_features"] / "cdc_svi_2022_us_county.csv"
-    pr_path = paths["raw_features"] / "cdc_svi_2022_pr_county.csv"
-    download_if_missing(CDC_SVI_2022_US_COUNTY_URL, us_path)
-    download_if_missing(CDC_SVI_2022_PR_COUNTY_URL, pr_path)
-
-    frames: list[pd.DataFrame] = []
-    for path in [us_path, pr_path]:
-        frame = pd.read_csv(
-            path,
-            usecols=["FIPS", "STCNTY", "RPL_THEMES"],
-            dtype={"FIPS": str, "STCNTY": str},
-        )
-        frame = frame.assign(
-            fips=standardize_fips(frame.get("FIPS", frame.get("STCNTY"))),
-            cdc_svi_2022_overall=pd.to_numeric(frame["RPL_THEMES"], errors="coerce"),
-        )
-        frames.append(frame[["fips", "cdc_svi_2022_overall"]].copy())
-
-    return (
-        pd.concat(frames, ignore_index=True)
-        .dropna(subset=["fips"])
-        .drop_duplicates("fips", keep="first")
-        .sort_values("fips")
-        .reset_index(drop=True)
-    )
-
-
-def load_usda_ers_rucc_2023_features(paths: dict[str, Path]) -> pd.DataFrame:
-    target = paths["raw_features"] / "usda_ers_rucc_2023.csv"
-    download_if_missing(USDA_ERS_RUCC_2023_URL, target)
-    raw = pd.read_csv(target, dtype={"FIPS": str}, encoding="latin-1")
-    rucc = raw.loc[raw["Attribute"].eq("RUCC_2023"), ["FIPS", "Value"]].copy()
-    rucc["fips"] = standardize_fips(rucc["FIPS"])
-    rucc["usda_ers_rucc_2023"] = pd.to_numeric(rucc["Value"], errors="coerce")
-    return (
-        rucc[["fips", "usda_ers_rucc_2023"]]
-        .dropna(subset=["fips"])
-        .drop_duplicates("fips", keep="first")
-        .sort_values("fips")
-        .reset_index(drop=True)
-    )
-
-
-def _mode_or_nan(series: pd.Series) -> float:
-    non_null = pd.to_numeric(series, errors="coerce").dropna()
-    if non_null.empty:
-        return float("nan")
-    mode = non_null.mode()
-    if mode.empty:
-        return float(non_null.iloc[0])
-    return float(mode.iloc[0])
-
-
-def build_feature_basis(
-    counties: pd.DataFrame,
-    vaccination_weekly: pd.DataFrame,
-    paths: dict[str, Path],
-) -> tuple[pd.DataFrame, str]:
-    try:
-        state_fips_list = sorted(counties["STATEFP"].astype(str).unique().tolist())
-        acs_features = fetch_acs_features(state_fips_list)
-        svi_features = load_cdc_svi_2022_features(paths)
-        rucc_features = load_usda_ers_rucc_2023_features(paths)
-        features = counties.merge(acs_features, on="fips", how="left")
-        features = features.merge(svi_features, on="fips", how="left")
-        features = features.merge(rucc_features, on="fips", how="left")
-        for column in [
-            "total_population",
-            "median_household_income",
-            "poverty_rate",
-            "senior_population",
-            "college_education",
-            "cdc_svi_2022_overall",
-        ]:
-            median_value = pd.to_numeric(features[column], errors="coerce").median()
-            features[column] = pd.to_numeric(features[column], errors="coerce").fillna(median_value)
-        rucc_fill = _mode_or_nan(features["usda_ers_rucc_2023"])
-        features["usda_ers_rucc_2023"] = pd.to_numeric(
-            features["usda_ers_rucc_2023"],
-            errors="coerce",
-        ).fillna(rucc_fill)
-        basis_mode = "acs_2021"
-    except Exception as exc:
-        warnings.warn(
-            f"County feature retrieval failed; falling back to population-only basis. {exc}",
-            stacklevel=2,
-        )
-        population = build_population_lookup(vaccination_weekly)
-        features = counties.merge(population, on="fips", how="left")
-        if features["population"].notna().any():
-            features["total_population"] = features["population"].fillna(features["population"].median())
-            features["median_household_income"] = np.nan
-            features["poverty_rate"] = np.nan
-            features["senior_population"] = np.nan
-            features["college_education"] = np.nan
-            features["cdc_svi_2022_overall"] = np.nan
-            features["usda_ers_rucc_2023"] = np.nan
-            basis_mode = "population_only"
-        else:
-            features["total_population"] = np.nan
-            features["median_household_income"] = np.nan
-            features["poverty_rate"] = np.nan
-            features["senior_population"] = np.nan
-            features["college_education"] = np.nan
-            features["cdc_svi_2022_overall"] = np.nan
-            features["usda_ers_rucc_2023"] = np.nan
-            basis_mode = "zero"
-    features["population_density"] = np.where(
-        pd.to_numeric(features["land_area_sq_km"], errors="coerce").gt(0),
-        pd.to_numeric(features["total_population"], errors="coerce")
-        / pd.to_numeric(features["land_area_sq_km"], errors="coerce"),
-        np.nan,
-    )
-    if features["population_density"].notna().any():
-        density_median = pd.to_numeric(features["population_density"], errors="coerce").median()
-        features["population_density"] = pd.to_numeric(features["population_density"], errors="coerce").fillna(
-            density_median
-        )
-    features["log_population"] = np.log1p(pd.to_numeric(features["total_population"], errors="coerce"))
-    return features.sort_values("fips").reset_index(drop=True), basis_mode
-
-
-def feature_dictionary(feature_basis_mode: str) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "column": "population_density",
-                "description": "County population density using total population divided by TIGER land area in square kilometers.",
-                "available_in_basis_mode": feature_basis_mode != "zero",
-            },
-            {
-                "column": "senior_population",
-                "description": "ACS 2021 share of the population age 65 and older.",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-            {
-                "column": "college_education",
-                "description": "ACS 2021 share of adults age 25 and older with a bachelor's degree or higher.",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-            {
-                "column": "poverty_rate",
-                "description": "ACS 2021 poverty rate percentage.",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-            {
-                "column": "log_population",
-                "description": "Natural log of one plus total county population.",
-                "available_in_basis_mode": feature_basis_mode != "zero",
-            },
-            {
-                "column": "median_household_income",
-                "description": "ACS 2021 median household income.",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-            {
-                "column": "cdc_svi_2022_overall",
-                "description": "CDC/ATSDR SVI 2022 overall county percentile ranking (RPL_THEMES).",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-            {
-                "column": "usda_ers_rucc_2023",
-                "description": "USDA ERS 2023 Rural-Urban Continuum Code as an ordinal county urbanicity feature.",
-                "available_in_basis_mode": feature_basis_mode == "acs_2021",
-            },
-        ]
-    )
 
 
 def load_or_download_geometry(paths: dict[str, Path]) -> tuple[gpd.GeoDataFrame, str]:
@@ -671,6 +403,18 @@ def build_county_master(
     return counties
 
 
+def build_node_geography_table(
+    counties: pd.DataFrame,
+    population_lookup: pd.DataFrame,
+) -> pd.DataFrame:
+    node_geography = counties.merge(
+        population_lookup.rename(columns={"population": "total_population"}),
+        on="fips",
+        how="left",
+    )
+    return node_geography.sort_values("fips").reset_index(drop=True)
+
+
 def build_joined_panel(
     counties: pd.DataFrame,
     weekly_nyt: pd.DataFrame,
@@ -734,19 +478,8 @@ def build_processed_outputs(args) -> None:
     vaccination_weekly = vaccination_weekly.loc[vaccination_weekly["fips"].isin(counties["fips"])].copy()
     nyt_daily = nyt_daily.loc[nyt_daily["fips"].isin(counties["fips"])].copy()
 
-    if args.reuse_processed_features and (PROCESSED_DIR / "us_county_feature_basis.csv.gz").exists():
-        features = pd.read_csv(PROCESSED_DIR / "us_county_feature_basis.csv.gz", dtype={"fips": str})
-        feature_basis_mode = str(features.get("feature_basis_mode", pd.Series(["unknown"])).iloc[0])
-    else:
-        features, feature_basis_mode = build_feature_basis(counties, vaccination_weekly, paths)
-        features["feature_basis_mode"] = feature_basis_mode
-        features.to_csv(PROCESSED_DIR / "us_county_feature_basis.csv.gz", index=False)
-        feature_dictionary(feature_basis_mode).to_csv(
-            PROCESSED_DIR / "us_county_feature_dictionary.csv",
-            index=False,
-        )
-
-    population_lookup = build_population_lookup(vaccination_weekly, features)
+    population_lookup = build_population_lookup(vaccination_weekly)
+    node_geography = build_node_geography_table(counties, population_lookup)
     weekly_nyt = aggregate_nyt_weekly(nyt_daily, population_lookup)
     weekly_nyt = weekly_nyt.loc[weekly_nyt["fips"].isin(counties["fips"])].copy()
     panel = build_joined_panel(counties, weekly_nyt, vaccination_weekly)
@@ -756,6 +489,7 @@ def build_processed_outputs(args) -> None:
         weekly_nyt.to_csv(PROCESSED_DIR / "us_county_weekly_nyt.csv.gz", index=False)
         vaccination_weekly.to_csv(PROCESSED_DIR / "us_county_weekly_vaccination.csv.gz", index=False)
         panel.to_csv(PROCESSED_DIR / "us_county_weekly_panel.csv.gz", index=False)
+        node_geography.to_csv(PROCESSED_DIR / "us_county_node_geography.csv.gz", index=False)
 
     if args.reuse_processed_networks and (PROCESSED_DIR / "us_county_network_summary.csv").exists():
         network_summary = pd.read_csv(PROCESSED_DIR / "us_county_network_summary.csv")
@@ -769,7 +503,6 @@ def build_processed_outputs(args) -> None:
             "vaccination_source_requested": args.vaccination_source,
             "vaccination_source_resolved": resolved_vaccination_source,
             "geometry_source": geometry_source,
-            "feature_basis_mode": feature_basis_mode,
             "county_count_geometry": int(geometry_gdf["fips"].nunique()),
             "county_count_weekly_panel": int(panel["fips"].nunique()),
             "state_count": int(counties["STATEFP"].nunique()),

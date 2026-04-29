@@ -19,13 +19,14 @@ Important keys:
 
 - `experiment_root`
 - `manifest_path`
-- `dimensions.N`, `dimensions.T`, `dimensions.s`
+- `dimensions.N`, `dimensions.T`
 - `generation.seed`, `generation.gibbs_sweeps`
 - `x0.generator`, `x0.params`
 - `graph.source`
 - `graph.generator` and `graph.params` for generated graphs
 - `graph.artifact.*` for fixed graph artifacts
 - `intervention.source`
+- `intervention.generator` and `intervention.params` for generated interventions
 - `intervention.artifact.*` for fixed intervention artifacts
 - `truth.B`
 - `truth.latent_rank`
@@ -38,13 +39,13 @@ Supported source modes:
 
 - `graph.source: generated | fixed_artifact`
 - `intervention.source: generated | fixed_artifact`
-- `truth.field_mode: random_low_rank | node_bias_plus_smooth_time_drift | low_rank_plus_early_treatment_confounding`
+- `intervention.generator: low_rank_probability`
+- `truth.field_mode: random_low_rank | confounded_low_rank`
 
 Dimension resolution:
 
 - fixed graph artifacts can determine `N`
-- fixed intervention artifacts can determine `N`, `T`, and `s`
-- generated interventions require an explicit `dimensions.s`
+- fixed intervention artifacts can determine `N` and `T`
 
 ### Generation Requests
 

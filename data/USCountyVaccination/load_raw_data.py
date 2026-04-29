@@ -14,12 +14,9 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 from common import (  # noqa: E402
     BANSAL_VACCINATION_URL,
-    CDC_SVI_2022_PR_COUNTY_URL,
-    CDC_SVI_2022_US_COUNTY_URL,
     CDC_VACCINATION_URL,
     TIGER_2021_COUNTY_URL,
     TIGER_2022_COUNTY_URL,
-    USDA_ERS_RUCC_2023_URL,
     ensure_directories,
 )
 from data_utils import download_if_missing  # noqa: E402
@@ -30,7 +27,7 @@ NYT_COUNTY_URL = "https://raw.githubusercontent.com/nytimes/covid-19-data/master
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Download/cache raw US county COVID, vaccination, geography, and feature inputs."
+        description="Download/cache raw US county COVID, vaccination, and geography inputs."
     )
     parser.add_argument(
         "--include_tiger_2022_fallback",
@@ -48,9 +45,6 @@ def load_raw_data(include_tiger_2022_fallback: bool = True) -> None:
         (CDC_VACCINATION_URL, paths["raw_vaccination"] / "cdc_county_vaccinations.csv"),
         (BANSAL_VACCINATION_URL, paths["raw_vaccination"] / "bansal_data_county_timeseries.csv"),
         (TIGER_2021_COUNTY_URL, paths["raw_geography"] / "tl_2021_us_county.zip"),
-        (CDC_SVI_2022_US_COUNTY_URL, paths["raw_features"] / "cdc_svi_2022_us_county.csv"),
-        (CDC_SVI_2022_PR_COUNTY_URL, paths["raw_features"] / "cdc_svi_2022_pr_county.csv"),
-        (USDA_ERS_RUCC_2023_URL, paths["raw_features"] / "usda_ers_rucc_2023.csv"),
     ]
     if include_tiger_2022_fallback:
         downloads.append(

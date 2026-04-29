@@ -26,6 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 from data.synthetic_data_generation import (
     generate_data,
     load_fixed_intervention_artifacts,
+    sample_low_rank_probability_interventions,
     simulate_outcomes_given_fixed_interventions,
 )
 from data.USCountyVaccination import (
@@ -66,17 +67,19 @@ from mple import (
 )
 from model_utils import (
     ModelArtifacts,
+    SpectralLowRankStructure,
     build_fit_model_artifacts,
     build_synthetic_field,
     compose_interaction_matrix,
     compose_latent_field_matrix,
     get_xi,
-    _smooth_time_trend,
+    normalize_matrix_max_abs,
     interaction_effect,
     interaction_matrix_infinity_norm,
     latent_field_bound_norm,
     load_model_artifacts,
-    SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING,
+    sample_spectral_low_rank_structure,
+    SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK,
     load_true_parameters,
     parameter_names,
     project_latent_field,
@@ -129,9 +132,9 @@ def base_config() -> object:
             "global_params": {
                 "N": 4,
                 "T": 3,
-                "s": 1,
                 "B": 1.0,
                 "latent_rank": 0,
+                "field_params": {},
             },
             "estimation_params": {
                 "xi": 0.25,
@@ -143,7 +146,8 @@ def base_config() -> object:
             "generation_params": {
                 "seed": 0,
                 "gibbs_sweeps": 1,
-                "intervention_mode": "generated_z",
+                "intervention_mode": "low_rank_probability",
+                "intervention_params": {},
             },
         }
     )
@@ -252,31 +256,6 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertTrue(np.array_equal(returned_z_0, z_0))
         self.assertTrue(np.array_equal(generated_x, expected_x))
 
-    def test_generate_data_generated_z_respects_pre_intervention_steps(self) -> None:
-        config = base_config()
-        config.global_params.T = 5
-        config.global_params.s = 2
-        x_0 = np.array([1.0, -1.0, 1.0, -1.0], dtype=float)
-        gamma = np.array(
-            [
-                [0.0, 1.0, 0.0, 0.0],
-                [1.0, 0.0, 1.0, 0.0],
-                [0.0, 1.0, 0.0, 1.0],
-                [0.0, 0.0, 1.0, 0.0],
-            ]
-        )
-        artifacts = build_synthetic_field(config, gamma)
-
-        _, z, z_0 = generate_data(
-            config,
-            artifacts,
-            x_0,
-            np.random.default_rng(321),
-        )
-
-        self.assertTrue(np.array_equal(z[:2, :], -np.ones((2, 4), dtype=float)))
-        self.assertTrue(np.array_equal(z_0, np.zeros(4, dtype=float)))
-
     def test_posterior_predictive_matches_fixed_z_generation(self) -> None:
         config = base_config()
         config.generation_params.intervention_mode = "fixed_z"
@@ -306,6 +285,7 @@ class MinimalPipelineTests(unittest.TestCase):
             xi=float(config.estimation_params.xi),
             eta=float(config.estimation_params.eta),
             beta_mask_pre_s=False,
+            beta_mask_post_e=False,
             latent_rank=int(artifacts.latent_rank),
             t_steps=int(config.global_params.T),
             field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
@@ -330,9 +310,49 @@ class MinimalPipelineTests(unittest.TestCase):
 
         self.assertTrue(np.array_equal(generated_x, predictive_x))
 
+    def test_sample_spectral_low_rank_structure_returns_orthonormal_factors(self) -> None:
+        structure = sample_spectral_low_rank_structure(
+            n_nodes=5,
+            t_steps=4,
+            singular_values=np.array([1.0, 0.7], dtype=float),
+            rng=np.random.default_rng(123),
+        )
+
+        self.assertEqual(structure.matrix.shape, (4, 5))
+        self.assertEqual(structure.node_factors.shape, (5, 2))
+        self.assertEqual(structure.time_factors.shape, (4, 2))
+        self.assertTrue(
+            np.allclose(
+                structure.node_factors.T @ structure.node_factors,
+                np.eye(2),
+                atol=1e-10,
+            )
+        )
+        self.assertTrue(
+            np.allclose(
+                structure.time_factors.T @ structure.time_factors,
+                np.eye(2),
+                atol=1e-10,
+            )
+        )
+        self.assertLessEqual(np.linalg.matrix_rank(structure.matrix), 2)
+
+    def test_sample_spectral_low_rank_structure_zero_singular_values_zeroes_matrix(self) -> None:
+        structure = sample_spectral_low_rank_structure(
+            n_nodes=4,
+            t_steps=3,
+            singular_values=np.zeros(2, dtype=float),
+            rng=np.random.default_rng(0),
+        )
+        normalized = normalize_matrix_max_abs(structure.matrix, max_abs=1.0)
+
+        self.assertTrue(np.allclose(structure.matrix, 0.0))
+        self.assertTrue(np.allclose(normalized, 0.0))
+
     def test_positive_rank_latent_field_is_realized(self) -> None:
         config = base_config()
         config.global_params.latent_rank = 2
+        config.global_params.field_params = {"singular_values": [1.0, 0.7]}
         gamma = np.array(
             [
                 [0.0, 1.0, 0.0, 0.0],
@@ -352,6 +372,7 @@ class MinimalPipelineTests(unittest.TestCase):
         config = base_config()
         config.global_params.latent_rank = 2
         config.global_params.B = 0.5
+        config.global_params.field_params = {"singular_values": [1.0, 0.7]}
         gamma = np.array(
             [
                 [0.0, 1.0, 0.0, 0.0],
@@ -375,16 +396,36 @@ class MinimalPipelineTests(unittest.TestCase):
             float(config.global_params.B) + 1e-12,
         )
 
-    def test_node_bias_plus_smooth_time_drift_field_is_rank_two(self) -> None:
+    def test_low_rank_probability_interventions_produce_valid_probabilities(self) -> None:
         config = base_config()
-        config.global_params.B = 1.0
-        config.global_params.latent_rank = 2
-        config.global_params.field_mode = "node_bias_plus_smooth_time_drift"
-        config.global_params.field_params = {
-            "node_bias_scale": 1.0,
-            "drift_scale": 0.4,
-            "time_trend_sharpness": 2.0,
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.generation_params.intervention_mode = "low_rank_probability"
+        config.generation_params.intervention_params = {
+            "singular_values": [1.0, 0.7],
+            "probability_amplitude": 0.3,
         }
+        artifacts = sample_low_rank_probability_interventions(config)
+
+        self.assertTrue(np.all(np.isin(artifacts.z, (-1.0, 1.0))))
+        self.assertTrue(np.array_equal(artifacts.z_0, np.zeros(4, dtype=float)))
+        self.assertTrue(np.all(artifacts.probability_matrix >= 0.0))
+        self.assertTrue(np.all(artifacts.probability_matrix <= 1.0))
+        self.assertEqual(artifacts.low_rank_structure.matrix.shape, (4, 4))
+        self.assertEqual(artifacts.low_rank_structure.node_factors.shape, (4, 2))
+        self.assertEqual(artifacts.low_rank_structure.time_factors.shape, (4, 2))
+
+    def test_generate_data_low_rank_probability_matches_fixed_intervention_pipeline(self) -> None:
+        config = base_config()
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.generation_params.intervention_mode = "low_rank_probability"
+        config.generation_params.gibbs_sweeps = 2
+        config.generation_params.intervention_params = {
+            "singular_values": [1.0, 0.7],
+            "probability_amplitude": 0.25,
+        }
+        x_0 = np.array([1.0, -1.0, 1.0, -1.0], dtype=float)
         gamma = np.array(
             [
                 [0.0, 1.0, 0.0, 0.0],
@@ -393,116 +434,116 @@ class MinimalPipelineTests(unittest.TestCase):
                 [0.0, 0.0, 1.0, 0.0],
             ]
         )
-
         artifacts = build_synthetic_field(config, gamma)
-        field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
-        trend = _smooth_time_trend(int(config.global_params.T), sharpness=2.0)
+        intervention_artifacts = sample_low_rank_probability_interventions(config)
+        seed = 222
 
-        self.assertEqual(artifacts.latent_rank, 2)
-        self.assertEqual(field_matrix.shape, (3, 4))
-        self.assertLessEqual(np.linalg.matrix_rank(field_matrix), 2)
-        self.assertLessEqual(
-            latent_field_bound_norm(field_matrix),
-            float(config.global_params.B) + 1e-12,
+        generated_x, generated_z, returned_z_0 = generate_data(
+            config,
+            artifacts,
+            x_0,
+            np.random.default_rng(seed),
+            fixed_z=intervention_artifacts.z,
+            z_0=intervention_artifacts.z_0,
         )
-        self.assertAlmostEqual(float(np.mean(trend)), 0.0, places=12)
-        self.assertAlmostEqual(float(np.sqrt(np.mean(trend**2))), 1.0, places=12)
-        self.assertTrue(np.all(np.diff(trend) >= -1e-12))
+        expected_x = simulate_outcomes_given_fixed_interventions(
+            x_0=x_0,
+            z=intervention_artifacts.z,
+            field_matrix=artifacts.field_matrix,
+            interaction_matrix=compose_interaction_matrix(
+                get_xi(config), artifacts.gamma_matrix
+            ),
+            beta=float(config.estimation_params.beta),
+            eta=float(config.estimation_params.eta),
+            rng=np.random.default_rng(seed),
+            gibbs_sweeps=int(config.generation_params.gibbs_sweeps),
+        )
 
-    def test_low_rank_plus_early_treatment_confounding_orders_county_bias(self) -> None:
+        self.assertTrue(np.array_equal(generated_z, intervention_artifacts.z))
+        self.assertTrue(np.array_equal(returned_z_0, intervention_artifacts.z_0))
+        self.assertTrue(np.array_equal(generated_x, expected_x))
+
+    def test_low_rank_probability_rank_zero_defaults_to_half_probabilities(self) -> None:
+        config = base_config()
+        config.generation_params.intervention_mode = "low_rank_probability"
+        config.generation_params.intervention_params = {"singular_values": [], "probability_amplitude": 0.5}
+        artifacts = sample_low_rank_probability_interventions(config)
+
+        self.assertTrue(np.allclose(artifacts.low_rank_structure.matrix, 0.0))
+        self.assertTrue(np.allclose(artifacts.probability_matrix, 0.5))
+
+    def test_confounded_low_rank_field_reuses_intervention_factors(self) -> None:
         config = base_config()
         config.global_params.B = 1.0
         config.global_params.N = 4
         config.global_params.T = 4
-        config.global_params.latent_rank = 0
-        config.global_params.field_mode = (
-            SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING
-        )
-        config.global_params.field_params = {
-            "confounding_bias_scale": 1.0,
-            "untreated_score_value": 0.0,
+        config.global_params.field_mode = SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
+        config.global_params.field_params = {"singular_values": [1.0, 0.5]}
+        config.generation_params.intervention_params = {
+            "singular_values": [1.0, 0.7],
+            "probability_amplitude": 0.3,
         }
-        z = np.array(
+        intervention_artifacts = sample_low_rank_probability_interventions(config)
+        gamma = np.array(
             [
-                [-1.0, -1.0, -1.0, -1.0],
-                [1.0, -1.0, -1.0, -1.0],
-                [1.0, 1.0, -1.0, -1.0],
-                [1.0, 1.0, 1.0, -1.0],
-            ],
-            dtype=float,
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
         )
-        temp_root = REPO_ROOT / "experiments" / f".tmp_confounding_{uuid.uuid4().hex}"
-        temp_root.mkdir(parents=True, exist_ok=False)
-        try:
-            panel_path = temp_root / "panel_data.npz"
-            z0_path = temp_root / "z_0.npy"
-            np.savez(panel_path, z=z)
-            np.save(z0_path, np.zeros(4, dtype=float))
-            config.generation_params.fixed_z_source = OmegaConf.create(
-                {
-                    "panel_path": str(panel_path),
-                    "z0_path": str(z0_path),
-                }
-            )
-            gamma = np.array(
-                [
-                    [0.0, 1.0, 0.0, 0.0],
-                    [1.0, 0.0, 1.0, 0.0],
-                    [0.0, 1.0, 0.0, 1.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                ]
-            )
-            artifacts = build_synthetic_field(config, gamma)
-        finally:
-            shutil.rmtree(temp_root, ignore_errors=True)
+        field_artifacts = build_synthetic_field(
+            config,
+            gamma,
+            intervention_structure=intervention_artifacts.low_rank_structure,
+        )
 
-        field_matrix = np.asarray(artifacts.field_matrix, dtype=float)
+        field_matrix = np.asarray(field_artifacts.field_matrix, dtype=float)
+        expected_unscaled = (
+            intervention_artifacts.low_rank_structure.time_factors
+            * np.array([1.0, 0.5], dtype=float)[None, :]
+        ) @ intervention_artifacts.low_rank_structure.node_factors.T
+        expected_field = normalize_matrix_max_abs(expected_unscaled, max_abs=1.0)
+        expected_field = expected_field * (
+            (0.4 * float(config.global_params.B))
+            / float(np.sqrt(np.mean(expected_field**2)))
+        )
+        if latent_field_bound_norm(expected_field) > float(config.global_params.B):
+            expected_field = expected_field * (
+                float(config.global_params.B) / latent_field_bound_norm(expected_field)
+            )
+
+        self.assertEqual(field_artifacts.latent_rank, 2)
         self.assertEqual(field_matrix.shape, (4, 4))
-        self.assertEqual(artifacts.latent_rank, 1)
-        self.assertLessEqual(
-            latent_field_bound_norm(field_matrix),
-            float(config.global_params.B) + 1e-12,
-        )
-        column_means = np.mean(field_matrix, axis=0)
-        self.assertLessEqual(column_means[0], column_means[1] + 1e-12)
-        self.assertLessEqual(column_means[1], column_means[2] + 1e-12)
-        self.assertLessEqual(column_means[2], column_means[3] + 1e-12)
+        self.assertLessEqual(latent_field_bound_norm(field_matrix), 1.0 + 1e-12)
+        self.assertTrue(np.allclose(field_matrix, expected_field))
 
-    def test_generation_spec_includes_us_county_confounding_experiment(self) -> None:
+    def test_generation_spec_includes_confounded_low_rank_example(self) -> None:
         from pipeline_specs import expand_named_entries
 
         experiments = expand_named_entries(REPO_ROOT / "data" / "configs" / "generation_spec.yaml", "experiments")
         confounding_spec = next(
             experiment
             for experiment in experiments
-            if experiment["name"] == "hybrid_us_county_intervention_uscounty_graph_confounding"
+            if experiment["name"] == "spectral_low_rank_confounding"
         )
         self.assertEqual(
             confounding_spec["truth"]["field_mode"],
-            SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING,
+            SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK,
         )
-        self.assertEqual(int(confounding_spec["truth"]["latent_rank"]), 20)
-        self.assertIn("confounding_bias_scale", confounding_spec["truth"]["field_params"])
+        self.assertEqual(
+            confounding_spec["intervention"]["generator"],
+            "low_rank_probability",
+        )
+        self.assertIn("singular_values", confounding_spec["truth"]["field_params"])
 
     def test_generation_pipeline_smoke_with_confounding_field_mode(self) -> None:
         root = REPO_ROOT / "experiments" / f".tmp_gen_confounding_{uuid.uuid4().hex}"
         root.mkdir(parents=True, exist_ok=False)
         try:
-            fixed_panel_path = root / "fixed_panel.npz"
-            fixed_z0_path = root / "fixed_z0.npy"
             gamma_path = root / "gamma.npy"
             spec_path = root / "generation_spec.yaml"
             fits_spec_path = root / "fits_spec.yaml"
-
-            z = np.array(
-                [
-                    [-1.0, -1.0, -1.0, -1.0],
-                    [1.0, -1.0, -1.0, -1.0],
-                    [1.0, 1.0, -1.0, -1.0],
-                    [1.0, 1.0, 1.0, -1.0],
-                ],
-                dtype=float,
-            )
             gamma = np.array(
                 [
                     [0.0, 1.0, 0.0, 0.0],
@@ -512,8 +553,6 @@ class MinimalPipelineTests(unittest.TestCase):
                 ],
                 dtype=float,
             )
-            np.savez(fixed_panel_path, z=z)
-            np.save(fixed_z0_path, np.zeros(4, dtype=float))
             np.save(gamma_path, gamma)
 
             spec_path.write_text(
@@ -525,7 +564,6 @@ class MinimalPipelineTests(unittest.TestCase):
                         "  dimensions:",
                         "    N: 4",
                         "    T: 4",
-                        "    s: 0",
                         "  generation:",
                         "    gibbs_sweeps: 1",
                         "    seed: 7",
@@ -543,23 +581,26 @@ class MinimalPipelineTests(unittest.TestCase):
                         "      network_name: test_graph",
                         "      trim_scope: test",
                         "  intervention:",
-                        "    source: fixed_artifact",
+                        "    source: generated",
+                        "    generator: low_rank_probability",
+                        "    params:",
+                        "      singular_values: [1.0, 0.7]",
+                        "      probability_amplitude: 0.3",
                         "    artifact:",
-                        f"      panel_path: {fixed_panel_path.as_posix()}",
-                        f"      z0_path: {fixed_z0_path.as_posix()}",
-                        f"      artifact_dir: {root.as_posix()}",
+                        "      panel_path: null",
+                        "      z0_path: null",
+                        "      artifact_dir: null",
                         "      shared_panel_dir: null",
                         "      outcome_code: null",
-                        "      intervention_code: test_intervention",
-                        "      lag_code: test",
-                        "      trim_scope: test",
+                        "      intervention_code: null",
+                        "      lag_code: null",
+                        "      trim_scope: null",
                         "  truth:",
                         "    B: 1.0",
                         "    latent_rank: 2",
-                        f"    field_mode: {SYNTHETIC_FIELD_MODE_LOW_RANK_PLUS_EARLY_TREATMENT_CONFOUNDING}",
+                        f"    field_mode: {SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK}",
                         "    field_params:",
-                        "      confounding_bias_scale: 0.75",
-                        "      untreated_score_value: 0.0",
+                        "      singular_values: [1.0, 0.5]",
                         "    scalars:",
                         "      beta: 0.2",
                         "      xi: 0.1",
@@ -599,6 +640,9 @@ class MinimalPipelineTests(unittest.TestCase):
 
             self.assertTrue((experiment_root / "panel_data.npz").exists())
             self.assertTrue((experiment_root / "field_artifacts.npz").exists())
+            self.assertTrue(
+                (experiment_root / "intervention_generation_artifacts.npz").exists()
+            )
             self.assertTrue((experiment_root / "fits" / "rank_0" / "mple_summary.csv").exists())
             self.assertEqual(
                 Path(fit_manifest),
@@ -1744,7 +1788,7 @@ class MinimalPipelineTests(unittest.TestCase):
             "estimation": {"fixed_scalar_params": {}},
         }
 
-        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 3})
         self.assertEqual(
             str(fit_config.global_params.optimizer_mode), "concurrent_latent_rank"
         )
@@ -1774,7 +1818,7 @@ class MinimalPipelineTests(unittest.TestCase):
             "estimation": {"fixed_scalar_params": {}},
         }
 
-        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 3})
         self.assertFalse(bool(fit_config.estimation_params.beta_mask_pre_s))
 
     def test_build_fit_config_copies_beta_mask_pre_s(self) -> None:
@@ -1789,7 +1833,7 @@ class MinimalPipelineTests(unittest.TestCase):
             },
         }
 
-        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 3})
         self.assertTrue(bool(fit_config.estimation_params.beta_mask_pre_s))
 
     def test_build_fit_config_defaults_warm_start_settings(self) -> None:
@@ -1912,7 +1956,7 @@ class MinimalPipelineTests(unittest.TestCase):
         }
 
         with self.assertRaisesRegex(ValueError, "lambda_uv_ridge"):
-            build_fit_config(variant, {"N": 4, "T": 3, "s": 1})
+            build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 3})
 
 
 class FitReportingTests(unittest.TestCase):
@@ -2115,7 +2159,6 @@ class FitReportingTests(unittest.TestCase):
                     "  dimensions:",
                     "    N: 6",
                     "    T: 4",
-                    "    s: 1",
                     "  generation:",
                     "    gibbs_sweeps: 1",
                     "    seed: 7",
@@ -2252,10 +2295,10 @@ class PipelineStageRequestTests(unittest.TestCase):
                 normalized_experiments.append(dict(experiment))
         spec_path = self.root / "generation_spec.yaml"
         spec = {
-            "base": {
-                "experiment_root": f"{self.root.as_posix()}/generated",
-                "manifest_path": f"{self.root.as_posix()}/generated/generation_manifest.csv",
-                "dimensions": {"N": 6, "T": 4, "s": 1},
+                "base": {
+                    "experiment_root": f"{self.root.as_posix()}/generated",
+                    "manifest_path": f"{self.root.as_posix()}/generated/generation_manifest.csv",
+                    "dimensions": {"N": 6, "T": 4},
                 "generation": {"gibbs_sweeps": 1, "seed": 7},
                 "x0": {
                     "generator": "bernoulli",
@@ -2384,6 +2427,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                     "truth": {
                         "latent_rank": 2,
                         "field_mode": "random_low_rank",
+                        "field_params": {"singular_values": [1.0, 0.7]},
                     },
                 }
             ]
@@ -2752,7 +2796,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         config = create_us_county_config(
             n_nodes=4,
             t_steps=4,
-            s=1,
             outcome_code="death_rate_100k_ge_2",
             intervention_code="complete_cov_ge_20",
             lag_code="2w",
@@ -2769,7 +2812,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             "trim_applied": True,
             "node_count": 4,
             "time_steps": 4,
-            "pre_intervention_steps": 1,
         }
         save_us_county_experiment(
             experiment_root,
@@ -2797,7 +2839,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             "graph_source": "contiguity",
             "N": 4,
             "T": 4,
-            "s": 1,
             "has_truth": False,
             "outcome_code": "death_rate_100k_ge_2",
             "intervention_code": "complete_cov_ge_20",
@@ -2812,13 +2853,12 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
 
     def _write_us_county_realized_artifacts(self, output_root: Path) -> dict[str, object]:
         node_order = ["01001", "01003", "01005", "01007"]
-        features = pd.DataFrame(
+        node_geography = pd.DataFrame(
             {
                 "fips": node_order,
                 "county": ["a", "b", "c", "d"],
                 "state_name": ["Alabama"] * 4,
                 "STATEFP": ["01"] * 4,
-                "feature_basis_mode": ["zero"] * 4,
                 "total_population": [10000, 12000, 14000, 16000],
             }
         )
@@ -2994,11 +3034,10 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
                 "realized_week_start_date": "2021-01-03",
                 "realized_week_end_date": "2021-02-06",
                 "time_steps": 4,
-                "pre_intervention_steps": 1,
             },
         )
         return {
-            "features": features,
+            "node_geography": node_geography,
             "centroids": centroids,
             "x": x,
             "z": z,
@@ -3040,7 +3079,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         with mock.patch.object(
             uscounty_materializer,
             "load_inputs",
-            return_value=(pd.DataFrame(), fixture["features"], fixture["centroids"]),
+            return_value=(pd.DataFrame(), fixture["node_geography"], fixture["centroids"]),
         ):
             uscounty_materializer.create_experiment_folders(args)
         return fixture
@@ -3054,7 +3093,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         with manifest_path.open("r", encoding="utf-8", newline="") as handle:
             manifest_row = next(csv.DictReader(handle))
 
-        self.assertEqual(dims, {"N": 4, "T": 4, "s": 1})
+        self.assertEqual(dims, {"N": 4, "T": 4, "s": 1, "e": 4})
         self.assertEqual(panel_context["x"].shape, (4, 4))
         self.assertEqual(artifacts.field_matrix.shape, (4, 4))
         self.assertTrue((experiment_root / "node_index.csv").exists())
@@ -3066,7 +3105,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             "graph_source",
             "N",
             "T",
-            "s",
             "has_truth",
         ]:
             self.assertIn(key, manifest_row)
@@ -3111,7 +3149,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         row = rows[0]
         self.assertEqual(row["experiment_name"], fixture["base_experiment_name"])
         self.assertEqual(row["T"], "4")
-        self.assertEqual(row["s"], "1")
         self.assertNotIn("requested_start_date", row)
         self.assertNotIn("resolved_start_week_end_date", row)
         for key in [
@@ -3144,7 +3181,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             {
                 "N": 4,
                 "T": 4,
-                "s": 1,
                 "gamma_matrix_generator": "real_data",
                 "x_0_generator": "observed",
             },
@@ -3219,7 +3255,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             fixture["base_experiment_name"] + "__start_2021_01_23",
         )
         self.assertEqual(row["T"], "2")
-        self.assertEqual(row["s"], "0")
         self.assertEqual(row["requested_start_date"], "2021-01-23")
         self.assertEqual(row["resolved_start_week_end_date"], "2021-01-23")
         self.assertEqual(row["start_index"], "2")
@@ -3243,7 +3278,7 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
             )
         )
         derived_dims = infer_panel_dimensions(derived_root)
-        self.assertEqual(derived_dims, {"N": 4, "T": 2, "s": 0})
+        self.assertEqual(derived_dims, {"N": 4, "T": 2, "s": 0, "e": 2})
 
         metadata = OmegaConf.to_container(
             OmegaConf.load(derived_root / "experiment_metadata.yaml"),
@@ -3682,6 +3717,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             xi=0.0,
             eta=0.0,
             beta_mask_pre_s=True,
+            beta_mask_post_e=False,
             latent_rank=0,
             t_steps=2,
             field_matrix=field_matrix,
@@ -4217,7 +4253,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "  dimensions:",
                     "    N: 6",
                     "    T: 4",
-                    "    s: 1",
                     "  generation:",
                     "    gibbs_sweeps: 1",
                     "    seed: 7",
@@ -4305,9 +4340,8 @@ class PosteriorPredictiveTests(unittest.TestCase):
             self.root / "generated" / "intervention_library_manifest.csv",
         )
         self.assertTrue(np.array_equal(observed_copy.z_0, np.zeros(6, dtype=float)))
-        self.assertTrue(np.array_equal(full_on.z[:1, :], -np.ones((1, 6), dtype=float)))
-        self.assertTrue(np.array_equal(full_on.z[1:, :], np.ones((3, 6), dtype=float)))
-        self.assertEqual(full_on.s, 1)
+        self.assertTrue(np.array_equal(full_on.z, np.ones((4, 6), dtype=float)))
+        self.assertEqual(full_on.s, 0)
         self.assertTrue(np.array_equal(single_unit.z[:2, 2], -np.ones(2, dtype=float)))
         self.assertTrue(np.array_equal(single_unit.z[2:, 2], np.ones(2, dtype=float)))
         self.assertTrue(
@@ -4329,7 +4363,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "  dimensions:",
                     "    N: 6",
                     "    T: 4",
-                    "    s: 1",
                     "  generation:",
                     "    gibbs_sweeps: 1",
                     "    seed: 7",
@@ -4537,7 +4570,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "  dimensions:",
                     "    N: 6",
                     "    T: 4",
-                    "    s: 1",
                     "  generation:",
                     "    gibbs_sweeps: 1",
                     "    seed: 7",
