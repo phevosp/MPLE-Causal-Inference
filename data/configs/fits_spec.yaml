@@ -12,125 +12,79 @@ base:
   lambda_nuclear: 0.0
   lambda_frobenius: 0.0
   lambda_uv_ridge: 0.0
+  v_column_l2_max: 1.0
   estimation:
     fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
     beta_mask_pre_s: false
     beta_mask_post_e: false
 
 variants:
-  - name: manifold_rank_2_rw
-    optimizer_mode: exact_rank_manifold
-    latent_rank: 2
-    lambda_frobenius: 0.05
-
-  - name: manifold_rank_5_rw
-    optimizer_mode: exact_rank_manifold
-    latent_rank: 5
-    lambda_frobenius: 0.1
-
-  - name: manifold_rank_10_rw
-    optimizer_mode: exact_rank_manifold
+  - name: alternating_rank_10_uv_1
+    optimizer_mode: alternating_latent_rank
     latent_rank: 10
-    lambda_frobenius: 0.1
+    lambda_uv_ridge: 1
 
-  - name: alternating_rank_10_rw
+  - name: alternating_rank_10_uv_2
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 2
+
+  - name: alternating_rank_10_uv_3
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 3    
+
+  - name: alternating_rank_10_uv_4
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 4    
+
+  - name: alternating_rank_10_uv_5
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 5    
+
+  - name: alternating_rank_10_uv_6
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 6    
+
+  - name: alternating_rank_10_uv_7
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 7    
+    
+  - name: alternating_rank_10_uv_8
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 8
+
+  - name: alternating_rank_10_uv_9
     optimizer_mode: alternating_latent_rank
     latent_rank: 10
     lambda_uv_ridge: 9
 
-  - name: alternating_rank_5_rw
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 5
-    lambda_uv_ridge: 7
-
-  - name: alternating_rank_2_rw
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 2
-    lambda_uv_ridge: 5
-
-  - name: concurrent_rank_10_rw
-    optimizer_mode: concurrent_latent_rank
-    latent_rank: 10
-    lambda_uv_ridge: 9
-
-  - name: concurrent_rank_2_rw
-    optimizer_mode: concurrent_latent_rank
-    latent_rank: 2
-    lambda_uv_ridge: 5
-
-  - name: concurrent_rank_5_rw
-    optimizer_mode: concurrent_latent_rank
-    latent_rank: 5
-    lambda_uv_ridge: 7
-
-  - name: manifold_rank_2_rw_fixed_beta
-    optimizer_mode: exact_rank_manifold
-    latent_rank: 2
-    lambda_frobenius: 0.05
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
-
-  - name: manifold_rank_5_rw_fixed_beta
-    optimizer_mode: exact_rank_manifold
-    latent_rank: 5
-    lambda_frobenius: 0.1
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
-
-  - name: manifold_rank_10_rw_fixed_beta
-    optimizer_mode: exact_rank_manifold
-    latent_rank: 10
-    lambda_frobenius: 0.1
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
-
-  - name: alternating_rank_10_rw_fixed_beta
+  - name: alternating_rank_10_uv_10
     optimizer_mode: alternating_latent_rank
     latent_rank: 10
-    lambda_uv_ridge: 9
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
+    lambda_uv_ridge: 10    
 
-  - name: alternating_rank_5_rw_fixed_beta
+  - name: alternating_rank_10_uv_11
     optimizer_mode: alternating_latent_rank
-    latent_rank: 5
-    lambda_uv_ridge: 7
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
-
-  - name: alternating_rank_2_rw_fixed_beta
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 2
-    lambda_uv_ridge: 5
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
-
-  - name: concurrent_rank_10_rw_fixed_beta
-    optimizer_mode: concurrent_latent_rank
     latent_rank: 10
-    lambda_uv_ridge: 9
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
+    lambda_uv_ridge: 11    
 
-  - name: concurrent_rank_2_rw_fixed_beta
-    optimizer_mode: concurrent_latent_rank
-    latent_rank: 2
-    lambda_uv_ridge: 5
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
+  - name: alternating_rank_10_uv_12
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 12    
 
-  - name: concurrent_rank_5_rw_fixed_beta
-    optimizer_mode: concurrent_latent_rank
-    latent_rank: 5
-    lambda_uv_ridge: 7
-    estimation:
-      fixed_scalar_params:
-        beta: -0.3
+  - name: alternating_rank_10_uv_13
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 13    
+
+  - name: alternating_rank_10_uv_14
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 10
+    lambda_uv_ridge: 14 
