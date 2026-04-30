@@ -20,10 +20,12 @@ from model_utils import (
     build_synthetic_field,
     compose_interaction_matrix,
     get_xi,
+    get_synthetic_field_params,
     get_synthetic_field_mode,
     interaction_matrix_infinity_norm,
     leading_svd_low_rank_structure,
     parse_singular_values,
+    resolve_generation_confounded_field_ranks,
     sample_spectral_low_rank_structure,
     save_model_artifacts,
 )
@@ -603,6 +605,26 @@ def materialize_generation_experiment(
         **fixed_gamma_metadata,
     }
     metadata["latent_rank"] = int(artifacts.latent_rank)
+    if get_synthetic_field_mode(config) == "confounded_low_rank":
+        shared_rank, nonshared_rank = resolve_generation_confounded_field_ranks(
+            config,
+            intervention_structure,
+        )
+        metadata["field_shared_rank"] = int(shared_rank)
+        metadata["field_nonshared_rank"] = int(nonshared_rank)
+        metadata["field_shared_basis_source"] = (
+            "fixed_z_svd"
+            if intervention_mode(config) == "fixed_z"
+            else "generated_intervention_basis"
+        )
+    else:
+        field_singular_values = parse_singular_values(
+            get_synthetic_field_params(config).get("singular_values"),
+            context="global_params.field_params.singular_values",
+        )
+        metadata["field_shared_rank"] = 0
+        metadata["field_nonshared_rank"] = int(field_singular_values.size)
+        metadata["field_shared_basis_source"] = "none"
 
     save_artifacts(
         data_folder,

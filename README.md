@@ -60,6 +60,7 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 - `intervention.params.probability_amplitude`: maps normalized low-rank scores to probabilities via `p = 0.5 + amplitude * score`
 - `truth.field_mode`: `random_low_rank` or `confounded_low_rank`
 - `truth.field_params.singular_values`: explicit singular values for spectral low-rank field generation
+- `truth.field_params.shared_rank`: optional for `confounded_low_rank`; the first `k` field components reuse the intervention basis and the remaining field components are sampled in an orthogonal complement. If omitted, `confounded_low_rank` keeps the original full-confounding behavior.
 - `truth.field_params.target_rms_fraction`: optional RMS target for the field as a fraction of `B`; defaults to `0.4`
 
 ## Environment

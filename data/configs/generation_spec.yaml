@@ -93,3 +93,38 @@ experiments:
       field_params:
         singular_values: [1.0, 0.9, 0.9]
         target_rms_fraction: 0.50
+
+  - name: r3_synthetic_partial_confounding
+    graph:
+      source: generated
+      generator: erdos_renyi
+      params:
+        p: 0.01
+    intervention:
+      source: generated
+      generator: low_rank_probability
+      params:
+        singular_values: [1.0, 0.9]
+        probability_amplitude: 0.5
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.1, 0.9, 0.5]
+        shared_rank: 2
+        target_rms_fraction: 0.50
+
+  - name: r3_hybrid_us_county_intervention_uscounty_graph_partial_confounding
+    graph:
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+        artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed
+        network_name: contiguity
+        trim_scope: trimmed
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.1, 0.9, 0.5]
+        shared_rank: 2
+        target_rms_fraction: 0.50

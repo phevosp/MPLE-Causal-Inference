@@ -531,6 +531,160 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(field_matrix.shape, (4, 4))
         self.assertTrue(np.allclose(field_matrix, expected_field))
 
+    def test_partial_confounded_low_rank_field_reuses_only_shared_intervention_factors(self) -> None:
+        config = base_config()
+        config.global_params.B = 1.0
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.global_params.field_mode = SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
+        config.global_params.field_params = {
+            "singular_values": [2.0, 0.4],
+            "shared_rank": 1,
+        }
+        config.generation_params.intervention_params = {
+            "singular_values": [1.0, 0.7],
+            "probability_amplitude": 0.3,
+        }
+        intervention_artifacts = sample_low_rank_probability_interventions(config)
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        field_artifacts = build_synthetic_field(
+            config,
+            gamma,
+            intervention_structure=intervention_artifacts.low_rank_structure,
+        )
+
+        field_matrix = np.asarray(field_artifacts.field_matrix, dtype=float)
+        u, _, vt = np.linalg.svd(field_matrix, full_matrices=False)
+        shared_time = intervention_artifacts.low_rank_structure.time_factors[:, 0]
+        shared_node = intervention_artifacts.low_rank_structure.node_factors[:, 0]
+
+        self.assertEqual(field_artifacts.latent_rank, 2)
+        self.assertAlmostEqual(abs(float(np.dot(u[:, 0], shared_time))), 1.0, places=10)
+        self.assertAlmostEqual(abs(float(np.dot(vt[0, :], shared_node))), 1.0, places=10)
+        self.assertAlmostEqual(abs(float(np.dot(u[:, 1], shared_time))), 0.0, places=10)
+        self.assertAlmostEqual(abs(float(np.dot(vt[1, :], shared_node))), 0.0, places=10)
+
+    def test_partial_confounded_low_rank_field_uses_fixed_intervention_svd_for_shared_block(self) -> None:
+        config = base_config()
+        config.global_params.B = 1.0
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.global_params.field_mode = SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
+        config.global_params.field_params = {
+            "singular_values": [2.0, 0.4],
+            "shared_rank": 1,
+        }
+        fixed_z = np.array(
+            [
+                [1.0, 1.0, -1.0, -1.0],
+                [1.0, -1.0, 1.0, -1.0],
+                [-1.0, 1.0, -1.0, 1.0],
+                [-1.0, -1.0, 1.0, 1.0],
+            ],
+            dtype=float,
+        )
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        fixed_u, fixed_s, fixed_vt = np.linalg.svd(fixed_z, full_matrices=False)
+        intervention_structure = SpectralLowRankStructure(
+            node_factors=np.asarray(fixed_vt[:2, :].T, dtype=float),
+            time_factors=np.asarray(fixed_u[:, :2], dtype=float),
+            singular_values=np.asarray(fixed_s[:2], dtype=float),
+            matrix=np.asarray((fixed_u[:, :2] * fixed_s[:2][None, :]) @ fixed_vt[:2, :], dtype=float),
+        )
+        field_artifacts = build_synthetic_field(
+            config,
+            gamma,
+            intervention_structure=intervention_structure,
+        )
+
+        field_matrix = np.asarray(field_artifacts.field_matrix, dtype=float)
+        u, _, vt = np.linalg.svd(field_matrix, full_matrices=False)
+
+        self.assertEqual(field_artifacts.latent_rank, 2)
+        self.assertAlmostEqual(abs(float(np.dot(u[:, 0], fixed_u[:, 0]))), 1.0, places=10)
+        self.assertAlmostEqual(abs(float(np.dot(vt[0, :], fixed_vt[0, :]))), 1.0, places=10)
+        self.assertAlmostEqual(abs(float(np.dot(u[:, 1], fixed_u[:, 0]))), 0.0, places=10)
+        self.assertAlmostEqual(abs(float(np.dot(vt[1, :], fixed_vt[0, :]))), 0.0, places=10)
+
+    def test_partial_confounding_rejects_invalid_shared_rank(self) -> None:
+        config = base_config()
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.global_params.field_mode = SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
+        config.generation_params.intervention_params = {
+            "singular_values": [1.0, 0.7],
+            "probability_amplitude": 0.3,
+        }
+        intervention_artifacts = sample_low_rank_probability_interventions(config)
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+
+        config.global_params.field_params = {
+            "singular_values": [2.0, 0.4],
+            "shared_rank": 3,
+        }
+        with self.assertRaisesRegex(ValueError, "must not exceed the total field rank"):
+            build_synthetic_field(
+                config,
+                gamma,
+                intervention_structure=intervention_artifacts.low_rank_structure,
+            )
+
+        config.global_params.field_params = {
+            "singular_values": [2.0, 0.4, 0.2],
+            "shared_rank": 3,
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            "must not exceed the available intervention basis rank",
+        ):
+            build_synthetic_field(
+                config,
+                gamma,
+                intervention_structure=intervention_artifacts.low_rank_structure,
+            )
+
+    def test_shared_rank_requires_confounded_field_mode(self) -> None:
+        config = base_config()
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.global_params.field_mode = "random_low_rank"
+        config.global_params.field_params = {
+            "singular_values": [1.0, 0.5],
+            "shared_rank": 1,
+        }
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "shared_rank is only valid"):
+            build_synthetic_field(config, gamma)
+
     def test_generation_pipeline_confounded_low_rank_reuses_fixed_intervention_svd(self) -> None:
         root = REPO_ROOT / "experiments" / f".tmp_fixed_z_confounding_{uuid.uuid4().hex}"
         root.mkdir(parents=True, exist_ok=False)
@@ -638,20 +792,32 @@ class MinimalPipelineTests(unittest.TestCase):
         from pipeline_specs import expand_named_entries
 
         experiments = expand_named_entries(REPO_ROOT / "data" / "configs" / "generation_spec.yaml", "experiments")
-        confounding_spec = next(
+        partial_synthetic_spec = next(
             experiment
             for experiment in experiments
-            if experiment["name"] == "confounding_weak"
+            if experiment["name"] == "r3_synthetic_partial_confounding"
         )
         self.assertEqual(
-            confounding_spec["truth"]["field_mode"],
+            partial_synthetic_spec["truth"]["field_mode"],
             SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK,
         )
         self.assertEqual(
-            confounding_spec["intervention"]["generator"],
+            partial_synthetic_spec["intervention"]["generator"],
             "low_rank_probability",
         )
-        self.assertIn("singular_values", confounding_spec["truth"]["field_params"])
+        self.assertEqual(
+            partial_synthetic_spec["truth"]["field_params"]["shared_rank"],
+            2,
+        )
+        partial_hybrid_spec = next(
+            experiment
+            for experiment in experiments
+            if experiment["name"] == "r3_hybrid_us_county_intervention_uscounty_graph_partial_confounding"
+        )
+        self.assertEqual(
+            partial_hybrid_spec["truth"]["field_params"]["shared_rank"],
+            2,
+        )
 
     def test_generation_spec_rejects_removed_truth_latent_rank(self) -> None:
         spec_path = REPO_ROOT / "experiments" / f".tmp_removed_truth_rank_{uuid.uuid4().hex}.yaml"
@@ -817,6 +983,98 @@ class MinimalPipelineTests(unittest.TestCase):
             self.assertEqual(
                 Path(fit_manifest),
                 root / "generated" / "fit_manifest.csv",
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_generation_pipeline_partial_confounding_writes_metadata(self) -> None:
+        root = REPO_ROOT / "experiments" / f".tmp_gen_partial_confounding_{uuid.uuid4().hex}"
+        root.mkdir(parents=True, exist_ok=False)
+        try:
+            gamma_path = root / "gamma.npy"
+            spec_path = root / "generation_spec.yaml"
+            gamma = np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ],
+                dtype=float,
+            )
+            np.save(gamma_path, gamma)
+
+            spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        f"  experiment_root: {root.as_posix()}/generated",
+                        f"  manifest_path: {root.as_posix()}/generated/generation_manifest.csv",
+                        "  dimensions:",
+                        "    N: 4",
+                        "    T: 4",
+                        "  generation:",
+                        "    gibbs_sweeps: 1",
+                        "    seed: 7",
+                        "  x0:",
+                        "    generator: bernoulli",
+                        "    params:",
+                        "      p: 0.5",
+                        "      fixed_val: null",
+                        "  graph:",
+                        "    source: fixed_artifact",
+                        "    artifact:",
+                        f"      gamma_path: {gamma_path.as_posix()}",
+                        "      node_index_path: null",
+                        f"      artifact_dir: {root.as_posix()}",
+                        "      network_name: test_graph",
+                        "      trim_scope: test",
+                        "  intervention:",
+                        "    source: generated",
+                        "    generator: low_rank_probability",
+                        "    params:",
+                        "      singular_values: [1.0, 0.7]",
+                        "      probability_amplitude: 0.3",
+                        "    artifact:",
+                        "      panel_path: null",
+                        "      z0_path: null",
+                        "      artifact_dir: null",
+                        "      shared_panel_dir: null",
+                        "      outcome_code: null",
+                        "      intervention_code: null",
+                        "      lag_code: null",
+                        "      trim_scope: null",
+                        "  truth:",
+                        "    B: 1.0",
+                        f"    field_mode: {SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK}",
+                        "    field_params:",
+                        "      singular_values: [2.0, 0.4]",
+                        "      shared_rank: 1",
+                        "    scalars:",
+                        "      beta: 0.2",
+                        "      xi: 0.1",
+                        "      eta: 0.05",
+                        "      zeta: -0.1",
+                        "      psi: 0.2",
+                        "experiments:",
+                        "  - name: partial_confounding_smoke",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            run_generation(spec_path, overwrite=True)
+            experiment_root = root / "generated" / "partial_confounding_smoke"
+            metadata = OmegaConf.to_container(
+                OmegaConf.load(experiment_root / "experiment_metadata.yaml"),
+                resolve=True,
+            )
+
+            self.assertEqual(metadata["field_shared_rank"], 1)
+            self.assertEqual(metadata["field_nonshared_rank"], 1)
+            self.assertEqual(
+                metadata["field_shared_basis_source"],
+                "generated_intervention_basis",
             )
         finally:
             shutil.rmtree(root, ignore_errors=True)

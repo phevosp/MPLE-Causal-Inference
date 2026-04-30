@@ -390,6 +390,71 @@ def _resolve_generation_field_rms_fraction(config) -> float:
     return fraction
 
 
+def _parse_optional_nonnegative_int(
+    raw_value: object | None,
+    *,
+    context: str,
+) -> int | None:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, bool):
+        raise ValueError(f"{context} must be a nonnegative integer.")
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{context} must be a nonnegative integer.") from exc
+    if not np.isfinite(value) or value < 0.0 or not value.is_integer():
+        raise ValueError(f"{context} must be a nonnegative integer.")
+    return int(value)
+
+
+def _resolve_generation_field_shared_rank(config) -> int | None:
+    field_params = get_synthetic_field_params(config)
+    return _parse_optional_nonnegative_int(
+        field_params.get("shared_rank"),
+        context="global_params.field_params.shared_rank",
+    )
+
+
+def resolve_generation_confounded_field_ranks(
+    config,
+    intervention_structure: SpectralLowRankStructure | None,
+) -> tuple[int, int]:
+    if intervention_structure is None:
+        raise ValueError(
+            "field_mode='confounded_low_rank' requires low-rank intervention factors, "
+            "either generated directly or derived from a fixed intervention panel."
+        )
+    singular_values = _resolve_generation_field_singular_values(
+        config,
+        allow_empty=False,
+    )
+    total_rank = int(singular_values.size)
+    available_rank = int(intervention_structure.singular_values.size)
+    requested_shared_rank = _resolve_generation_field_shared_rank(config)
+    if requested_shared_rank is None:
+        shared_rank = available_rank
+        if total_rank != available_rank:
+            raise ValueError(
+                "global_params.field_params.singular_values must have the same length as the "
+                "shared intervention low-rank basis for field_mode='confounded_low_rank' "
+                "when shared_rank is omitted."
+            )
+    else:
+        shared_rank = int(requested_shared_rank)
+        if shared_rank > total_rank:
+            raise ValueError(
+                "global_params.field_params.shared_rank must not exceed the total field rank "
+                "defined by global_params.field_params.singular_values."
+            )
+        if shared_rank > available_rank:
+            raise ValueError(
+                "global_params.field_params.shared_rank must not exceed the available "
+                "intervention basis rank for field_mode='confounded_low_rank'."
+            )
+    return shared_rank, int(total_rank - shared_rank)
+
+
 def _scale_spectral_field(field_matrix: np.ndarray, config) -> np.ndarray:
     field_matrix = normalize_matrix_max_abs(field_matrix, max_abs=1.0)
     target_rms = _resolve_generation_field_rms_fraction(config) * get_B(config)
@@ -414,30 +479,84 @@ def _sample_random_low_rank_field(
     return field_matrix, int(singular_values.size)
 
 
+def _orthonormal_complement_gaussian_factors(
+    n_rows: int,
+    rank: int,
+    existing_factors: np.ndarray,
+    rng,
+) -> np.ndarray:
+    if rank < 0:
+        raise ValueError("rank must be nonnegative.")
+    if rank == 0:
+        return np.zeros((n_rows, 0), dtype=float)
+    existing = np.asarray(existing_factors, dtype=float)
+    if existing.ndim != 2 or existing.shape[0] != int(n_rows):
+        raise ValueError("existing_factors must have shape (n_rows, existing_rank).")
+    existing_rank = int(existing.shape[1])
+    if existing_rank + rank > int(n_rows):
+        raise ValueError(
+            "Requested orthogonal-complement rank exceeds the remaining ambient dimension."
+        )
+    if existing_rank == 0:
+        return _orthonormal_gaussian_factors(int(n_rows), int(rank), rng)
+
+    existing_q, _ = np.linalg.qr(existing, mode="reduced")
+    for _ in range(8):
+        proposal = rng.normal(size=(int(n_rows), int(rank)))
+        projected = proposal - existing_q @ (existing_q.T @ proposal)
+        q, r = np.linalg.qr(projected, mode="reduced")
+        diag = np.abs(np.diag(r))
+        if diag.size >= int(rank) and np.all(diag[:rank] > _DEGENERACY_THRESHOLD):
+            return np.asarray(q[:, :rank], dtype=float)
+    raise ValueError(
+        "Unable to sample a stable orthogonal complement for the requested nonshared rank."
+    )
+
+
 def _sample_confounded_low_rank_field(
     config,
     intervention_structure: SpectralLowRankStructure | None,
 ) -> tuple[np.ndarray, int]:
-    if intervention_structure is None:
-        raise ValueError(
-            "field_mode='confounded_low_rank' requires low-rank intervention factors, "
-            "either generated directly or derived from a fixed intervention panel."
-        )
     singular_values = _resolve_generation_field_singular_values(
         config,
         allow_empty=False,
     )
-    shared_rank = int(intervention_structure.singular_values.size)
-    if singular_values.size != shared_rank:
-        raise ValueError(
-            "global_params.field_params.singular_values must have the same length as the "
-            "shared intervention low-rank basis for field_mode='confounded_low_rank'."
-        )
-    field_matrix = (
-        intervention_structure.time_factors * singular_values[None, :]
-    ) @ intervention_structure.node_factors.T
+    shared_rank, nonshared_rank = resolve_generation_confounded_field_ranks(
+        config,
+        intervention_structure,
+    )
+    shared_time_factors = np.asarray(
+        intervention_structure.time_factors[:, :shared_rank],
+        dtype=float,
+    )
+    shared_node_factors = np.asarray(
+        intervention_structure.node_factors[:, :shared_rank],
+        dtype=float,
+    )
+    rng = np.random.default_rng(int(config.generation_params.seed) + 211)
+    nonshared_time_factors = _orthonormal_complement_gaussian_factors(
+        intervention_structure.time_factors.shape[0],
+        nonshared_rank,
+        shared_time_factors,
+        rng,
+    )
+    nonshared_node_factors = _orthonormal_complement_gaussian_factors(
+        intervention_structure.node_factors.shape[0],
+        nonshared_rank,
+        shared_node_factors,
+        rng,
+    )
+    time_factors = np.concatenate(
+        [shared_time_factors, nonshared_time_factors],
+        axis=1,
+    )
+    node_factors = np.concatenate(
+        [shared_node_factors, nonshared_node_factors],
+        axis=1,
+    )
+    field_matrix = (time_factors * singular_values[None, :]) @ node_factors.T
     field_matrix = _scale_spectral_field(field_matrix, config)
-    return field_matrix, shared_rank
+    return field_matrix, int(singular_values.size)
 
 
 def build_synthetic_field(
@@ -450,6 +569,14 @@ def build_synthetic_field(
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
     field_mode = get_synthetic_field_mode(config)
+    if (
+        _resolve_generation_field_shared_rank(config) is not None
+        and field_mode != SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
+    ):
+        raise ValueError(
+            "global_params.field_params.shared_rank is only valid when "
+            "global_params.field_mode='confounded_low_rank'."
+        )
     if field_mode == SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK:
         field_matrix, latent_rank = _sample_random_low_rank_field(
             config, n_nodes, t_steps
