@@ -161,41 +161,56 @@ variants:
   #     beta_mask_post_e: true
 
 
-  - name: alternating_rank_3_uv_2_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .02
-
-  - name: alternating_rank_3_uv_3_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .03
-
-  - name: alternating_rank_3_uv_4_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .04
-
-  - name: alternating_rank_3_uv_2_e2_beta_mask
+  - name: alternating_rank_3_uv_2_e2_xi_zero
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
     lambda_uv_ridge: .02
     estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: alternating_rank_3_uv_3_e2_xi_zero
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .03
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+
+  - name: alternating_rank_3_uv_4_e2_xi_zero
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .04
+    estimation:
+      fixed_scalar_params:
+        xi: 0.0
+                
+  - name: alternating_rank_3_uv_2_e2_beta_mask_xi_zero
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .02
+    estimation:
       beta_mask_pre_s: true
       beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_3_e2_beta_mask
+      fixed_scalar_params:
+        xi: 0.0
+                
+  - name: alternating_rank_3_uv_3_e2_beta_mask_xi_zero
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
     lambda_uv_ridge: .03
     estimation:
       beta_mask_pre_s: true
       beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_4_e2_beta_mask
+      fixed_scalar_params:
+        xi: 0.0
+                
+  - name: alternating_rank_3_uv_4_e2_beta_mask_xi_zero
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
     lambda_uv_ridge: .04
     estimation:
       beta_mask_pre_s: true
       beta_mask_post_e: true
+      fixed_scalar_params:
+        xi: 0.0
