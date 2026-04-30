@@ -19,143 +19,183 @@ base:
     beta_mask_post_e: false
 
 variants:
-  - name: alternating_rank_3_uv_1_e4
+  # - name: alternating_rank_3_uv_1_e4
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .0001
+
+  # - name: alternating_rank_3_uv_5_e4
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .0005
+
+  # - name: alternating_rank_3_uv_1_e3
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .001
+
+  # - name: alternating_rank_3_uv_5_e3
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .005
+
+  # - name: alternating_rank_3_uv_1_e2
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .01
+
+  # - name: alternating_rank_3_uv_5_e2
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .05
+
+  # - name: alternating_rank_3_uv_1_e1
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .1
+
+  # - name: alternating_rank_3_uv_5_e1
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .5
+
+  # - name: alternating_rank_3_uv_1
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: 1
+
+  # - name: alternating_rank_3_uv_5
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: 5
+
+  # - name: base
+  #   optimizer_mode: no_external_field
+  #   latent_rank: 0
+
+  # - name: alternating_rank_3_uv_1_e4_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .0001
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_5_e4_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .0005
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_1_e3_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .001
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_5_e3_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .005
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_1_e2_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .01
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_5_e2_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .05
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_1_e1_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .1
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_5_e1_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: .5
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_1_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: 1
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: alternating_rank_3_uv_5_beta_mask
+  #   optimizer_mode: alternating_latent_rank
+  #   latent_rank: 3
+  #   lambda_uv_ridge: 5
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+  # - name: base_beta_mask
+  #   optimizer_mode: no_external_field
+  #   latent_rank: 0
+  #   estimation:
+  #     beta_mask_pre_s: true
+  #     beta_mask_post_e: true
+
+
+  - name: alternating_rank_3_uv_2_e2
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
-    lambda_uv_ridge: .0001
+    lambda_uv_ridge: .02
 
-  - name: alternating_rank_3_uv_5_e4
+  - name: alternating_rank_3_uv_3_e2
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
-    lambda_uv_ridge: .0005
+    lambda_uv_ridge: .03
 
-  - name: alternating_rank_3_uv_1_e3
+  - name: alternating_rank_3_uv_4_e2
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
-    lambda_uv_ridge: .001
+    lambda_uv_ridge: .04
 
-  - name: alternating_rank_3_uv_5_e3
+  - name: alternating_rank_3_uv_2_e2_beta_mask
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
-    lambda_uv_ridge: .005
-
-  - name: alternating_rank_3_uv_1_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .01
-
-  - name: alternating_rank_3_uv_5_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .05
-
-  - name: alternating_rank_3_uv_1_e1
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .1
-
-  - name: alternating_rank_3_uv_5_e1
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .5
-
-  - name: alternating_rank_3_uv_1
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: 1
-
-  - name: alternating_rank_3_uv_5
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: 5
-
-  - name: base
-    optimizer_mode: no_external_field
-    latent_rank: 0
-
-  - name: alternating_rank_3_uv_1_e4_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .0001
+    lambda_uv_ridge: .02
     estimation:
       beta_mask_pre_s: true
       beta_mask_post_e: true
 
-  - name: alternating_rank_3_uv_5_e4_beta_mask
+  - name: alternating_rank_3_uv_3_e2_beta_mask
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
-    lambda_uv_ridge: .0005
+    lambda_uv_ridge: .03
     estimation:
       beta_mask_pre_s: true
       beta_mask_post_e: true
 
-  - name: alternating_rank_3_uv_1_e3_beta_mask
+  - name: alternating_rank_3_uv_4_e2_beta_mask
     optimizer_mode: alternating_latent_rank
     latent_rank: 3
-    lambda_uv_ridge: .001
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_5_e3_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .005
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_1_e2_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .01
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_5_e2_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .05
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_1_e1_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .1
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_5_e1_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .5
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_1_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: 1
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: alternating_rank_3_uv_5_beta_mask
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: 5
-    estimation:
-      beta_mask_pre_s: true
-      beta_mask_post_e: true
-
-  - name: base_beta_mask
-    optimizer_mode: no_external_field
-    latent_rank: 0
+    lambda_uv_ridge: .04
     estimation:
       beta_mask_pre_s: true
       beta_mask_post_e: true
