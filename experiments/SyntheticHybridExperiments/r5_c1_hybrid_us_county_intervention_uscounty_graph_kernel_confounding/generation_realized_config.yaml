@@ -1,0 +1,50 @@
+global_params:
+  'N': 3014
+  T: 120
+  B: 1.0
+  gamma_matrix_generator: fixed_artifact
+  fixed_gamma_source:
+    gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed/gamma_matrix_sparse.npz
+    node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed/node_index.csv
+    artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed
+    network_name: distance_kernel_8
+    trim_scope: trimmed
+  x_0_generator: bernoulli
+  field_mode: confounded_low_rank
+  field_params:
+    singular_values:
+    - 1.0
+    - 0.9
+    - 0.9
+    - 0.7
+    - 0.6
+    target_rms_fraction: 0.5
+    shared_rank: 1
+  gamma_matrix_params:
+    p: null
+  x_0_params:
+    p: 0.5
+    fixed_val: null
+estimation_params:
+  beta: -0.3
+  xi: 0.8
+  eta: 0.3
+  zeta: 0.0
+  psi: 0.0
+generation_params:
+  seed: 42
+  gibbs_sweeps: 20
+  intervention_mode: fixed_z
+  intervention_generator: None
+  intervention_params:
+    singular_values: null
+    probability_amplitude: null
+  fixed_z_source:
+    panel_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed/panel_data.npz
+    z0_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed/z_0.npy
+    artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed
+    shared_panel_dir: null
+    outcome_code: null
+    intervention_code: complete_cov_ge_30
+    lag_code: 2w
+    trim_scope: trimmed

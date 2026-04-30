@@ -223,14 +223,8 @@ experiments/**
 experiments/.tmp_*/
 
 # Manual gitignore adds
-!experiments/SyntheticHybridExperiments/fit_manifest_hybrid_r1.csv
-!experiments/SyntheticHybridExperiments/fit_manifest_hybrid_r3_v1.csv
-!experiments/SyntheticHybridExperiments/fit_manifest_hybrid_r3_v2.csv
-!experiments/SyntheticHybridExperiments/fit_manifest_synth.csv
-!experiments/SyntheticHybridExperiments/generation_manifest_hybrid_r1.csv
-!experiments/SyntheticHybridExperiments/generation_manifest_hybrid_r3_v1.csv
-!experiments/SyntheticHybridExperiments/generation_manifest_hybrid_r3_v2.csv
-!experiments/SyntheticHybridExperiments/generation_manifest_synth.csv
+!experiments/SyntheticHybridExperiments/**_manifest**.csv
+
 
 # Data
 data/*/processed/

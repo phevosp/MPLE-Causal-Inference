@@ -1,0 +1,33 @@
+2026-04-30 11:53:30 | INFO | Loading data...
+2026-04-30 11:53:30 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_c1_hybrid_us_county_intervention_generated_graph_confounding/panel_data.npz
+2026-04-30 11:53:30 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_c1_hybrid_us_county_intervention_generated_graph_confounding/x_0.npy
+2026-04-30 11:53:30 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_c1_hybrid_us_county_intervention_generated_graph_confounding/fits/base_beta_mask/fit_realized_config.yaml
+2026-04-30 11:53:30 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_c1_hybrid_us_county_intervention_generated_graph_confounding
+2026-04-30 11:53:30 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_c1_hybrid_us_county_intervention_generated_graph_confounding
+2026-04-30 11:53:30 | INFO | Configured optimizer mode: no_external_field
+2026-04-30 11:53:30 | INFO | Configured latent rank: 0
+2026-04-30 11:53:30 | INFO | Using a fixed known graph with scalar xi.
+2026-04-30 11:53:30 | INFO | Fit-time hard bounds active: False
+2026-04-30 11:53:30 | INFO | Fixed scalar parameters: {}
+2026-04-30 11:53:30 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-30 11:53:30 | INFO | Beta mask before s: True with s=55
+2026-04-30 11:53:30 | INFO | Beta mask after e: True with e=120
+2026-04-30 11:53:30 | INFO | Ignoring v_column_l2_max=1.0 for optimizer_mode=no_external_field
+2026-04-30 11:53:30 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-04-30 11:53:31 | INFO | Done fitting.
+2026-04-30 11:53:31 | INFO | Optimizer status: Desired error not necessarily achieved due to precision loss.
+2026-04-30 11:53:31 | INFO | Best optimizer start: 1 / 1
+2026-04-30 11:53:31 | INFO | Final Loss: 0.646645
+2026-04-30 11:53:31 | INFO | Estimated vs True Parameters:
+2026-04-30 11:53:31 | INFO |   beta: -0.0866 (True: -0.3000) | SQE: 0.045541
+2026-04-30 11:53:31 | INFO |   xi: 1.0221 (True: 0.8000) | SQE: 0.049347
+2026-04-30 11:53:31 | INFO |   eta: 0.2730 (True: 0.3000) | SQE: 0.000731
+2026-04-30 11:53:31 | INFO | Field and interaction diagnostics:
+2026-04-30 11:53:31 | INFO |   field_rmse: 0.500000
+2026-04-30 11:53:31 | INFO |   interaction_fro_error: 1.389677
+2026-04-30 11:53:31 | INFO |   estimated_field_max_abs_entry: 0.000000
+2026-04-30 11:53:31 | INFO |   estimated_field_rank: 0.000000
+2026-04-30 11:53:31 | INFO |   true_field_max_abs_entry: 3.260394
+2026-04-30 11:53:31 | INFO |   true_field_rank: 3.000000
+2026-04-30 11:53:31 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_c1_hybrid_us_county_intervention_generated_graph_confounding/fits/base_beta_mask/mple_summary.csv
+2026-04-30 11:53:31 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_c1_hybrid_us_county_intervention_generated_graph_confounding/fits/base_beta_mask/mple.log
