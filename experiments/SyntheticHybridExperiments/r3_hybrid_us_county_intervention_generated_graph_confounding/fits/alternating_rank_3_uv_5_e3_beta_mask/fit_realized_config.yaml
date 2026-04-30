@@ -1,0 +1,28 @@
+global_params:
+  'N': 3014
+  T: 120
+  s: 55
+  e: 120
+  latent_rank: 3
+  optimizer_mode: alternating_latent_rank
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.005
+  v_column_l2_max: 1.0
+estimation_params:
+  fixed_scalar_params: {}
+  warm_start_fixed_scalars: {}
+  warm_start_steps: 0
+  beta_mask_pre_s: true
+  beta_mask_post_e: true
+optimizer_params:
+  steps: 20000
+  tol: 1.0e-09
+  seed: 0
+  n_starts: 1
+  proximal_lr: 1.0
+input_artifacts:
+  model_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_generated_graph_confounding
+  truth_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_generated_graph_confounding
+  panel_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_generated_graph_confounding/panel_data.npz
+  x0_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_generated_graph_confounding/x_0.npy

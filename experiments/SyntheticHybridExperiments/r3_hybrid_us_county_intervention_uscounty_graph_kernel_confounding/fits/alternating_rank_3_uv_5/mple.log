@@ -1,0 +1,43 @@
+2026-04-30 09:51:23 | INFO | Loading data...
+2026-04-30 09:51:23 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding/panel_data.npz
+2026-04-30 09:51:23 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding/x_0.npy
+2026-04-30 09:51:23 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding/fits/alternating_rank_3_uv_5/fit_realized_config.yaml
+2026-04-30 09:51:23 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
+2026-04-30 09:51:23 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
+2026-04-30 09:51:23 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-04-30 09:51:23 | INFO | Configured latent rank: 3
+2026-04-30 09:51:23 | INFO | Using a fixed known graph with scalar xi.
+2026-04-30 09:51:23 | INFO | Fit-time hard bounds active: False
+2026-04-30 09:51:23 | INFO | Fixed scalar parameters: {}
+2026-04-30 09:51:23 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-04-30 09:51:23 | INFO | Beta mask before s: False with s=55
+2026-04-30 09:51:23 | INFO | Beta mask after e: False with e=120
+2026-04-30 09:51:23 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-04-30 09:51:23 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=5.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-04-30 09:51:23 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.682659 | initial_penalized=0.682750
+2026-04-30 09:51:23 | INFO | Alternating low-rank iter 0 | Loss: 0.596615 | Penalized: 0.599195
+2026-04-30 09:51:36 | INFO | Alternating low-rank iter 100 | Loss: 0.575604 | Penalized: 0.577550
+2026-04-30 09:51:45 | INFO | Done fitting.
+2026-04-30 09:51:45 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-04-30 09:51:45 | INFO | Best optimizer start: 1 / 1
+2026-04-30 09:51:45 | INFO | Final Loss: 0.575603
+2026-04-30 09:51:45 | INFO | Estimated vs True Parameters:
+2026-04-30 09:51:45 | INFO |   beta: 0.0661 (True: -0.3000) | SQE: 0.134043
+2026-04-30 09:51:45 | INFO |   xi: 0.9899 (True: 0.8000) | SQE: 0.036066
+2026-04-30 09:51:45 | INFO |   eta: 0.3387 (True: 0.3000) | SQE: 0.001495
+2026-04-30 09:51:45 | INFO | Alternating low-rank optimizer diagnostics:
+2026-04-30 09:51:45 | INFO |   penalized_objective: 0.577545
+2026-04-30 09:51:45 | INFO |   mple_loss_without_penalty: 0.575603
+2026-04-30 09:51:45 | INFO |   lambda_uv_ridge: 5.000000
+2026-04-30 09:51:45 | INFO |   u_frobenius_norm: 11.726495
+2026-04-30 09:51:45 | INFO |   v_frobenius_norm: 1.732051
+2026-04-30 09:51:45 | INFO |   effective_rank: 1.000000
+2026-04-30 09:51:45 | INFO | Field and interaction diagnostics:
+2026-04-30 09:51:45 | INFO |   field_rmse: 0.486258
+2026-04-30 09:51:45 | INFO |   interaction_fro_error: 2.101199
+2026-04-30 09:51:45 | INFO |   estimated_field_max_abs_entry: 0.221793
+2026-04-30 09:51:45 | INFO |   estimated_field_rank: 1.000000
+2026-04-30 09:51:45 | INFO |   true_field_max_abs_entry: 2.169749
+2026-04-30 09:51:45 | INFO |   true_field_rank: 3.000000
+2026-04-30 09:51:45 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding/fits/alternating_rank_3_uv_5/mple_summary.csv
+2026-04-30 09:51:45 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding/fits/alternating_rank_3_uv_5/mple.log

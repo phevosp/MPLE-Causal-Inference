@@ -13,36 +13,36 @@ base:
       p: 0.5
       fixed_val: null
   graph:
-    source: generated
-    generator: erdos_renyi
+    source: fixed_artifact
+    generator: null
     params:
-      p: 0.05
+      p: null
     artifact:
-      gamma_path: null
-      node_index_path: null
-      artifact_dir: null
-      network_name: null
-      trim_scope: null
+      gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+      node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+      artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed
+      network_name: contiguity
+      trim_scope: trimmed
   intervention:
-    source: generated
-    generator: low_rank_probability
+    source: fixed_artifact
+    generator: null
     params:
-      singular_values: [1.0, 0.7, 0.49]
-      probability_amplitude: 0.5
+      singular_values: null
+      probability_amplitude: null
     artifact:
-      panel_path: null
-      z0_path: null
-      artifact_dir: null
+      panel_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed/panel_data.npz
+      z0_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed/z_0.npy
+      artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_30__lag_2w__scope_trimmed
       shared_panel_dir: null
       outcome_code: null
-      intervention_code: null
-      lag_code: null
-      trim_scope: null
+      intervention_code: complete_cov_ge_30
+      lag_code: 2w
+      trim_scope: trimmed
   truth:
     B: 1.0
     field_mode: random_low_rank
     field_params:
-      singular_values: [2.0, 0.7, 0.49]
+      singular_values: [1.0]
       target_rms_fraction: 0.4
     scalars:
       beta: -0.3
@@ -52,43 +52,44 @@ base:
       psi: 0
 
 experiments:
-  - name: base
-    truth:
-      field_mode: random_low_rank
-      field_params:
-        singular_values: []
-
-  - name: spectral_low_rank
-
-  - name: confounding_weak
-    intervention:
+  - name: r3_hybrid_us_county_intervention_generated_graph_confounding
+    graph:
+      source: generated
+      generator: erdos_renyi
       params:
-        singular_values: [1.0, 0.7, 0.49]
+        p: 0.01
     truth:
-      B: 1.5
       field_mode: confounded_low_rank
       field_params:
-        singular_values: [0.5, 0.15, 0.05]
-        target_rms_fraction: 0.10
+        singular_values: [1.0, 0.9, 0.9]
+        target_rms_fraction: 0.50
 
-  - name: confounding_moderate
-    intervention:
-      params:
-        singular_values: [1.0, 0.7, 0.49]
+  - name: r3_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
+    graph:    
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/node_index.csv
+        artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed
+        network_name: contiguity
+        trim_scope: trimmed
     truth:
-      B: 2.0
       field_mode: confounded_low_rank
       field_params:
-        singular_values: [1.0, 0.5, 0.25]
-        target_rms_fraction: 0.25
+        singular_values: [1.0, 0.9, 0.9]
+        target_rms_fraction: 0.50
 
-  - name: confounding_strong
-    intervention:
-      params:
-        singular_values: [1.0, 0.7, 0.49]
+  - name: r3_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
+    graph:    
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed/node_index.csv
+        artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed
+        network_name: distance_kernel_8
+        trim_scope: trimmed
     truth:
-      B: 2.5
       field_mode: confounded_low_rank
       field_params:
-        singular_values: [1.0, 0.8, 0.6]
+        singular_values: [1.0, 0.9, 0.9]
         target_rms_fraction: 0.50
