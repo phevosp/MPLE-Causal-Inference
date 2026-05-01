@@ -3240,6 +3240,10 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(len(fold_rows), 10)
         self.assertEqual(len(score_rows), 2)
         self.assertEqual(str(best_candidate.search_slug), "no_external_field_mask_grid")
+        self.assertIn("weighted_mean_validation_brier_score", manifest_rows[0])
+        self.assertIn("mean_fold_validation_brier_score", manifest_rows[0])
+        self.assertIn("weighted_mean_validation_brier_score", best_candidate)
+        self.assertIn("mean_fold_validation_brier_score", best_candidate)
 
         completed_rows = [row for row in fold_rows if row["status"] == "completed"]
         self.assertEqual(len(completed_rows), 10)
@@ -3250,15 +3254,50 @@ class PipelineStageRequestTests(unittest.TestCase):
             if row["status"] != "completed":
                 continue
             candidate_rows_group = grouped[row["candidate_slug"]]
+            for fold_row in candidate_rows_group:
+                self.assertIn("validation_brier_score", fold_row)
             weighted = sum(
                 float(fold_row["validation_loss"]) * int(fold_row["num_validation_slots"])
                 for fold_row in candidate_rows_group
             ) / sum(int(fold_row["num_validation_slots"]) for fold_row in candidate_rows_group)
+            weighted_brier = sum(
+                float(fold_row["validation_brier_score"])
+                * int(fold_row["num_validation_slots"])
+                for fold_row in candidate_rows_group
+            ) / sum(int(fold_row["num_validation_slots"]) for fold_row in candidate_rows_group)
+            mean_fold_brier = sum(
+                float(fold_row["validation_brier_score"])
+                for fold_row in candidate_rows_group
+            ) / len(candidate_rows_group)
             self.assertAlmostEqual(
                 float(row["weighted_mean_validation_loss"]),
                 weighted,
                 places=12,
             )
+            self.assertAlmostEqual(
+                float(row["weighted_mean_validation_brier_score"]),
+                weighted_brier,
+                places=12,
+            )
+            self.assertAlmostEqual(
+                float(row["mean_fold_validation_brier_score"]),
+                mean_fold_brier,
+                places=12,
+            )
+
+    def test_validation_brier_score_matches_spin_probability_formula(self) -> None:
+        x = np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        h_x = np.asarray([[0.0, 0.2], [-0.7, 1.1]], dtype=float)
+        mask = np.asarray([[True, False], [True, True]], dtype=bool)
+
+        observed_positive = (x + 1.0) / 2.0
+        predicted_positive = (1.0 + np.tanh(h_x)) / 2.0
+        expected = float(
+            np.mean(((observed_positive - predicted_positive) ** 2)[mask])
+        )
+
+        actual = cv_runner._validation_brier_score(x=x, h_x=h_x, loss_mask=mask)
+        self.assertAlmostEqual(actual, expected, places=12)
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_generation_jobs_submits_workers_and_report(self) -> None:

@@ -227,27 +227,68 @@ def _save_loss_mask(path: str | Path, loss_mask: np.ndarray) -> Path:
     return output_path
 
 
-def _evaluate_fold_losses(
+def _masked_beta_feature(
+    z: np.ndarray,
+    *,
+    s: int,
+    e: int,
+    beta_mask_pre_s: bool,
+    beta_mask_post_e: bool,
+) -> np.ndarray:
+    beta_feature = np.asarray(z, dtype=float).copy()
+    if bool(beta_mask_pre_s) and int(s) > 0:
+        beta_feature[: int(s), :] = 0.0
+    if bool(beta_mask_post_e) and int(e) < beta_feature.shape[0]:
+        beta_feature[int(e) :, :] = 0.0
+    return beta_feature
+
+
+def _validation_brier_score(
+    *,
+    x: np.ndarray,
+    h_x: np.ndarray,
+    loss_mask: np.ndarray,
+) -> float:
+    x_array = np.asarray(x, dtype=float)
+    h_array = np.asarray(h_x, dtype=float)
+    mask = np.asarray(loss_mask, dtype=bool)
+    if x_array.shape != h_array.shape or x_array.shape != mask.shape:
+        raise ValueError(
+            "x, h_x, and loss_mask must all have the same shape for Brier evaluation."
+        )
+    if not np.any(mask):
+        raise ValueError("loss_mask must contain at least one active entry.")
+    observed_positive = (x_array + 1.0) / 2.0
+    predicted_positive = (1.0 + np.tanh(h_array)) / 2.0
+    squared_error = (observed_positive - predicted_positive) ** 2
+    return float(np.mean(squared_error[mask]))
+
+
+def _evaluate_fold_metrics(
     fit_root: str | Path,
     experiment_root: str | Path,
     *,
     training_loss_mask: np.ndarray,
     validation_loss_mask: np.ndarray,
-) -> tuple[float, float]:
+) -> tuple[float, float, float]:
     panel_context = load_experiment_panel_context(experiment_root)
     bundle = load_fit_parameter_bundle(fit_root, experiment_root)
-    interaction_effect_x = interaction_effect(
-        np.asarray(panel_context["x"], dtype=float),
-        bundle.gamma_matrix,
-    )
+    x = np.asarray(panel_context["x"], dtype=float)
+    z = np.asarray(panel_context["z"], dtype=float)
+    x_0 = np.asarray(panel_context["x_0"], dtype=float)
+    field_matrix = np.asarray(bundle.field_matrix, dtype=float)
+    beta = float(bundle.beta)
+    xi = float(bundle.xi)
+    eta = float(bundle.eta)
+    interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
     common_kwargs = {
-        "x": np.asarray(panel_context["x"], dtype=float),
-        "z": np.asarray(panel_context["z"], dtype=float),
-        "x_0": np.asarray(panel_context["x_0"], dtype=float),
-        "field_matrix": np.asarray(bundle.field_matrix, dtype=float),
-        "beta": float(bundle.beta),
-        "xi": float(bundle.xi),
-        "eta": float(bundle.eta),
+        "x": x,
+        "z": z,
+        "x_0": x_0,
+        "field_matrix": field_matrix,
+        "beta": beta,
+        "xi": xi,
+        "eta": eta,
         "interaction_effect_x": interaction_effect_x,
         "fixed_scalar_params": {},
         "s": int(panel_context["s"]),
@@ -263,7 +304,26 @@ def _evaluate_fold_losses(
         loss_mask=np.asarray(validation_loss_mask, dtype=bool),
         **common_kwargs,
     )
-    return float(fit_loss), float(validation_loss)
+    prev_x = np.vstack([x_0, x[:-1, :]])
+    h_x = (
+        field_matrix
+        + beta
+        * _masked_beta_feature(
+            z,
+            s=int(panel_context["s"]),
+            e=int(panel_context["e"]),
+            beta_mask_pre_s=bool(bundle.beta_mask_pre_s),
+            beta_mask_post_e=bool(bundle.beta_mask_post_e),
+        )
+        + xi * interaction_effect_x
+        + eta * prev_x
+    )
+    validation_brier_score = _validation_brier_score(
+        x=x,
+        h_x=h_x,
+        loss_mask=np.asarray(validation_loss_mask, dtype=bool),
+    )
+    return float(fit_loss), float(validation_loss), float(validation_brier_score)
 
 
 def _candidate_grid_row(search: dict[str, Any], candidate: dict[str, Any]) -> dict[str, object]:
@@ -301,6 +361,8 @@ def _candidate_score_row(
             "num_completed_folds": int(len(success_rows)),
             "weighted_mean_validation_loss": "",
             "mean_fold_validation_loss": "",
+            "weighted_mean_validation_brier_score": "",
+            "mean_fold_validation_brier_score": "",
             "total_validation_slots": "",
         }
     validation_slots = np.asarray(
@@ -311,10 +373,18 @@ def _candidate_score_row(
         [float(row["validation_loss"]) for row in success_rows],
         dtype=float,
     )
+    validation_brier_scores = np.asarray(
+        [float(row["validation_brier_score"]) for row in success_rows],
+        dtype=float,
+    )
     weighted_mean = float(
         np.sum(validation_slots * validation_losses) / np.sum(validation_slots)
     )
     mean_fold = float(np.mean(validation_losses))
+    weighted_mean_brier = float(
+        np.sum(validation_slots * validation_brier_scores) / np.sum(validation_slots)
+    )
+    mean_fold_brier = float(np.mean(validation_brier_scores))
     return {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
@@ -327,6 +397,8 @@ def _candidate_score_row(
         "num_completed_folds": int(len(success_rows)),
         "weighted_mean_validation_loss": weighted_mean,
         "mean_fold_validation_loss": mean_fold,
+        "weighted_mean_validation_brier_score": weighted_mean_brier,
+        "mean_fold_validation_brier_score": mean_fold_brier,
         "total_validation_slots": int(np.sum(validation_slots)),
     }
 
@@ -423,7 +495,7 @@ def _run_search_for_experiment(
                     extra_metadata=extra_metadata,
                 )
                 execute_fit_root(fold_root)
-                fit_loss, validation_loss = _evaluate_fold_losses(
+                fit_loss, validation_loss, validation_brier_score = _evaluate_fold_metrics(
                     fold_root,
                     experiment_root,
                     training_loss_mask=training_loss_mask,
@@ -434,6 +506,7 @@ def _run_search_for_experiment(
                         "status": "completed",
                         "fit_loss": float(fit_loss),
                         "validation_loss": float(validation_loss),
+                        "validation_brier_score": float(validation_brier_score),
                     }
                 )
             except Exception as exc:  # noqa: BLE001
@@ -442,6 +515,7 @@ def _run_search_for_experiment(
                         "status": "failed",
                         "fit_loss": "",
                         "validation_loss": "",
+                        "validation_brier_score": "",
                         "error_message": str(exc),
                     }
                 )
@@ -489,6 +563,12 @@ def _run_search_for_experiment(
         "candidate_index": int(best_candidate["_candidate_index"]),
         "weighted_mean_validation_loss": float(best_row["weighted_mean_validation_loss"]),
         "mean_fold_validation_loss": float(best_row["mean_fold_validation_loss"]),
+        "weighted_mean_validation_brier_score": float(
+            best_row["weighted_mean_validation_brier_score"]
+        ),
+        "mean_fold_validation_brier_score": float(
+            best_row["mean_fold_validation_brier_score"]
+        ),
         "total_validation_slots": int(best_row["total_validation_slots"]),
         "hyperparameters": {
             key: value for key, value in sorted(best_candidate["_flat_params"].items())
@@ -509,6 +589,12 @@ def _run_search_for_experiment(
         "best_candidate_slug": best_candidate["slug"],
         "weighted_mean_validation_loss": float(best_row["weighted_mean_validation_loss"]),
         "mean_fold_validation_loss": float(best_row["mean_fold_validation_loss"]),
+        "weighted_mean_validation_brier_score": float(
+            best_row["weighted_mean_validation_brier_score"]
+        ),
+        "mean_fold_validation_brier_score": float(
+            best_row["mean_fold_validation_brier_score"]
+        ),
         "total_validation_slots": int(best_row["total_validation_slots"]),
         "status": "completed",
     }

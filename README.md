@@ -481,9 +481,16 @@ So the fitted MPLE parameters are learned by conditioning on separator unit-time
 
 Selection is based on pooled validation loss:
 
-- for each candidate and fold, save `fit_loss`, `validation_loss`, and the numbers of active training and validation slots
+- for each candidate and fold, save `fit_loss`, `validation_loss`, `validation_brier_score`, and the numbers of active training and validation slots
 - aggregate across the 5 folds using `weighted_mean_validation_loss`, weighting each fold by its number of validation slots
+- also report `weighted_mean_validation_brier_score` and `mean_fold_validation_brier_score`
 - choose the candidate with the lowest weighted mean validation loss
+
+The reported validation Brier score uses the model-implied probability of a positive spin:
+
+- `h_it = M_it + beta z_it + xi (Gamma x_t)_i + eta x_{i,t-1}`
+- `P(x_it = 1 | h_it) = (1 + tanh(h_it)) / 2`
+- observed outcome on the probability scale is `(x_it + 1) / 2`
 
 Artifacts are written under:
 
