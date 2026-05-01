@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 from scipy import sparse
 
+from io_utils import io_path
+
 
 DEFAULT_LATENT_RANK = 0
 _DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerate
@@ -640,7 +642,9 @@ def save_field_artifacts(path: str | Path, artifacts: ModelArtifacts) -> None:
     }
     if artifacts.field_matrix is not None:
         payload["field_matrix"] = np.asarray(artifacts.field_matrix, dtype=float)
-    np.savez(Path(path), **payload)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(io_path(target), **payload)
 
 
 def load_field_artifacts(path: str | Path) -> dict[str, object]:

@@ -24,10 +24,12 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from data.synthetic_data_generation import derive_pre_intervention_steps
+from io_utils import io_path
 from intervention_utils import derive_post_intervention_steps
 from pipeline_specs import (
     expand_named_entries,
     read_csv_manifest,
+    validate_fit_variant_dict,
     validate_fits_spec,
     write_csv_manifest,
 )
@@ -92,63 +94,22 @@ def build_fit_config(
     variant: dict[str, Any],
     dims: dict[str, int],
 ) -> object:
+    validate_fit_variant_dict(variant)
     estimation = dict(variant.get("estimation", {}) or {})
     optimizer = dict(variant.get("optimizer", {}) or {})
     optimizer_mode = str(variant.get("optimizer_mode", "no_external_field"))
-    if optimizer_mode not in {
-        "no_external_field",
-        "nuclear_norm",
-        "exact_rank_manifold",
-        "alternating_latent_rank",
-        "concurrent_latent_rank",
-    }:
-        raise ValueError(
-            "optimizer_mode must be one of 'no_external_field', 'nuclear_norm', "
-            "'exact_rank_manifold', 'alternating_latent_rank', or "
-            "'concurrent_latent_rank'."
-        )
     latent_rank = (
         0
         if optimizer_mode in {"no_external_field", "nuclear_norm"}
         else int(variant.get("latent_rank", 0))
     )
-    if optimizer_mode in {"alternating_latent_rank", "concurrent_latent_rank"} and latent_rank <= 0:
-        raise ValueError(
-            f"latent_rank must be positive for optimizer_mode='{optimizer_mode}'."
-        )
-    if optimizer_mode == "exact_rank_manifold" and latent_rank <= 0:
-        raise ValueError(
-            "latent_rank must be positive for optimizer_mode='exact_rank_manifold'."
-        )
     lambda_nuclear = float(variant.get("lambda_nuclear", 0.0))
-    if lambda_nuclear < 0.0:
-        raise ValueError("lambda_nuclear must be nonnegative.")
     lambda_frobenius = float(variant.get("lambda_frobenius", 0.0))
-    if lambda_frobenius < 0.0:
-        raise ValueError("lambda_frobenius must be nonnegative.")
     lambda_uv_ridge = float(variant.get("lambda_uv_ridge", 0.0))
-    if lambda_uv_ridge < 0.0:
-        raise ValueError("lambda_uv_ridge must be nonnegative.")
     raw_v_column_l2_max = variant.get("v_column_l2_max", None)
     v_column_l2_max = (
         None if raw_v_column_l2_max is None else float(raw_v_column_l2_max)
     )
-    if v_column_l2_max is not None and v_column_l2_max <= 0.0:
-        raise ValueError("v_column_l2_max must be positive.")
-    if optimizer_mode != "nuclear_norm" and lambda_nuclear != 0.0:
-        raise ValueError("lambda_nuclear is only valid for optimizer_mode='nuclear_norm'.")
-    if optimizer_mode != "exact_rank_manifold" and lambda_frobenius != 0.0:
-        raise ValueError(
-            "lambda_frobenius is only valid for optimizer_mode='exact_rank_manifold'."
-        )
-    if (
-        optimizer_mode not in {"alternating_latent_rank", "concurrent_latent_rank"}
-        and lambda_uv_ridge != 0.0
-    ):
-        raise ValueError(
-            "lambda_uv_ridge is only valid for optimizer_mode='alternating_latent_rank' "
-            "or 'concurrent_latent_rank'."
-        )
 
     optimizer_config: dict[str, Any] = {
         "steps": int(optimizer["steps"]),
@@ -183,6 +144,92 @@ def build_fit_config(
         "optimizer_params": optimizer_config,
     }
     return OmegaConf.create(config_dict)
+
+
+def _fit_input_artifacts(
+    experiment_root: str | Path,
+    *,
+    extra_input_artifacts: dict[str, object] | None = None,
+) -> dict[str, object]:
+    experiment_path = Path(experiment_root)
+    artifacts = {
+        "model_artifact_dir": str(experiment_path.resolve()),
+        "truth_artifact_dir": str(experiment_path.resolve()),
+        "panel_path": str((experiment_path / "panel_data.npz").resolve()),
+        "x0_path": str((experiment_path / "x_0.npy").resolve()),
+    }
+    if extra_input_artifacts:
+        artifacts.update(extra_input_artifacts)
+    return artifacts
+
+
+def materialize_fit_root(
+    experiment_row: dict[str, str],
+    variant: dict[str, Any],
+    fit_root: str | Path,
+    *,
+    extra_input_artifacts: dict[str, object] | None = None,
+    extra_metadata: dict[str, object] | None = None,
+) -> tuple[Path, object, dict[str, object]]:
+    experiment_root = Path(experiment_row["experiment_path"])
+    fit_root_path = Path(fit_root)
+    dims = infer_panel_dimensions(experiment_root)
+    fit_config = build_fit_config(variant, dims)
+    fit_config.input_artifacts = OmegaConf.create(
+        _fit_input_artifacts(
+            experiment_root,
+            extra_input_artifacts=extra_input_artifacts,
+        )
+    )
+    config_path = fit_root_path / "fit_realized_config.yaml"
+    fixed_scalar_params = OmegaConf.to_container(
+        fit_config.estimation_params.fixed_scalar_params, resolve=True
+    )
+    fit_metadata = {
+        "variant_name": variant["name"],
+        "variant_slug": variant["slug"],
+        "fits_spec_path": str(Path(variant["_spec_path"]).resolve())
+        if variant.get("_spec_path")
+        else "",
+        "experiment_name": experiment_row.get("experiment_name", ""),
+        "experiment_slug": experiment_row.get("experiment_slug", ""),
+        "descriptor": experiment_row.get(
+            "descriptor", experiment_row.get("experiment_name", "")
+        ),
+        "experiment_path": str(experiment_root.resolve()),
+        "intervention_source": experiment_row.get("intervention_source", ""),
+        "graph_source": experiment_row.get("graph_source", ""),
+        "field_mode": experiment_row.get("field_mode", ""),
+        "model_artifact_dir": str(experiment_root.resolve()),
+        "truth_artifact_dir": str(experiment_root.resolve()),
+        "panel_path": str((experiment_root / "panel_data.npz").resolve()),
+        "x0_path": str((experiment_root / "x_0.npy").resolve()),
+        "latent_rank": int(fit_config.global_params.latent_rank),
+        "optimizer_mode": str(fit_config.global_params.optimizer_mode),
+        "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
+        "lambda_frobenius": float(fit_config.global_params.lambda_frobenius),
+        "lambda_uv_ridge": float(fit_config.global_params.lambda_uv_ridge),
+        "fixed_scalar_params": fixed_scalar_params,
+        **dims,
+    }
+    if extra_metadata:
+        fit_metadata.update(extra_metadata)
+    OmegaConf.save(fit_config, io_path(config_path))
+    OmegaConf.save(
+        OmegaConf.create(fit_metadata),
+        io_path(fit_root_path / "fit_metadata.yaml"),
+    )
+    return fit_root_path, fit_config, fit_metadata
+
+
+def execute_fit_root(fit_root: str | Path) -> None:
+    command = [
+        sys.executable,
+        str(REPO_ROOT / "mple.py"),
+        "--data_folder",
+        str(Path(fit_root)),
+    ]
+    subprocess.run(command, check=True, cwd=REPO_ROOT)
 
 
 def _fit_request_row(
@@ -283,56 +330,16 @@ def run_fit_variant(
                 f"{fit_root} already exists. Re-run with --overwrite to rebuild it."
             )
     fit_root.mkdir(parents=True, exist_ok=False)
-
-    dims = infer_panel_dimensions(experiment_root)
-    fit_config = build_fit_config(variant, dims)
-    fit_config.input_artifacts = OmegaConf.create(
-        {
-            "model_artifact_dir": str(experiment_root.resolve()),
-            "truth_artifact_dir": str(experiment_root.resolve()),
-            "panel_path": str((experiment_root / "panel_data.npz").resolve()),
-            "x0_path": str((experiment_root / "x_0.npy").resolve()),
-        }
+    fit_root_path, fit_config, _ = materialize_fit_root(
+        experiment_row,
+        variant,
+        fit_root,
     )
-    config_path = fit_root / "fit_realized_config.yaml"
+    execute_fit_root(fit_root_path)
+    dims = infer_panel_dimensions(experiment_root)
     fixed_scalar_params = OmegaConf.to_container(
         fit_config.estimation_params.fixed_scalar_params, resolve=True
     )
-    fit_metadata = {
-        "variant_name": variant["name"],
-        "variant_slug": variant["slug"],
-        "fits_spec_path": str(Path(variant["_spec_path"]).resolve()),
-        "experiment_name": experiment_row.get("experiment_name", ""),
-        "experiment_slug": experiment_row.get("experiment_slug", ""),
-        "descriptor": experiment_row.get(
-            "descriptor", experiment_row.get("experiment_name", "")
-        ),
-        "experiment_path": str(experiment_root.resolve()),
-        "intervention_source": experiment_row.get("intervention_source", ""),
-        "graph_source": experiment_row.get("graph_source", ""),
-        "field_mode": experiment_row.get("field_mode", ""),
-        "model_artifact_dir": str(experiment_root.resolve()),
-        "truth_artifact_dir": str(experiment_root.resolve()),
-        "panel_path": str((experiment_root / "panel_data.npz").resolve()),
-        "x0_path": str((experiment_root / "x_0.npy").resolve()),
-        "latent_rank": int(fit_config.global_params.latent_rank),
-        "optimizer_mode": str(fit_config.global_params.optimizer_mode),
-        "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
-        "lambda_frobenius": float(fit_config.global_params.lambda_frobenius),
-        "lambda_uv_ridge": float(fit_config.global_params.lambda_uv_ridge),
-        "fixed_scalar_params": fixed_scalar_params,
-        **dims,
-    }
-    OmegaConf.save(fit_config, config_path)
-    OmegaConf.save(OmegaConf.create(fit_metadata), fit_root / "fit_metadata.yaml")
-
-    command = [
-        sys.executable,
-        str(REPO_ROOT / "mple.py"),
-        "--data_folder",
-        str(fit_root),
-    ]
-    subprocess.run(command, check=True, cwd=REPO_ROOT)
     return {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),

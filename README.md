@@ -89,6 +89,8 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | MPLE variant fitting | `run_fit_pipeline.py`, `submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
 | Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
 | Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `report_posterior_predictive.py`, `submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
+| CV fold construction for `U,V` regularizer tuning | `build_cv_folds.py` | `generation_manifest.csv` for experiments with `Gamma`, `panel_data.npz`, and optional `node_index.csv` / `time_index.csv` | `cv_folds/folds_5/` spatial partitions plus spatiotemporal fold artifacts |
+| Cross-validated MPLE hyperparameter search | `run_cv_folds.py` | `generation_manifest.csv`, prebuilt `cv_folds/folds_5/`, `data/configs/cv_spec.yaml` | `cv_requests.csv`, `cv_manifest.csv`, per-search candidate scores and fold fits |
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census geography sources | cached raw inputs |
 | Real-data preprocessing and realization | `data/USCountyVaccination/preprocess_us_county_vaccination_data.py` | cached raw inputs | processed panels, `realized_*`, `shared_panels` |
 | Real-data experiment materialization | `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | `realized_*`, `shared_panels` | shared-compatible experiment folders, `generation_manifest.csv` |
@@ -310,6 +312,202 @@ synthetic_rank_40_B1,fit,rank_40_B1,saved_intervention,all_minus_ones
 
 The `seed` in `posterior_predictive_spec.yaml` is the starting seed for a run. Individual samples use `seed + sample_index`, so `num_samples` produces reproducible but distinct draws.
 
+## CV Fold Construction
+
+`build_cv_folds.py` is the canonical downstream entry point for building the spatial and spatiotemporal folds used to tune `lambda_uv_ridge` or related `U,V` regularization choices. It now consumes a generation manifest and builds folds for every experiment listed there.
+
+Run it with:
+
+```bash
+pixi run python -u build_cv_folds.py \
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
+```
+
+Required experiment artifacts:
+
+- `gamma_matrix.npy` or `gamma_matrix_sparse.npz`
+- `panel_data.npz`
+- optional `node_index.csv`
+- optional `time_index.csv`
+
+`pymetis` is required and is pinned in `pixi.toml`. The script validates that the loaded `Gamma` artifact is:
+
+- square
+- symmetric within the configured tolerance
+- zero-diagonal within the configured tolerance
+
+The graph partitioning stage then computes:
+
+- `C_1, ..., C_5`: a 5-way METIS partition of the vertex set
+- `S_i = {v in V \ C_i : v has at least one neighbor in C_i}` for each `i`
+
+METIS optimizes a balanced edge-cut objective. The saved separator sets `S_i` are derived diagnostics used to construct the CV folds; they are not the optimization target of METIS itself.
+
+The time horizon is split into 5 contiguous ordered blocks `T_1, ..., T_5` with:
+
+- minimum block sizes `[1, 2, 2, 2, 2]`
+- the first time index of `T_2, ..., T_5` marked as a transition step
+- a minimum supported horizon of `T = 9`
+
+The 5 composite folds use cyclic validation schedules:
+
+- fold 1 validates `C_1, C_2, C_3, C_4, C_5` on `T_1, ..., T_5`
+- fold 2 validates `C_5, C_1, C_2, C_3, C_4`
+- fold 3 validates `C_4, C_5, C_1, C_2, C_3`
+- fold 4 validates `C_3, C_4, C_5, C_1, C_2`
+- fold 5 validates `C_2, C_3, C_4, C_5, C_1`
+
+Per-time role assignment uses three roles:
+
+- `training`
+- `separator`
+- `validation`
+
+On non-transition times in block `T_b`:
+
+- validation = `C_active`
+- separator = `S_active`
+- training = `V \ (C_active ∪ S_active)`
+
+On the first time index of each of `T_2, ..., T_5`, if the active validation partition changes from `C_prev` to `C_curr`:
+
+- separator = `S_curr ∪ C_prev ∪ C_curr`
+- validation = empty
+- training = the complement
+
+This guarantees a 1-step temporal separator whenever a partition switches between training and validation. There is no wraparound transition after `T_5`.
+
+During construction, `build_cv_folds.py` also validates that the separator acts as a Markov blanket in the **full spatiotemporal dependency graph** implied by the model:
+
+- same-time spatial dependencies come from `Gamma`
+- adjacent-time self-dependencies come from the `eta * prev_x` term
+
+So the construction succeeds only if:
+
+- there is no same-time `Gamma` edge between validation and training vertices
+- there is no adjacent-time self-transition where the same vertex is validation at one time and training at the next
+
+The script always writes the blanket and coverage diagnostics, then raises if the Markov-blanket check fails.
+
+Artifacts are written under each experiment root:
+
+- `<experiment_root>/cv_folds/folds_5/`
+
+Files:
+
+- `vertex_assignments.csv`: one row per vertex with its `C_i` assignment
+- `separator_vertices.csv`: one row per `(S_i, vertex)` membership
+- `fold_roles.npz`: compact `(cv_fold, time, vertex)` role tensor
+- `time_blocks.csv`: block assignment and transition-step metadata for each time index
+- `fold_schedule.csv`: the 5 cyclic validation schedules
+- `fold_role_counts.csv`: aggregated training/separator/validation counts by fold and block
+- `spatial_partition_metadata.yaml`
+- `spatiotemporal_cv_metadata.yaml`
+- `markov_blanket_summary.yaml`
+
+`fold_roles.npz` contains:
+
+- `role_codes` with shape `(5, T, N)`
+- `time_block_ids` with shape `(T,)`
+- `is_transition_step` with shape `(T,)`
+- `validation_partition_ids_by_fold_block` with shape `(5, 5)`
+
+Role codes are:
+
+- `0 = training`
+- `1 = separator`
+- `2 = validation`
+
+`markov_blanket_summary.yaml` records whether the constructed folds pass the full spatiotemporal blanket test, along with counts of spatial and temporal violations by fold.
+
+`spatiotemporal_cv_metadata.yaml` now also includes the aggregate coverage-count diagnostics describing how often vertices appear in validation, separator, and training across the full 5-fold family. These coverage counts are descriptive diagnostics only; they are not enforced as hard acceptance thresholds.
+
+Example on a US county experiment root:
+
+```bash
+pixi run python -u build_cv_folds.py \
+  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv
+```
+
+## Cross-Validated MPLE Search
+
+`run_cv_folds.py` consumes the prebuilt fold artifacts from `build_cv_folds.py` and runs a 5-fold hyperparameter grid search without duplicating the core MPLE fitting code.
+
+Run it with:
+
+```bash
+pixi run python -u run_cv_folds.py \
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --cv_spec_path data/configs/cv_spec.yaml
+```
+
+The CV spec mirrors the fit-spec layout but adds a required `grid:` section inside each named search. Fixed values outside `grid` apply to every candidate, and list-valued leaves inside `grid` are expanded as a Cartesian product.
+
+Example:
+
+```yaml
+base:
+  cv_root_name: cv_runs
+  cv_manifest_path: experiments/SyntheticHybridExperiments/cv_manifest.csv
+  optimizer:
+    steps: 20000
+    tol: 1.0e-9
+    seed: 0
+    n_starts: 1
+    proximal_lr: 1.0
+  optimizer_mode: alternating_latent_rank
+  latent_rank: 3
+  lambda_uv_ridge: 0.0
+  estimation:
+    fixed_scalar_params: {}
+
+searches:
+  - name: alternating_uv_grid
+    optimizer_mode: alternating_latent_rank
+    grid:
+      latent_rank: [3, 5, 7]
+      lambda_uv_ridge: [0.001, 0.01, 0.1]
+      estimation:
+        beta_mask_pre_s: [false, true]
+```
+
+Each CV fold uses the saved role tensor from `fold_roles.npz`:
+
+- training loss mask = entries with role `training`
+- validation loss mask = entries with role `validation`
+- separator entries stay visible in `x`, `z`, `prev_x`, and `Gamma x`, but contribute zero loss during fitting and zero loss during validation scoring
+
+So the fitted MPLE parameters are learned by conditioning on separator unit-times while optimizing only over training unit-times. Validation uses the same fitted parameters and evaluates masked MPLE loss only on validation unit-times.
+
+Selection is based on pooled validation loss:
+
+- for each candidate and fold, save `fit_loss`, `validation_loss`, and the numbers of active training and validation slots
+- aggregate across the 5 folds using `weighted_mean_validation_loss`, weighting each fold by its number of validation slots
+- choose the candidate with the lowest weighted mean validation loss
+
+Artifacts are written under:
+
+- `<experiment_root>/<cv_root_name>/<search_slug>/`
+
+Files:
+
+- `candidate_grid.csv`: resolved hyperparameter combinations
+- `fold_scores.csv`: one row per `(candidate, cv_fold)`
+- `candidate_scores.csv`: aggregated 5-fold metrics and ranks
+- `best_candidate.yaml`: winning hyperparameters and summary metrics
+- `candidates/<candidate_slug>/fold_<i>/...`: ordinary MPLE fit artifacts for each fold
+
+Top-level outputs:
+
+- `cv_requests.csv`: one row per `(experiment, search, candidate, fold)`
+- `cv_manifest.csv`: one row per `(experiment, search)` with the selected winner
+
+The runner requires:
+
+- prebuilt `cv_folds/folds_5/fold_roles.npz`
+- `markov_blanket_summary.yaml` with `blanket_validation_passed: true`
+- exactly 5 folds in v1
+
 ## Core Artifact Contract
 
 At experiment scope, the shared panel/model artifacts are:
@@ -417,6 +615,13 @@ pixi run python -u run_intervention_library.py \
   --overwrite
 ```
 
+Build unified spatial + spatiotemporal CV folds:
+
+```bash
+pixi run python -u build_cv_folds.py \
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
+```
+
 Regenerate grouped fit reports from an existing fit manifest:
 
 ```bash
@@ -505,6 +710,7 @@ They call the same Python entry points and accept environment-variable overrides
 - `run_fit_pipeline.py`: fit request planning, single-fit execution, and manifest refresh/report rebuild
 - `submit_fit_jobs.sh`: SLURM fan-out for fit requests plus manifest/report refresh barrier
 - `run_intervention_library.py`: reusable intervention-panel materialization
+- `build_cv_folds.py`: manifest-driven spatial partition plus spatiotemporal CV-fold construction
 - `run_posterior_predictive.py`: single-target posterior-predictive/counterfactual execution
 - `report_posterior_predictive.py`: manifest refresh plus grouped posterior-predictive reporting
 - `run_tests.sh`: staged generation → fit → intervention → posterior-predictive shell orchestrator

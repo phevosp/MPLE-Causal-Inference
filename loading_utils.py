@@ -8,7 +8,13 @@ from pathlib import Path
 
 import numpy as np
 
-from io_utils import first_existing_path, io_path, load_gamma_matrix, load_yaml_config
+from io_utils import (
+    first_existing_path,
+    io_path,
+    load_gamma_matrix,
+    load_yaml_config,
+    path_exists,
+)
 from model_utils import load_model_artifacts
 
 
@@ -38,11 +44,11 @@ def load_panel_context_from_artifacts(
     x0_path: str | Path,
     z0_path: str | Path,
 ) -> dict[str, object]:
-    with np.load(Path(panel_path), allow_pickle=False) as data:
+    with np.load(io_path(panel_path), allow_pickle=False) as data:
         x = np.asarray(data["x"], dtype=float)
         z = np.asarray(data["z"], dtype=float)
-    x_0 = np.asarray(np.load(Path(x0_path)), dtype=float)
-    z_0 = np.asarray(np.load(Path(z0_path)), dtype=float)
+    x_0 = np.asarray(np.load(io_path(x0_path)), dtype=float)
+    z_0 = np.asarray(np.load(io_path(z0_path)), dtype=float)
 
     from data.synthetic_data_generation import derive_pre_intervention_steps
     from intervention_utils import derive_post_intervention_steps
@@ -91,7 +97,7 @@ def save_estimated_parameter_bundle(
 
 def _load_scalar_estimates_from_summary(summary_path: Path) -> dict[str, float]:
     estimates: dict[str, float] = {}
-    with summary_path.open("r", encoding="utf-8", newline="") as handle:
+    with open(io_path(summary_path), "r", encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             name = row.get("name", "")
             if name in {"beta", "xi", "eta"} and row.get("estimate"):
@@ -101,7 +107,7 @@ def _load_scalar_estimates_from_summary(summary_path: Path) -> dict[str, float]:
 
 def _fit_beta_mask_pre_s(fit_root: Path) -> bool:
     config_path = fit_root / "fit_realized_config.yaml"
-    if not config_path.exists():
+    if not path_exists(config_path):
         return False
     config = load_yaml_config(config_path)
     estimation_params = getattr(config, "estimation_params", None)
@@ -112,7 +118,7 @@ def _fit_beta_mask_pre_s(fit_root: Path) -> bool:
 
 def _fit_beta_mask_post_e(fit_root: Path) -> bool:
     config_path = fit_root / "fit_realized_config.yaml"
-    if not config_path.exists():
+    if not path_exists(config_path):
         return False
     config = load_yaml_config(config_path)
     estimation_params = getattr(config, "estimation_params", None)
@@ -156,8 +162,8 @@ def load_fit_parameter_bundle(
     beta_mask_pre_s = _fit_beta_mask_pre_s(fit_path)
     beta_mask_post_e = _fit_beta_mask_post_e(fit_path)
 
-    if bundle_path.exists():
-        with np.load(bundle_path, allow_pickle=False) as data:
+    if path_exists(bundle_path):
+        with np.load(io_path(bundle_path), allow_pickle=False) as data:
             return OutcomeParameterBundle(
                 source_type="fit",
                 source_name=fit_path.name,
@@ -176,11 +182,11 @@ def load_fit_parameter_bundle(
     estimates = _load_scalar_estimates_from_summary(summary_path)
     field_artifacts = load_model_artifacts(experiment_path)
     estimated_field_path = fit_path / "estimated_field_artifacts.npz"
-    if not estimated_field_path.exists():
+    if not path_exists(estimated_field_path):
         raise FileNotFoundError(
             f"Missing estimated_parameter_bundle.npz and estimated_field_artifacts.npz in {fit_path}."
         )
-    with np.load(estimated_field_path, allow_pickle=False) as data:
+    with np.load(io_path(estimated_field_path), allow_pickle=False) as data:
         field_matrix = np.asarray(data["field_matrix"], dtype=float)
         latent_rank = int(data["latent_rank"])
         t_steps = int(data["t_steps"])

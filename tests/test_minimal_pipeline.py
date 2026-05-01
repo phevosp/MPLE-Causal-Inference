@@ -62,6 +62,7 @@ from mple import (
     _evaluate_full_field_loss,
     _evaluate_scalar_only_loss,
     _project_node_factor_columns_to_l2_ball,
+    evaluate_mple_loss_from_parts,
     fit_mple,
     pseudo_nll,
 )
@@ -86,7 +87,9 @@ from model_utils import (
     save_model_artifacts,
     unpack_theta,
 )
-from pipeline_specs import read_csv_manifest, validate_fits_spec
+from pipeline_specs import read_csv_manifest, validate_cv_spec, validate_fits_spec
+import build_cv_folds as cv_folds
+import run_cv_folds as cv_runner
 from posterior_predictive_utils import (
     compute_panel_statistics,
     simulate_outcomes_for_bundle,
@@ -105,7 +108,9 @@ from report_parameter_recovery_detailed import (
 )
 from run_fit_pipeline import (
     build_fit_config,
+    execute_fit_root,
     infer_panel_dimensions,
+    materialize_fit_root,
     refresh_fit_manifest,
     run_fit_request,
     run_fits,
@@ -1628,6 +1633,102 @@ class MinimalPipelineTests(unittest.TestCase):
             places=8,
         )
 
+    def test_masked_pseudo_nll_matches_manual_subset_average(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[0.5, -0.25], [0.75, 0.1]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="nuclear_norm",
+        )
+        theta = np.array([0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2], dtype=float)
+        loss_mask = np.array([[True, False], [False, True]], dtype=bool)
+        interaction_effect_x = interaction_effect(x, gamma)
+
+        masked_loss, masked_grad = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            fixed_scalar_params={},
+            loss_mask=loss_mask,
+        )
+
+        field_matrix = theta[:4].reshape(2, 2)
+        context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect_x,
+            {},
+            loss_mask=loss_mask,
+        )
+        kernel_loss, residual, scalar_grad = _evaluate_full_field_loss(
+            field_matrix,
+            context,
+            free_scalar_values=theta[4:],
+        )
+        kernel_grad = np.concatenate(
+            [(residual / np.count_nonzero(loss_mask)).reshape(-1), scalar_grad]
+        )
+        h_x = _compute_h_x(
+            field_matrix,
+            {"beta": theta[4], "xi": theta[5], "eta": theta[6]},
+            context,
+        )
+        expected_loss = float(
+            (
+                np.logaddexp(h_x, -h_x) - x * h_x
+            )[loss_mask].mean()
+        )
+
+        self.assertAlmostEqual(masked_loss, expected_loss, places=12)
+        self.assertAlmostEqual(kernel_loss, expected_loss, places=12)
+        self.assertTrue(np.allclose(masked_grad, kernel_grad))
+
+    def test_evaluate_mple_loss_from_parts_matches_masked_pseudo_nll(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[0.5, -0.25], [0.75, 0.1]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="nuclear_norm",
+        )
+        theta = np.array([0.1, -0.2, 0.05, 0.15, 0.3, -0.25, 0.2], dtype=float)
+        loss_mask = np.array([[True, False], [False, True]], dtype=bool)
+        interaction_effect_x = interaction_effect(x, gamma)
+        ref_loss, _ = pseudo_nll(
+            x=x,
+            z=z,
+            theta=theta,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            fixed_scalar_params={},
+            loss_mask=loss_mask,
+        )
+        helper_loss = evaluate_mple_loss_from_parts(
+            x=x,
+            z=z,
+            x_0=x_0,
+            field_matrix=theta[:4].reshape(2, 2),
+            beta=theta[4],
+            xi=theta[5],
+            eta=theta[6],
+            interaction_effect_x=interaction_effect_x,
+            fixed_scalar_params={},
+            loss_mask=loss_mask,
+        )
+        self.assertAlmostEqual(helper_loss, ref_loss, places=12)
+
     def test_fit_mple_uses_s_when_beta_mask_pre_s_is_enabled(self) -> None:
         x = np.ones((2, 2), dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, 1.0]], dtype=float)
@@ -2859,6 +2960,31 @@ class PipelineStageRequestTests(unittest.TestCase):
         OmegaConf.save(OmegaConf.create(spec), fits_spec_path)
         return fits_spec_path
 
+    def _write_cv_spec(self, searches: list[dict[str, object] | str]) -> Path:
+        normalized_searches: list[dict[str, object]] = []
+        for search in searches:
+            if isinstance(search, str):
+                normalized_searches.append({"name": search})
+            else:
+                normalized_searches.append(dict(search))
+        cv_spec_path = self.root / "cv_spec.yaml"
+        spec = {
+            "base": {
+                "cv_root_name": "cv_runs",
+                "cv_manifest_path": f"{self.root.as_posix()}/generated/cv_manifest.csv",
+                "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0, "n_starts": 1},
+                "latent_rank": 0,
+                "optimizer_mode": "no_external_field",
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.0,
+                "estimation": {"fixed_scalar_params": {}},
+            },
+            "searches": normalized_searches,
+        }
+        OmegaConf.save(OmegaConf.create(spec), cv_spec_path)
+        return cv_spec_path
+
     def _write_fake_sbatch(self) -> tuple[Path, Path, Path]:
         fake_sbatch_path = self.root / "fake_sbatch.sh"
         fake_counter_path = self.root / "fake_sbatch_counter.txt"
@@ -3004,6 +3130,135 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertTrue(
             (self.root / "generated" / "best_fit_by_experiment.csv").exists()
         )
+
+    def test_validate_cv_spec_accepts_grid_search(self) -> None:
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "alternating_uv_grid",
+                    "optimizer_mode": "alternating_latent_rank",
+                    "grid": {
+                        "latent_rank": [1, 2],
+                        "lambda_uv_ridge": [0.01, 0.1],
+                    },
+                }
+            ]
+        )
+
+        validate_cv_spec(cv_spec_path)
+        searches = cv_runner._expand_searches(cv_spec_path)
+        candidates = cv_runner.expand_search_candidates(searches[0])
+
+        self.assertEqual(len(candidates), 4)
+
+    def test_materialize_fit_root_supports_loss_mask_path(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a"])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        experiment_row = read_csv_manifest(generation_manifest)[0]
+        fit_root = self.root / "generated" / "exp_a" / "masked_fit"
+        fit_root.mkdir(parents=True, exist_ok=False)
+        loss_mask = np.array(
+            [[True, False, True, False, True, False]] * 4,
+            dtype=bool,
+        )
+        loss_mask_path = fit_root / "loss_mask.npy"
+        np.save(io_path(loss_mask_path), loss_mask)
+        variant = {
+            "name": "rank_0_masked",
+            "slug": "rank_0_masked",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "no_external_field",
+            "latent_rank": 0,
+            "lambda_nuclear": 0.0,
+            "lambda_frobenius": 0.0,
+            "lambda_uv_ridge": 0.0,
+            "estimation": {"fixed_scalar_params": {}},
+        }
+        materialize_fit_root(
+            experiment_row,
+            variant,
+            fit_root,
+            extra_input_artifacts={"loss_mask_path": str(loss_mask_path.resolve())},
+        )
+
+        execute_fit_root(fit_root)
+        config = OmegaConf.load(fit_root / "fit_realized_config.yaml")
+        self.assertEqual(
+            str(config.input_artifacts.loss_mask_path),
+            str(loss_mask_path.resolve()),
+        )
+        self.assertTrue((fit_root / "mple_summary.csv").exists())
+
+    def test_run_cv_folds_writes_requests_manifest_and_scores(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "no_external_field_mask_grid",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {
+                        "estimation": {
+                            "beta_mask_pre_s": [False, True],
+                        }
+                    },
+                }
+            ]
+        )
+
+        manifest_path = cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            overwrite=True,
+        )
+
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(len(manifest_rows), 1)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+        self.assertEqual(manifest_rows[0]["search_slug"], "no_external_field_mask_grid")
+
+        requests_path = cv_runner.cv_requests_path_for_spec(cv_spec_path)
+        request_rows = read_csv_manifest(requests_path)
+        self.assertEqual(len(request_rows), 10)
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "cv_runs"
+            / "no_external_field_mask_grid"
+        )
+        candidate_rows = read_csv_manifest(output_root / "candidate_grid.csv")
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        score_rows = read_csv_manifest(output_root / "candidate_scores.csv")
+        best_candidate = OmegaConf.load(output_root / "best_candidate.yaml")
+
+        self.assertEqual(len(candidate_rows), 2)
+        self.assertEqual(len(fold_rows), 10)
+        self.assertEqual(len(score_rows), 2)
+        self.assertEqual(str(best_candidate.search_slug), "no_external_field_mask_grid")
+
+        completed_rows = [row for row in fold_rows if row["status"] == "completed"]
+        self.assertEqual(len(completed_rows), 10)
+        grouped: dict[str, list[dict[str, str]]] = {}
+        for row in completed_rows:
+            grouped.setdefault(row["candidate_slug"], []).append(row)
+        for row in score_rows:
+            if row["status"] != "completed":
+                continue
+            candidate_rows_group = grouped[row["candidate_slug"]]
+            weighted = sum(
+                float(fold_row["validation_loss"]) * int(fold_row["num_validation_slots"])
+                for fold_row in candidate_rows_group
+            ) / sum(int(fold_row["num_validation_slots"]) for fold_row in candidate_rows_group)
+            self.assertAlmostEqual(
+                float(row["weighted_mean_validation_loss"]),
+                weighted,
+                places=12,
+            )
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_generation_jobs_submits_workers_and_report(self) -> None:
@@ -5309,6 +5564,624 @@ class PosteriorPredictiveTests(unittest.TestCase):
             "8|<--parsable><run_posterior_predictive_job.sh><exp_a><truth><><observed_experiment><><longer>",
         )
         self.assertIn("<--wrap>", log_lines[2])
+
+
+class GraphPartitioningTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = REPO_ROOT / "experiments" / f".tmp_graph_partition_{uuid.uuid4().hex}"
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _write_experiment_root(
+        self,
+        gamma_matrix: np.ndarray,
+        *,
+        use_sparse_artifact: bool = False,
+        include_node_index: bool = False,
+        t_steps: int = 10,
+        include_time_index: bool = False,
+    ) -> Path:
+        experiment_root = self.root / f"experiment_{uuid.uuid4().hex[:8]}"
+        experiment_root.mkdir(parents=True, exist_ok=True)
+        if use_sparse_artifact:
+            sparse.save_npz(
+                experiment_root / "gamma_matrix_sparse.npz",
+                sparse.csr_matrix(np.asarray(gamma_matrix, dtype=float)),
+            )
+        else:
+            np.save(experiment_root / "gamma_matrix.npy", np.asarray(gamma_matrix, dtype=float))
+        np.savez(
+            experiment_root / "panel_data.npz",
+            x=np.zeros((int(t_steps), int(gamma_matrix.shape[0])), dtype=float),
+            z=np.zeros((int(t_steps), int(gamma_matrix.shape[0])), dtype=float),
+        )
+        if include_node_index:
+            with (experiment_root / "node_index.csv").open(
+                "w", encoding="utf-8", newline=""
+            ) as handle:
+                writer = csv.DictWriter(handle, fieldnames=["fips", "county_name"])
+                writer.writeheader()
+                for index in range(int(gamma_matrix.shape[0])):
+                    writer.writerow(
+                        {
+                            "fips": f"{index:05d}",
+                            "county_name": f"county_{index}",
+                        }
+                    )
+        if include_time_index:
+            with (experiment_root / "time_index.csv").open(
+                "w", encoding="utf-8", newline=""
+            ) as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=["WeekStartDate", "WeekEndDate", "iso_week"],
+                )
+                writer.writeheader()
+                for time_index in range(int(t_steps)):
+                    writer.writerow(
+                        {
+                            "WeekStartDate": f"2021-01-{time_index + 1:02d}",
+                            "WeekEndDate": f"2021-01-{time_index + 2:02d}",
+                            "iso_week": str(time_index + 1),
+                        }
+                    )
+        return experiment_root
+
+    def _recompute_partition_metrics(
+        self,
+        gamma_matrix: np.ndarray,
+        fold_ids: list[int],
+    ) -> tuple[int, int, list[list[int]]]:
+        adjacency, _ = cv_folds._support_adjacency_from_gamma(gamma_matrix)
+        membership = np.asarray(fold_ids, dtype=int)
+        metrics = cv_folds._compute_partition_metrics(
+            adjacency,
+            membership,
+            num_folds=max(fold_ids) + 1,
+        )
+        separator_sets = [
+            sorted(int(value) for value in values)
+            for values in metrics["separator_sets"]
+        ]
+        return (
+            int(metrics["cut_edge_count"]),
+            int(metrics["separator_union_vertex_count"]),
+            separator_sets,
+        )
+
+    def _write_generation_manifest(self, experiment_roots: list[Path]) -> Path:
+        manifest_path = self.root / f"generation_manifest_{uuid.uuid4().hex[:8]}.csv"
+        with manifest_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["experiment_name", "experiment_path"],
+            )
+            writer.writeheader()
+            for index, experiment_root in enumerate(experiment_roots, start=1):
+                writer.writerow(
+                    {
+                        "experiment_name": f"exp_{index}",
+                        "experiment_path": str(experiment_root.resolve()),
+                    }
+                )
+        return manifest_path
+
+    def test_build_cv_folds_writes_dense_outputs_and_metrics(self) -> None:
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_root = self._write_experiment_root(
+            gamma_matrix,
+            include_node_index=True,
+            include_time_index=True,
+            t_steps=10,
+        )
+
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                self.assertEqual(nparts, 5)
+                self.assertFalse(bool(recursive))
+                self.assertTrue(bool(contiguous))
+                self.assertEqual(len(adjacency), 5)
+                return 99, [0, 1, 2, 3, 4]
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=FakePyMetis(),
+        ):
+            output_root = cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+                seed=11,
+                contiguous=True,
+            )
+
+        spatial_metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "spatial_partition_metadata.yaml"),
+            resolve=True,
+        )
+        spatiotemporal_metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "spatiotemporal_cv_metadata.yaml"),
+            resolve=True,
+        )
+        markov_blanket_summary = OmegaConf.to_container(
+            OmegaConf.load(output_root / "markov_blanket_summary.yaml"),
+            resolve=True,
+        )
+        with (output_root / "vertex_assignments.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            assignment_rows = list(csv.DictReader(handle))
+        with (output_root / "separator_vertices.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            separator_rows = list(csv.DictReader(handle))
+        with (output_root / "time_blocks.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            time_rows = list(csv.DictReader(handle))
+        with (output_root / "fold_schedule.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            schedule_rows = list(csv.DictReader(handle))
+        with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
+            role_codes = np.asarray(data["role_codes"], dtype=int)
+            time_block_ids = np.asarray(data["time_block_ids"], dtype=int)
+            is_transition_step = np.asarray(data["is_transition_step"], dtype=bool)
+            validation_schedule = np.asarray(
+                data["validation_partition_ids_by_fold_block"], dtype=int
+            )
+
+        self.assertEqual(spatial_metadata["partitioner"], "pymetis")
+        self.assertEqual(spatial_metadata["metis"]["mode"], "kway")
+        self.assertEqual(spatial_metadata["metrics"]["partition_sizes"], [1, 1, 1, 1, 1])
+        self.assertEqual(spatial_metadata["metrics"]["cut_edge_count"], 4)
+        self.assertEqual(spatial_metadata["metrics"]["separator_union_vertex_count"], 5)
+        self.assertEqual(spatial_metadata["metrics"]["separator_sizes"], [1, 2, 2, 2, 1])
+        self.assertEqual(spatial_metadata["metrics"]["total_separator_memberships"], 8)
+        self.assertEqual(len(assignment_rows), 5)
+        self.assertEqual(len(separator_rows), 8)
+        self.assertIn("fips", assignment_rows[0])
+        self.assertIn("county_name", assignment_rows[0])
+        self.assertIn("separator_set_id", separator_rows[0])
+        self.assertIn("vertex_partition_id", separator_rows[0])
+        self.assertEqual(spatial_metadata["gamma_artifact_kind"], "dense_npy")
+        self.assertTrue(spatial_metadata["gamma_validation"]["passed"])
+        self.assertEqual(spatiotemporal_metadata["num_time_steps"], 10)
+        self.assertEqual(spatiotemporal_metadata["time_block_sizes"], [2, 2, 2, 2, 2])
+        self.assertEqual(spatiotemporal_metadata["time_source"], "time_index_csv")
+        self.assertTrue(markov_blanket_summary["blanket_validation_passed"])
+        self.assertEqual(markov_blanket_summary["spatial_violation_edge_count"], 0)
+        self.assertEqual(markov_blanket_summary["temporal_violation_edge_count"], 0)
+        self.assertEqual(markov_blanket_summary["total_violation_count"], 0)
+        self.assertEqual(markov_blanket_summary["num_folds_with_any_violation"], 0)
+        coverage_counts = spatiotemporal_metadata["coverage_counts"]
+        self.assertEqual(
+            coverage_counts["total_assignment_slots_per_vertex"],
+            50,
+        )
+        self.assertEqual(coverage_counts["validation_count_min"], 6)
+        self.assertEqual(coverage_counts["validation_count_max"], 6)
+        self.assertEqual(coverage_counts["num_vertices_with_zero_validation_count"], 0)
+        self.assertEqual(coverage_counts["num_vertices_with_zero_training_count"], 0)
+        self.assertEqual(role_codes.shape, (5, 10, 5))
+        self.assertTrue(np.array_equal(time_block_ids, np.array([1, 1, 2, 2, 3, 3, 4, 4, 5, 5])))
+        self.assertTrue(np.array_equal(is_transition_step, np.array([False, False, True, False, True, False, True, False, True, False])))
+        np.testing.assert_array_equal(
+            validation_schedule,
+            np.array(
+                [
+                    [1, 2, 3, 4, 5],
+                    [5, 1, 2, 3, 4],
+                    [4, 5, 1, 2, 3],
+                    [3, 4, 5, 1, 2],
+                    [2, 3, 4, 5, 1],
+                ]
+            ),
+        )
+        self.assertEqual(time_rows[0]["WeekEndDate"], "2021-01-02")
+        self.assertEqual(schedule_rows[0]["validation_partition_id"], "1")
+        self.assertEqual(schedule_rows[0]["transition_time_index"], "")
+        self.assertEqual(schedule_rows[1]["validation_partition_id"], "2")
+        self.assertEqual(schedule_rows[1]["transition_time_index"], "2")
+        cut_edge_count, separator_union_vertex_count, separator_sets = self._recompute_partition_metrics(
+            gamma_matrix,
+            [int(row["partition_id"]) - 1 for row in assignment_rows],
+        )
+        observed_separator_sets = [[] for _ in range(5)]
+        for row in separator_rows:
+            observed_separator_sets[int(row["separator_set_id"]) - 1].append(
+                int(row["vertex_index"])
+            )
+        observed_separator_sets = [sorted(values) for values in observed_separator_sets]
+        self.assertEqual(cut_edge_count, int(spatial_metadata["metrics"]["cut_edge_count"]))
+        self.assertEqual(
+            separator_union_vertex_count,
+            int(spatial_metadata["metrics"]["separator_union_vertex_count"]),
+        )
+        self.assertEqual(observed_separator_sets, separator_sets)
+
+    def test_build_cv_folds_writes_sparse_artifact_metadata(self) -> None:
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_root = self._write_experiment_root(
+            gamma_matrix,
+            use_sparse_artifact=True,
+        )
+
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                self.assertEqual(nparts, 5)
+                self.assertTrue(bool(recursive))
+                return 7, [0, 0, 1, 3, 4]
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=FakePyMetis(),
+        ):
+            output_root = cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+                recursive=True,
+            )
+
+        metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "spatial_partition_metadata.yaml"),
+            resolve=True,
+        )
+        self.assertEqual(metadata["metis"]["mode"], "recursive")
+        self.assertEqual(metadata["gamma_artifact_kind"], "sparse_npz")
+        self.assertEqual(metadata["metis"]["reported_cutcount"], 7)
+
+    def test_build_cv_folds_rejects_non_square_gamma(self) -> None:
+        experiment_root = self._write_experiment_root(np.zeros((2, 3), dtype=float))
+        with self.assertRaisesRegex(ValueError, "must be square"):
+            cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+            )
+
+    def test_build_cv_folds_rejects_asymmetric_gamma(self) -> None:
+        experiment_root = self._write_experiment_root(
+            np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0, 0.0],
+                ],
+                dtype=float,
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "must be symmetric"):
+            cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+            )
+
+    def test_build_cv_folds_rejects_nonzero_diagonal(self) -> None:
+        experiment_root = self._write_experiment_root(
+            np.eye(5, dtype=float)
+        )
+        with self.assertRaisesRegex(ValueError, "zero diagonal"):
+            cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+            )
+
+    def test_build_time_block_plan_handles_9_10_and_uneven_horizons(self) -> None:
+        plan_9 = cv_folds._build_time_block_plan(9, num_folds=5)
+        plan_10 = cv_folds._build_time_block_plan(10, num_folds=5)
+        plan_13 = cv_folds._build_time_block_plan(13, num_folds=5)
+
+        self.assertEqual(plan_9["block_sizes"], [1, 2, 2, 2, 2])
+        self.assertEqual(plan_10["block_sizes"], [2, 2, 2, 2, 2])
+        self.assertEqual(plan_13["block_sizes"], [3, 3, 3, 2, 2])
+        self.assertEqual(plan_9["transition_time_indices"], [1, 3, 5, 7])
+        self.assertEqual(plan_10["transition_time_indices"], [2, 4, 6, 8])
+        self.assertEqual(plan_13["transition_time_indices"], [3, 6, 9, 11])
+
+    def test_build_cv_folds_rejects_too_short_time_horizon(self) -> None:
+        experiment_root = self._write_experiment_root(
+            np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 0.0, 1.0, 0.0],
+                ]
+            ),
+            t_steps=8,
+        )
+        with self.assertRaisesRegex(ValueError, "at least 9 time steps"):
+            cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+            )
+
+    def test_build_cv_folds_fails_cleanly_without_pymetis(self) -> None:
+        experiment_root = self._write_experiment_root(
+            np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 0.0, 1.0, 0.0],
+                ]
+            )
+        )
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            side_effect=RuntimeError("pymetis is required for CV graph partitioning"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "pymetis is required"):
+                cv_folds._run_build_cv_folds_for_experiment(
+                    experiment_root,
+                    num_folds=5,
+                )
+
+    def test_build_cv_folds_falls_back_to_inferred_integer_time_index(self) -> None:
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_root = self._write_experiment_root(gamma_matrix, include_time_index=False)
+
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                return 4, [0, 1, 2, 3, 4]
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=FakePyMetis(),
+        ):
+            output_root = cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+            )
+
+        metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "spatiotemporal_cv_metadata.yaml"),
+            resolve=True,
+        )
+        with (output_root / "time_blocks.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(metadata["time_source"], "inferred_from_panel_data")
+        self.assertEqual(rows[0]["time_index"], "0")
+
+    def test_markov_blanket_summary_detects_spatial_violation(self) -> None:
+        adjacency = [
+            [1],
+            [0],
+        ]
+        role_codes = np.array(
+            [
+                [
+                    [cv_folds.ROLE_CODE_VALIDATION, cv_folds.ROLE_CODE_TRAINING],
+                    [cv_folds.ROLE_CODE_SEPARATOR, cv_folds.ROLE_CODE_SEPARATOR],
+                ]
+            ],
+            dtype=int,
+        )
+        summary = cv_folds._summarize_markov_blanket_validation(adjacency, role_codes)
+
+        self.assertFalse(summary["blanket_validation_passed"])
+        self.assertEqual(summary["spatial_violation_edge_count"], 1)
+        self.assertEqual(summary["temporal_violation_edge_count"], 0)
+        self.assertEqual(summary["violations_by_fold"], [1])
+
+    def test_markov_blanket_summary_detects_temporal_violation(self) -> None:
+        adjacency = [
+            [],
+        ]
+        role_codes = np.array(
+            [
+                [
+                    [cv_folds.ROLE_CODE_VALIDATION],
+                    [cv_folds.ROLE_CODE_TRAINING],
+                ]
+            ],
+            dtype=int,
+        )
+        summary = cv_folds._summarize_markov_blanket_validation(adjacency, role_codes)
+
+        self.assertFalse(summary["blanket_validation_passed"])
+        self.assertEqual(summary["spatial_violation_edge_count"], 0)
+        self.assertEqual(summary["temporal_violation_edge_count"], 1)
+        self.assertEqual(summary["violations_by_fold"], [1])
+
+    def test_coverage_count_summary_counts_roles(self) -> None:
+        role_codes = np.array(
+            [
+                [
+                    [cv_folds.ROLE_CODE_VALIDATION, cv_folds.ROLE_CODE_TRAINING],
+                    [cv_folds.ROLE_CODE_SEPARATOR, cv_folds.ROLE_CODE_TRAINING],
+                ],
+                [
+                    [cv_folds.ROLE_CODE_VALIDATION, cv_folds.ROLE_CODE_SEPARATOR],
+                    [cv_folds.ROLE_CODE_TRAINING, cv_folds.ROLE_CODE_TRAINING],
+                ],
+            ],
+            dtype=int,
+        )
+        summary = cv_folds._summarize_role_coverage_counts(role_codes)
+
+        self.assertEqual(summary["num_folds"], 2)
+        self.assertEqual(summary["num_vertices"], 2)
+        self.assertEqual(summary["num_time_steps"], 2)
+        self.assertEqual(summary["total_assignment_slots_per_vertex"], 4)
+        self.assertEqual(summary["validation_count_min"], 0)
+        self.assertEqual(summary["validation_count_max"], 2)
+        self.assertEqual(summary["separator_count_min"], 1)
+        self.assertEqual(summary["separator_count_max"], 1)
+        self.assertEqual(summary["training_count_min"], 1)
+        self.assertEqual(summary["training_count_max"], 3)
+        self.assertEqual(summary["num_vertices_with_zero_validation_count"], 1)
+        self.assertEqual(summary["num_vertices_with_training_count_lt_2"], 1)
+
+    def test_build_cv_folds_transition_and_nontransition_roles_are_correct(self) -> None:
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_root = self._write_experiment_root(gamma_matrix, t_steps=10)
+
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                return 4, [0, 1, 2, 3, 4]
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=FakePyMetis(),
+        ):
+            output_root = cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+            )
+
+        with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
+            role_codes = np.asarray(data["role_codes"], dtype=int)
+
+        # Fold 1, non-transition step inside T1: validation is C1={0}, separator is S1={1}.
+        self.assertEqual(role_codes[0, 1, 0], cv_folds.ROLE_CODE_VALIDATION)
+        self.assertEqual(role_codes[0, 1, 1], cv_folds.ROLE_CODE_SEPARATOR)
+        self.assertEqual(role_codes[0, 1, 2], cv_folds.ROLE_CODE_TRAINING)
+        # Fold 1, first step of T2: validation empty and separator is S2 union C1 union C2 = {0,1,2}.
+        self.assertEqual(role_codes[0, 2, 0], cv_folds.ROLE_CODE_SEPARATOR)
+        self.assertEqual(role_codes[0, 2, 1], cv_folds.ROLE_CODE_SEPARATOR)
+        self.assertEqual(role_codes[0, 2, 2], cv_folds.ROLE_CODE_SEPARATOR)
+        self.assertEqual(role_codes[0, 2, 3], cv_folds.ROLE_CODE_TRAINING)
+        self.assertEqual(role_codes[0, 2, 4], cv_folds.ROLE_CODE_TRAINING)
+        self.assertEqual(
+            int(np.count_nonzero(role_codes[0, 2, :] == cv_folds.ROLE_CODE_VALIDATION)),
+            0,
+        )
+
+    def test_build_cv_folds_is_stable_for_repeated_runs(self) -> None:
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_root = self._write_experiment_root(gamma_matrix)
+
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                return 4, [0, 1, 2, 3, 4]
+
+        first_output = self.root / "out_a"
+        second_output = self.root / "out_b"
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=FakePyMetis(),
+        ):
+            cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+                seed=3,
+                output_dir=first_output,
+            )
+            cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=5,
+                seed=3,
+                output_dir=second_output,
+            )
+
+        first_assignments = (first_output / "vertex_assignments.csv").read_text(encoding="utf-8")
+        second_assignments = (second_output / "vertex_assignments.csv").read_text(encoding="utf-8")
+        first_summary = (first_output / "spatiotemporal_cv_metadata.yaml").read_text(
+            encoding="utf-8"
+        )
+        second_summary = (second_output / "spatiotemporal_cv_metadata.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(first_assignments, second_assignments)
+        self.assertEqual(first_summary, second_summary)
+
+    def test_run_build_cv_folds_processes_generation_manifest(self) -> None:
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_a = self._write_experiment_root(gamma_matrix, t_steps=10)
+        experiment_b = self._write_experiment_root(gamma_matrix, t_steps=10)
+        manifest_path = self._write_generation_manifest([experiment_a, experiment_b])
+
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                return 4, [0, 1, 2, 3, 4]
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=FakePyMetis(),
+        ):
+            output_paths = cv_folds.run_build_cv_folds(
+                manifest_path,
+                num_folds=5,
+            )
+
+        self.assertEqual(len(output_paths), 2)
+        for output_path in output_paths:
+            self.assertTrue((output_path / "fold_roles.npz").exists())
+            self.assertTrue((output_path / "spatial_partition_metadata.yaml").exists())
+            self.assertTrue((output_path / "spatiotemporal_cv_metadata.yaml").exists())
+            self.assertTrue((output_path / "markov_blanket_summary.yaml").exists())
+            self.assertFalse((output_path / "spatial_partition_summary.yaml").exists())
+            self.assertFalse((output_path / "spatiotemporal_cv_summary.yaml").exists())
+            self.assertFalse((output_path / "coverage_count_summary.yaml").exists())
 
 
 if __name__ == "__main__":

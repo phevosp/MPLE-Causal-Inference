@@ -13,7 +13,7 @@ from scipy import sparse
 
 
 def load_yaml_config(path: str | Path):
-    return OmegaConf.load(Path(path))
+    return OmegaConf.load(io_path(path))
 
 
 def io_path(path: str | Path) -> str:
@@ -21,6 +21,10 @@ def io_path(path: str | Path) -> str:
     if os.name == "nt" and not resolved.startswith("\\\\?\\"):
         return "\\\\?\\" + resolved
     return resolved
+
+
+def path_exists(path: str | Path) -> bool:
+    return os.path.exists(io_path(path))
 
 
 def first_existing_path(*paths: str | Path) -> Path:

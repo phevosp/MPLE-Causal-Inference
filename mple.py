@@ -60,6 +60,7 @@ class _FitEvalContext:
     beta_feature: np.ndarray
     beta_feature_masked: np.ndarray
     interaction_effect_x: np.ndarray
+    loss_mask: np.ndarray | None
     outcome_size: float
     s: int
     e: int
@@ -79,6 +80,7 @@ def _build_fit_eval_context(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
 ) -> _FitEvalContext:
     fixed = validate_fixed_scalar_params(fixed_scalar_params)
     x_array = np.asarray(x, dtype=float)
@@ -96,13 +98,25 @@ def _build_fit_eval_context(
         beta_feature_masked[:s_index, :] = 0.0
     if bool(beta_mask_post_e) and e_index < t_steps:
         beta_feature_masked[e_index:, :] = 0.0
+    resolved_loss_mask: np.ndarray | None = None
+    outcome_size = float(x_array.size)
+    if loss_mask is not None:
+        resolved_loss_mask = np.asarray(loss_mask, dtype=bool)
+        if resolved_loss_mask.shape != x_array.shape:
+            raise ValueError(
+                f"loss_mask shape {resolved_loss_mask.shape} does not match x shape {x_array.shape}."
+            )
+        outcome_size = float(np.count_nonzero(resolved_loss_mask))
+        if outcome_size <= 0.0:
+            raise ValueError("loss_mask must contain at least one active entry.")
     return _FitEvalContext(
         x=x_array,
         prev_x=np.vstack([np.asarray(x_0, dtype=float), x_array[:-1, :]]),
         beta_feature=beta_feature,
         beta_feature_masked=beta_feature_masked,
         interaction_effect_x=np.asarray(interaction_effect_x, dtype=float),
-        outcome_size=float(x_array.size),
+        loss_mask=resolved_loss_mask,
+        outcome_size=outcome_size,
         s=s_index,
         e=e_index,
         beta_mask_pre_s=bool(beta_mask_pre_s),
@@ -191,6 +205,10 @@ def _evaluate_full_field_loss(
     h_x = _compute_h_x(field_matrix, resolved_scalars, context)
     loss_x = np.logaddexp(h_x, -h_x) - context.x * h_x
     residual = np.tanh(h_x) - context.x
+    if context.loss_mask is not None:
+        mask = context.loss_mask
+        loss_x = loss_x * mask
+        residual = residual * mask
     smooth_loss = float(loss_x.sum() / context.outcome_size)
     scalar_gradient = _scalar_gradient_from_residual(residual, context)
     return smooth_loss, residual, scalar_gradient
@@ -242,6 +260,10 @@ def _evaluate_factorized_loss_with_offset(
     h_x = field_matrix + scalar_offset
     loss_x = np.logaddexp(h_x, -h_x) - context.x * h_x
     residual = np.tanh(h_x) - context.x
+    if context.loss_mask is not None:
+        mask = context.loss_mask
+        loss_x = loss_x * mask
+        residual = residual * mask
     smooth_loss = float(loss_x.sum() / context.outcome_size)
     time_gradient = (residual @ node_factors) / context.outcome_size
     node_gradient = (residual.T @ time_factors) / context.outcome_size
@@ -322,6 +344,7 @@ def pseudo_nll(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
 ) -> tuple[float, np.ndarray]:
     if x.shape[0] != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
@@ -335,6 +358,7 @@ def pseudo_nll(
         e=e,
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
     )
     theta_parts = unpack_theta(
         theta,
@@ -367,6 +391,43 @@ def pseudo_nll(
         )
         field_grad = np.concatenate([node_grad.reshape(-1), time_grad.reshape(-1)])
     return float(smooth_loss), np.concatenate([field_grad, scalar_gradient])
+
+
+def evaluate_mple_loss_from_parts(
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    *,
+    field_matrix: np.ndarray,
+    beta: float,
+    xi: float,
+    eta: float,
+    interaction_effect_x: np.ndarray,
+    fixed_scalar_params: dict[str, float] | None = None,
+    s: int = 0,
+    e: int | None = None,
+    beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
+) -> float:
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+        s=s,
+        e=e,
+        beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
+    )
+    loss, _, _ = _evaluate_full_field_loss(
+        np.asarray(field_matrix, dtype=float),
+        context,
+        scalar_values={"beta": float(beta), "xi": float(xi), "eta": float(eta)},
+    )
+    return float(loss)
 
 
 def _nuclear_norm(field_matrix: np.ndarray) -> float:
@@ -405,6 +466,7 @@ def _fit_mple_nuclear_norm(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit via proximal gradient descent with nuclear-norm regularization on the field matrix.
 
@@ -685,6 +747,7 @@ def _fit_zero_rank_unconstrained(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     context = _build_fit_eval_context(
         x,
@@ -696,6 +759,7 @@ def _fit_zero_rank_unconstrained(
         e=e,
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -757,6 +821,7 @@ def _fit_mple_low_rank_manifold(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit using Riemannian conjugate gradient on the fixed-rank matrix manifold (pymanopt).
 
@@ -776,6 +841,7 @@ def _fit_mple_low_rank_manifold(
         e=e,
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -1119,6 +1185,7 @@ def _fit_mple_alternative_low_rank(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit via alternating gradient updates between U, Vt factors and scalar parameters.
 
@@ -1142,6 +1209,7 @@ def _fit_mple_alternative_low_rank(
         e=e,
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -1509,6 +1577,7 @@ def _fit_mple_concurrent_low_rank(
     e: int | None = None,
     beta_mask_pre_s: bool = False,
     beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
     """Fit the factorized U/V formulation with SciPy L-BFGS-B.
 
@@ -1528,6 +1597,7 @@ def _fit_mple_concurrent_low_rank(
         e=e,
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
@@ -1769,6 +1839,7 @@ def _apply_warm_start(
     e: int | None,
     beta_mask_pre_s: bool,
     beta_mask_post_e: bool,
+    loss_mask: np.ndarray | None,
 ) -> np.ndarray:
     phase1_fixed = {**fixed_scalar_params, **warm_start_fixed_scalars}
     phase1_theta, _, _ = fit_mple(
@@ -1795,6 +1866,7 @@ def _apply_warm_start(
         e=e,
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
     )
     theta_parts = unpack_theta(phase1_theta, artifacts, fixed_scalar_params=phase1_fixed)
     return pack_theta(theta_parts, artifacts, fixed_scalar_params=fixed_scalar_params)
@@ -1826,6 +1898,7 @@ def fit_mple(
     beta_mask_post_e: bool = False,
     warm_start_fixed_scalars: dict[str, float] | None = None,
     warm_start_steps: int = 0,
+    loss_mask: np.ndarray | None = None,
 ):
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
@@ -1861,6 +1934,7 @@ def fit_mple(
             e,
             beta_mask_pre_s,
             beta_mask_post_e,
+            loss_mask,
         )
 
     if artifacts.optimizer_mode == OPTIMIZER_MODE_NO_EXTERNAL_FIELD:
@@ -1879,6 +1953,7 @@ def fit_mple(
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
             beta_mask_post_e=beta_mask_post_e,
+            loss_mask=loss_mask,
         )
         result["optimizer_mode"] = OPTIMIZER_MODE_NO_EXTERNAL_FIELD
         result["optimizer"] = "scipy_bfgs_no_external_field"
@@ -1928,6 +2003,7 @@ def fit_mple(
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
             beta_mask_post_e=beta_mask_post_e,
+            loss_mask=loss_mask,
         )
     if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
         return _fit_mple_alternative_low_rank(
@@ -1950,6 +2026,7 @@ def fit_mple(
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
             beta_mask_post_e=beta_mask_post_e,
+            loss_mask=loss_mask,
         )
     if artifacts.optimizer_mode == OPTIMIZER_MODE_CONCURRENT_LATENT_RANK:
         return _fit_mple_concurrent_low_rank(
@@ -1971,6 +2048,7 @@ def fit_mple(
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
             beta_mask_post_e=beta_mask_post_e,
+            loss_mask=loss_mask,
         )
     if artifacts.optimizer_mode == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD:
         return _fit_mple_low_rank_manifold(
@@ -1992,6 +2070,7 @@ def fit_mple(
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
             beta_mask_post_e=beta_mask_post_e,
+            loss_mask=loss_mask,
         )
     raise ValueError(f"Unsupported optimizer_mode: {artifacts.optimizer_mode}")
 
@@ -2183,7 +2262,8 @@ def write_summary_table(
             fixed_scalar_params=fixed_scalar_params,
         )
     )
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(io_path(csv_path), "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle, fieldnames=["category", "name", "estimate", "true", "squared_error"]
         )
@@ -2195,6 +2275,8 @@ def write_optimizer_start_summary(path: str | Path, result: OptimizeResult) -> N
     start_summaries = result.get("start_summaries", [])
     if not start_summaries:
         return
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "start_index",
         "seed",
@@ -2210,7 +2292,7 @@ def write_optimizer_start_summary(path: str | Path, result: OptimizeResult) -> N
         "is_best",
     ]
     best_start = int(result.get("best_start", 0))
-    with Path(path).open("w", newline="", encoding="utf-8") as handle:
+    with open(io_path(output_path), "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in start_summaries:
@@ -2398,16 +2480,27 @@ def main() -> None:
     truth_artifact_dir = Path(str(input_artifacts.truth_artifact_dir))
     panel_path = Path(str(input_artifacts.panel_path))
     x0_path = Path(str(input_artifacts.x0_path))
+    raw_loss_mask_path = input_artifacts.get("loss_mask_path", None)
+    loss_mask_path = (
+        None if raw_loss_mask_path in (None, "") else Path(str(raw_loss_mask_path))
+    )
     logger.info("Using panel artifact: %s", panel_path)
     logger.info("Using x_0 artifact: %s", x0_path)
     logger.info("Using fit config: %s", config_path)
     logger.info("Using model artifact directory: %s", model_artifact_dir)
     logger.info("Using truth artifact directory: %s", truth_artifact_dir)
+    if loss_mask_path is not None:
+        logger.info("Using loss mask artifact: %s", loss_mask_path)
     # Load Data
     x_0 = np.load(x0_path)
     panel = load_panel_artifact(panel_path)
     x = panel["x"]
     z = panel["z"]
+    loss_mask = (
+        None
+        if loss_mask_path is None
+        else np.asarray(np.load(loss_mask_path, allow_pickle=False), dtype=bool)
+    )
 
     gamma_matrix = load_gamma_matrix(model_artifact_dir)
     artifacts = build_fit_model_artifacts(config, gamma_matrix)
@@ -2480,6 +2573,7 @@ def main() -> None:
         beta_mask_post_e=beta_mask_post_e,
         warm_start_fixed_scalars=warm_start_fixed_scalars,
         warm_start_steps=warm_start_steps,
+        loss_mask=loss_mask,
     )
 
     logger.info("Done fitting.")
