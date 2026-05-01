@@ -4,7 +4,7 @@ base:
   num_folds: 5  # Number of folds for spatiotemporal CV; can be overridden per search
   optimizer:
     steps: 5000
-    tol: 1.0e-9
+    tol: 1.0e-7
     seed: 0
     n_starts: 1
     proximal_lr: 1.0
@@ -21,6 +21,9 @@ base:
 searches:
   - name: alternating_uv_grid
     optimizer_mode: alternating_latent_rank
+    estimation:
+      beta_mask_pre_s: true
+      beta_mask_post_e: true
     grid:
       latent_rank: [1]
-      lambda_uv_ridge: [0.1, 0.5, 1, 5]
+      lambda_uv_ridge: [0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
