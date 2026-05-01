@@ -1,0 +1,56 @@
+experiment_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperiments/spectral_low_rank
+num_folds: 10
+seed: 0
+partitioner: pymetis
+pymetis_seed_supported: false
+requested_seed: 0
+runtime_seconds: 0.010085902991704643
+gamma_artifact_kind: dense_npy
+gamma_validation:
+  passed: true
+  tolerance: 1.0e-12
+  max_symmetry_violation: 0.0
+  max_abs_diagonal: 0.0
+graph_preprocessing:
+  support_threshold: 1.0e-12
+  interpreted_as_unweighted_support_graph: true
+  symmetry_enforced_via_validation_only: true
+  zero_diagonal_enforced_via_validation_only: true
+metis:
+  mode: kway
+  contiguous: false
+  reported_cutcount: 4463
+metrics:
+  num_vertices: 500
+  num_edges: 6162
+  partition_sizes:
+  - 49
+  - 51
+  - 51
+  - 51
+  - 50
+  - 50
+  - 50
+  - 49
+  - 48
+  - 51
+  cut_edge_count: 4463
+  separator_sizes:
+  - 380
+  - 392
+  - 388
+  - 400
+  - 397
+  - 395
+  - 381
+  - 389
+  - 387
+  - 388
+  separator_union_vertex_count: 500
+  separator_union_vertex_fraction: 1.0
+  total_separator_memberships: 3897
+  partition_size_mean: 50.0
+  partition_size_min: 48
+  partition_size_max: 51
+  partition_size_std: 1.0
+  max_relative_deviation_from_mean: 0.04

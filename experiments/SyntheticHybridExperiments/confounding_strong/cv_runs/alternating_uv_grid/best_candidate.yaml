@@ -1,0 +1,14 @@
+experiment_name: confounding_strong
+experiment_slug: confounding_strong
+search_name: alternating_uv_grid
+search_slug: alternating_uv_grid
+candidate_name: alternating_uv_grid__candidate_0005
+candidate_slug: alternating_uv_grid_candidate_0005
+candidate_index: 5
+weighted_mean_validation_loss: 0.6289283610709092
+mean_fold_validation_loss: 0.6289274195492142
+weighted_mean_validation_brier_score: 0.21978151674248572
+mean_fold_validation_brier_score: 0.21978107229236493
+total_validation_slots: 20500
+hyperparameters:
+  lambda_uv_ridge: 0.1
