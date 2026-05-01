@@ -16,6 +16,7 @@ export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
+CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"  # Optional override; uses CV spec default if not set
 CV_OVERWRITE="${CV_OVERWRITE:-false}"
 
 EXPERIMENT_SLUG="${1:?missing experiment_slug}"
@@ -24,6 +25,11 @@ SEARCH_SLUG="${2:?missing search_slug}"
 OVERWRITE_FLAG=()
 if [[ "${CV_OVERWRITE}" == "true" ]]; then
   OVERWRITE_FLAG=(--overwrite)
+fi
+
+NUM_FOLDS_FLAG=()
+if [[ -n "${CV_NUM_FOLDS}" ]]; then
+  NUM_FOLDS_FLAG=(--num_folds "${CV_NUM_FOLDS}")
 fi
 
 # Ensure the log directory exists
@@ -40,4 +46,5 @@ pixi run python -u run_cv_folds.py \
   --run_request \
   --experiment_slug "${EXPERIMENT_SLUG}" \
   --search_slug "${SEARCH_SLUG}" \
+  "${NUM_FOLDS_FLAG[@]}" \
   "${OVERWRITE_FLAG[@]}"

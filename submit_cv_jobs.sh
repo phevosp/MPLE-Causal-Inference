@@ -4,6 +4,7 @@ set -euo pipefail
 
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
+CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"  # Optional override; uses CV spec default if not set
 CV_OVERWRITE="${CV_OVERWRITE:-false}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
 WORKER_SCRIPT="${WORKER_SCRIPT:-run_cv_job.sh}"
@@ -52,6 +53,7 @@ while IFS=$'\t' read -r experiment_slug search_slug; do
   submit_output="$(
     GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH}" \
     CV_SPEC_PATH="${CV_SPEC_PATH}" \
+    CV_NUM_FOLDS="${CV_NUM_FOLDS}" \
     CV_OVERWRITE="${CV_OVERWRITE}" \
     "${SBATCH_BIN}" "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}" "${search_slug}"
   )"

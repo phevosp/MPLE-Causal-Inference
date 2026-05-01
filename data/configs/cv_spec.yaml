@@ -1,6 +1,7 @@
 base:
   cv_root_name: cv_runs
   cv_manifest_path: experiments/SyntheticHybridExperiments/cv_manifest.csv
+  num_folds: 5  # Number of folds for spatiotemporal CV; can be overridden per search
   optimizer:
     steps: 5000
     tol: 1.0e-9

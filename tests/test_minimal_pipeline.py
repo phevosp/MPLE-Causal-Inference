@@ -6183,6 +6183,101 @@ class GraphPartitioningTests(unittest.TestCase):
             self.assertFalse((output_path / "spatiotemporal_cv_summary.yaml").exists())
             self.assertFalse((output_path / "coverage_count_summary.yaml").exists())
 
+    def test_min_time_block_sizes_for_various_k(self) -> None:
+        """Test that _min_time_block_sizes_for_folds generates correct sizes for k=1..10."""
+        # k=1: should be (1,)
+        sizes = cv_folds._min_time_block_sizes_for_folds(1)
+        self.assertEqual(sizes, (1,))
+
+        # k=3: should be (1, 2, 2)
+        sizes = cv_folds._min_time_block_sizes_for_folds(3)
+        self.assertEqual(sizes, (1, 2, 2))
+        self.assertEqual(sum(sizes), 5)
+
+        # k=5: should be (1, 2, 2, 2, 2)
+        sizes = cv_folds._min_time_block_sizes_for_folds(5)
+        self.assertEqual(sizes, (1, 2, 2, 2, 2))
+        self.assertEqual(sum(sizes), 9)
+
+        # k=10: should be (1, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+        sizes = cv_folds._min_time_block_sizes_for_folds(10)
+        self.assertEqual(len(sizes), 10)
+        self.assertEqual(sizes[0], 1)
+        self.assertTrue(all(s == 2 for s in sizes[1:]))
+        self.assertEqual(sum(sizes), 19)
+
+    def test_build_cv_folds_with_k3(self) -> None:
+        """Test build_cv_folds with k=3 folds."""
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_root = self._write_experiment_root(
+            gamma_matrix,
+            include_node_index=True,
+            include_time_index=True,
+            t_steps=10,
+        )
+
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                self.assertEqual(nparts, 3)
+                self.assertEqual(len(adjacency), 5)
+                return 25, [0, 1, 0, 2, 1]
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=FakePyMetis(),
+        ):
+            output_root = cv_folds._run_build_cv_folds_for_experiment(
+                experiment_root,
+                num_folds=3,
+                seed=42,
+                contiguous=False,
+            )
+
+        # Check output directory structure
+        self.assertTrue((output_root / "fold_roles.npz").exists())
+        self.assertTrue((output_root / "spatial_partition_metadata.yaml").exists())
+
+        # Load and verify fold_roles tensor
+        with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
+            role_codes = data["role_codes"]
+        self.assertEqual(role_codes.shape[0], 3)  # 3 folds
+        self.assertEqual(role_codes.shape[1], 10)  # 10 time steps
+        self.assertEqual(role_codes.shape[2], 5)  # 5 vertices
+
+        # Check metadata
+        spatiotemporal_metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "spatiotemporal_cv_metadata.yaml"),
+            resolve=True,
+        )
+        self.assertEqual(spatiotemporal_metadata["num_cv_folds"], 3)
+        self.assertEqual(spatiotemporal_metadata["minimum_supported_time_steps"], 5)  # 1 + 2*2
+
+    def test_get_num_folds_from_search_uses_search_override(self) -> None:
+        """Test that _get_num_folds_from_search respects search-level num_folds."""
+        search_with_k3 = {"name": "test", "num_folds": 3}
+        self.assertEqual(cv_runner._get_num_folds_from_search(search_with_k3), 3)
+
+        search_with_k10 = {"name": "test", "num_folds": 10}
+        self.assertEqual(cv_runner._get_num_folds_from_search(search_with_k10), 10)
+
+    def test_get_num_folds_from_search_defaults_to_default_num_folds(self) -> None:
+        """Test that _get_num_folds_from_search defaults to DEFAULT_NUM_FOLDS."""
+        search_without_override = {"name": "test"}
+        self.assertEqual(
+            cv_runner._get_num_folds_from_search(search_without_override),
+            cv_runner.DEFAULT_NUM_FOLDS,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

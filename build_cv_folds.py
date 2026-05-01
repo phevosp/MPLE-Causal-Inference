@@ -17,7 +17,6 @@ from pipeline_specs import read_csv_manifest
 
 DEFAULT_GAMMA_TOLERANCE = 1.0e-12
 DEFAULT_NUM_FOLDS = 5
-MIN_TIME_BLOCK_SIZES = (1, 2, 2, 2, 2)
 ROLE_CODE_TRAINING = 0
 ROLE_CODE_SEPARATOR = 1
 ROLE_CODE_VALIDATION = 2
@@ -26,6 +25,18 @@ ROLE_NAME_BY_CODE = {
     ROLE_CODE_SEPARATOR: "separator",
     ROLE_CODE_VALIDATION: "validation",
 }
+
+
+def _min_time_block_sizes_for_folds(num_folds: int) -> tuple[int, ...]:
+    """Generate minimum time block sizes for k-fold CV.
+
+    First block gets 1 step, remaining blocks get 2 steps each (for transition support).
+    """
+    if int(num_folds) < 1:
+        raise ValueError(f"num_folds must be >= 1, got {num_folds}.")
+    if int(num_folds) == 1:
+        return (1,)
+    return (1,) + (2,) * (int(num_folds) - 1)
 
 
 def _load_pymetis():
@@ -39,12 +50,6 @@ def _load_pymetis():
     return pymetis
 
 
-def _require_supported_num_folds(num_folds: int) -> None:
-    if int(num_folds) != DEFAULT_NUM_FOLDS:
-        raise ValueError(
-            f"This v1 CV-fold builder currently requires num_folds={DEFAULT_NUM_FOLDS} "
-            f"(received {num_folds})."
-        )
 
 
 def _gamma_artifact_kind(experiment_root: str | Path) -> str:
@@ -295,15 +300,15 @@ def _build_time_block_plan(
     *,
     num_folds: int,
 ) -> dict[str, Any]:
-    _require_supported_num_folds(num_folds)
-    minimum_steps = int(sum(MIN_TIME_BLOCK_SIZES))
+    min_block_sizes = _min_time_block_sizes_for_folds(num_folds)
+    minimum_steps = int(sum(min_block_sizes))
     if int(t_steps) < minimum_steps:
         raise ValueError(
             f"Spatiotemporal CV with {num_folds} folds requires at least {minimum_steps} "
             f"time steps to support the 1-step transition separators (received T={t_steps})."
         )
 
-    block_sizes = list(int(value) for value in MIN_TIME_BLOCK_SIZES)
+    block_sizes = list(int(value) for value in min_block_sizes)
     remaining = int(t_steps) - minimum_steps
     while remaining > 0:
         smallest_size = min(block_sizes)
@@ -344,7 +349,6 @@ def _build_time_block_plan(
 
 
 def _build_validation_schedule(*, num_folds: int) -> np.ndarray:
-    _require_supported_num_folds(num_folds)
     schedule = np.zeros((num_folds, num_folds), dtype=int)
     for fold_index in range(num_folds):
         for block_index in range(num_folds):
@@ -665,7 +669,8 @@ def _run_build_cv_folds_for_experiment(
     contiguous: bool = False,
     tolerance: float = DEFAULT_GAMMA_TOLERANCE,
 ) -> Path:
-    _require_supported_num_folds(num_folds)
+    if int(num_folds) < 1:
+        raise ValueError(f"num_folds must be >= 1, got {num_folds}.")
     experiment_path = Path(experiment_root).resolve()
     gamma_artifact_kind = _gamma_artifact_kind(experiment_path)
     gamma_matrix = load_gamma_matrix(experiment_path)
@@ -870,6 +875,7 @@ def _run_build_cv_folds_for_experiment(
         },
     }
     coverage_count_summary = _summarize_role_coverage_counts(role_codes)
+    min_block_sizes = _min_time_block_sizes_for_folds(num_folds)
     spatiotemporal_metadata = {
         "experiment_root": str(experiment_path),
         "num_cv_folds": int(num_folds),
@@ -879,9 +885,9 @@ def _run_build_cv_folds_for_experiment(
         "transition_time_indices": time_plan["transition_time_indices"],
         "validation_partition_ids_by_fold_block": validation_schedule.tolist(),
         "time_source": str(time_source),
-        "minimum_supported_time_steps": int(sum(MIN_TIME_BLOCK_SIZES)),
+        "minimum_supported_time_steps": int(sum(min_block_sizes)),
         "time_block_rule": {
-            "minimum_block_sizes": [int(value) for value in MIN_TIME_BLOCK_SIZES],
+            "minimum_block_sizes": [int(value) for value in min_block_sizes],
             "transition_step_location": "first_step_of_next_block",
             "wraparound_transition": False,
         },
@@ -948,7 +954,8 @@ def run_build_cv_folds(
     contiguous: bool = False,
     tolerance: float = DEFAULT_GAMMA_TOLERANCE,
 ) -> list[Path]:
-    _require_supported_num_folds(num_folds)
+    if int(num_folds) < 1:
+        raise ValueError(f"num_folds must be >= 1, got {num_folds}.")
     output_paths: list[Path] = []
     for row in _generation_manifest_rows(generation_manifest_path):
         experiment_path = str(row.get("experiment_path", "")).strip()

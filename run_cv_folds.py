@@ -34,6 +34,14 @@ DEFAULT_NUM_FOLDS = 5
 CV_REQUESTS_NAME = "cv_requests.csv"
 
 
+def _get_num_folds_from_search(search: dict[str, Any]) -> int:
+    """Extract num_folds from search configuration, defaults to DEFAULT_NUM_FOLDS."""
+    num_folds = search.get("num_folds")
+    if num_folds is not None:
+        return int(num_folds)
+    return DEFAULT_NUM_FOLDS
+
+
 def _read_yaml_mapping(path: str | Path) -> dict[str, object]:
     loaded = OmegaConf.to_container(OmegaConf.load(Path(path)), resolve=True)
     if not isinstance(loaded, dict):
@@ -127,22 +135,22 @@ def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
-def _load_fold_roles(experiment_root: str | Path) -> np.ndarray:
-    output_root = Path(experiment_root) / "cv_folds" / f"folds_{DEFAULT_NUM_FOLDS}"
+def _load_fold_roles(experiment_root: str | Path, *, num_folds: int) -> np.ndarray:
+    output_root = Path(experiment_root) / "cv_folds" / f"folds_{num_folds}"
     blanket_summary = _read_yaml_mapping(output_root / "markov_blanket_summary.yaml")
     if not bool(blanket_summary.get("blanket_validation_passed", False)):
         raise ValueError(
             f"CV folds at {output_root} failed Markov blanket validation."
         )
     metadata = _read_yaml_mapping(output_root / "spatiotemporal_cv_metadata.yaml")
-    if int(metadata.get("num_cv_folds", 0)) != DEFAULT_NUM_FOLDS:
+    if int(metadata.get("num_cv_folds", 0)) != num_folds:
         raise ValueError(
-            f"Expected {DEFAULT_NUM_FOLDS} folds in {output_root}; found "
+            f"Expected {num_folds} folds in {output_root}; found "
             f"{metadata.get('num_cv_folds')}."
         )
     with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
         role_codes = np.asarray(data["role_codes"], dtype=np.int8)
-    if role_codes.ndim != 3 or role_codes.shape[0] != DEFAULT_NUM_FOLDS:
+    if role_codes.ndim != 3 or role_codes.shape[0] != num_folds:
         raise ValueError(
             f"fold_roles.npz at {output_root} has invalid role tensor shape {role_codes.shape}."
         )
@@ -200,9 +208,10 @@ def write_cv_requests(
         )
     request_rows: list[dict[str, object]] = []
     for search in _expand_searches(cv_spec_path):
+        num_folds = _get_num_folds_from_search(search)
         for candidate in expand_search_candidates(search):
             for experiment_row in generation_rows:
-                for fold_id in range(1, DEFAULT_NUM_FOLDS + 1):
+                for fold_id in range(1, num_folds + 1):
                     request_rows.append(
                         _cv_request_row(experiment_row, search, candidate, fold_id)
                     )
@@ -275,9 +284,11 @@ def _candidate_score_row(
     search: dict[str, Any],
     candidate: dict[str, Any],
     fold_rows: list[dict[str, object]],
+    *,
+    num_folds: int,
 ) -> dict[str, object]:
     success_rows = [row for row in fold_rows if row.get("status") == "completed"]
-    if len(success_rows) != DEFAULT_NUM_FOLDS:
+    if len(success_rows) != num_folds:
         return {
             "experiment_name": experiment_row.get("experiment_name", ""),
             "experiment_slug": experiment_row.get("experiment_slug", ""),
@@ -324,15 +335,18 @@ def _run_search_for_experiment(
     experiment_row: dict[str, str],
     search: dict[str, Any],
     *,
+    num_folds: int | None = None,
     overwrite: bool = False,
 ) -> dict[str, object]:
+    if num_folds is None:
+        num_folds = _get_num_folds_from_search(search)
     experiment_root = Path(experiment_row["experiment_path"]).resolve()
     output_root = _candidate_output_root(experiment_root, search)
     if output_root.exists() and overwrite:
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    role_codes = _load_fold_roles(experiment_root)
+    role_codes = _load_fold_roles(experiment_root, num_folds=num_folds)
     panel_context = load_experiment_panel_context(experiment_root)
     if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
         panel_context["N"]
@@ -353,7 +367,7 @@ def _run_search_for_experiment(
 
     for candidate in candidates:
         candidate_fold_rows: list[dict[str, object]] = []
-        for fold_id in range(1, DEFAULT_NUM_FOLDS + 1):
+        for fold_id in range(1, num_folds + 1):
             fold_root = _candidate_fit_root(experiment_root, search, candidate, fold_id)
             if fold_root.exists():
                 if overwrite:
@@ -439,6 +453,7 @@ def _run_search_for_experiment(
             search,
             candidate,
             candidate_fold_rows,
+            num_folds=num_folds,
         )
         candidate_score_rows.append(candidate_score)
         if candidate_score["status"] != "completed":
@@ -537,9 +552,14 @@ def run_cv_search_for_experiment_slug(
     experiment_slug: str,
     search_slug: str,
     *,
+    num_folds: int | None = None,
     overwrite: bool = False,
 ) -> dict[str, object]:
-    """Run CV for a specific experiment and search combination."""
+    """Run CV for a specific experiment and search combination.
+
+    Args:
+        num_folds: Override the number of folds from cv_spec. If None, uses cv_spec default.
+    """
     generation_rows = read_csv_manifest(generation_manifest_path)
     experiment_row = next(
         (row for row in generation_rows if row.get("experiment_slug") == experiment_slug),
@@ -556,7 +576,14 @@ def run_cv_search_for_experiment_slug(
     if search is None:
         raise ValueError(f"Search slug '{search_slug}' not found in {cv_spec_path}.")
 
-    return _run_search_for_experiment(experiment_row, search, overwrite=overwrite)
+    if num_folds is None:
+        num_folds = _get_num_folds_from_search(search)
+    return _run_search_for_experiment(
+        experiment_row,
+        search,
+        num_folds=num_folds,
+        overwrite=overwrite,
+    )
 
 
 def main() -> None:
@@ -583,15 +610,22 @@ def main() -> None:
     )
     parser.add_argument("--experiment_slug", type=str, help="Experiment slug (used with --run_request).")
     parser.add_argument("--search_slug", type=str, help="Search slug (used with --run_request).")
+    parser.add_argument("--num_folds", type=int, help="Override number of CV folds from cv_spec.")
     args = parser.parse_args()
 
     if args.dry_run:
         generation_rows = read_csv_manifest(args.generation_manifest_path)
         searches = _expand_searches(args.cv_spec_path)
-        candidate_count = sum(len(expand_search_candidates(search)) for search in searches)
+        total_folds = 0
+        total_candidates = 0
+        for search in searches:
+            num_folds = _get_num_folds_from_search(search)
+            candidates = expand_search_candidates(search)
+            total_folds += len(candidates) * num_folds
+            total_candidates += len(candidates)
         print(
-            f"Dry run: {len(generation_rows)} experiment(s) × {candidate_count} candidate(s) "
-            f"× {DEFAULT_NUM_FOLDS} fold(s) planned."
+            f"Dry run: {len(generation_rows)} experiment(s) × {total_candidates} candidate(s) "
+            f"× variable folds = {total_folds} total fold(s) planned."
         )
         return
 
@@ -606,11 +640,29 @@ def main() -> None:
     if args.run_request:
         if not args.experiment_slug or not args.search_slug:
             raise ValueError("--run_request requires both --experiment_slug and --search_slug.")
-        run_cv_search_for_experiment_slug(
-            args.generation_manifest_path,
-            args.cv_spec_path,
-            args.experiment_slug,
-            args.search_slug,
+        generation_rows = read_csv_manifest(args.generation_manifest_path)
+        experiment_row = next(
+            (row for row in generation_rows if row.get("experiment_slug") == args.experiment_slug),
+            None,
+        )
+        if experiment_row is None:
+            raise ValueError(
+                f"Experiment slug '{args.experiment_slug}' not found in {args.generation_manifest_path}."
+            )
+
+        searches = _expand_searches(args.cv_spec_path)
+        search = next(
+            (s for s in searches if s.get("slug") == args.search_slug),
+            None,
+        )
+        if search is None:
+            raise ValueError(f"Search slug '{args.search_slug}' not found in {args.cv_spec_path}.")
+
+        num_folds = args.num_folds if args.num_folds is not None else _get_num_folds_from_search(search)
+        _run_search_for_experiment(
+            experiment_row,
+            search,
+            num_folds=num_folds,
             overwrite=args.overwrite,
         )
         return
