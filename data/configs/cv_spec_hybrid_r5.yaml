@@ -1,6 +1,7 @@
 base:
   cv_root_name: cv_runs
   cv_manifest_path: experiments/SyntheticHybridExperiments/cv_manifest.csv
+  num_folds: 5  # Number of folds for spatiotemporal CV; can be overridden per search
   optimizer:
     steps: 2000
     tol: 1.0e-7
@@ -20,6 +21,5 @@ base:
 
 searches:
   - name: alternating_uv_grid
-    optimizer_mode: alternating_latent_rank
     grid:
       lambda_uv_ridge: [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]

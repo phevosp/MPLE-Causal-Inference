@@ -1,0 +1,14 @@
+experiment_name: spectral_low_rank
+experiment_slug: spectral_low_rank
+search_name: alternating_uv_grid
+search_slug: alternating_uv_grid
+candidate_name: alternating_uv_grid__candidate_0006
+candidate_slug: alternating_uv_grid_candidate_0006
+candidate_index: 6
+weighted_mean_validation_loss: 0.6222634966332073
+mean_fold_validation_loss: 0.6222618392389635
+weighted_mean_validation_brier_score: 0.2163943008803377
+mean_fold_validation_brier_score: 0.2163935403198726
+total_validation_slots: 20500
+hyperparameters:
+  lambda_uv_ridge: 0.5
