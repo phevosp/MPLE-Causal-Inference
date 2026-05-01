@@ -442,6 +442,7 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/counterfactual/<source_
   counterfactual_sample_summaries.npz
   counterfactual_summary.csv
   counterfactual_unit_summary.csv
+  counterfactual_time_summary.csv
 ```
 
 `counterfactual_sample_summaries.npz` contains:
@@ -449,6 +450,7 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/counterfactual/<source_
 - `overall_mean_magnetization`
 - `post_intervention_mean_magnetization`
 - `unit_mean_magnetization`
+- `time_mean_magnetization`
 
 Full simulated `x` panels are not saved for counterfactual runs.
 
@@ -466,7 +468,7 @@ Posterior-predictive reports:
 
 Counterfactual runs write scenario-specific summary CSVs under each counterfactual output root. They do not participate in posterior-predictive ranking reports.
 
-Saved-intervention `intervention_summaries/<intervention_slug>.csv` reports can compare fit rows against the matching truth row for the same run using overall, post-intervention, and unit-level mean magnetization summaries. Time-level comparison is intentionally unavailable in these reports because the current counterfactual artifacts do not save per-time summaries.
+Saved-intervention `intervention_summaries/<intervention_slug>.csv` reports can compare fit rows against the matching truth row for the same run using overall, post-intervention, unit-level, and time-level mean magnetization summaries.
 
 ## Ranking Rules
 

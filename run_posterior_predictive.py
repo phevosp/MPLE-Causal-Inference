@@ -92,6 +92,7 @@ def _simulate_target(
         "overall_mean_magnetization": [],
         "post_intervention_mean_magnetization": [],
         "unit_mean_magnetization": [],
+        "time_mean_magnetization": [],
     }
     observed_stats = None
     if intervention_source == "observed_experiment":
@@ -140,6 +141,9 @@ def _simulate_target(
             counterfactual_sample_summaries["unit_mean_magnetization"].append(
                 sample_summary["unit_mean_magnetization"]
             )
+            counterfactual_sample_summaries["time_mean_magnetization"].append(
+                sample_summary["time_mean_magnetization"]
+            )
 
     summary: dict[str, float | int | str] = {"s": int(intervention_context.s)}
     if intervention_source == "observed_experiment":
@@ -160,6 +164,10 @@ def _simulate_target(
             ),
             "unit_mean_magnetization": np.asarray(
                 counterfactual_sample_summaries["unit_mean_magnetization"],
+                dtype=float,
+            ),
+            "time_mean_magnetization": np.asarray(
+                counterfactual_sample_summaries["time_mean_magnetization"],
                 dtype=float,
             ),
         }

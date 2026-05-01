@@ -296,11 +296,12 @@ Unified outputs:
 - `counterfactual_sample_summaries.npz`
 - `counterfactual_summary.csv`
 - `counterfactual_unit_summary.csv`
+- `counterfactual_time_summary.csv`
 - `counterfactual_metadata.yaml`
 
 Counterfactual rows are included in the unified `posterior_predictive_manifest.csv`, but they do not write `posterior_predictive_stats.csv` and are excluded from posterior-predictive ranking.
 
-Saved-intervention `intervention_summaries/<intervention_slug>.csv` files now include truth-referenced counterfactual comparison columns when a matching `truth` row exists for the same run. These reports compare overall, post-intervention, and unit-level mean magnetization summaries against the saved truth row, but they do not report time-level errors because current counterfactual artifacts do not store per-time summaries.
+Saved-intervention `intervention_summaries/<intervention_slug>.csv` files now include truth-referenced counterfactual comparison columns when a matching `truth` row exists for the same run. These reports compare overall, post-intervention, unit-level, and time-level mean magnetization summaries against the saved truth row.
 
 Example counterfactual target-pairs file:
 
@@ -477,20 +478,21 @@ Each CV fold uses the saved role tensor from `fold_roles.npz`:
 - validation loss mask = entries with role `validation`
 - separator entries stay visible in `x`, `z`, `prev_x`, and `Gamma x`, but contribute zero loss during fitting and zero loss during validation scoring
 
-So the fitted MPLE parameters are learned by conditioning on separator unit-times while optimizing only over training unit-times. Validation uses the same fitted parameters and evaluates masked MPLE loss only on validation unit-times.
+So the fitted MPLE parameters are learned by conditioning on separator unit-times while optimizing only over training unit-times. Validation uses the same fitted parameters and evaluates masked statistics only on validation unit-times. Separator entries remain visible to the model through `x`, `z`, `x_{t-1}`, and `Gamma x`, but they are never scored as part of validation.
 
-Selection is based on pooled validation loss:
+Selection is based on pooled validation Brier score:
 
-- for each candidate and fold, save `fit_loss`, `validation_loss`, `validation_brier_score`, and the numbers of active training and validation slots
-- aggregate across the 5 folds using `weighted_mean_validation_loss`, weighting each fold by its number of validation slots
-- also report `weighted_mean_validation_brier_score` and `mean_fold_validation_brier_score`
-- choose the candidate with the lowest weighted mean validation loss
+- for each candidate and fold, save `fit_loss`, `validation_loss`, `validation_brier_score`, `validation_ece`, and the numbers of active training and validation slots
+- aggregate across the 5 folds using slot-weighted means for `validation_loss`, `validation_brier_score`, and `validation_ece`
+- also report mean-per-fold summaries for Brier score and ECE
+- choose the candidate with the lowest `weighted_mean_validation_brier_score`
 
-The reported validation Brier score uses the model-implied probability of a positive spin:
+The reported validation Brier score and ECE use the model-implied probability of a positive spin:
 
 - `h_it = M_it + beta z_it + xi (Gamma x_t)_i + eta x_{i,t-1}`
 - `P(x_it = 1 | h_it) = (1 + tanh(h_it)) / 2`
 - observed outcome on the probability scale is `(x_it + 1) / 2`
+- ECE uses 10 equal-width bins on `[0, 1]`, skips empty bins, and is computed only on validation unit-times
 
 Artifacts are written under:
 
@@ -565,6 +567,7 @@ Each counterfactual run writes:
 - `counterfactual_sample_summaries.npz`
 - `counterfactual_summary.csv`
 - `counterfactual_unit_summary.csv`
+- `counterfactual_time_summary.csv`
 - `counterfactual_metadata.yaml`
 
 `PIPELINE_REFERENCE.md` has the full directory and manifest layout.

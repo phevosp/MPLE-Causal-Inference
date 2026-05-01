@@ -131,12 +131,13 @@ def write_counterfactual_summary_tables(
     output_root: str | Path,
     *,
     sample_summaries: dict[str, np.ndarray],
-) -> tuple[Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path]:
     output_path = Path(output_root)
     output_path.mkdir(parents=True, exist_ok=True)
     sample_npz_path = output_path / "counterfactual_sample_summaries.npz"
     summary_csv_path = output_path / "counterfactual_summary.csv"
     unit_csv_path = output_path / "counterfactual_unit_summary.csv"
+    time_csv_path = output_path / "counterfactual_time_summary.csv"
     np.savez(io_path(sample_npz_path), **sample_summaries)
 
     summary_rows = []
@@ -180,4 +181,24 @@ def write_counterfactual_summary_tables(
             "num_finite_samples",
         ],
     )
-    return sample_npz_path, summary_csv_path, unit_csv_path
+
+    time_values = np.asarray(sample_summaries["time_mean_magnetization"], dtype=float)
+    time_rows = []
+    for time_index in range(time_values.shape[1]):
+        row = {"time_index": int(time_index)}
+        row.update(_finite_summary(time_values[:, time_index]))
+        time_rows.append(row)
+    write_csv(
+        time_csv_path,
+        time_rows,
+        [
+            "time_index",
+            "sample_mean",
+            "sample_std",
+            "q025",
+            "q500",
+            "q975",
+            "num_finite_samples",
+        ],
+    )
+    return sample_npz_path, summary_csv_path, unit_csv_path, time_csv_path

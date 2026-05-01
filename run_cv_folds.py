@@ -32,6 +32,7 @@ from run_fit_pipeline import execute_fit_root, materialize_fit_root
 
 DEFAULT_NUM_FOLDS = 5
 CV_REQUESTS_NAME = "cv_requests.csv"
+ECE_NUM_BINS = 10
 
 
 def _get_num_folds_from_search(search: dict[str, Any]) -> int:
@@ -264,13 +265,50 @@ def _validation_brier_score(
     return float(np.mean(squared_error[mask]))
 
 
+def _validation_expected_calibration_error(
+    *,
+    x: np.ndarray,
+    h_x: np.ndarray,
+    loss_mask: np.ndarray,
+    num_bins: int = ECE_NUM_BINS,
+) -> float:
+    x_array = np.asarray(x, dtype=float)
+    h_array = np.asarray(h_x, dtype=float)
+    mask = np.asarray(loss_mask, dtype=bool)
+    if x_array.shape != h_array.shape or x_array.shape != mask.shape:
+        raise ValueError(
+            "x, h_x, and loss_mask must all have the same shape for ECE evaluation."
+        )
+    if num_bins <= 0:
+        raise ValueError("num_bins must be positive for ECE evaluation.")
+    if not np.any(mask):
+        raise ValueError("loss_mask must contain at least one active entry.")
+    observed_positive = ((x_array + 1.0) / 2.0)[mask]
+    predicted_positive = ((1.0 + np.tanh(h_array)) / 2.0)[mask]
+    bin_indices = np.minimum(
+        np.floor(predicted_positive * float(num_bins)).astype(int),
+        int(num_bins - 1),
+    )
+    total_count = float(predicted_positive.size)
+    ece = 0.0
+    for bin_index in range(num_bins):
+        in_bin = bin_indices == bin_index
+        if not np.any(in_bin):
+            continue
+        bin_fraction = float(np.count_nonzero(in_bin)) / total_count
+        empirical_rate = float(np.mean(observed_positive[in_bin]))
+        mean_predicted_probability = float(np.mean(predicted_positive[in_bin]))
+        ece += bin_fraction * abs(empirical_rate - mean_predicted_probability)
+    return float(ece)
+
+
 def _evaluate_fold_metrics(
     fit_root: str | Path,
     experiment_root: str | Path,
     *,
     training_loss_mask: np.ndarray,
     validation_loss_mask: np.ndarray,
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float]:
     panel_context = load_experiment_panel_context(experiment_root)
     bundle = load_fit_parameter_bundle(fit_root, experiment_root)
     x = np.asarray(panel_context["x"], dtype=float)
@@ -323,7 +361,17 @@ def _evaluate_fold_metrics(
         h_x=h_x,
         loss_mask=np.asarray(validation_loss_mask, dtype=bool),
     )
-    return float(fit_loss), float(validation_loss), float(validation_brier_score)
+    validation_ece = _validation_expected_calibration_error(
+        x=x,
+        h_x=h_x,
+        loss_mask=np.asarray(validation_loss_mask, dtype=bool),
+    )
+    return (
+        float(fit_loss),
+        float(validation_loss),
+        float(validation_brier_score),
+        float(validation_ece),
+    )
 
 
 def _candidate_grid_row(search: dict[str, Any], candidate: dict[str, Any]) -> dict[str, object]:
@@ -363,6 +411,8 @@ def _candidate_score_row(
             "mean_fold_validation_loss": "",
             "weighted_mean_validation_brier_score": "",
             "mean_fold_validation_brier_score": "",
+            "weighted_mean_validation_ece": "",
+            "mean_fold_validation_ece": "",
             "total_validation_slots": "",
         }
     validation_slots = np.asarray(
@@ -377,6 +427,10 @@ def _candidate_score_row(
         [float(row["validation_brier_score"]) for row in success_rows],
         dtype=float,
     )
+    validation_eces = np.asarray(
+        [float(row["validation_ece"]) for row in success_rows],
+        dtype=float,
+    )
     weighted_mean = float(
         np.sum(validation_slots * validation_losses) / np.sum(validation_slots)
     )
@@ -385,6 +439,10 @@ def _candidate_score_row(
         np.sum(validation_slots * validation_brier_scores) / np.sum(validation_slots)
     )
     mean_fold_brier = float(np.mean(validation_brier_scores))
+    weighted_mean_ece = float(
+        np.sum(validation_slots * validation_eces) / np.sum(validation_slots)
+    )
+    mean_fold_ece = float(np.mean(validation_eces))
     return {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
@@ -399,8 +457,18 @@ def _candidate_score_row(
         "mean_fold_validation_loss": mean_fold,
         "weighted_mean_validation_brier_score": weighted_mean_brier,
         "mean_fold_validation_brier_score": mean_fold_brier,
+        "weighted_mean_validation_ece": weighted_mean_ece,
+        "mean_fold_validation_ece": mean_fold_ece,
         "total_validation_slots": int(np.sum(validation_slots)),
     }
+
+
+def _candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int]:
+    return (
+        float(row["weighted_mean_validation_brier_score"]),
+        float(row["weighted_mean_validation_loss"]),
+        int(row["candidate_index"]),
+    )
 
 
 def _run_search_for_experiment(
@@ -495,7 +563,12 @@ def _run_search_for_experiment(
                     extra_metadata=extra_metadata,
                 )
                 execute_fit_root(fold_root)
-                fit_loss, validation_loss, validation_brier_score = _evaluate_fold_metrics(
+                (
+                    fit_loss,
+                    validation_loss,
+                    validation_brier_score,
+                    validation_ece,
+                ) = _evaluate_fold_metrics(
                     fold_root,
                     experiment_root,
                     training_loss_mask=training_loss_mask,
@@ -507,6 +580,7 @@ def _run_search_for_experiment(
                         "fit_loss": float(fit_loss),
                         "validation_loss": float(validation_loss),
                         "validation_brier_score": float(validation_brier_score),
+                        "validation_ece": float(validation_ece),
                     }
                 )
             except Exception as exc:  # noqa: BLE001
@@ -516,6 +590,7 @@ def _run_search_for_experiment(
                         "fit_loss": "",
                         "validation_loss": "",
                         "validation_brier_score": "",
+                        "validation_ece": "",
                         "error_message": str(exc),
                     }
                 )
@@ -532,8 +607,8 @@ def _run_search_for_experiment(
         candidate_score_rows.append(candidate_score)
         if candidate_score["status"] != "completed":
             continue
-        if best_row is None or float(candidate_score["weighted_mean_validation_loss"]) < float(
-            best_row["weighted_mean_validation_loss"]
+        if best_row is None or _candidate_score_sort_key(candidate_score) < _candidate_score_sort_key(
+            best_row
         ):
             best_row = candidate_score
             best_candidate = candidate
@@ -541,7 +616,7 @@ def _run_search_for_experiment(
     write_csv_manifest(output_root / "fold_scores.csv", fold_rows)
     completed_rows = sorted(
         [row for row in candidate_score_rows if row.get("status") == "completed"],
-        key=lambda row: float(row["weighted_mean_validation_loss"]),
+        key=_candidate_score_sort_key,
     )
     for rank, row in enumerate(completed_rows, start=1):
         row["rank"] = int(rank)
@@ -569,6 +644,8 @@ def _run_search_for_experiment(
         "mean_fold_validation_brier_score": float(
             best_row["mean_fold_validation_brier_score"]
         ),
+        "weighted_mean_validation_ece": float(best_row["weighted_mean_validation_ece"]),
+        "mean_fold_validation_ece": float(best_row["mean_fold_validation_ece"]),
         "total_validation_slots": int(best_row["total_validation_slots"]),
         "hyperparameters": {
             key: value for key, value in sorted(best_candidate["_flat_params"].items())
@@ -595,6 +672,8 @@ def _run_search_for_experiment(
         "mean_fold_validation_brier_score": float(
             best_row["mean_fold_validation_brier_score"]
         ),
+        "weighted_mean_validation_ece": float(best_row["weighted_mean_validation_ece"]),
+        "mean_fold_validation_ece": float(best_row["mean_fold_validation_ece"]),
         "total_validation_slots": int(best_row["total_validation_slots"]),
         "status": "completed",
     }

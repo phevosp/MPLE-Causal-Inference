@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 import uuid
 import csv
+from types import SimpleNamespace
 from pathlib import Path
 import tempfile
 
@@ -92,6 +93,7 @@ import build_cv_folds as cv_folds
 import run_cv_folds as cv_runner
 from posterior_predictive_utils import (
     compute_panel_statistics,
+    compute_counterfactual_sample_summary,
     simulate_outcomes_for_bundle,
     summarize_predictive_statistics,
 )
@@ -3242,8 +3244,12 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(str(best_candidate.search_slug), "no_external_field_mask_grid")
         self.assertIn("weighted_mean_validation_brier_score", manifest_rows[0])
         self.assertIn("mean_fold_validation_brier_score", manifest_rows[0])
+        self.assertIn("weighted_mean_validation_ece", manifest_rows[0])
+        self.assertIn("mean_fold_validation_ece", manifest_rows[0])
         self.assertIn("weighted_mean_validation_brier_score", best_candidate)
         self.assertIn("mean_fold_validation_brier_score", best_candidate)
+        self.assertIn("weighted_mean_validation_ece", best_candidate)
+        self.assertIn("mean_fold_validation_ece", best_candidate)
 
         completed_rows = [row for row in fold_rows if row["status"] == "completed"]
         self.assertEqual(len(completed_rows), 10)
@@ -3256,6 +3262,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             candidate_rows_group = grouped[row["candidate_slug"]]
             for fold_row in candidate_rows_group:
                 self.assertIn("validation_brier_score", fold_row)
+                self.assertIn("validation_ece", fold_row)
             weighted = sum(
                 float(fold_row["validation_loss"]) * int(fold_row["num_validation_slots"])
                 for fold_row in candidate_rows_group
@@ -3267,6 +3274,15 @@ class PipelineStageRequestTests(unittest.TestCase):
             ) / sum(int(fold_row["num_validation_slots"]) for fold_row in candidate_rows_group)
             mean_fold_brier = sum(
                 float(fold_row["validation_brier_score"])
+                for fold_row in candidate_rows_group
+            ) / len(candidate_rows_group)
+            weighted_ece = sum(
+                float(fold_row["validation_ece"])
+                * int(fold_row["num_validation_slots"])
+                for fold_row in candidate_rows_group
+            ) / sum(int(fold_row["num_validation_slots"]) for fold_row in candidate_rows_group)
+            mean_fold_ece = sum(
+                float(fold_row["validation_ece"])
                 for fold_row in candidate_rows_group
             ) / len(candidate_rows_group)
             self.assertAlmostEqual(
@@ -3284,6 +3300,16 @@ class PipelineStageRequestTests(unittest.TestCase):
                 mean_fold_brier,
                 places=12,
             )
+            self.assertAlmostEqual(
+                float(row["weighted_mean_validation_ece"]),
+                weighted_ece,
+                places=12,
+            )
+            self.assertAlmostEqual(
+                float(row["mean_fold_validation_ece"]),
+                mean_fold_ece,
+                places=12,
+            )
 
     def test_validation_brier_score_matches_spin_probability_formula(self) -> None:
         x = np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
@@ -3298,6 +3324,223 @@ class PipelineStageRequestTests(unittest.TestCase):
 
         actual = cv_runner._validation_brier_score(x=x, h_x=h_x, loss_mask=mask)
         self.assertAlmostEqual(actual, expected, places=12)
+
+    def test_validation_expected_calibration_error_matches_hand_computation(self) -> None:
+        x = np.asarray([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
+        predicted_positive = np.asarray([[0.05, 0.15], [0.75, 0.95]], dtype=float)
+        h_x = np.arctanh((2.0 * predicted_positive) - 1.0)
+        mask = np.asarray([[True, True], [True, True]], dtype=bool)
+
+        expected = (
+            0.25 * abs(0.0 - 0.05)
+            + 0.25 * abs(1.0 - 0.15)
+            + 0.25 * abs(0.0 - 0.75)
+            + 0.25 * abs(1.0 - 0.95)
+        )
+
+        actual = cv_runner._validation_expected_calibration_error(
+            x=x,
+            h_x=h_x,
+            loss_mask=mask,
+        )
+        self.assertAlmostEqual(actual, expected, places=12)
+
+    def test_validation_statistics_ignore_masked_entries(self) -> None:
+        x = np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        h_x = np.asarray([[0.4, -0.2], [0.9, -1.2]], dtype=float)
+        mask = np.asarray([[False, True], [False, True]], dtype=bool)
+
+        masked_brier = cv_runner._validation_brier_score(x=x, h_x=h_x, loss_mask=mask)
+        masked_ece = cv_runner._validation_expected_calibration_error(
+            x=x,
+            h_x=h_x,
+            loss_mask=mask,
+        )
+
+        perturbed_x = np.asarray(x, dtype=float).copy()
+        perturbed_h_x = np.asarray(h_x, dtype=float).copy()
+        perturbed_x[0, 0] = -1.0
+        perturbed_x[1, 0] = 1.0
+        perturbed_h_x[0, 0] = 3.0
+        perturbed_h_x[1, 0] = -3.0
+
+        self.assertAlmostEqual(
+            cv_runner._validation_brier_score(
+                x=perturbed_x,
+                h_x=perturbed_h_x,
+                loss_mask=mask,
+            ),
+            masked_brier,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            cv_runner._validation_expected_calibration_error(
+                x=perturbed_x,
+                h_x=perturbed_h_x,
+                loss_mask=mask,
+            ),
+            masked_ece,
+            places=12,
+        )
+
+    def test_evaluate_fold_metrics_conditions_on_separator_but_scores_validation_only(self) -> None:
+        experiment_root = Path("unused-experiment-root")
+        fit_root = Path("unused-fit-root")
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0]], dtype=float),
+            "z": np.zeros((2, 2), dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 0,
+            "e": 2,
+        }
+        bundle = SimpleNamespace(
+            field_matrix=np.zeros((2, 2), dtype=float),
+            beta=0.0,
+            xi=1.0,
+            eta=0.0,
+            gamma_matrix=np.asarray([[0.0, 1.0], [1.0, 0.0]], dtype=float),
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+        )
+        training_loss_mask = np.asarray([[True, False], [False, False]], dtype=bool)
+        validation_loss_mask = np.asarray([[False, False], [False, True]], dtype=bool)
+
+        with mock.patch.object(
+            cv_runner,
+            "load_experiment_panel_context",
+            return_value=panel_context,
+        ), mock.patch.object(
+            cv_runner,
+            "load_fit_parameter_bundle",
+            return_value=bundle,
+        ):
+            fit_loss, validation_loss, validation_brier, validation_ece = (
+                cv_runner._evaluate_fold_metrics(
+                    fit_root,
+                    experiment_root,
+                    training_loss_mask=training_loss_mask,
+                    validation_loss_mask=validation_loss_mask,
+                )
+            )
+
+        interaction_effect_x = interaction_effect(panel_context["x"], bundle.gamma_matrix)
+        expected_fit_loss = evaluate_mple_loss_from_parts(
+            x=panel_context["x"],
+            z=panel_context["z"],
+            x_0=panel_context["x_0"],
+            field_matrix=bundle.field_matrix,
+            beta=bundle.beta,
+            xi=bundle.xi,
+            eta=bundle.eta,
+            interaction_effect_x=interaction_effect_x,
+            fixed_scalar_params={},
+            loss_mask=training_loss_mask,
+            s=int(panel_context["s"]),
+            e=int(panel_context["e"]),
+            beta_mask_pre_s=bundle.beta_mask_pre_s,
+            beta_mask_post_e=bundle.beta_mask_post_e,
+        )
+        expected_validation_loss = evaluate_mple_loss_from_parts(
+            x=panel_context["x"],
+            z=panel_context["z"],
+            x_0=panel_context["x_0"],
+            field_matrix=bundle.field_matrix,
+            beta=bundle.beta,
+            xi=bundle.xi,
+            eta=bundle.eta,
+            interaction_effect_x=interaction_effect_x,
+            fixed_scalar_params={},
+            loss_mask=validation_loss_mask,
+            s=int(panel_context["s"]),
+            e=int(panel_context["e"]),
+            beta_mask_pre_s=bundle.beta_mask_pre_s,
+            beta_mask_post_e=bundle.beta_mask_post_e,
+        )
+        prev_x = np.vstack([panel_context["x_0"], panel_context["x"][:-1, :]])
+        h_x = bundle.field_matrix + (bundle.xi * interaction_effect_x) + (bundle.eta * prev_x)
+        expected_brier = cv_runner._validation_brier_score(
+            x=panel_context["x"],
+            h_x=h_x,
+            loss_mask=validation_loss_mask,
+        )
+        expected_ece = cv_runner._validation_expected_calibration_error(
+            x=panel_context["x"],
+            h_x=h_x,
+            loss_mask=validation_loss_mask,
+        )
+
+        self.assertAlmostEqual(fit_loss, float(expected_fit_loss), places=12)
+        self.assertAlmostEqual(validation_loss, float(expected_validation_loss), places=12)
+        self.assertAlmostEqual(validation_brier, expected_brier, places=12)
+        self.assertAlmostEqual(validation_ece, expected_ece, places=12)
+
+        separator_flipped_context = dict(panel_context)
+        separator_flipped_context["x"] = np.asarray(panel_context["x"], dtype=float).copy()
+        separator_flipped_context["x"][1, 0] = -1.0
+        with mock.patch.object(
+            cv_runner,
+            "load_experiment_panel_context",
+            return_value=separator_flipped_context,
+        ), mock.patch.object(
+            cv_runner,
+            "load_fit_parameter_bundle",
+            return_value=bundle,
+        ):
+            (
+                _,
+                flipped_validation_loss,
+                flipped_validation_brier,
+                flipped_validation_ece,
+            ) = cv_runner._evaluate_fold_metrics(
+                fit_root,
+                experiment_root,
+                training_loss_mask=training_loss_mask,
+                validation_loss_mask=validation_loss_mask,
+            )
+
+        self.assertNotAlmostEqual(flipped_validation_loss, validation_loss, places=12)
+        self.assertNotAlmostEqual(flipped_validation_brier, validation_brier, places=12)
+        self.assertNotAlmostEqual(flipped_validation_ece, validation_ece, places=12)
+
+    def test_candidate_score_sort_key_prefers_lower_brier_then_loss(self) -> None:
+        rows = [
+            {
+                "candidate_slug": "higher_loss_better_brier",
+                "candidate_index": 2,
+                "weighted_mean_validation_brier_score": 0.10,
+                "weighted_mean_validation_loss": 0.60,
+            },
+            {
+                "candidate_slug": "lower_loss_same_brier",
+                "candidate_index": 3,
+                "weighted_mean_validation_brier_score": 0.10,
+                "weighted_mean_validation_loss": 0.40,
+            },
+            {
+                "candidate_slug": "worse_brier",
+                "candidate_index": 1,
+                "weighted_mean_validation_brier_score": 0.12,
+                "weighted_mean_validation_loss": 0.20,
+            },
+            {
+                "candidate_slug": "same_brier_same_loss_lower_index",
+                "candidate_index": 1,
+                "weighted_mean_validation_brier_score": 0.10,
+                "weighted_mean_validation_loss": 0.40,
+            },
+        ]
+
+        ordered = sorted(rows, key=cv_runner._candidate_score_sort_key)
+
+        self.assertEqual(
+            [row["candidate_slug"] for row in ordered],
+            [
+                "same_brier_same_loss_lower_index",
+                "lower_loss_same_brier",
+                "higher_loss_better_brier",
+                "worse_brier",
+            ],
+        )
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_generation_jobs_submits_workers_and_report(self) -> None:
@@ -4246,6 +4489,11 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
                 io_path(counterfactual_root / "counterfactual_unit_summary.csv")
             ).exists()
         )
+        self.assertTrue(
+            Path(
+                io_path(counterfactual_root / "counterfactual_time_summary.csv")
+            ).exists()
+        )
 
 
 class PosteriorPredictiveTests(unittest.TestCase):
@@ -4296,6 +4544,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
         unit_means: list[float],
         unit_q025: list[float],
         unit_q975: list[float],
+        time_means: list[float],
+        time_q025: list[float],
+        time_q975: list[float],
     ) -> None:
         output_root.mkdir(parents=True, exist_ok=True)
         summary_rows = [
@@ -4367,6 +4618,38 @@ class PosteriorPredictiveTests(unittest.TestCase):
             )
             writer.writeheader()
             writer.writerows(unit_rows)
+
+        time_rows = [
+            {
+                "time_index": time_index,
+                "sample_mean": mean,
+                "sample_std": 0.0,
+                "q025": q025,
+                "q500": mean,
+                "q975": q975,
+                "num_finite_samples": 4,
+            }
+            for time_index, (mean, q025, q975) in enumerate(
+                zip(time_means, time_q025, time_q975)
+            )
+        ]
+        with (output_root / "counterfactual_time_summary.csv").open(
+            "w", encoding="utf-8", newline=""
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "time_index",
+                    "sample_mean",
+                    "sample_std",
+                    "q025",
+                    "q500",
+                    "q975",
+                    "num_finite_samples",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(time_rows)
 
     def _write_predictive_stats_output(
         self,
@@ -4445,6 +4728,28 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertAlmostEqual(stats["lag1_persistence"], 1.0)
         self.assertAlmostEqual(stats["graph_interaction_energy"], 0.0)
         self.assertAlmostEqual(stats["field_alignment"], 1.0)
+
+    def test_compute_counterfactual_sample_summary_includes_time_mean_magnetization(
+        self,
+    ) -> None:
+        x = np.asarray(
+            [
+                [1.0, -1.0, 1.0],
+                [-1.0, -1.0, 1.0],
+                [1.0, 1.0, 1.0],
+            ],
+            dtype=float,
+        )
+
+        summary = compute_counterfactual_sample_summary(x, s=1)
+
+        self.assertAlmostEqual(summary["overall_mean_magnetization"], float(np.mean(x)))
+        self.assertAlmostEqual(
+            summary["post_intervention_mean_magnetization"],
+            float(np.mean(x[1:, :])),
+        )
+        self.assertTrue(np.allclose(summary["unit_mean_magnetization"], np.mean(x, axis=0)))
+        self.assertTrue(np.allclose(summary["time_mean_magnetization"], np.mean(x, axis=1)))
 
     def test_load_fit_parameter_bundle_propagates_beta_mask_pre_s(self) -> None:
         experiment_root = self.root / "exp_bundle"
@@ -4729,6 +5034,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
             unit_means=[0.10, 0.60, -0.20],
             unit_q025=[-0.05, 0.40, -0.35],
             unit_q975=[0.25, 0.80, -0.05],
+            time_means=[0.05, 0.30, 0.55, -0.10],
+            time_q025=[-0.05, 0.20, 0.45, -0.20],
+            time_q975=[0.15, 0.40, 0.65, 0.00],
         )
         self._write_counterfactual_summary_outputs(
             better_root,
@@ -4743,6 +5051,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
             unit_means=[0.12, 0.58, -0.18],
             unit_q025=[-0.02, 0.38, -0.30],
             unit_q975=[0.26, 0.78, -0.06],
+            time_means=[0.08, 0.28, 0.50, -0.06],
+            time_q025=[-0.02, 0.18, 0.40, -0.16],
+            time_q975=[0.18, 0.38, 0.60, 0.04],
         )
         self._write_counterfactual_summary_outputs(
             worse_root,
@@ -4757,6 +5068,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
             unit_means=[0.75, -0.10, 0.35],
             unit_q025=[0.55, -0.30, 0.15],
             unit_q975=[0.95, 0.10, 0.55],
+            time_means=[0.45, -0.10, 0.80, 0.25],
+            time_q025=[0.35, -0.20, 0.70, 0.15],
+            time_q975=[0.55, 0.00, 0.90, 0.35],
         )
 
         manifest_rows = [
@@ -4810,15 +5124,19 @@ class PosteriorPredictiveTests(unittest.TestCase):
         by_name = {row["source_name"]: row for row in rows}
 
         self.assertIn("truth_unit_mean_squared_error_mean", rows[0])
-        self.assertNotIn("truth_time_mean_abs_error", rows[0])
+        self.assertIn("truth_time_mean_squared_error_mean", rows[0])
         self.assertEqual(float(by_name["truth"]["truth_unit_mean_squared_error_mean"]), 0.0)
+        self.assertEqual(float(by_name["truth"]["truth_time_mean_squared_error_mean"]), 0.0)
         self.assertEqual(float(by_name["truth"]["truth_overall_mean_magnetization_abs_error"]), 0.0)
         self.assertEqual(by_name["truth"]["truth_rank_in_run"], "")
         self.assertEqual(by_name["truth"]["truth_is_best"], "")
 
         better_mse = float(by_name["better_fit"]["truth_unit_mean_squared_error_mean"])
         worse_mse = float(by_name["worse_fit"]["truth_unit_mean_squared_error_mean"])
+        better_time_mse = float(by_name["better_fit"]["truth_time_mean_squared_error_mean"])
+        worse_time_mse = float(by_name["worse_fit"]["truth_time_mean_squared_error_mean"])
         self.assertLess(better_mse, worse_mse)
+        self.assertLess(better_time_mse, worse_time_mse)
         self.assertEqual(by_name["better_fit"]["truth_rank_in_run"], "1")
         self.assertEqual(by_name["better_fit"]["truth_is_best"], "True")
         self.assertEqual(by_name["worse_fit"]["truth_rank_in_run"], "2")
@@ -4826,6 +5144,10 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertGreater(
             float(by_name["better_fit"]["truth_unit_mean_95_interval_coverage_rate"]),
             float(by_name["worse_fit"]["truth_unit_mean_95_interval_coverage_rate"]),
+        )
+        self.assertGreater(
+            float(by_name["better_fit"]["truth_time_mean_95_interval_coverage_rate"]),
+            float(by_name["worse_fit"]["truth_time_mean_95_interval_coverage_rate"]),
         )
 
     def test_write_intervention_summaries_leaves_truth_metrics_blank_without_truth_row(
@@ -4848,6 +5170,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
             unit_means=[0.10, 0.20],
             unit_q025=[0.0, 0.10],
             unit_q975=[0.20, 0.30],
+            time_means=[0.10, 0.25, 0.05],
+            time_q025=[0.0, 0.15, -0.05],
+            time_q975=[0.20, 0.35, 0.15],
         )
 
         write_intervention_summaries(
@@ -4873,6 +5198,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
         with summary_path.open("r", encoding="utf-8", newline="") as handle:
             row = next(csv.DictReader(handle))
         self.assertEqual(row["truth_unit_mean_squared_error_mean"], "")
+        self.assertEqual(row["truth_time_mean_squared_error_mean"], "")
         self.assertEqual(row["truth_rank_in_run"], "")
         self.assertEqual(row["truth_is_best"], "")
 
@@ -4918,6 +5244,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             row = next(csv.DictReader(handle))
         self.assertEqual(row["overall_mean_magnetization_mean"], "0.15")
         self.assertEqual(row["truth_unit_mean_squared_error_mean"], "")
+        self.assertEqual(row["truth_time_mean_squared_error_mean"], "")
         self.assertEqual(row["truth_rank_in_run"], "")
 
     def test_target_pair_resolution_validates_truth_and_fit_rows(self) -> None:
@@ -5311,6 +5638,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertTrue((counterfactual_root / "counterfactual_summary.csv").exists())
         self.assertTrue(
             (counterfactual_root / "counterfactual_unit_summary.csv").exists()
+        )
+        self.assertTrue(
+            (counterfactual_root / "counterfactual_time_summary.csv").exists()
         )
         self.assertFalse(
             (counterfactual_root / "posterior_predictive_stats.csv").exists()

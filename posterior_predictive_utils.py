@@ -96,6 +96,7 @@ def compute_counterfactual_sample_summary(
         "overall_mean_magnetization": float(np.mean(x)),
         "post_intervention_mean_magnetization": post_value,
         "unit_mean_magnetization": np.mean(x, axis=0),
+        "time_mean_magnetization": np.mean(x, axis=1),
     }
 
 

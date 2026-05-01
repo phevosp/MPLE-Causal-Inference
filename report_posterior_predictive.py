@@ -117,6 +117,12 @@ INTERVENTION_SUMMARY_COLUMNS = [
     "truth_unit_mean_max_abs_error",
     "truth_unit_mean_correlation",
     "truth_unit_mean_95_interval_coverage_rate",
+    "truth_time_mean_abs_error_mean",
+    "truth_time_mean_squared_error_mean",
+    "truth_time_mean_rmse",
+    "truth_time_mean_max_abs_error",
+    "truth_time_mean_correlation",
+    "truth_time_mean_95_interval_coverage_rate",
     "truth_rank_in_run",
     "truth_is_best",
 ]
@@ -144,6 +150,12 @@ _TRUTH_COMPARISON_COLUMNS = [
     "truth_unit_mean_max_abs_error",
     "truth_unit_mean_correlation",
     "truth_unit_mean_95_interval_coverage_rate",
+    "truth_time_mean_abs_error_mean",
+    "truth_time_mean_squared_error_mean",
+    "truth_time_mean_rmse",
+    "truth_time_mean_max_abs_error",
+    "truth_time_mean_correlation",
+    "truth_time_mean_95_interval_coverage_rate",
 ]
 _TRUTH_RANKING_COLUMNS = [
     "truth_rank_in_run",
@@ -314,6 +326,43 @@ def _read_counterfactual_unit_summary(
     }
 
 
+def _read_counterfactual_time_summary(
+    output_path: Path,
+    intervention_source: str,
+) -> dict[str, np.ndarray | None]:
+    if intervention_source == "observed_experiment":
+        return {
+            "time_mean_sample_mean": None,
+            "time_mean_q025": None,
+            "time_mean_q975": None,
+        }
+    csv_path = output_path / "counterfactual_time_summary.csv"
+    if not csv_path.exists():
+        return {
+            "time_mean_sample_mean": None,
+            "time_mean_q025": None,
+            "time_mean_q975": None,
+        }
+
+    sample_means: list[float] = []
+    q025_values: list[float] = []
+    q975_values: list[float] = []
+    with csv_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            sample_mean = _as_float(row.get("sample_mean"))
+            q025 = _as_float(row.get("q025"))
+            q975 = _as_float(row.get("q975"))
+            sample_means.append(np.nan if sample_mean is None else float(sample_mean))
+            q025_values.append(np.nan if q025 is None else float(q025))
+            q975_values.append(np.nan if q975 is None else float(q975))
+    return {
+        "time_mean_sample_mean": np.asarray(sample_means, dtype=float),
+        "time_mean_q025": np.asarray(q025_values, dtype=float),
+        "time_mean_q975": np.asarray(q975_values, dtype=float),
+    }
+
+
 def _blank_truth_metrics() -> dict[str, object]:
     return {column: "" for column in [*_TRUTH_COMPARISON_COLUMNS, *_TRUTH_RANKING_COLUMNS]}
 
@@ -366,6 +415,12 @@ def _compute_truth_metrics(
         "truth_unit_mean_max_abs_error": None,
         "truth_unit_mean_correlation": None,
         "truth_unit_mean_95_interval_coverage_rate": None,
+        "truth_time_mean_abs_error_mean": None,
+        "truth_time_mean_squared_error_mean": None,
+        "truth_time_mean_rmse": None,
+        "truth_time_mean_max_abs_error": None,
+        "truth_time_mean_correlation": None,
+        "truth_time_mean_95_interval_coverage_rate": None,
     }
     overall_mean = _as_float(candidate_row.get("overall_mean_magnetization_mean"))
     truth_overall_mean = _as_float(truth_row.get("overall_mean_magnetization_mean"))
@@ -432,6 +487,48 @@ def _compute_truth_metrics(
             metrics["truth_unit_mean_95_interval_coverage_rate"] = float(
                 np.mean(covered)
             )
+
+    candidate_time_means = candidate_row.get("time_mean_sample_mean")
+    truth_time_means = truth_row.get("time_mean_sample_mean")
+    if (
+        isinstance(candidate_time_means, np.ndarray)
+        and isinstance(truth_time_means, np.ndarray)
+        and candidate_time_means.shape == truth_time_means.shape
+    ):
+        valid = np.isfinite(candidate_time_means) & np.isfinite(truth_time_means)
+        if np.any(valid):
+            abs_errors = np.abs(candidate_time_means[valid] - truth_time_means[valid])
+            squared_errors = abs_errors**2
+            metrics["truth_time_mean_abs_error_mean"] = float(np.mean(abs_errors))
+            metrics["truth_time_mean_squared_error_mean"] = float(np.mean(squared_errors))
+            metrics["truth_time_mean_rmse"] = float(np.sqrt(np.mean(squared_errors)))
+            metrics["truth_time_mean_max_abs_error"] = float(np.max(abs_errors))
+            metrics["truth_time_mean_correlation"] = _safe_correlation(
+                candidate_time_means[valid],
+                truth_time_means[valid],
+            )
+
+    candidate_time_q025 = candidate_row.get("time_mean_q025")
+    candidate_time_q975 = candidate_row.get("time_mean_q975")
+    if (
+        isinstance(candidate_time_q025, np.ndarray)
+        and isinstance(candidate_time_q975, np.ndarray)
+        and isinstance(truth_time_means, np.ndarray)
+        and candidate_time_q025.shape == candidate_time_q975.shape == truth_time_means.shape
+    ):
+        valid = (
+            np.isfinite(candidate_time_q025)
+            & np.isfinite(candidate_time_q975)
+            & np.isfinite(truth_time_means)
+        )
+        if np.any(valid):
+            covered = (
+                (candidate_time_q025[valid] <= truth_time_means[valid])
+                & (truth_time_means[valid] <= candidate_time_q975[valid])
+            )
+            metrics["truth_time_mean_95_interval_coverage_rate"] = float(
+                np.mean(covered)
+            )
     return metrics
 
 
@@ -447,6 +544,12 @@ def _truth_row_self_metrics(truth_row: dict[str, object]) -> dict[str, object]:
         "truth_unit_mean_max_abs_error": None,
         "truth_unit_mean_correlation": None,
         "truth_unit_mean_95_interval_coverage_rate": None,
+        "truth_time_mean_abs_error_mean": None,
+        "truth_time_mean_squared_error_mean": None,
+        "truth_time_mean_rmse": None,
+        "truth_time_mean_max_abs_error": None,
+        "truth_time_mean_correlation": None,
+        "truth_time_mean_95_interval_coverage_rate": None,
     }
     if _as_float(truth_row.get("overall_mean_magnetization_mean")) is not None:
         metrics["truth_overall_mean_in_95_interval"] = 1.0
@@ -461,6 +564,14 @@ def _truth_row_self_metrics(truth_row: dict[str, object]) -> dict[str, object]:
         metrics["truth_unit_mean_max_abs_error"] = 0.0
         metrics["truth_unit_mean_correlation"] = 1.0
         metrics["truth_unit_mean_95_interval_coverage_rate"] = 1.0
+    truth_time_means = truth_row.get("time_mean_sample_mean")
+    if isinstance(truth_time_means, np.ndarray) and np.isfinite(truth_time_means).any():
+        metrics["truth_time_mean_abs_error_mean"] = 0.0
+        metrics["truth_time_mean_squared_error_mean"] = 0.0
+        metrics["truth_time_mean_rmse"] = 0.0
+        metrics["truth_time_mean_max_abs_error"] = 0.0
+        metrics["truth_time_mean_correlation"] = 1.0
+        metrics["truth_time_mean_95_interval_coverage_rate"] = 1.0
     return metrics
 
 
@@ -513,6 +624,7 @@ def _build_intervention_row(manifest_row: dict[str, object]) -> dict[str, object
     intervention_source = str(manifest_row.get("target_intervention_source", ""))
     stats = _read_magnetization_stats(output_path, intervention_source)
     unit_stats = _read_counterfactual_unit_summary(output_path, intervention_source)
+    time_stats = _read_counterfactual_time_summary(output_path, intervention_source)
     return {
         "source_type": manifest_row.get("source_type", ""),
         "source_name": manifest_row.get("source_name", ""),
@@ -525,6 +637,7 @@ def _build_intervention_row(manifest_row: dict[str, object]) -> dict[str, object
         "target_intervention_source": intervention_source,
         **stats,
         **unit_stats,
+        **time_stats,
     }
 
 
@@ -579,8 +692,6 @@ def write_intervention_summaries(
     outputs: dict[str, dict[str, str]] = {}
     for slug, group_rows in grouped.items():
         built_rows = [_build_intervention_row(r) for r in group_rows]
-        # Time-level counterfactual error is intentionally unavailable here because
-        # current saved counterfactual artifacts do not store per-time summaries.
         built_rows = _apply_truth_metrics_and_ranking(built_rows)
         csv_path = summary_dir / f"{slug}.csv"
         write_csv(csv_path, built_rows, INTERVENTION_SUMMARY_COLUMNS)
