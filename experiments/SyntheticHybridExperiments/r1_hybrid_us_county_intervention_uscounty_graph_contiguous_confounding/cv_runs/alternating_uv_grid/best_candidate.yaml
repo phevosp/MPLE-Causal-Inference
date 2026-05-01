@@ -1,0 +1,13 @@
+experiment_name: r1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
+experiment_slug: r1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
+search_name: alternating_uv_grid
+search_slug: alternating_uv_grid
+candidate_name: alternating_uv_grid__candidate_0007
+candidate_slug: alternating_uv_grid_candidate_0007
+candidate_index: 7
+weighted_mean_validation_loss: 0.5477421822940313
+mean_fold_validation_loss: 0.547741223526586
+total_validation_slots: 349624
+hyperparameters:
+  lambda_uv_ridge: 0.05
+  latent_rank: 1
