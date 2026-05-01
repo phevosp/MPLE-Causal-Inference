@@ -2,7 +2,7 @@ base:
   cv_root_name: cv_runs
   cv_manifest_path: experiments/SyntheticHybridExperiments/cv_manifest.csv
   optimizer:
-    steps: 20000
+    steps: 5000
     tol: 1.0e-9
     seed: 0
     n_starts: 1
@@ -22,4 +22,4 @@ searches:
     optimizer_mode: alternating_latent_rank
     grid:
       latent_rank: [1]
-      lambda_uv_ridge: [0.001, 0.01, 0.1, 1, 5]
+      lambda_uv_ridge: [0.1, 0.5, 1, 5]

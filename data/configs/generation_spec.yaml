@@ -1,6 +1,6 @@
 base:
-  experiment_root: experiments/SyntheticHybridExperiments
-  manifest_path: experiments/SyntheticHybridExperiments/generation_manifest.csv
+  experiment_root: experiments/test
+  manifest_path: experiments/test/generation_manifest.csv
   dimensions:
     N: 500
     T: 50
@@ -52,6 +52,23 @@ base:
       psi: 0
 
 experiments:
+  # - name: base
+  #   graph:   
+  #     source: generated
+  #     generator: erdos_renyi
+  #     params:
+  #       p: 0.01
+  #   intervention:
+  #     source: generated
+  #     generator: low_rank_probability
+  #     params:
+  #       singular_values: []
+  #       probability_amplitude: 0.5
+  #   truth:
+  #     field_mode: random_low_rank
+  #     field_params:
+  #       singular_values: []
+
   - name: r5_c1_hybrid_us_county_intervention_generated_graph_confounding
     graph:
       source: generated
