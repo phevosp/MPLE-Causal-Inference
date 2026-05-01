@@ -531,6 +531,34 @@ def run_cv_folds(
     return manifest_path
 
 
+def run_cv_search_for_experiment_slug(
+    generation_manifest_path: str | Path,
+    cv_spec_path: str | Path,
+    experiment_slug: str,
+    search_slug: str,
+    *,
+    overwrite: bool = False,
+) -> dict[str, object]:
+    """Run CV for a specific experiment and search combination."""
+    generation_rows = read_csv_manifest(generation_manifest_path)
+    experiment_row = next(
+        (row for row in generation_rows if row.get("experiment_slug") == experiment_slug),
+        None,
+    )
+    if experiment_row is None:
+        raise ValueError(f"Experiment slug '{experiment_slug}' not found in {generation_manifest_path}.")
+
+    searches = _expand_searches(cv_spec_path)
+    search = next(
+        (s for s in searches if s.get("slug") == search_slug),
+        None,
+    )
+    if search is None:
+        raise ValueError(f"Search slug '{search_slug}' not found in {cv_spec_path}.")
+
+    return _run_search_for_experiment(experiment_row, search, overwrite=overwrite)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run 5-fold hyperparameter CV over prebuilt spatiotemporal fold artifacts."
@@ -548,6 +576,13 @@ def main() -> None:
         action="store_true",
         help="Write cv_requests.csv for the configured generation manifest and CV spec.",
     )
+    parser.add_argument(
+        "--run_request",
+        action="store_true",
+        help="Run a specific experiment+search CV job.",
+    )
+    parser.add_argument("--experiment_slug", type=str, help="Experiment slug (used with --run_request).")
+    parser.add_argument("--search_slug", type=str, help="Search slug (used with --run_request).")
     args = parser.parse_args()
 
     if args.dry_run:
@@ -566,6 +601,18 @@ def main() -> None:
             args.cv_spec_path,
         )
         print(f"CV requests: {request_path}")
+        return
+
+    if args.run_request:
+        if not args.experiment_slug or not args.search_slug:
+            raise ValueError("--run_request requires both --experiment_slug and --search_slug.")
+        run_cv_search_for_experiment_slug(
+            args.generation_manifest_path,
+            args.cv_spec_path,
+            args.experiment_slug,
+            args.search_slug,
+            overwrite=args.overwrite,
+        )
         return
 
     run_cv_folds(

@@ -1,0 +1,43 @@
+#!/bin/bash
+#SBATCH --job-name=cv
+#SBATCH --time=08:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=32G
+#SBATCH --partition=mit_normal
+#SBATCH --output=/dev/stdout         # Send SLURM output to stdout (captured by exec below)
+#SBATCH --error=/dev/stderr          # Send SLURM errors to stderr (captured by exec below)
+
+set -euo pipefail
+
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+
+GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
+CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
+CV_OVERWRITE="${CV_OVERWRITE:-false}"
+
+EXPERIMENT_SLUG="${1:?missing experiment_slug}"
+SEARCH_SLUG="${2:?missing search_slug}"
+
+OVERWRITE_FLAG=()
+if [[ "${CV_OVERWRITE}" == "true" ]]; then
+  OVERWRITE_FLAG=(--overwrite)
+fi
+
+# Ensure the log directory exists
+DATE=$(date +%F)
+LOG_DIR="slurm-logs/$DATE"
+mkdir -p "$LOG_DIR"
+OUT_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.out"
+ERR_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.err"
+exec >"$OUT_PATH" 2>"$ERR_PATH"
+
+pixi run python -u run_cv_folds.py \
+  --generation_manifest_path "${GENERATION_MANIFEST_PATH}" \
+  --cv_spec_path "${CV_SPEC_PATH}" \
+  --run_request \
+  --experiment_slug "${EXPERIMENT_SLUG}" \
+  --search_slug "${SEARCH_SLUG}" \
+  "${OVERWRITE_FLAG[@]}"
