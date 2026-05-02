@@ -3256,6 +3256,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("mean_fold_post_s_validation_loss", manifest_rows[0])
         self.assertIn("weighted_mean_post_s_validation_brier_score", manifest_rows[0])
         self.assertIn("mean_fold_post_s_validation_brier_score", manifest_rows[0])
+        self.assertIn("standard_error_fold_post_s_validation_brier_score", manifest_rows[0])
         self.assertIn("weighted_mean_post_s_validation_ece", manifest_rows[0])
         self.assertIn("mean_fold_post_s_validation_ece", manifest_rows[0])
         self.assertIn(
@@ -3264,6 +3265,10 @@ class PipelineStageRequestTests(unittest.TestCase):
         )
         self.assertIn(
             "mean_fold_post_s_validation_mean_magnetization_abs_diff",
+            manifest_rows[0],
+        )
+        self.assertIn(
+            "standard_error_fold_post_s_validation_mean_magnetization_abs_diff",
             manifest_rows[0],
         )
         self.assertIn("weighted_mean_validation_brier_score", best_candidate)
@@ -3276,6 +3281,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("mean_fold_post_s_validation_loss", best_candidate)
         self.assertIn("weighted_mean_post_s_validation_brier_score", best_candidate)
         self.assertIn("mean_fold_post_s_validation_brier_score", best_candidate)
+        self.assertIn("standard_error_fold_post_s_validation_brier_score", best_candidate)
         self.assertIn("weighted_mean_post_s_validation_ece", best_candidate)
         self.assertIn("mean_fold_post_s_validation_ece", best_candidate)
         self.assertIn(
@@ -3284,6 +3290,10 @@ class PipelineStageRequestTests(unittest.TestCase):
         )
         self.assertIn(
             "mean_fold_post_s_validation_mean_magnetization_abs_diff",
+            best_candidate,
+        )
+        self.assertIn(
+            "standard_error_fold_post_s_validation_mean_magnetization_abs_diff",
             best_candidate,
         )
 
@@ -3405,6 +3415,10 @@ class PipelineStageRequestTests(unittest.TestCase):
                     float(fold_row["post_s_validation_brier_score"])
                     for fold_row in post_s_rows
                 ) / len(post_s_rows)
+                post_s_brier_values = [
+                    float(fold_row["post_s_validation_brier_score"])
+                    for fold_row in post_s_rows
+                ]
                 weighted_post_s_ece = sum(
                     float(fold_row["post_s_validation_ece"])
                     * int(fold_row["num_post_s_validation_slots"])
@@ -3429,6 +3443,24 @@ class PipelineStageRequestTests(unittest.TestCase):
                     float(fold_row["post_s_validation_mean_magnetization_abs_diff"])
                     for fold_row in post_s_rows
                 ) / len(post_s_rows)
+                post_s_mag_diff_values = [
+                    float(fold_row["post_s_validation_mean_magnetization_abs_diff"])
+                    for fold_row in post_s_rows
+                ]
+                if len(post_s_brier_values) <= 1:
+                    se_post_s_brier = 0.0
+                else:
+                    se_post_s_brier = float(
+                        np.std(post_s_brier_values, ddof=1)
+                        / np.sqrt(len(post_s_brier_values))
+                    )
+                if len(post_s_mag_diff_values) <= 1:
+                    se_post_s_mag_diff = 0.0
+                else:
+                    se_post_s_mag_diff = float(
+                        np.std(post_s_mag_diff_values, ddof=1)
+                        / np.sqrt(len(post_s_mag_diff_values))
+                    )
                 self.assertAlmostEqual(
                     float(row["weighted_mean_post_s_validation_loss"]),
                     weighted_post_s_loss,
@@ -3447,6 +3479,11 @@ class PipelineStageRequestTests(unittest.TestCase):
                 self.assertAlmostEqual(
                     float(row["mean_fold_post_s_validation_brier_score"]),
                     mean_fold_post_s_brier,
+                    places=12,
+                )
+                self.assertAlmostEqual(
+                    float(row["standard_error_fold_post_s_validation_brier_score"]),
+                    se_post_s_brier,
                     places=12,
                 )
                 self.assertAlmostEqual(
@@ -3469,11 +3506,21 @@ class PipelineStageRequestTests(unittest.TestCase):
                     mean_fold_post_s_mag_diff,
                     places=12,
                 )
+                self.assertAlmostEqual(
+                    float(
+                        row[
+                            "standard_error_fold_post_s_validation_mean_magnetization_abs_diff"
+                        ]
+                    ),
+                    se_post_s_mag_diff,
+                    places=12,
+                )
             else:
                 self.assertEqual(row["weighted_mean_post_s_validation_loss"], "")
                 self.assertEqual(row["mean_fold_post_s_validation_loss"], "")
                 self.assertEqual(row["weighted_mean_post_s_validation_brier_score"], "")
                 self.assertEqual(row["mean_fold_post_s_validation_brier_score"], "")
+                self.assertEqual(row["standard_error_fold_post_s_validation_brier_score"], "")
                 self.assertEqual(row["weighted_mean_post_s_validation_ece"], "")
                 self.assertEqual(row["mean_fold_post_s_validation_ece"], "")
                 self.assertEqual(
@@ -3482,6 +3529,10 @@ class PipelineStageRequestTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     row["mean_fold_post_s_validation_mean_magnetization_abs_diff"],
+                    "",
+                )
+                self.assertEqual(
+                    row["standard_error_fold_post_s_validation_mean_magnetization_abs_diff"],
                     "",
                 )
 
@@ -4105,44 +4156,59 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIsNone(post_s_validation_brier)
         self.assertIsNone(post_s_validation_ece)
 
-    def test_candidate_score_sort_key_prefers_lower_mag_diff_then_brier_then_loss(
+    def test_candidate_score_sort_key_prefers_lower_post_s_mag_diff_then_brier_then_loss(
         self,
     ) -> None:
         rows = [
             {
                 "candidate_slug": "higher_loss_same_mag_same_brier",
                 "candidate_index": 2,
-                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
-                "weighted_mean_validation_brier_score": 0.10,
-                "weighted_mean_validation_loss": 0.60,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.01,
+                "weighted_mean_validation_brier_score": 0.01,
+                "weighted_mean_validation_loss": 0.01,
+                "weighted_mean_post_s_validation_mean_magnetization_abs_diff": 0.10,
+                "weighted_mean_post_s_validation_brier_score": 0.10,
+                "weighted_mean_post_s_validation_loss": 0.60,
             },
             {
                 "candidate_slug": "lower_loss_same_mag_same_brier",
                 "candidate_index": 3,
-                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
-                "weighted_mean_validation_brier_score": 0.10,
-                "weighted_mean_validation_loss": 0.40,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.01,
+                "weighted_mean_validation_brier_score": 0.01,
+                "weighted_mean_validation_loss": 0.01,
+                "weighted_mean_post_s_validation_mean_magnetization_abs_diff": 0.10,
+                "weighted_mean_post_s_validation_brier_score": 0.10,
+                "weighted_mean_post_s_validation_loss": 0.40,
             },
             {
                 "candidate_slug": "worse_mag",
                 "candidate_index": 1,
-                "weighted_mean_validation_mean_magnetization_abs_diff": 0.12,
-                "weighted_mean_validation_brier_score": 0.05,
-                "weighted_mean_validation_loss": 0.20,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.01,
+                "weighted_mean_validation_brier_score": 0.01,
+                "weighted_mean_validation_loss": 0.01,
+                "weighted_mean_post_s_validation_mean_magnetization_abs_diff": 0.12,
+                "weighted_mean_post_s_validation_brier_score": 0.05,
+                "weighted_mean_post_s_validation_loss": 0.20,
             },
             {
                 "candidate_slug": "same_mag_same_brier_same_loss_lower_index",
                 "candidate_index": 1,
-                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
-                "weighted_mean_validation_brier_score": 0.10,
-                "weighted_mean_validation_loss": 0.40,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.01,
+                "weighted_mean_validation_brier_score": 0.01,
+                "weighted_mean_validation_loss": 0.01,
+                "weighted_mean_post_s_validation_mean_magnetization_abs_diff": 0.10,
+                "weighted_mean_post_s_validation_brier_score": 0.10,
+                "weighted_mean_post_s_validation_loss": 0.40,
             },
             {
                 "candidate_slug": "better_brier_same_mag",
                 "candidate_index": 4,
-                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
-                "weighted_mean_validation_brier_score": 0.09,
-                "weighted_mean_validation_loss": 0.90,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.99,
+                "weighted_mean_validation_brier_score": 0.99,
+                "weighted_mean_validation_loss": 0.99,
+                "weighted_mean_post_s_validation_mean_magnetization_abs_diff": 0.10,
+                "weighted_mean_post_s_validation_brier_score": 0.09,
+                "weighted_mean_post_s_validation_loss": 0.90,
             },
         ]
 
@@ -4159,7 +4225,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             ],
         )
 
-    def test_standard_error_winner_rule_prefers_least_regularized_brier_eligible_fit(
+    def test_standard_error_winner_rule_uses_post_s_metrics(
         self,
     ) -> None:
         candidates = [
@@ -4204,34 +4270,50 @@ class PipelineStageRequestTests(unittest.TestCase):
             {
                 "candidate_slug": "best_mag_more_regularized",
                 "status": "completed",
-                "mean_fold_validation_mean_magnetization_abs_diff": 0.10,
-                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.02,
-                "mean_fold_validation_brier_score": 0.20,
-                "standard_error_fold_validation_brier_score": 0.01,
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.01,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.001,
+                "mean_fold_validation_brier_score": 0.01,
+                "standard_error_fold_validation_brier_score": 0.001,
+                "mean_fold_post_s_validation_mean_magnetization_abs_diff": 0.10,
+                "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": 0.02,
+                "mean_fold_post_s_validation_brier_score": 0.20,
+                "standard_error_fold_post_s_validation_brier_score": 0.01,
             },
             {
                 "candidate_slug": "within_se_less_regularized",
                 "status": "completed",
-                "mean_fold_validation_mean_magnetization_abs_diff": 0.11,
-                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.01,
-                "mean_fold_validation_brier_score": 0.205,
-                "standard_error_fold_validation_brier_score": 0.02,
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.50,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.001,
+                "mean_fold_validation_brier_score": 0.50,
+                "standard_error_fold_validation_brier_score": 0.001,
+                "mean_fold_post_s_validation_mean_magnetization_abs_diff": 0.11,
+                "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": 0.01,
+                "mean_fold_post_s_validation_brier_score": 0.205,
+                "standard_error_fold_post_s_validation_brier_score": 0.02,
             },
             {
                 "candidate_slug": "within_mag_se_but_bad_brier",
                 "status": "completed",
-                "mean_fold_validation_mean_magnetization_abs_diff": 0.11,
-                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.01,
-                "mean_fold_validation_brier_score": 0.23,
-                "standard_error_fold_validation_brier_score": 0.01,
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.40,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.001,
+                "mean_fold_validation_brier_score": 0.40,
+                "standard_error_fold_validation_brier_score": 0.001,
+                "mean_fold_post_s_validation_mean_magnetization_abs_diff": 0.11,
+                "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": 0.01,
+                "mean_fold_post_s_validation_brier_score": 0.23,
+                "standard_error_fold_post_s_validation_brier_score": 0.01,
             },
             {
                 "candidate_slug": "outside_mag_se",
                 "status": "completed",
-                "mean_fold_validation_mean_magnetization_abs_diff": 0.14,
-                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.01,
-                "mean_fold_validation_brier_score": 0.18,
-                "standard_error_fold_validation_brier_score": 0.01,
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.02,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.001,
+                "mean_fold_validation_brier_score": 0.02,
+                "standard_error_fold_validation_brier_score": 0.001,
+                "mean_fold_post_s_validation_mean_magnetization_abs_diff": 0.14,
+                "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": 0.01,
+                "mean_fold_post_s_validation_brier_score": 0.18,
+                "standard_error_fold_post_s_validation_brier_score": 0.01,
             },
         ]
 
@@ -4242,6 +4324,64 @@ class PipelineStageRequestTests(unittest.TestCase):
 
         self.assertEqual(best_candidate["slug"], "within_se_less_regularized")
         self.assertEqual(best_row["candidate_slug"], "within_se_less_regularized")
+
+    def test_standard_error_winner_rule_falls_back_when_post_s_metrics_missing(
+        self,
+    ) -> None:
+        candidates = [
+            {
+                "name": "candidate_a",
+                "slug": "candidate_a",
+                "_candidate_index": 1,
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.5,
+                "v_column_l2_max": None,
+            },
+            {
+                "name": "candidate_b",
+                "slug": "candidate_b",
+                "_candidate_index": 2,
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.1,
+                "v_column_l2_max": None,
+            },
+        ]
+        candidate_score_rows = [
+            {
+                "candidate_slug": "candidate_a",
+                "status": "completed",
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.10,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.02,
+                "mean_fold_validation_brier_score": 0.20,
+                "standard_error_fold_validation_brier_score": 0.01,
+                "mean_fold_post_s_validation_mean_magnetization_abs_diff": "",
+                "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": "",
+                "mean_fold_post_s_validation_brier_score": "",
+                "standard_error_fold_post_s_validation_brier_score": "",
+            },
+            {
+                "candidate_slug": "candidate_b",
+                "status": "completed",
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.11,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.01,
+                "mean_fold_validation_brier_score": 0.205,
+                "standard_error_fold_validation_brier_score": 0.02,
+                "mean_fold_post_s_validation_mean_magnetization_abs_diff": "",
+                "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": "",
+                "mean_fold_post_s_validation_brier_score": "",
+                "standard_error_fold_post_s_validation_brier_score": "",
+            },
+        ]
+
+        best_candidate, best_row = cv_runner._select_best_candidate_within_standard_error(
+            candidates,
+            candidate_score_rows,
+        )
+
+        self.assertEqual(best_candidate["slug"], "candidate_b")
+        self.assertEqual(best_row["candidate_slug"], "candidate_b")
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_generation_jobs_submits_workers_and_report(self) -> None:

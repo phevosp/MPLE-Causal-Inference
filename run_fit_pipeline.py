@@ -14,6 +14,7 @@ wrappers.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -41,13 +42,22 @@ REPO_ROOT = Path(__file__).resolve().parent
 FIT_REQUESTS_NAME = "fit_requests.csv"
 
 
+def _path_text(path: str | Path) -> str:
+    candidate = Path(path)
+    if os.name == "nt":
+        return str(candidate.resolve())
+    if candidate.is_absolute():
+        return str(candidate)
+    return os.path.abspath(os.fspath(candidate))
+
+
 def _expand_fit_variants(fits_spec_path: str | Path) -> list[dict[str, Any]]:
     validate_fits_spec(fits_spec_path)
     variants = expand_named_entries(fits_spec_path, "variants")
     if not variants:
         raise ValueError(f"No variants found in fit spec {fits_spec_path}.")
     for variant in variants:
-        variant["_spec_path"] = str(Path(fits_spec_path).resolve())
+        variant["_spec_path"] = _path_text(fits_spec_path)
     return variants
 
 
@@ -147,10 +157,10 @@ def _fit_input_artifacts(
 ) -> dict[str, object]:
     experiment_path = Path(experiment_root)
     artifacts = {
-        "model_artifact_dir": str(experiment_path.resolve()),
-        "truth_artifact_dir": str(experiment_path.resolve()),
-        "panel_path": str((experiment_path / "panel_data.npz").resolve()),
-        "x0_path": str((experiment_path / "x_0.npy").resolve()),
+        "model_artifact_dir": _path_text(experiment_path),
+        "truth_artifact_dir": _path_text(experiment_path),
+        "panel_path": _path_text(experiment_path / "panel_data.npz"),
+        "x0_path": _path_text(experiment_path / "x_0.npy"),
     }
     if extra_input_artifacts:
         artifacts.update(extra_input_artifacts)
@@ -182,22 +192,20 @@ def materialize_fit_root(
     fit_metadata = {
         "variant_name": variant["name"],
         "variant_slug": variant["slug"],
-        "fits_spec_path": str(Path(variant["_spec_path"]).resolve())
-        if variant.get("_spec_path")
-        else "",
+        "fits_spec_path": _path_text(variant["_spec_path"]) if variant.get("_spec_path") else "",
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
         "descriptor": experiment_row.get(
             "descriptor", experiment_row.get("experiment_name", "")
         ),
-        "experiment_path": str(experiment_root.resolve()),
+        "experiment_path": _path_text(experiment_root),
         "intervention_source": experiment_row.get("intervention_source", ""),
         "graph_source": experiment_row.get("graph_source", ""),
         "field_mode": experiment_row.get("field_mode", ""),
-        "model_artifact_dir": str(experiment_root.resolve()),
-        "truth_artifact_dir": str(experiment_root.resolve()),
-        "panel_path": str((experiment_root / "panel_data.npz").resolve()),
-        "x0_path": str((experiment_root / "x_0.npy").resolve()),
+        "model_artifact_dir": _path_text(experiment_root),
+        "truth_artifact_dir": _path_text(experiment_root),
+        "panel_path": _path_text(experiment_root / "panel_data.npz"),
+        "x0_path": _path_text(experiment_root / "x_0.npy"),
         "latent_rank": int(fit_config.global_params.latent_rank),
         "optimizer_mode": str(fit_config.global_params.optimizer_mode),
         "lambda_nuclear": float(fit_config.global_params.lambda_nuclear),
@@ -235,13 +243,13 @@ def _fit_request_row(
     experiment_root = Path(experiment_row["experiment_path"])
     fit_path = experiment_root / str(variant["fit_root_name"]) / str(variant["slug"])
     return {
-        "generation_manifest_path": str(Path(generation_manifest_path).resolve()),
-        "fits_spec_path": str(Path(fits_spec_path).resolve()),
+        "generation_manifest_path": _path_text(generation_manifest_path),
+        "fits_spec_path": _path_text(fits_spec_path),
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
         "variant_name": str(variant["name"]),
         "variant_slug": str(variant["slug"]),
-        "fit_path": str(fit_path.resolve()),
+        "fit_path": _path_text(fit_path),
     }
 
 
@@ -338,13 +346,13 @@ def run_fit_variant(
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
         "descriptor": experiment_row.get("descriptor", ""),
-        "experiment_path": str(experiment_root.resolve()),
+        "experiment_path": _path_text(experiment_root),
         "intervention_source": experiment_row.get("intervention_source", ""),
         "graph_source": experiment_row.get("graph_source", ""),
         "field_mode": experiment_row.get("field_mode", ""),
         "variant_name": variant["name"],
         "variant_slug": variant["slug"],
-        "fit_path": str(fit_root.resolve()),
+        "fit_path": _path_text(fit_root),
         "N": dims["N"],
         "T": dims["T"],
         "s": dims["s"],
@@ -371,7 +379,7 @@ def run_fit_request(
 
 
 def _manifest_row_from_completed_fit(request_row: dict[str, str]) -> dict[str, object]:
-    fit_root = Path(request_row["fit_path"]).resolve()
+    fit_root = Path(_path_text(request_row["fit_path"]))
     metadata_path = fit_root / "fit_metadata.yaml"
     if not metadata_path.exists():
         raise FileNotFoundError(f"Missing fit metadata: {metadata_path}")

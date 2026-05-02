@@ -445,10 +445,12 @@ def _blank_aggregate_metrics() -> dict[str, object]:
         "mean_fold_post_s_validation_loss": "",
         "weighted_mean_post_s_validation_brier_score": "",
         "mean_fold_post_s_validation_brier_score": "",
+        "standard_error_fold_post_s_validation_brier_score": "",
         "weighted_mean_post_s_validation_ece": "",
         "mean_fold_post_s_validation_ece": "",
         "weighted_mean_post_s_validation_mean_magnetization_abs_diff": "",
         "mean_fold_post_s_validation_mean_magnetization_abs_diff": "",
+        "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": "",
         "total_post_s_validation_slots": "",
     }
 
@@ -566,10 +568,12 @@ def build_candidate_score_row(
                 "mean_fold_post_s_validation_loss": "",
                 "weighted_mean_post_s_validation_brier_score": "",
                 "mean_fold_post_s_validation_brier_score": "",
+                "standard_error_fold_post_s_validation_brier_score": "",
                 "weighted_mean_post_s_validation_ece": "",
                 "mean_fold_post_s_validation_ece": "",
                 "weighted_mean_post_s_validation_mean_magnetization_abs_diff": "",
                 "mean_fold_post_s_validation_mean_magnetization_abs_diff": "",
+                "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": "",
                 "total_post_s_validation_slots": 0,
             }
         )
@@ -585,6 +589,10 @@ def build_candidate_score_row(
         value_key="post_s_validation_brier_score",
         weight_key="num_post_s_validation_slots",
     )
+    _, se_post_s_brier = _mean_and_standard_error(
+        post_s_rows,
+        value_key="post_s_validation_brier_score",
+    )
     weighted_post_s_ece, mean_post_s_ece = _weighted_and_mean(
         post_s_rows,
         value_key="post_s_validation_ece",
@@ -595,16 +603,22 @@ def build_candidate_score_row(
         value_key="post_s_validation_mean_magnetization_abs_diff",
         weight_key="num_post_s_validation_slots",
     )
+    _, se_post_s_mag_diff = _mean_and_standard_error(
+        post_s_rows,
+        value_key="post_s_validation_mean_magnetization_abs_diff",
+    )
     aggregated.update(
         {
             "weighted_mean_post_s_validation_loss": weighted_post_s_loss,
             "mean_fold_post_s_validation_loss": mean_post_s_loss,
             "weighted_mean_post_s_validation_brier_score": weighted_post_s_brier,
             "mean_fold_post_s_validation_brier_score": mean_post_s_brier,
+            "standard_error_fold_post_s_validation_brier_score": se_post_s_brier,
             "weighted_mean_post_s_validation_ece": weighted_post_s_ece,
             "mean_fold_post_s_validation_ece": mean_post_s_ece,
             "weighted_mean_post_s_validation_mean_magnetization_abs_diff": weighted_post_s_mag_diff,
             "mean_fold_post_s_validation_mean_magnetization_abs_diff": mean_post_s_mag_diff,
+            "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": se_post_s_mag_diff,
             "total_post_s_validation_slots": int(
                 np.sum(
                     np.asarray(
@@ -619,9 +633,18 @@ def build_candidate_score_row(
 
 
 def candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int]:
+    mag_diff = row.get("weighted_mean_post_s_validation_mean_magnetization_abs_diff", "")
+    brier = row.get("weighted_mean_post_s_validation_brier_score", "")
+    loss = row.get("weighted_mean_post_s_validation_loss", "")
+    if mag_diff in ("", None):
+        mag_diff = row["weighted_mean_validation_mean_magnetization_abs_diff"]
+    if brier in ("", None):
+        brier = row["weighted_mean_validation_brier_score"]
+    if loss in ("", None):
+        loss = row["weighted_mean_validation_loss"]
     return (
-        float(row["weighted_mean_validation_mean_magnetization_abs_diff"]),
-        float(row["weighted_mean_validation_brier_score"]),
-        float(row["weighted_mean_validation_loss"]),
+        float(mag_diff),
+        float(brier),
+        float(loss),
         int(row["candidate_index"]),
     )

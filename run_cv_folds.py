@@ -58,10 +58,12 @@ AGGREGATED_METRIC_KEYS = (
     "mean_fold_post_s_validation_loss",
     "weighted_mean_post_s_validation_brier_score",
     "mean_fold_post_s_validation_brier_score",
+    "standard_error_fold_post_s_validation_brier_score",
     "weighted_mean_post_s_validation_ece",
     "mean_fold_post_s_validation_ece",
     "weighted_mean_post_s_validation_mean_magnetization_abs_diff",
     "mean_fold_post_s_validation_mean_magnetization_abs_diff",
+    "standard_error_fold_post_s_validation_mean_magnetization_abs_diff",
     "total_post_s_validation_slots",
 )
 FOLD_METRIC_KEYS = (
@@ -81,10 +83,10 @@ FOLD_METRIC_KEYS = (
     "post_s_validation_sampled_mean_magnetization_mean",
 )
 
-WINNER_MAG_DIFF_MEAN_KEY = "mean_fold_validation_mean_magnetization_abs_diff"
-WINNER_MAG_DIFF_SE_KEY = "standard_error_fold_validation_mean_magnetization_abs_diff"
-WINNER_BRIER_MEAN_KEY = "mean_fold_validation_brier_score"
-WINNER_BRIER_SE_KEY = "standard_error_fold_validation_brier_score"
+WINNER_MAG_DIFF_MEAN_KEY = "mean_fold_post_s_validation_mean_magnetization_abs_diff"
+WINNER_MAG_DIFF_SE_KEY = "standard_error_fold_post_s_validation_mean_magnetization_abs_diff"
+WINNER_BRIER_MEAN_KEY = "mean_fold_post_s_validation_brier_score"
+WINNER_BRIER_SE_KEY = "standard_error_fold_post_s_validation_brier_score"
 
 
 def _normalize_execution_mode(execution_mode: str) -> str:
@@ -554,21 +556,37 @@ def _select_best_candidate_within_standard_error(
     if not completed_pairs:
         raise RuntimeError("No completed candidate score rows are available.")
 
+    winner_mag_diff_mean_key = WINNER_MAG_DIFF_MEAN_KEY
+    winner_mag_diff_se_key = WINNER_MAG_DIFF_SE_KEY
+    winner_brier_mean_key = WINNER_BRIER_MEAN_KEY
+    winner_brier_se_key = WINNER_BRIER_SE_KEY
+    if any(
+        pair[1].get(winner_mag_diff_mean_key, "") in ("", None)
+        or pair[1].get(winner_mag_diff_se_key, "") in ("", None)
+        or pair[1].get(winner_brier_mean_key, "") in ("", None)
+        or pair[1].get(winner_brier_se_key, "") in ("", None)
+        for pair in completed_pairs
+    ):
+        winner_mag_diff_mean_key = "mean_fold_validation_mean_magnetization_abs_diff"
+        winner_mag_diff_se_key = "standard_error_fold_validation_mean_magnetization_abs_diff"
+        winner_brier_mean_key = "mean_fold_validation_brier_score"
+        winner_brier_se_key = "standard_error_fold_validation_brier_score"
+
     best_mag_candidate, best_mag_row = min(
         completed_pairs,
         key=lambda pair: (
-            float(pair[1][WINNER_MAG_DIFF_MEAN_KEY]),
-            float(pair[1][WINNER_BRIER_MEAN_KEY]),
+            float(pair[1][winner_mag_diff_mean_key]),
+            float(pair[1][winner_brier_mean_key]),
             _candidate_regularization_sort_key(pair[0]),
         ),
     )
-    mag_diff_threshold = float(best_mag_row[WINNER_MAG_DIFF_MEAN_KEY]) + float(
-        best_mag_row[WINNER_MAG_DIFF_SE_KEY]
+    mag_diff_threshold = float(best_mag_row[winner_mag_diff_mean_key]) + float(
+        best_mag_row[winner_mag_diff_se_key]
     )
     mag_eligible_pairs = [
         pair
         for pair in completed_pairs
-        if float(pair[1][WINNER_MAG_DIFF_MEAN_KEY]) <= mag_diff_threshold
+        if float(pair[1][winner_mag_diff_mean_key]) <= mag_diff_threshold
     ]
     if not mag_eligible_pairs:
         return best_mag_candidate, best_mag_row
@@ -576,24 +594,24 @@ def _select_best_candidate_within_standard_error(
     _, best_brier_row = min(
         mag_eligible_pairs,
         key=lambda pair: (
-            float(pair[1][WINNER_BRIER_MEAN_KEY]),
+            float(pair[1][winner_brier_mean_key]),
             _candidate_regularization_sort_key(pair[0]),
         ),
     )
-    brier_threshold = float(best_brier_row[WINNER_BRIER_MEAN_KEY]) + float(
-        best_brier_row[WINNER_BRIER_SE_KEY]
+    brier_threshold = float(best_brier_row[winner_brier_mean_key]) + float(
+        best_brier_row[winner_brier_se_key]
     )
     brier_eligible_pairs = [
         pair
         for pair in mag_eligible_pairs
-        if float(pair[1][WINNER_BRIER_MEAN_KEY]) <= brier_threshold
+        if float(pair[1][winner_brier_mean_key]) <= brier_threshold
     ]
     return min(
         brier_eligible_pairs,
         key=lambda pair: (
             _candidate_regularization_sort_key(pair[0]),
-            float(pair[1][WINNER_MAG_DIFF_MEAN_KEY]),
-            float(pair[1][WINNER_BRIER_MEAN_KEY]),
+            float(pair[1][winner_mag_diff_mean_key]),
+            float(pair[1][winner_brier_mean_key]),
         ),
     )
 

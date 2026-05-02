@@ -17,10 +17,15 @@ def load_yaml_config(path: str | Path):
 
 
 def io_path(path: str | Path) -> str:
-    resolved = str(Path(path).resolve())
-    if os.name == "nt" and not resolved.startswith("\\\\?\\"):
-        return "\\\\?\\" + resolved
-    return resolved
+    candidate = Path(path)
+    if os.name == "nt":
+        resolved = str(candidate.resolve())
+        if not resolved.startswith("\\\\?\\"):
+            return "\\\\?\\" + resolved
+        return resolved
+    if candidate.is_absolute():
+        return str(candidate)
+    return os.path.abspath(os.fspath(candidate))
 
 
 def path_exists(path: str | Path) -> bool:
