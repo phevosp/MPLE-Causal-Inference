@@ -1,6 +1,6 @@
 base:
-  experiment_root: experiments/HybridExperiments_r5_c1
-  manifest_path: experiments/HybridExperiments_r5_c1/generation_manifest.csv
+  experiment_root: experiments/HybridExperiments_r5_c1_v2
+  manifest_path: experiments/HybridExperiments_r5_c1_v2/generation_manifest.csv
   dimensions:
     N: 500
     T: 50
@@ -62,14 +62,14 @@ experiments:
       field_mode: confounded_low_rank
       field_params:
         shared_rank: 1
-        singular_values: [1.0, 0.9, 0.7, 0.6, 0.5]
+        singular_values: [1.0, 0.9, 0.7, 0.7, 0.6]
 
   - name: r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
     truth:
       field_mode: confounded_low_rank
       field_params:
         shared_rank: 1
-        singular_values: [1.0, 0.9, 0.7, 0.6, 0.5]
+        singular_values: [1.0, 0.9, 0.7, 0.7, 0.6]
 
   - name: r5_c1_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
     graph:    
@@ -84,4 +84,4 @@ experiments:
       field_mode: confounded_low_rank
       field_params:
         shared_rank: 1
-        singular_values: [1.0, 0.9, 0.7, 0.6, 0.5]
+        singular_values: [1.0, 0.9, 0.7, 0.7, 0.6]
