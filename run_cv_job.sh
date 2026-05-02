@@ -18,6 +18,7 @@ GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybri
 CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
 CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"  # Optional override; uses CV spec default if not set
 CV_OVERWRITE="${CV_OVERWRITE:-false}"
+EXECUTION_MODE="${EXECUTION_MODE:-cv}"
 
 EXPERIMENT_SLUG="${1:?missing experiment_slug}"
 SEARCH_SLUG="${2:?missing search_slug}"
@@ -43,6 +44,7 @@ exec >"$OUT_PATH" 2>"$ERR_PATH"
 pixi run python -u run_cv_folds.py \
   --generation_manifest_path "${GENERATION_MANIFEST_PATH}" \
   --cv_spec_path "${CV_SPEC_PATH}" \
+  --execution_mode "${EXECUTION_MODE}" \
   --run_request \
   --experiment_slug "${EXPERIMENT_SLUG}" \
   --search_slug "${SEARCH_SLUG}" \

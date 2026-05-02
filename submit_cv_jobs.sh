@@ -6,6 +6,7 @@ GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybri
 CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
 CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"  # Optional override; uses CV spec default if not set
 CV_OVERWRITE="${CV_OVERWRITE:-false}"
+EXECUTION_MODE="${EXECUTION_MODE:-cv}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
 WORKER_SCRIPT="${WORKER_SCRIPT:-run_cv_job.sh}"
 WORKER_JOB_NAME="${WORKER_JOB_NAME:-cv}"
@@ -24,14 +25,15 @@ CV_REPORT_PARTITION="${CV_REPORT_PARTITION:-mit_normal}"
 pixi run python -u run_cv_folds.py \
   --generation_manifest_path "${GENERATION_MANIFEST_PATH}" \
   --cv_spec_path "${CV_SPEC_PATH}" \
+  --execution_mode "${EXECUTION_MODE}" \
   --write_requests >/dev/null
 
 REQUESTS_PATH="$(
-  pixi run python - <<'PY' "${CV_SPEC_PATH}"
+  pixi run python - <<'PY' "${CV_SPEC_PATH}" "${EXECUTION_MODE}"
 import sys
-from run_cv_folds import cv_requests_path_for_spec
+from run_cv_folds import model_selection_requests_path_for_spec
 
-print(cv_requests_path_for_spec(sys.argv[1]))
+print(model_selection_requests_path_for_spec(sys.argv[1], execution_mode=sys.argv[2]))
 PY
 )"
 
@@ -55,6 +57,7 @@ while IFS=$'\t' read -r experiment_slug search_slug; do
     CV_SPEC_PATH="${CV_SPEC_PATH}" \
     CV_NUM_FOLDS="${CV_NUM_FOLDS}" \
     CV_OVERWRITE="${CV_OVERWRITE}" \
+    EXECUTION_MODE="${EXECUTION_MODE}" \
     "${SBATCH_BIN}" "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}" "${search_slug}"
   )"
   job_ids+=("${submit_output%%;*}")
@@ -96,6 +99,6 @@ fi
 
 report_job_id="$(
   "${SBATCH_BIN}" "${report_args[@]}" \
-    --wrap "pixi run python -u run_cv_folds.py --generation_manifest_path '${GENERATION_MANIFEST_PATH}' --cv_spec_path '${CV_SPEC_PATH}' --write_requests"
+    --wrap "pixi run python -u run_cv_folds.py --refresh_scores --cv_requests_path '${REQUESTS_PATH}' --execution_mode '${EXECUTION_MODE}'"
 )"
 printf "%s\n" "${report_job_id%%;*}"

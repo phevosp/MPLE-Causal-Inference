@@ -27,6 +27,7 @@ from data.synthetic_data_generation import (
 )
 from pipeline_specs import (
     expand_named_entries,
+    load_spec,
     read_csv_manifest,
     slugify,
     write_csv_manifest,
@@ -34,13 +35,6 @@ from pipeline_specs import (
 
 
 GENERATION_REQUESTS_NAME = "generation_requests.csv"
-
-
-def _read_yaml_mapping(path: str | Path) -> dict[str, object]:
-    loaded = OmegaConf.to_container(OmegaConf.load(Path(path)), resolve=True)
-    if not isinstance(loaded, dict):
-        raise ValueError(f"Expected mapping data in {path}.")
-    return loaded
 
 
 def _expand_generation_experiments(spec_path: str | Path) -> list[dict[str, Any]]:
@@ -363,7 +357,7 @@ def _manifest_row_from_completed_experiment(
     if not field_artifacts_path.exists():
         raise FileNotFoundError(f"Missing field artifacts: {field_artifacts_path}")
 
-    metadata = _read_yaml_mapping(metadata_path)
+    metadata = load_spec(metadata_path)
     with np.load(panel_path, allow_pickle=False) as panel_data:
         x = np.asarray(panel_data["x"], dtype=float)
         z = np.asarray(panel_data["z"], dtype=float)

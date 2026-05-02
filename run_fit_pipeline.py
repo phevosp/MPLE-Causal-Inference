@@ -28,6 +28,7 @@ from io_utils import io_path
 from intervention_utils import derive_post_intervention_steps
 from pipeline_specs import (
     expand_named_entries,
+    load_spec,
     read_csv_manifest,
     validate_fit_variant_dict,
     validate_fits_spec,
@@ -38,13 +39,6 @@ from report_parameter_recovery_detailed import write_fit_reports
 
 REPO_ROOT = Path(__file__).resolve().parent
 FIT_REQUESTS_NAME = "fit_requests.csv"
-
-
-def _read_yaml_mapping(path: str | Path) -> dict[str, object]:
-    loaded = OmegaConf.to_container(OmegaConf.load(Path(path)), resolve=True)
-    if not isinstance(loaded, dict):
-        raise ValueError(f"Expected mapping data in {path}.")
-    return loaded
 
 
 def _expand_fit_variants(fits_spec_path: str | Path) -> list[dict[str, Any]]:
@@ -381,7 +375,7 @@ def _manifest_row_from_completed_fit(request_row: dict[str, str]) -> dict[str, o
     metadata_path = fit_root / "fit_metadata.yaml"
     if not metadata_path.exists():
         raise FileNotFoundError(f"Missing fit metadata: {metadata_path}")
-    metadata = _read_yaml_mapping(metadata_path)
+    metadata = load_spec(metadata_path)
     fixed_scalar_params = metadata.get("fixed_scalar_params", {})
     return {
         "experiment_name": str(metadata.get("experiment_name", "")),

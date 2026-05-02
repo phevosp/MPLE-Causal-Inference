@@ -5,8 +5,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
 #SBATCH --partition=mit_normal
-#SBATCH --output=/dev/stdout         # Send SLURM output to stdout (captured by exec below)
-#SBATCH --error=/dev/stderr          # Send SLURM errors to stderr (captured by exec below)
+#SBATCH --output=/dev/stdout
+#SBATCH --error=/dev/stderr
 
 set -euo pipefail
 
@@ -26,14 +26,18 @@ export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH:-data/configs/generation_spec.yaml}"
+CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
 FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
 INTERVENTION_LIBRARY_SPEC_PATH="${INTERVENTION_LIBRARY_SPEC_PATH:-data/configs/intervention_library_spec.yaml}"
 TARGET_PAIRS_PATH="${TARGET_PAIRS_PATH:-data/configs/posterior_predictive_target_pairs.csv}"
 POSTERIOR_PREDICTIVE_SPEC_PATH="${POSTERIOR_PREDICTIVE_SPEC_PATH:-data/configs/posterior_predictive_spec.yaml}"
 
+MODEL_SELECTION_MODE="${MODEL_SELECTION_MODE:-cv}"
 GENERATION_OVERWRITE="${GENERATION_OVERWRITE:-false}"
+CV_OVERWRITE="${CV_OVERWRITE:-false}"
 FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
 POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE:-false}"
+CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"
 
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
 SACCT_BIN="${SACCT_BIN:-sacct}"
@@ -42,14 +46,17 @@ SLEEP_BIN="${SLEEP_BIN:-sleep}"
 WAIT_POLL_SECONDS="${WAIT_POLL_SECONDS:-10}"
 
 GENERATION_SUBMITTER="${GENERATION_SUBMITTER:-submit_generation_jobs.sh}"
+CV_SUBMITTER="${CV_SUBMITTER:-submit_cv_jobs.sh}"
 FIT_SUBMITTER="${FIT_SUBMITTER:-submit_fit_jobs.sh}"
 POSTERIOR_PREDICTIVE_SUBMITTER="${POSTERIOR_PREDICTIVE_SUBMITTER:-submit_posterior_predictive_jobs.sh}"
 
 GENERATION_WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT:-run_generation_job.sh}"
+CV_WORKER_SCRIPT="${CV_WORKER_SCRIPT:-run_cv_job.sh}"
 FIT_WORKER_SCRIPT="${FIT_WORKER_SCRIPT:-run_fit_job.sh}"
 POSTERIOR_PREDICTIVE_WORKER_SCRIPT="${POSTERIOR_PREDICTIVE_WORKER_SCRIPT:-run_posterior_predictive_job.sh}"
 
 GENERATION_REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME:-generation-refresh}"
+CV_REPORT_JOB_NAME="${CV_REPORT_JOB_NAME:-cv-refresh}"
 FIT_REPORT_JOB_NAME="${FIT_REPORT_JOB_NAME:-fit-refresh}"
 POSTERIOR_PREDICTIVE_REPORT_JOB_NAME="${POSTERIOR_PREDICTIVE_REPORT_JOB_NAME:-posterior-predictive-report}"
 
@@ -68,6 +75,31 @@ import sys
 from run_fit_pipeline import fit_manifest_path_for_spec
 
 print(fit_manifest_path_for_spec(sys.argv[1]))
+PY
+}
+
+resolve_model_selection_requests_path() {
+  local execution_mode="$1"
+  pixi run python - <<'PY' "${CV_SPEC_PATH}" "${execution_mode}"
+import sys
+from run_cv_folds import model_selection_requests_path_for_spec
+
+print(model_selection_requests_path_for_spec(sys.argv[1], execution_mode=sys.argv[2]))
+PY
+}
+
+resolve_cv_num_folds_list() {
+  if [[ -n "${CV_NUM_FOLDS}" ]]; then
+    printf "%s\n" "${CV_NUM_FOLDS}"
+    return 0
+  fi
+  pixi run python - <<'PY' "${CV_SPEC_PATH}"
+import sys
+from run_cv_folds import _expand_searches, _get_num_folds_from_search
+
+values = sorted({_get_num_folds_from_search(search) for search in _expand_searches(sys.argv[1])})
+for value in values:
+    print(value)
 PY
 }
 
@@ -124,6 +156,46 @@ submit_generation_stage() {
   bash "${GENERATION_SUBMITTER}"
 }
 
+build_cv_folds_stage() {
+  if [[ -n "${BUILD_CV_FOLDS_SCRIPT:-}" ]]; then
+    bash "${BUILD_CV_FOLDS_SCRIPT}" "${GEN_MANIFEST}" "${CV_SPEC_PATH}"
+    return 0
+  fi
+  while IFS= read -r num_folds; do
+    [[ -n "${num_folds}" ]] || continue
+    pixi run python -u build_cv_folds.py \
+      --generation_manifest_path "${GEN_MANIFEST}" \
+      --num_folds "${num_folds}"
+  done < <(resolve_cv_num_folds_list)
+}
+
+submit_model_selection_stage() {
+  local execution_mode="$1"
+  GENERATION_MANIFEST_PATH="${GEN_MANIFEST}" \
+  CV_SPEC_PATH="${CV_SPEC_PATH}" \
+  CV_NUM_FOLDS="${CV_NUM_FOLDS}" \
+  CV_OVERWRITE="${CV_OVERWRITE}" \
+  EXECUTION_MODE="${execution_mode}" \
+  SBATCH_BIN="${SBATCH_BIN}" \
+  WORKER_SCRIPT="${CV_WORKER_SCRIPT}" \
+  REPORT_JOB_NAME="${CV_REPORT_JOB_NAME}-${execution_mode}" \
+  bash "${CV_SUBMITTER}"
+}
+
+refresh_model_selection_stage() {
+  local execution_mode="$1"
+  if [[ -n "${MODEL_SELECTION_REFRESH_SCRIPT:-}" ]]; then
+    bash "${MODEL_SELECTION_REFRESH_SCRIPT}" "${execution_mode}"
+    return 0
+  fi
+  local requests_path=""
+  requests_path="$(resolve_model_selection_requests_path "${execution_mode}")"
+  pixi run python -u run_cv_folds.py \
+    --refresh_scores \
+    --cv_requests_path "${requests_path}" \
+    --execution_mode "${execution_mode}"
+}
+
 submit_fit_stage() {
   GENERATION_MANIFEST_PATH="${GEN_MANIFEST}" \
   FITS_SPEC_PATH="${FITS_SPEC_PATH}" \
@@ -156,22 +228,57 @@ submit_posterior_predictive_stage() {
   bash "${POSTERIOR_PREDICTIVE_SUBMITTER}"
 }
 
+run_requested_model_selection_modes() {
+  case "${MODEL_SELECTION_MODE}" in
+    cv|validation)
+      echo "Submitting ${MODEL_SELECTION_MODE} model-selection jobs..."
+      model_selection_barrier_job_id="$(submit_model_selection_stage "${MODEL_SELECTION_MODE}")"
+      wait_for_job "${model_selection_barrier_job_id}" "Model selection (${MODEL_SELECTION_MODE})"
+      echo "Refreshing ${MODEL_SELECTION_MODE} model-selection metrics..."
+      refresh_model_selection_stage "${MODEL_SELECTION_MODE}"
+      ;;
+    both)
+      echo "Submitting cv model-selection jobs..."
+      cv_barrier_job_id="$(submit_model_selection_stage "cv")"
+      wait_for_job "${cv_barrier_job_id}" "Model selection (cv)"
+      echo "Refreshing cv model-selection metrics..."
+      refresh_model_selection_stage "cv"
+      echo "Submitting validation model-selection jobs..."
+      validation_barrier_job_id="$(submit_model_selection_stage "validation")"
+      wait_for_job "${validation_barrier_job_id}" "Model selection (validation)"
+      echo "Refreshing validation model-selection metrics..."
+      refresh_model_selection_stage "validation"
+      ;;
+    skip)
+      echo "Skipping model selection stage."
+      ;;
+    *)
+      echo "Unknown MODEL_SELECTION_MODE='${MODEL_SELECTION_MODE}'. Expected cv, validation, both, or skip." >&2
+      exit 1
+      ;;
+  esac
+}
+
 echo "Submitting generation jobs..."
 generation_barrier_job_id="$(submit_generation_stage)"
 wait_for_job "${generation_barrier_job_id}" "Generation"
+
+echo "Building CV folds..."
+build_cv_folds_stage
+
+run_requested_model_selection_modes
 
 echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
 wait_for_job "${fit_barrier_job_id}" "Fit"
 
-# echo "Running intervention library..."
-# run_intervention_stage
+echo "Running intervention library..."
+run_intervention_stage
 
-# echo "Submitting posterior predictive jobs..."
-# posterior_predictive_report_job_id="$(submit_posterior_predictive_stage)"
-# wait_for_job "${posterior_predictive_report_job_id}" "Posterior predictive"
+echo "Submitting posterior predictive jobs..."
+posterior_predictive_report_job_id="$(submit_posterior_predictive_stage)"
+wait_for_job "${posterior_predictive_report_job_id}" "Posterior predictive"
 
 echo "Job finished at $(date)"
 
-# Ensure the log directory exists
 mkdir -p "slurm-logs/$(date +%Y-%m-%d)"

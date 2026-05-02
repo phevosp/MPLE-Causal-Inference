@@ -179,6 +179,21 @@ def validate_fits_spec(spec_path: str | Path) -> None:
 def validate_cv_spec(spec_path: str | Path) -> None:
     searches = expand_named_entries(spec_path, "searches")
     for search in searches:
+        validation_sampling = search.get("validation_sampling", {})
+        if validation_sampling is None:
+            validation_sampling = {}
+        if not isinstance(validation_sampling, dict):
+            raise ValueError(
+                f"Search '{search.get('name', '<unnamed>')}' validation_sampling must be a mapping."
+            )
+        for key in ("num_samples", "gibbs_sweeps"):
+            if key in validation_sampling and int(validation_sampling[key]) <= 0:
+                raise ValueError(
+                    f"Search '{search.get('name', '<unnamed>')}' validation_sampling.{key} "
+                    "must be positive."
+                )
+        if "seed" in validation_sampling:
+            int(validation_sampling["seed"])
         grid = search.get("grid", {})
         if not isinstance(grid, dict) or not grid:
             raise ValueError(

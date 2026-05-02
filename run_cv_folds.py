@@ -1,4 +1,4 @@
-"""Run 5-fold spatiotemporal cross-validation over hyperparameter grids."""
+"""Run spatiotemporal hyperparameter search in CV or single-validation mode."""
 
 from __future__ import annotations
 
@@ -6,8 +6,6 @@ import argparse
 import ast
 import itertools
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +14,11 @@ from omegaconf import OmegaConf
 
 import build_cv_folds as cv_folds
 from io_utils import io_path
-from loading_utils import load_experiment_panel_context, load_fit_parameter_bundle
-from model_utils import interaction_effect
-from mple import evaluate_mple_loss_from_parts
+from loading_utils import load_experiment_panel_context
 from pipeline_specs import (
     deep_merge,
     expand_named_entries,
+    load_spec,
     read_csv_manifest,
     slugify,
     validate_cv_spec,
@@ -29,26 +26,74 @@ from pipeline_specs import (
     write_csv_manifest,
 )
 from run_fit_pipeline import execute_fit_root, materialize_fit_root
+from validation_metric_utils import (
+    build_candidate_score_row,
+    candidate_score_sort_key,
+    evaluate_saved_fit_fold_metrics,
+    resolve_validation_sampling,
+    time_window_mask,
+)
 
 
 DEFAULT_NUM_FOLDS = 5
 CV_REQUESTS_NAME = "cv_requests.csv"
-ECE_NUM_BINS = 10
+VALIDATION_REQUESTS_NAME = "validation_requests.csv"
+EXECUTION_MODE_CV = "cv"
+EXECUTION_MODE_VALIDATION = "validation"
+VALID_EXECUTION_MODES = frozenset({EXECUTION_MODE_CV, EXECUTION_MODE_VALIDATION})
+
+AGGREGATED_METRIC_KEYS = (
+    "weighted_mean_validation_loss",
+    "mean_fold_validation_loss",
+    "weighted_mean_validation_brier_score",
+    "mean_fold_validation_brier_score",
+    "weighted_mean_validation_ece",
+    "mean_fold_validation_ece",
+    "weighted_mean_validation_mean_magnetization_abs_diff",
+    "mean_fold_validation_mean_magnetization_abs_diff",
+    "total_validation_slots",
+    "weighted_mean_post_s_validation_loss",
+    "mean_fold_post_s_validation_loss",
+    "weighted_mean_post_s_validation_brier_score",
+    "mean_fold_post_s_validation_brier_score",
+    "weighted_mean_post_s_validation_ece",
+    "mean_fold_post_s_validation_ece",
+    "weighted_mean_post_s_validation_mean_magnetization_abs_diff",
+    "mean_fold_post_s_validation_mean_magnetization_abs_diff",
+    "total_post_s_validation_slots",
+)
+FOLD_METRIC_KEYS = (
+    "fit_loss",
+    "validation_loss",
+    "validation_brier_score",
+    "validation_ece",
+    "num_post_s_validation_slots",
+    "post_s_validation_loss",
+    "post_s_validation_brier_score",
+    "post_s_validation_ece",
+    "validation_mean_magnetization_abs_diff",
+    "validation_observed_mean_magnetization",
+    "validation_sampled_mean_magnetization_mean",
+    "post_s_validation_mean_magnetization_abs_diff",
+    "post_s_validation_observed_mean_magnetization",
+    "post_s_validation_sampled_mean_magnetization_mean",
+)
+
+
+def _normalize_execution_mode(execution_mode: str) -> str:
+    normalized = str(execution_mode).strip().lower()
+    if normalized not in VALID_EXECUTION_MODES:
+        raise ValueError(
+            f"execution_mode must be one of {sorted(VALID_EXECUTION_MODES)}, got '{execution_mode}'."
+        )
+    return normalized
 
 
 def _get_num_folds_from_search(search: dict[str, Any]) -> int:
-    """Extract num_folds from search configuration, defaults to DEFAULT_NUM_FOLDS."""
     num_folds = search.get("num_folds")
     if num_folds is not None:
         return int(num_folds)
     return DEFAULT_NUM_FOLDS
-
-
-def _read_yaml_mapping(path: str | Path) -> dict[str, object]:
-    loaded = OmegaConf.to_container(OmegaConf.load(Path(path)), resolve=True)
-    if not isinstance(loaded, dict):
-        raise ValueError(f"Expected mapping data in {path}.")
-    return loaded
 
 
 def _expand_searches(cv_spec_path: str | Path) -> list[dict[str, Any]]:
@@ -61,13 +106,75 @@ def _expand_searches(cv_spec_path: str | Path) -> list[dict[str, Any]]:
     return searches
 
 
-def cv_manifest_path_for_spec(cv_spec_path: str | Path) -> Path:
+def _execution_manifest_path_from_search(
+    search: dict[str, Any],
+    *,
+    execution_mode: str,
+) -> Path:
+    normalized_mode = _normalize_execution_mode(execution_mode)
+    if normalized_mode == EXECUTION_MODE_CV:
+        return Path(str(search["cv_manifest_path"]))
+    validation_manifest_path = search.get("validation_manifest_path")
+    if validation_manifest_path not in (None, ""):
+        return Path(str(validation_manifest_path))
+    return Path(str(search["cv_manifest_path"])).with_name("validation_manifest.csv")
+
+
+def model_selection_manifest_path_for_spec(
+    cv_spec_path: str | Path,
+    *,
+    execution_mode: str = EXECUTION_MODE_CV,
+) -> Path:
     searches = _expand_searches(cv_spec_path)
-    return Path(str(searches[0]["cv_manifest_path"]))
+    return _execution_manifest_path_from_search(
+        searches[0],
+        execution_mode=execution_mode,
+    )
+
+
+def cv_manifest_path_for_spec(cv_spec_path: str | Path) -> Path:
+    return model_selection_manifest_path_for_spec(
+        cv_spec_path,
+        execution_mode=EXECUTION_MODE_CV,
+    )
+
+
+def validation_manifest_path_for_spec(cv_spec_path: str | Path) -> Path:
+    return model_selection_manifest_path_for_spec(
+        cv_spec_path,
+        execution_mode=EXECUTION_MODE_VALIDATION,
+    )
+
+
+def model_selection_requests_path_for_spec(
+    cv_spec_path: str | Path,
+    *,
+    execution_mode: str = EXECUTION_MODE_CV,
+) -> Path:
+    manifest_path = model_selection_manifest_path_for_spec(
+        cv_spec_path,
+        execution_mode=execution_mode,
+    )
+    requests_name = (
+        CV_REQUESTS_NAME
+        if _normalize_execution_mode(execution_mode) == EXECUTION_MODE_CV
+        else VALIDATION_REQUESTS_NAME
+    )
+    return manifest_path.with_name(requests_name)
 
 
 def cv_requests_path_for_spec(cv_spec_path: str | Path) -> Path:
-    return cv_manifest_path_for_spec(cv_spec_path).with_name(CV_REQUESTS_NAME)
+    return model_selection_requests_path_for_spec(
+        cv_spec_path,
+        execution_mode=EXECUTION_MODE_CV,
+    )
+
+
+def validation_requests_path_for_spec(cv_spec_path: str | Path) -> Path:
+    return model_selection_requests_path_for_spec(
+        cv_spec_path,
+        execution_mode=EXECUTION_MODE_VALIDATION,
+    )
 
 
 def _grid_leaf_entries(
@@ -99,17 +206,6 @@ def _assign_nested_value(target: dict[str, Any], path: tuple[str, ...], value: A
     cursor[path[-1]] = value
 
 
-def _flatten_mapping(mapping: dict[str, Any], *, prefix: str = "") -> dict[str, Any]:
-    flat: dict[str, Any] = {}
-    for key, value in mapping.items():
-        dotted = f"{prefix}.{key}" if prefix else str(key)
-        if isinstance(value, dict):
-            flat.update(_flatten_mapping(value, prefix=dotted))
-        else:
-            flat[dotted] = value
-    return flat
-
-
 def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
     grid = dict(search.get("grid", {}) or {})
     if not grid:
@@ -139,29 +235,43 @@ def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _load_fold_roles(experiment_root: str | Path, *, num_folds: int) -> np.ndarray:
     output_root = Path(experiment_root) / "cv_folds" / f"folds_{num_folds}"
-    blanket_summary = _read_yaml_mapping(output_root / "markov_blanket_summary.yaml")
+    blanket_summary = load_spec(output_root / "markov_blanket_summary.yaml")
     if not bool(blanket_summary.get("blanket_validation_passed", False)):
         raise ValueError(
             f"CV folds at {output_root} failed Markov blanket validation."
         )
-    metadata = _read_yaml_mapping(output_root / "spatiotemporal_cv_metadata.yaml")
-    if int(metadata.get("num_cv_folds", 0)) != num_folds:
+    metadata = load_spec(output_root / "spatiotemporal_cv_metadata.yaml")
+    if int(metadata.get("num_cv_folds", 0)) != int(num_folds):
         raise ValueError(
             f"Expected {num_folds} folds in {output_root}; found "
             f"{metadata.get('num_cv_folds')}."
         )
     with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
         role_codes = np.asarray(data["role_codes"], dtype=np.int8)
-    if role_codes.ndim != 3 or role_codes.shape[0] != num_folds:
+    if role_codes.ndim != 3 or role_codes.shape[0] != int(num_folds):
         raise ValueError(
             f"fold_roles.npz at {output_root} has invalid role tensor shape {role_codes.shape}."
         )
     return role_codes
 
 
-def _candidate_output_root(experiment_root: str | Path, search: dict[str, Any]) -> Path:
-    cv_root_name = str(search.get("cv_root_name", "cv_runs"))
-    return Path(experiment_root) / cv_root_name / str(search["slug"])
+def _output_root_name(search: dict[str, Any], *, execution_mode: str) -> str:
+    normalized_mode = _normalize_execution_mode(execution_mode)
+    if normalized_mode == EXECUTION_MODE_CV:
+        return str(search.get("cv_root_name", "cv_runs"))
+    return str(search.get("validation_root_name", "validation_runs"))
+
+
+def _candidate_output_root(
+    experiment_root: str | Path,
+    search: dict[str, Any],
+    *,
+    execution_mode: str,
+) -> Path:
+    return Path(experiment_root) / _output_root_name(
+        search,
+        execution_mode=execution_mode,
+    ) / str(search["slug"])
 
 
 def _candidate_fit_root(
@@ -169,13 +279,26 @@ def _candidate_fit_root(
     search: dict[str, Any],
     candidate: dict[str, Any],
     fold_id: int,
+    *,
+    execution_mode: str,
 ) -> Path:
     return (
-        _candidate_output_root(experiment_root, search)
+        _candidate_output_root(
+            experiment_root,
+            search,
+            execution_mode=execution_mode,
+        )
         / "candidates"
         / str(candidate["slug"])
         / f"fold_{int(fold_id)}"
     )
+
+
+def _selected_fold_ids(num_folds: int, *, execution_mode: str) -> tuple[int, ...]:
+    normalized_mode = _normalize_execution_mode(execution_mode)
+    if normalized_mode == EXECUTION_MODE_VALIDATION:
+        return (1,)
+    return tuple(range(1, int(num_folds) + 1))
 
 
 def _cv_request_row(
@@ -183,9 +306,21 @@ def _cv_request_row(
     search: dict[str, Any],
     candidate: dict[str, Any],
     fold_id: int,
+    *,
+    execution_mode: str,
+    configured_num_folds: int,
 ) -> dict[str, object]:
-    fit_root = _candidate_fit_root(experiment_row["experiment_path"], search, candidate, fold_id)
+    fit_root = _candidate_fit_root(
+        experiment_row["experiment_path"],
+        search,
+        candidate,
+        fold_id,
+        execution_mode=execution_mode,
+    )
     return {
+        "execution_mode": _normalize_execution_mode(execution_mode),
+        "configured_num_folds": int(configured_num_folds),
+        "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
         "experiment_path": experiment_row.get("experiment_path", ""),
@@ -202,7 +337,10 @@ def _cv_request_row(
 def write_cv_requests(
     generation_manifest_path: str | Path,
     cv_spec_path: str | Path,
+    *,
+    execution_mode: str = EXECUTION_MODE_CV,
 ) -> Path:
+    normalized_mode = _normalize_execution_mode(execution_mode)
     generation_rows = read_csv_manifest(generation_manifest_path)
     if not generation_rows:
         raise ValueError(
@@ -210,14 +348,27 @@ def write_cv_requests(
         )
     request_rows: list[dict[str, object]] = []
     for search in _expand_searches(cv_spec_path):
-        num_folds = _get_num_folds_from_search(search)
+        configured_num_folds = _get_num_folds_from_search(search)
         for candidate in expand_search_candidates(search):
             for experiment_row in generation_rows:
-                for fold_id in range(1, num_folds + 1):
+                for fold_id in _selected_fold_ids(
+                    configured_num_folds,
+                    execution_mode=normalized_mode,
+                ):
                     request_rows.append(
-                        _cv_request_row(experiment_row, search, candidate, fold_id)
+                        _cv_request_row(
+                            experiment_row,
+                            search,
+                            candidate,
+                            fold_id,
+                            execution_mode=normalized_mode,
+                            configured_num_folds=configured_num_folds,
+                        )
                     )
-    request_path = cv_requests_path_for_spec(cv_spec_path)
+    request_path = model_selection_requests_path_for_spec(
+        cv_spec_path,
+        execution_mode=normalized_mode,
+    )
     write_csv_manifest(request_path, request_rows)
     return request_path
 
@@ -227,199 +378,6 @@ def _save_loss_mask(path: str | Path, loss_mask: np.ndarray) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(io_path(output_path), np.asarray(loss_mask, dtype=bool))
     return output_path
-
-
-def _masked_beta_feature(
-    z: np.ndarray,
-    *,
-    s: int,
-    e: int,
-    beta_mask_pre_s: bool,
-    beta_mask_post_e: bool,
-) -> np.ndarray:
-    beta_feature = np.asarray(z, dtype=float).copy()
-    if bool(beta_mask_pre_s) and int(s) > 0:
-        beta_feature[: int(s), :] = 0.0
-    if bool(beta_mask_post_e) and int(e) < beta_feature.shape[0]:
-        beta_feature[int(e) :, :] = 0.0
-    return beta_feature
-
-
-def _time_window_mask(*, t_steps: int, n_nodes: int, start_t: int = 0) -> np.ndarray:
-    mask = np.zeros((int(t_steps), int(n_nodes)), dtype=bool)
-    if int(start_t) < int(t_steps):
-        mask[int(start_t) :, :] = True
-    return mask
-
-
-def _validation_brier_score(
-    *,
-    x: np.ndarray,
-    h_x: np.ndarray,
-    loss_mask: np.ndarray,
-) -> float:
-    x_array = np.asarray(x, dtype=float)
-    h_array = np.asarray(h_x, dtype=float)
-    mask = np.asarray(loss_mask, dtype=bool)
-    if x_array.shape != h_array.shape or x_array.shape != mask.shape:
-        raise ValueError(
-            "x, h_x, and loss_mask must all have the same shape for Brier evaluation."
-        )
-    if not np.any(mask):
-        raise ValueError("loss_mask must contain at least one active entry.")
-    observed_positive = (x_array + 1.0) / 2.0
-    predicted_positive = (1.0 + np.tanh(h_array)) / 2.0
-    squared_error = (observed_positive - predicted_positive) ** 2
-    return float(np.mean(squared_error[mask]))
-
-
-def _validation_expected_calibration_error(
-    *,
-    x: np.ndarray,
-    h_x: np.ndarray,
-    loss_mask: np.ndarray,
-    num_bins: int = ECE_NUM_BINS,
-) -> float:
-    x_array = np.asarray(x, dtype=float)
-    h_array = np.asarray(h_x, dtype=float)
-    mask = np.asarray(loss_mask, dtype=bool)
-    if x_array.shape != h_array.shape or x_array.shape != mask.shape:
-        raise ValueError(
-            "x, h_x, and loss_mask must all have the same shape for ECE evaluation."
-        )
-    if num_bins <= 0:
-        raise ValueError("num_bins must be positive for ECE evaluation.")
-    if not np.any(mask):
-        raise ValueError("loss_mask must contain at least one active entry.")
-    observed_positive = ((x_array + 1.0) / 2.0)[mask]
-    predicted_positive = ((1.0 + np.tanh(h_array)) / 2.0)[mask]
-    bin_indices = np.minimum(
-        np.floor(predicted_positive * float(num_bins)).astype(int),
-        int(num_bins - 1),
-    )
-    total_count = float(predicted_positive.size)
-    ece = 0.0
-    for bin_index in range(num_bins):
-        in_bin = bin_indices == bin_index
-        if not np.any(in_bin):
-            continue
-        bin_fraction = float(np.count_nonzero(in_bin)) / total_count
-        empirical_rate = float(np.mean(observed_positive[in_bin]))
-        mean_predicted_probability = float(np.mean(predicted_positive[in_bin]))
-        ece += bin_fraction * abs(empirical_rate - mean_predicted_probability)
-    return float(ece)
-
-
-def _evaluate_fold_metrics(
-    fit_root: str | Path,
-    experiment_root: str | Path,
-    *,
-    training_loss_mask: np.ndarray,
-    validation_loss_mask: np.ndarray,
-) -> tuple[
-    float,
-    float,
-    float,
-    float,
-    int,
-    float | None,
-    float | None,
-    float | None,
-]:
-    panel_context = load_experiment_panel_context(experiment_root)
-    bundle = load_fit_parameter_bundle(fit_root, experiment_root)
-    x = np.asarray(panel_context["x"], dtype=float)
-    z = np.asarray(panel_context["z"], dtype=float)
-    x_0 = np.asarray(panel_context["x_0"], dtype=float)
-    field_matrix = np.asarray(bundle.field_matrix, dtype=float)
-    beta = float(bundle.beta)
-    xi = float(bundle.xi)
-    eta = float(bundle.eta)
-    interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
-    common_kwargs = {
-        "x": x,
-        "z": z,
-        "x_0": x_0,
-        "field_matrix": field_matrix,
-        "beta": beta,
-        "xi": xi,
-        "eta": eta,
-        "interaction_effect_x": interaction_effect_x,
-        "fixed_scalar_params": {},
-        "s": int(panel_context["s"]),
-        "e": int(panel_context["e"]),
-        "beta_mask_pre_s": bool(bundle.beta_mask_pre_s),
-        "beta_mask_post_e": bool(bundle.beta_mask_post_e),
-    }
-    fit_loss = evaluate_mple_loss_from_parts(
-        loss_mask=np.asarray(training_loss_mask, dtype=bool),
-        **common_kwargs,
-    )
-    validation_loss = evaluate_mple_loss_from_parts(
-        loss_mask=np.asarray(validation_loss_mask, dtype=bool),
-        **common_kwargs,
-    )
-    post_s_validation_loss_mask = np.asarray(validation_loss_mask, dtype=bool) & _time_window_mask(
-        t_steps=x.shape[0],
-        n_nodes=x.shape[1],
-        start_t=int(panel_context["s"]),
-    )
-    num_post_s_validation_slots = int(np.count_nonzero(post_s_validation_loss_mask))
-    post_s_validation_loss: float | None = None
-    if num_post_s_validation_slots > 0:
-        post_s_validation_loss = float(
-            evaluate_mple_loss_from_parts(
-                loss_mask=post_s_validation_loss_mask,
-                **common_kwargs,
-            )
-        )
-    prev_x = np.vstack([x_0, x[:-1, :]])
-    h_x = (
-        field_matrix
-        + beta
-        * _masked_beta_feature(
-            z,
-            s=int(panel_context["s"]),
-            e=int(panel_context["e"]),
-            beta_mask_pre_s=bool(bundle.beta_mask_pre_s),
-            beta_mask_post_e=bool(bundle.beta_mask_post_e),
-        )
-        + xi * interaction_effect_x
-        + eta * prev_x
-    )
-    validation_brier_score = _validation_brier_score(
-        x=x,
-        h_x=h_x,
-        loss_mask=np.asarray(validation_loss_mask, dtype=bool),
-    )
-    validation_ece = _validation_expected_calibration_error(
-        x=x,
-        h_x=h_x,
-        loss_mask=np.asarray(validation_loss_mask, dtype=bool),
-    )
-    post_s_validation_brier_score: float | None = None
-    post_s_validation_ece: float | None = None
-    if num_post_s_validation_slots > 0:
-        post_s_validation_brier_score = _validation_brier_score(
-            x=x,
-            h_x=h_x,
-            loss_mask=post_s_validation_loss_mask,
-        )
-        post_s_validation_ece = _validation_expected_calibration_error(
-            x=x,
-            h_x=h_x,
-            loss_mask=post_s_validation_loss_mask,
-        )
-    return (
-        float(fit_loss),
-        float(validation_loss),
-        float(validation_brier_score),
-        float(validation_ece),
-        int(num_post_s_validation_slots),
-        post_s_validation_loss,
-        post_s_validation_brier_score,
-        post_s_validation_ece,
-    )
 
 
 def _parse_manifest_scalar(value: object) -> object:
@@ -434,8 +392,14 @@ def _parse_manifest_scalar(value: object) -> object:
         return stripped
 
 
-def _candidate_grid_row(search: dict[str, Any], candidate: dict[str, Any]) -> dict[str, object]:
+def _candidate_grid_row(
+    search: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    execution_mode: str,
+) -> dict[str, object]:
     row: dict[str, object] = {
+        "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
         "candidate_name": candidate["name"],
@@ -445,152 +409,6 @@ def _candidate_grid_row(search: dict[str, Any], candidate: dict[str, Any]) -> di
     for key, value in sorted(candidate["_flat_params"].items()):
         row[key] = value
     return row
-
-
-def _candidate_score_row(
-    experiment_row: dict[str, str],
-    search: dict[str, Any],
-    candidate: dict[str, Any],
-    fold_rows: list[dict[str, object]],
-    *,
-    num_folds: int,
-) -> dict[str, object]:
-    success_rows = [row for row in fold_rows if row.get("status") == "completed"]
-    if len(success_rows) != num_folds:
-        return {
-            "experiment_name": experiment_row.get("experiment_name", ""),
-            "experiment_slug": experiment_row.get("experiment_slug", ""),
-            "search_name": search["name"],
-            "search_slug": search["slug"],
-            "candidate_name": candidate["name"],
-            "candidate_slug": candidate["slug"],
-            "candidate_index": int(candidate["_candidate_index"]),
-            "status": "failed",
-            "num_completed_folds": int(len(success_rows)),
-            "weighted_mean_validation_loss": "",
-            "mean_fold_validation_loss": "",
-            "weighted_mean_validation_brier_score": "",
-            "mean_fold_validation_brier_score": "",
-            "weighted_mean_validation_ece": "",
-            "mean_fold_validation_ece": "",
-            "total_validation_slots": "",
-            "weighted_mean_post_s_validation_loss": "",
-            "mean_fold_post_s_validation_loss": "",
-            "weighted_mean_post_s_validation_brier_score": "",
-            "mean_fold_post_s_validation_brier_score": "",
-            "weighted_mean_post_s_validation_ece": "",
-            "mean_fold_post_s_validation_ece": "",
-            "total_post_s_validation_slots": "",
-        }
-    validation_slots = np.asarray(
-        [int(row["num_validation_slots"]) for row in success_rows],
-        dtype=float,
-    )
-    validation_losses = np.asarray(
-        [float(row["validation_loss"]) for row in success_rows],
-        dtype=float,
-    )
-    validation_brier_scores = np.asarray(
-        [float(row["validation_brier_score"]) for row in success_rows],
-        dtype=float,
-    )
-    validation_eces = np.asarray(
-        [float(row["validation_ece"]) for row in success_rows],
-        dtype=float,
-    )
-    weighted_mean = float(
-        np.sum(validation_slots * validation_losses) / np.sum(validation_slots)
-    )
-    mean_fold = float(np.mean(validation_losses))
-    weighted_mean_brier = float(
-        np.sum(validation_slots * validation_brier_scores) / np.sum(validation_slots)
-    )
-    mean_fold_brier = float(np.mean(validation_brier_scores))
-    weighted_mean_ece = float(
-        np.sum(validation_slots * validation_eces) / np.sum(validation_slots)
-    )
-    mean_fold_ece = float(np.mean(validation_eces))
-    post_s_rows = [
-        row
-        for row in success_rows
-        if int(row.get("num_post_s_validation_slots", 0)) > 0
-    ]
-    aggregated: dict[str, object] = {
-        "experiment_name": experiment_row.get("experiment_name", ""),
-        "experiment_slug": experiment_row.get("experiment_slug", ""),
-        "search_name": search["name"],
-        "search_slug": search["slug"],
-        "candidate_name": candidate["name"],
-        "candidate_slug": candidate["slug"],
-        "candidate_index": int(candidate["_candidate_index"]),
-        "status": "completed",
-        "num_completed_folds": int(len(success_rows)),
-        "weighted_mean_validation_loss": weighted_mean,
-        "mean_fold_validation_loss": mean_fold,
-        "weighted_mean_validation_brier_score": weighted_mean_brier,
-        "mean_fold_validation_brier_score": mean_fold_brier,
-        "weighted_mean_validation_ece": weighted_mean_ece,
-        "mean_fold_validation_ece": mean_fold_ece,
-        "total_validation_slots": int(np.sum(validation_slots)),
-    }
-    if not post_s_rows:
-        aggregated.update(
-            {
-                "weighted_mean_post_s_validation_loss": "",
-                "mean_fold_post_s_validation_loss": "",
-                "weighted_mean_post_s_validation_brier_score": "",
-                "mean_fold_post_s_validation_brier_score": "",
-                "weighted_mean_post_s_validation_ece": "",
-                "mean_fold_post_s_validation_ece": "",
-                "total_post_s_validation_slots": 0,
-            }
-        )
-        return aggregated
-
-    post_s_slots = np.asarray(
-        [int(row["num_post_s_validation_slots"]) for row in post_s_rows],
-        dtype=float,
-    )
-    post_s_validation_losses = np.asarray(
-        [float(row["post_s_validation_loss"]) for row in post_s_rows],
-        dtype=float,
-    )
-    post_s_validation_brier_scores = np.asarray(
-        [float(row["post_s_validation_brier_score"]) for row in post_s_rows],
-        dtype=float,
-    )
-    post_s_validation_eces = np.asarray(
-        [float(row["post_s_validation_ece"]) for row in post_s_rows],
-        dtype=float,
-    )
-    aggregated.update(
-        {
-            "weighted_mean_post_s_validation_loss": float(
-                np.sum(post_s_slots * post_s_validation_losses) / np.sum(post_s_slots)
-            ),
-            "mean_fold_post_s_validation_loss": float(np.mean(post_s_validation_losses)),
-            "weighted_mean_post_s_validation_brier_score": float(
-                np.sum(post_s_slots * post_s_validation_brier_scores) / np.sum(post_s_slots)
-            ),
-            "mean_fold_post_s_validation_brier_score": float(
-                np.mean(post_s_validation_brier_scores)
-            ),
-            "weighted_mean_post_s_validation_ece": float(
-                np.sum(post_s_slots * post_s_validation_eces) / np.sum(post_s_slots)
-            ),
-            "mean_fold_post_s_validation_ece": float(np.mean(post_s_validation_eces)),
-            "total_post_s_validation_slots": int(np.sum(post_s_slots)),
-        }
-    )
-    return aggregated
-
-
-def _candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int]:
-    return (
-        float(row["weighted_mean_validation_brier_score"]),
-        float(row["weighted_mean_validation_loss"]),
-        int(row["candidate_index"]),
-    )
 
 
 def _load_scored_candidates(
@@ -610,6 +428,7 @@ def _load_scored_candidates(
     candidate_grid_path = Path(output_root) / "candidate_grid.csv"
     if candidate_grid_path.exists():
         base_fields = {
+            "execution_mode",
             "search_name",
             "search_slug",
             "candidate_name",
@@ -633,7 +452,69 @@ def _load_scored_candidates(
                 if key not in base_fields and value not in {"", None}
             }
 
-    return sorted(candidate_map.values(), key=lambda candidate: int(candidate["_candidate_index"]))
+    return sorted(
+        candidate_map.values(),
+        key=lambda candidate: int(candidate["_candidate_index"]),
+    )
+
+
+def _metric_or_blank(value: object) -> object:
+    return "" if value is None else value
+
+
+def _blank_fold_metric_values() -> dict[str, object]:
+    return {key: "" for key in FOLD_METRIC_KEYS}
+
+
+def _manifest_row_from_best_row(
+    experiment_row: dict[str, str],
+    search: dict[str, Any],
+    best_candidate: dict[str, Any],
+    best_row: dict[str, object],
+    output_root: Path,
+    *,
+    execution_mode: str,
+) -> dict[str, object]:
+    return {
+        "experiment_name": experiment_row.get("experiment_name", ""),
+        "experiment_slug": experiment_row.get("experiment_slug", ""),
+        "experiment_path": str(Path(experiment_row["experiment_path"]).resolve()),
+        "execution_mode": _normalize_execution_mode(execution_mode),
+        "search_name": search["name"],
+        "search_slug": search["slug"],
+        "output_path": str(output_root.resolve()),
+        "best_candidate_name": best_candidate["name"],
+        "best_candidate_slug": best_candidate["slug"],
+        **{key: best_row[key] for key in AGGREGATED_METRIC_KEYS},
+        "status": "completed",
+    }
+
+
+def _best_candidate_payload(
+    experiment_row: dict[str, str],
+    search: dict[str, Any],
+    best_candidate: dict[str, Any],
+    best_row: dict[str, object],
+    *,
+    execution_mode: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "experiment_name": experiment_row.get("experiment_name", ""),
+        "experiment_slug": experiment_row.get("experiment_slug", ""),
+        "execution_mode": _normalize_execution_mode(execution_mode),
+        "search_name": search["name"],
+        "search_slug": search["slug"],
+        "candidate_name": best_candidate["name"],
+        "candidate_slug": best_candidate["slug"],
+        "candidate_index": int(best_candidate["_candidate_index"]),
+        "hyperparameters": {
+            key: value for key, value in sorted(best_candidate["_flat_params"].items())
+        },
+    }
+    for key in AGGREGATED_METRIC_KEYS:
+        value = best_row[key]
+        payload[key] = "" if value == "" else value
+    return payload
 
 
 def _write_search_score_artifacts(
@@ -642,162 +523,192 @@ def _write_search_score_artifacts(
     candidates: list[dict[str, Any]],
     fold_rows: list[dict[str, object]],
     *,
-    num_folds: int,
+    expected_num_folds: int,
     output_root: str | Path,
+    execution_mode: str,
 ) -> dict[str, object]:
-    output_root = Path(output_root)
+    output_root_path = Path(output_root)
     candidate_score_rows: list[dict[str, object]] = []
     best_row: dict[str, object] | None = None
     best_candidate: dict[str, Any] | None = None
 
+    score_search = dict(search)
+    score_search["_execution_mode"] = _normalize_execution_mode(execution_mode)
     for candidate in candidates:
         candidate_fold_rows = [
             row for row in fold_rows if row.get("candidate_slug") == candidate["slug"]
         ]
-        candidate_score = _candidate_score_row(
+        candidate_score = build_candidate_score_row(
             experiment_row,
-            search,
+            score_search,
             candidate,
             candidate_fold_rows,
-            num_folds=num_folds,
+            expected_num_folds=expected_num_folds,
         )
         candidate_score_rows.append(candidate_score)
         if candidate_score["status"] != "completed":
             continue
-        if best_row is None or _candidate_score_sort_key(candidate_score) < _candidate_score_sort_key(
+        if best_row is None or candidate_score_sort_key(candidate_score) < candidate_score_sort_key(
             best_row
         ):
             best_row = candidate_score
             best_candidate = candidate
 
-    write_csv_manifest(output_root / "fold_scores.csv", fold_rows)
+    write_csv_manifest(output_root_path / "fold_scores.csv", fold_rows)
     completed_rows = sorted(
         [row for row in candidate_score_rows if row.get("status") == "completed"],
-        key=_candidate_score_sort_key,
+        key=candidate_score_sort_key,
     )
     for rank, row in enumerate(completed_rows, start=1):
         row["rank"] = int(rank)
-    write_csv_manifest(output_root / "candidate_scores.csv", candidate_score_rows)
+    write_csv_manifest(output_root_path / "candidate_scores.csv", candidate_score_rows)
 
     if best_row is None or best_candidate is None:
         raise RuntimeError(
             f"All candidates failed for experiment '{experiment_row.get('experiment_name', '')}' "
-            f"search '{search['name']}'. See {output_root / 'fold_scores.csv'}."
+            f"search '{search['name']}'. See {output_root_path / 'fold_scores.csv'}."
         )
 
-    best_candidate_payload = {
-        "experiment_name": experiment_row.get("experiment_name", ""),
-        "experiment_slug": experiment_row.get("experiment_slug", ""),
-        "search_name": search["name"],
-        "search_slug": search["slug"],
-        "candidate_name": best_candidate["name"],
-        "candidate_slug": best_candidate["slug"],
-        "candidate_index": int(best_candidate["_candidate_index"]),
-        "weighted_mean_validation_loss": float(best_row["weighted_mean_validation_loss"]),
-        "mean_fold_validation_loss": float(best_row["mean_fold_validation_loss"]),
-        "weighted_mean_validation_brier_score": float(
-            best_row["weighted_mean_validation_brier_score"]
-        ),
-        "mean_fold_validation_brier_score": float(
-            best_row["mean_fold_validation_brier_score"]
-        ),
-        "weighted_mean_validation_ece": float(best_row["weighted_mean_validation_ece"]),
-        "mean_fold_validation_ece": float(best_row["mean_fold_validation_ece"]),
-        "total_validation_slots": int(best_row["total_validation_slots"]),
-        "weighted_mean_post_s_validation_loss": (
-            ""
-            if best_row["weighted_mean_post_s_validation_loss"] == ""
-            else float(best_row["weighted_mean_post_s_validation_loss"])
-        ),
-        "mean_fold_post_s_validation_loss": (
-            ""
-            if best_row["mean_fold_post_s_validation_loss"] == ""
-            else float(best_row["mean_fold_post_s_validation_loss"])
-        ),
-        "weighted_mean_post_s_validation_brier_score": (
-            ""
-            if best_row["weighted_mean_post_s_validation_brier_score"] == ""
-            else float(best_row["weighted_mean_post_s_validation_brier_score"])
-        ),
-        "mean_fold_post_s_validation_brier_score": (
-            ""
-            if best_row["mean_fold_post_s_validation_brier_score"] == ""
-            else float(best_row["mean_fold_post_s_validation_brier_score"])
-        ),
-        "weighted_mean_post_s_validation_ece": (
-            ""
-            if best_row["weighted_mean_post_s_validation_ece"] == ""
-            else float(best_row["weighted_mean_post_s_validation_ece"])
-        ),
-        "mean_fold_post_s_validation_ece": (
-            ""
-            if best_row["mean_fold_post_s_validation_ece"] == ""
-            else float(best_row["mean_fold_post_s_validation_ece"])
-        ),
-        "total_post_s_validation_slots": int(best_row["total_post_s_validation_slots"]),
-        "hyperparameters": {
-            key: value for key, value in sorted(best_candidate["_flat_params"].items())
-        },
-    }
     OmegaConf.save(
-        OmegaConf.create(best_candidate_payload),
-        io_path(output_root / "best_candidate.yaml"),
+        OmegaConf.create(
+            _best_candidate_payload(
+                experiment_row,
+                search,
+                best_candidate,
+                best_row,
+                execution_mode=execution_mode,
+            )
+        ),
+        io_path(output_root_path / "best_candidate.yaml"),
     )
+    return _manifest_row_from_best_row(
+        experiment_row,
+        search,
+        best_candidate,
+        best_row,
+        output_root_path,
+        execution_mode=execution_mode,
+    )
+
+
+def _fit_metric_row(
+    experiment_row: dict[str, str],
+    search: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    execution_mode: str,
+    fold_id: int,
+    fit_root: Path,
+    num_training_slots: int,
+    num_validation_slots: int,
+    num_post_s_validation_slots: int,
+) -> dict[str, object]:
     return {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
-        "experiment_path": str(Path(experiment_row["experiment_path"]).resolve()),
+        "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
-        "output_path": str(output_root.resolve()),
-        "best_candidate_name": best_candidate["name"],
-        "best_candidate_slug": best_candidate["slug"],
-        "weighted_mean_validation_loss": float(best_row["weighted_mean_validation_loss"]),
-        "mean_fold_validation_loss": float(best_row["mean_fold_validation_loss"]),
-        "weighted_mean_validation_brier_score": float(
-            best_row["weighted_mean_validation_brier_score"]
-        ),
-        "mean_fold_validation_brier_score": float(
-            best_row["mean_fold_validation_brier_score"]
-        ),
-        "weighted_mean_validation_ece": float(best_row["weighted_mean_validation_ece"]),
-        "mean_fold_validation_ece": float(best_row["mean_fold_validation_ece"]),
-        "total_validation_slots": int(best_row["total_validation_slots"]),
-        "weighted_mean_post_s_validation_loss": best_row[
-            "weighted_mean_post_s_validation_loss"
-        ],
-        "mean_fold_post_s_validation_loss": best_row["mean_fold_post_s_validation_loss"],
-        "weighted_mean_post_s_validation_brier_score": best_row[
-            "weighted_mean_post_s_validation_brier_score"
-        ],
-        "mean_fold_post_s_validation_brier_score": best_row[
-            "mean_fold_post_s_validation_brier_score"
-        ],
-        "weighted_mean_post_s_validation_ece": best_row[
-            "weighted_mean_post_s_validation_ece"
-        ],
-        "mean_fold_post_s_validation_ece": best_row["mean_fold_post_s_validation_ece"],
-        "total_post_s_validation_slots": int(best_row["total_post_s_validation_slots"]),
-        "status": "completed",
+        "candidate_name": candidate["name"],
+        "candidate_slug": candidate["slug"],
+        "candidate_index": int(candidate["_candidate_index"]),
+        "cv_fold_id": int(fold_id),
+        "num_training_slots": int(num_training_slots),
+        "num_validation_slots": int(num_validation_slots),
+        "num_post_s_validation_slots": int(num_post_s_validation_slots),
+        "fit_path": str(fit_root.resolve()),
     }
+
+
+def _evaluate_and_store_fold_metrics(
+    row: dict[str, object],
+    *,
+    fit_root: Path,
+    experiment_root: Path,
+    training_loss_mask: np.ndarray,
+    validation_loss_mask: np.ndarray,
+    validation_sampling: dict[str, Any],
+) -> None:
+    metrics = evaluate_saved_fit_fold_metrics(
+        fit_root,
+        experiment_root,
+        training_loss_mask=training_loss_mask,
+        validation_loss_mask=validation_loss_mask,
+        validation_sampling=validation_sampling,
+    )
+    row.update(
+        {
+            "status": "completed",
+            "fit_loss": float(metrics["fit_loss"]),
+            "validation_loss": float(metrics["validation_loss"]),
+            "validation_brier_score": float(metrics["validation_brier_score"]),
+            "validation_ece": float(metrics["validation_ece"]),
+            "num_post_s_validation_slots": int(metrics["num_post_s_validation_slots"]),
+            "post_s_validation_loss": _metric_or_blank(metrics["post_s_validation_loss"]),
+            "post_s_validation_brier_score": _metric_or_blank(
+                metrics["post_s_validation_brier_score"]
+            ),
+            "post_s_validation_ece": _metric_or_blank(metrics["post_s_validation_ece"]),
+            "validation_mean_magnetization_abs_diff": float(
+                metrics["validation_mean_magnetization_abs_diff"]
+            ),
+            "validation_observed_mean_magnetization": float(
+                metrics["validation_observed_mean_magnetization"]
+            ),
+            "validation_sampled_mean_magnetization_mean": float(
+                metrics["validation_sampled_mean_magnetization_mean"]
+            ),
+            "post_s_validation_mean_magnetization_abs_diff": _metric_or_blank(
+                metrics["post_s_validation_mean_magnetization_abs_diff"]
+            ),
+            "post_s_validation_observed_mean_magnetization": _metric_or_blank(
+                metrics["post_s_validation_observed_mean_magnetization"]
+            ),
+            "post_s_validation_sampled_mean_magnetization_mean": _metric_or_blank(
+                metrics["post_s_validation_sampled_mean_magnetization_mean"]
+            ),
+        }
+    )
+
+
+def _load_search_from_spec(
+    cv_spec_path: str | Path,
+    search_slug: str,
+) -> dict[str, Any]:
+    searches = _expand_searches(cv_spec_path)
+    search = next((item for item in searches if item.get("slug") == search_slug), None)
+    if search is None:
+        raise ValueError(f"Search slug '{search_slug}' not found in {cv_spec_path}.")
+    return search
 
 
 def _run_search_for_experiment(
     experiment_row: dict[str, str],
     search: dict[str, Any],
     *,
+    execution_mode: str = EXECUTION_MODE_CV,
     num_folds: int | None = None,
     overwrite: bool = False,
 ) -> dict[str, object]:
-    if num_folds is None:
-        num_folds = _get_num_folds_from_search(search)
+    normalized_mode = _normalize_execution_mode(execution_mode)
+    configured_num_folds = (
+        int(num_folds) if num_folds is not None else _get_num_folds_from_search(search)
+    )
+    selected_fold_ids = _selected_fold_ids(
+        configured_num_folds,
+        execution_mode=normalized_mode,
+    )
     experiment_root = Path(experiment_row["experiment_path"]).resolve()
-    output_root = _candidate_output_root(experiment_root, search)
+    output_root = _candidate_output_root(
+        experiment_root,
+        search,
+        execution_mode=normalized_mode,
+    )
     if output_root.exists() and overwrite:
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    role_codes = _load_fold_roles(experiment_root, num_folds=num_folds)
+    role_codes = _load_fold_roles(experiment_root, num_folds=configured_num_folds)
     panel_context = load_experiment_panel_context(experiment_root)
     if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
         panel_context["N"]
@@ -807,15 +718,28 @@ def _run_search_for_experiment(
             f"(T={panel_context['T']}, N={panel_context['N']}) for {experiment_root}."
         )
 
+    validation_sampling = resolve_validation_sampling(search.get("validation_sampling"))
     candidates = expand_search_candidates(search)
-    candidate_grid_rows = [_candidate_grid_row(search, candidate) for candidate in candidates]
+    candidate_grid_rows = [
+        _candidate_grid_row(
+            search,
+            candidate,
+            execution_mode=normalized_mode,
+        )
+        for candidate in candidates
+    ]
     write_csv_manifest(output_root / "candidate_grid.csv", candidate_grid_rows)
 
     fold_rows: list[dict[str, object]] = []
-
     for candidate in candidates:
-        for fold_id in range(1, num_folds + 1):
-            fold_root = _candidate_fit_root(experiment_root, search, candidate, fold_id)
+        for fold_id in selected_fold_ids:
+            fold_root = _candidate_fit_root(
+                experiment_root,
+                search,
+                candidate,
+                fold_id,
+                execution_mode=normalized_mode,
+            )
             if fold_root.exists():
                 if overwrite:
                     shutil.rmtree(fold_root)
@@ -824,12 +748,12 @@ def _run_search_for_experiment(
                         f"{fold_root} already exists. Re-run with --overwrite to rebuild it."
                     )
             fold_root.mkdir(parents=True, exist_ok=False)
-            fold_roles = np.asarray(role_codes[fold_id - 1], dtype=np.int8)
+            fold_roles = np.asarray(role_codes[int(fold_id) - 1], dtype=np.int8)
             training_loss_mask = fold_roles == cv_folds.ROLE_CODE_TRAINING
             validation_loss_mask = fold_roles == cv_folds.ROLE_CODE_VALIDATION
             num_training_slots = int(np.count_nonzero(training_loss_mask))
             num_validation_slots = int(np.count_nonzero(validation_loss_mask))
-            post_s_validation_loss_mask = validation_loss_mask & _time_window_mask(
+            post_s_validation_loss_mask = validation_loss_mask & time_window_mask(
                 t_steps=fold_roles.shape[0],
                 n_nodes=fold_roles.shape[1],
                 start_t=int(panel_context["s"]),
@@ -843,9 +767,11 @@ def _run_search_for_experiment(
                 )
             mask_path = _save_loss_mask(fold_root / "loss_mask.npy", training_loss_mask)
             extra_metadata = {
+                "execution_mode": normalized_mode,
                 "search_name": search["name"],
                 "search_slug": search["slug"],
                 "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
+                "configured_num_folds": int(configured_num_folds),
                 "cv_fold_id": int(fold_id),
                 "candidate_name": candidate["name"],
                 "candidate_slug": candidate["slug"],
@@ -857,20 +783,17 @@ def _run_search_for_experiment(
                 "num_validation_slots": num_validation_slots,
                 "num_post_s_validation_slots": num_post_s_validation_slots,
             }
-            row = {
-                "experiment_name": experiment_row.get("experiment_name", ""),
-                "experiment_slug": experiment_row.get("experiment_slug", ""),
-                "search_name": search["name"],
-                "search_slug": search["slug"],
-                "candidate_name": candidate["name"],
-                "candidate_slug": candidate["slug"],
-                "candidate_index": int(candidate["_candidate_index"]),
-                "cv_fold_id": int(fold_id),
-                "num_training_slots": num_training_slots,
-                "num_validation_slots": num_validation_slots,
-                "num_post_s_validation_slots": num_post_s_validation_slots,
-                "fit_path": str(fold_root.resolve()),
-            }
+            row = _fit_metric_row(
+                experiment_row,
+                search,
+                candidate,
+                execution_mode=normalized_mode,
+                fold_id=fold_id,
+                fit_root=fold_root,
+                num_training_slots=num_training_slots,
+                num_validation_slots=num_validation_slots,
+                num_post_s_validation_slots=num_post_s_validation_slots,
+            )
             try:
                 materialize_fit_root(
                     experiment_row,
@@ -880,59 +803,19 @@ def _run_search_for_experiment(
                     extra_metadata=extra_metadata,
                 )
                 execute_fit_root(fold_root)
-                (
-                    fit_loss,
-                    validation_loss,
-                    validation_brier_score,
-                    validation_ece,
-                    computed_num_post_s_validation_slots,
-                    post_s_validation_loss,
-                    post_s_validation_brier_score,
-                    post_s_validation_ece,
-                ) = _evaluate_fold_metrics(
-                    fold_root,
-                    experiment_root,
+                _evaluate_and_store_fold_metrics(
+                    row,
+                    fit_root=fold_root,
+                    experiment_root=experiment_root,
                     training_loss_mask=training_loss_mask,
                     validation_loss_mask=validation_loss_mask,
-                )
-                row.update(
-                    {
-                        "status": "completed",
-                        "fit_loss": float(fit_loss),
-                        "validation_loss": float(validation_loss),
-                        "validation_brier_score": float(validation_brier_score),
-                        "validation_ece": float(validation_ece),
-                        "num_post_s_validation_slots": int(
-                            computed_num_post_s_validation_slots
-                        ),
-                        "post_s_validation_loss": (
-                            ""
-                            if post_s_validation_loss is None
-                            else float(post_s_validation_loss)
-                        ),
-                        "post_s_validation_brier_score": (
-                            ""
-                            if post_s_validation_brier_score is None
-                            else float(post_s_validation_brier_score)
-                        ),
-                        "post_s_validation_ece": (
-                            ""
-                            if post_s_validation_ece is None
-                            else float(post_s_validation_ece)
-                        ),
-                    }
+                    validation_sampling=validation_sampling,
                 )
             except Exception as exc:  # noqa: BLE001
                 row.update(
                     {
                         "status": "failed",
-                        "fit_loss": "",
-                        "validation_loss": "",
-                        "validation_brier_score": "",
-                        "validation_ece": "",
-                        "post_s_validation_loss": "",
-                        "post_s_validation_brier_score": "",
-                        "post_s_validation_ece": "",
+                        **_blank_fold_metric_values(),
                         "error_message": str(exc),
                     }
                 )
@@ -942,8 +825,9 @@ def _run_search_for_experiment(
         search,
         candidates,
         fold_rows,
-        num_folds=num_folds,
+        expected_num_folds=len(selected_fold_ids),
         output_root=output_root,
+        execution_mode=normalized_mode,
     )
 
 
@@ -951,31 +835,45 @@ def run_cv_folds(
     generation_manifest_path: str | Path,
     cv_spec_path: str | Path,
     *,
+    execution_mode: str = EXECUTION_MODE_CV,
     overwrite: bool = False,
 ) -> Path:
-    request_path = write_cv_requests(generation_manifest_path, cv_spec_path)
+    normalized_mode = _normalize_execution_mode(execution_mode)
+    request_path = write_cv_requests(
+        generation_manifest_path,
+        cv_spec_path,
+        execution_mode=normalized_mode,
+    )
     generation_rows = read_csv_manifest(generation_manifest_path)
     searches = _expand_searches(cv_spec_path)
     manifest_rows: list[dict[str, object]] = []
     print(f"Loaded {len(generation_rows)} experiment(s) from {generation_manifest_path}.")
-    print(f"Loaded {len(searches)} CV search(es) from {cv_spec_path}.")
+    print(
+        f"Loaded {len(searches)} {normalized_mode} search(es) from {cv_spec_path}.",
+        flush=True,
+    )
     for experiment_row in generation_rows:
         for search in searches:
             print(
-                f"Running CV search '{search['name']}' for experiment "
-                f"'{experiment_row.get('experiment_name', experiment_row.get('experiment_slug', ''))}'..."
+                f"Running {normalized_mode} search '{search['name']}' for experiment "
+                f"'{experiment_row.get('experiment_name', experiment_row.get('experiment_slug', ''))}'...",
+                flush=True,
             )
             manifest_rows.append(
                 _run_search_for_experiment(
                     experiment_row,
                     search,
+                    execution_mode=normalized_mode,
                     overwrite=overwrite,
                 )
             )
-    manifest_path = cv_manifest_path_for_spec(cv_spec_path)
+    manifest_path = model_selection_manifest_path_for_spec(
+        cv_spec_path,
+        execution_mode=normalized_mode,
+    )
     write_csv_manifest(manifest_path, manifest_rows)
-    print(f"CV requests: {request_path}")
-    print(f"CV manifest: {manifest_path}")
+    print(f"{normalized_mode} requests: {request_path}")
+    print(f"{normalized_mode} manifest: {manifest_path}")
     return manifest_path
 
 
@@ -985,36 +883,28 @@ def run_cv_search_for_experiment_slug(
     experiment_slug: str,
     search_slug: str,
     *,
+    execution_mode: str = EXECUTION_MODE_CV,
     num_folds: int | None = None,
     overwrite: bool = False,
 ) -> dict[str, object]:
-    """Run CV for a specific experiment and search combination.
-
-    Args:
-        num_folds: Override the number of folds from cv_spec. If None, uses cv_spec default.
-    """
     generation_rows = read_csv_manifest(generation_manifest_path)
     experiment_row = next(
         (row for row in generation_rows if row.get("experiment_slug") == experiment_slug),
         None,
     )
     if experiment_row is None:
-        raise ValueError(f"Experiment slug '{experiment_slug}' not found in {generation_manifest_path}.")
-
-    searches = _expand_searches(cv_spec_path)
-    search = next(
-        (s for s in searches if s.get("slug") == search_slug),
-        None,
+        raise ValueError(
+            f"Experiment slug '{experiment_slug}' not found in {generation_manifest_path}."
+        )
+    search = _load_search_from_spec(cv_spec_path, search_slug)
+    resolved_num_folds = (
+        int(num_folds) if num_folds is not None else _get_num_folds_from_search(search)
     )
-    if search is None:
-        raise ValueError(f"Search slug '{search_slug}' not found in {cv_spec_path}.")
-
-    if num_folds is None:
-        num_folds = _get_num_folds_from_search(search)
     return _run_search_for_experiment(
         experiment_row,
         search,
-        num_folds=num_folds,
+        execution_mode=execution_mode,
+        num_folds=resolved_num_folds,
         overwrite=overwrite,
     )
 
@@ -1022,12 +912,18 @@ def run_cv_search_for_experiment_slug(
 def refresh_cv_scores_from_requests(
     cv_requests_path: str | Path,
     *,
+    execution_mode: str | None = None,
     cv_manifest_path: str | Path | None = None,
 ) -> Path:
     request_rows = read_csv_manifest(cv_requests_path)
     if not request_rows:
         raise ValueError(f"No CV requests found in {cv_requests_path}.")
 
+    normalized_mode = (
+        _normalize_execution_mode(execution_mode)
+        if execution_mode is not None
+        else _normalize_execution_mode(request_rows[0].get("execution_mode", EXECUTION_MODE_CV))
+    )
     grouped_rows: dict[tuple[str, str], list[dict[str, str]]] = {}
     for row in request_rows:
         key = (str(row["experiment_slug"]), str(row["search_slug"]))
@@ -1041,11 +937,15 @@ def refresh_cv_scores_from_requests(
             "experiment_slug": first_row.get("experiment_slug", ""),
             "experiment_path": first_row.get("experiment_path", ""),
         }
-        search = {
-            "name": first_row["search_name"],
-            "slug": first_row["search_slug"],
-        }
-        num_folds = len({int(row["cv_fold_id"]) for row in group_rows})
+        cv_spec_path = first_row.get("cv_spec_path", "")
+        if not cv_spec_path:
+            raise ValueError(
+                f"Request row for experiment '{experiment_row['experiment_slug']}' is missing cv_spec_path."
+            )
+        search = _load_search_from_spec(cv_spec_path, str(first_row["search_slug"]))
+        configured_num_folds = int(
+            first_row.get("configured_num_folds", _get_num_folds_from_search(search))
+        )
         experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
         output_roots = {
             Path(str(row["fit_path"])).resolve().parents[2]
@@ -1053,14 +953,14 @@ def refresh_cv_scores_from_requests(
         }
         if len(output_roots) != 1:
             raise ValueError(
-                f"Expected a single CV output root for experiment '{experiment_row['experiment_slug']}' "
+                f"Expected a single output root for experiment '{experiment_row['experiment_slug']}' "
                 f"search '{search['slug']}', found {len(output_roots)}."
             )
         output_root = next(iter(output_roots))
         output_root.mkdir(parents=True, exist_ok=True)
         candidates = _load_scored_candidates(output_root, group_rows)
 
-        role_codes = _load_fold_roles(experiment_root, num_folds=num_folds)
+        role_codes = _load_fold_roles(experiment_root, num_folds=configured_num_folds)
         panel_context = load_experiment_panel_context(experiment_root)
         if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
             panel_context["N"]
@@ -1069,6 +969,7 @@ def refresh_cv_scores_from_requests(
                 f"CV fold tensor shape {role_codes.shape} does not match panel dimensions "
                 f"(T={panel_context['T']}, N={panel_context['N']}) for {experiment_root}."
             )
+        validation_sampling = resolve_validation_sampling(search.get("validation_sampling"))
 
         fold_rows: list[dict[str, object]] = []
         sorted_group_rows = sorted(
@@ -1081,81 +982,41 @@ def refresh_cv_scores_from_requests(
             fold_roles = np.asarray(role_codes[fold_id - 1], dtype=np.int8)
             training_loss_mask = fold_roles == cv_folds.ROLE_CODE_TRAINING
             validation_loss_mask = fold_roles == cv_folds.ROLE_CODE_VALIDATION
-            post_s_validation_loss_mask = validation_loss_mask & _time_window_mask(
+            post_s_validation_loss_mask = validation_loss_mask & time_window_mask(
                 t_steps=fold_roles.shape[0],
                 n_nodes=fold_roles.shape[1],
                 start_t=int(panel_context["s"]),
             )
-            row: dict[str, object] = {
-                "experiment_name": request_row.get("experiment_name", ""),
-                "experiment_slug": request_row.get("experiment_slug", ""),
-                "search_name": request_row["search_name"],
-                "search_slug": request_row["search_slug"],
-                "candidate_name": request_row["candidate_name"],
-                "candidate_slug": request_row["candidate_slug"],
-                "candidate_index": int(request_row["candidate_index"]),
-                "cv_fold_id": fold_id,
-                "num_training_slots": int(np.count_nonzero(training_loss_mask)),
-                "num_validation_slots": int(np.count_nonzero(validation_loss_mask)),
-                "num_post_s_validation_slots": int(
-                    np.count_nonzero(post_s_validation_loss_mask)
-                ),
-                "fit_path": str(fit_root),
+            candidate = {
+                "name": request_row["candidate_name"],
+                "slug": request_row["candidate_slug"],
+                "_candidate_index": int(request_row["candidate_index"]),
             }
+            row = _fit_metric_row(
+                experiment_row,
+                search,
+                candidate,
+                execution_mode=normalized_mode,
+                fold_id=fold_id,
+                fit_root=fit_root,
+                num_training_slots=int(np.count_nonzero(training_loss_mask)),
+                num_validation_slots=int(np.count_nonzero(validation_loss_mask)),
+                num_post_s_validation_slots=int(np.count_nonzero(post_s_validation_loss_mask)),
+            )
             try:
-                (
-                    fit_loss,
-                    validation_loss,
-                    validation_brier_score,
-                    validation_ece,
-                    computed_num_post_s_validation_slots,
-                    post_s_validation_loss,
-                    post_s_validation_brier_score,
-                    post_s_validation_ece,
-                ) = _evaluate_fold_metrics(
-                    fit_root,
-                    experiment_root,
+                _evaluate_and_store_fold_metrics(
+                    row,
+                    fit_root=fit_root,
+                    experiment_root=experiment_root,
                     training_loss_mask=training_loss_mask,
                     validation_loss_mask=validation_loss_mask,
-                )
-                row.update(
-                    {
-                        "status": "completed",
-                        "fit_loss": float(fit_loss),
-                        "validation_loss": float(validation_loss),
-                        "validation_brier_score": float(validation_brier_score),
-                        "validation_ece": float(validation_ece),
-                        "num_post_s_validation_slots": int(
-                            computed_num_post_s_validation_slots
-                        ),
-                        "post_s_validation_loss": (
-                            ""
-                            if post_s_validation_loss is None
-                            else float(post_s_validation_loss)
-                        ),
-                        "post_s_validation_brier_score": (
-                            ""
-                            if post_s_validation_brier_score is None
-                            else float(post_s_validation_brier_score)
-                        ),
-                        "post_s_validation_ece": (
-                            ""
-                            if post_s_validation_ece is None
-                            else float(post_s_validation_ece)
-                        ),
-                    }
+                    validation_sampling=validation_sampling,
                 )
             except Exception as exc:  # noqa: BLE001
                 row.update(
                     {
                         "status": "failed",
-                        "fit_loss": "",
-                        "validation_loss": "",
-                        "validation_brier_score": "",
-                        "validation_ece": "",
-                        "post_s_validation_loss": "",
-                        "post_s_validation_brier_score": "",
-                        "post_s_validation_ece": "",
+                        **_blank_fold_metric_values(),
                         "error_message": str(exc),
                     }
                 )
@@ -1167,62 +1028,81 @@ def refresh_cv_scores_from_requests(
                 search,
                 candidates,
                 fold_rows,
-                num_folds=num_folds,
+                expected_num_folds=len(
+                    _selected_fold_ids(
+                        configured_num_folds,
+                        execution_mode=normalized_mode,
+                    )
+                ),
                 output_root=output_root,
+                execution_mode=normalized_mode,
             )
         )
 
     manifest_path = (
         Path(cv_manifest_path)
         if cv_manifest_path is not None
-        else Path(cv_requests_path).with_name("cv_manifest.csv")
+        else model_selection_manifest_path_for_spec(
+            first_row["cv_spec_path"],
+            execution_mode=normalized_mode,
+        )
     )
     write_csv_manifest(manifest_path, manifest_rows)
     return manifest_path
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run 5-fold hyperparameter CV over prebuilt spatiotemporal fold artifacts."
+        description="Run CV or single-fold validation search over prebuilt spatiotemporal fold artifacts."
     )
     parser.add_argument("--generation_manifest_path", type=str)
     parser.add_argument("--cv_spec_path", type=str)
     parser.add_argument(
         "--cv_requests_path",
         type=str,
-        help="Path to an existing cv_requests.csv file (used with --refresh_scores).",
+        help="Path to an existing request CSV file (used with --refresh_scores).",
+    )
+    parser.add_argument(
+        "--execution_mode",
+        type=str,
+        default=EXECUTION_MODE_CV,
+        choices=sorted(VALID_EXECUTION_MODES),
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--dry_run",
         action="store_true",
-        help="Validate configs and print planned CV work without executing fits.",
+        help="Validate configs and print planned model-selection work without executing fits.",
     )
     parser.add_argument(
         "--write_requests",
         action="store_true",
-        help="Write cv_requests.csv for the configured generation manifest and CV spec.",
+        help="Write request CSVs for the configured generation manifest and CV spec.",
     )
     parser.add_argument(
         "--run_request",
         action="store_true",
-        help="Run a specific experiment+search CV job.",
+        help="Run a specific experiment+search job.",
     )
     parser.add_argument(
         "--refresh_scores",
         action="store_true",
-        help="Recompute fold and candidate CV scores from an existing cv_requests.csv without rerunning fits.",
+        help="Recompute fold and candidate scores from an existing request CSV without rerunning fits.",
     )
     parser.add_argument("--experiment_slug", type=str, help="Experiment slug (used with --run_request).")
     parser.add_argument("--search_slug", type=str, help="Search slug (used with --run_request).")
-    parser.add_argument("--num_folds", type=int, help="Override number of CV folds from cv_spec.")
+    parser.add_argument("--num_folds", type=int, help="Override number of folds from cv_spec.")
     args = parser.parse_args()
+
+    normalized_mode = _normalize_execution_mode(args.execution_mode)
 
     if args.refresh_scores:
         if not args.cv_requests_path:
             raise ValueError("--refresh_scores requires --cv_requests_path.")
-        manifest_path = refresh_cv_scores_from_requests(args.cv_requests_path)
-        print(f"CV manifest: {manifest_path}")
+        manifest_path = refresh_cv_scores_from_requests(
+            args.cv_requests_path,
+            execution_mode=normalized_mode,
+        )
+        print(f"{normalized_mode} manifest: {manifest_path}")
         return
 
     if args.dry_run:
@@ -1233,13 +1113,22 @@ def main() -> None:
         total_folds = 0
         total_candidates = 0
         for search in searches:
-            num_folds = _get_num_folds_from_search(search)
+            configured_num_folds = (
+                int(args.num_folds)
+                if args.num_folds is not None
+                else _get_num_folds_from_search(search)
+            )
             candidates = expand_search_candidates(search)
-            total_folds += len(candidates) * num_folds
+            total_folds += len(candidates) * len(
+                _selected_fold_ids(
+                    configured_num_folds,
+                    execution_mode=normalized_mode,
+                )
+            )
             total_candidates += len(candidates)
         print(
             f"Dry run: {len(generation_rows)} experiment(s) × {total_candidates} candidate(s) "
-            f"× variable folds = {total_folds} total fold(s) planned."
+            f"× mode={normalized_mode} = {total_folds} total fit(s) planned."
         )
         return
 
@@ -1251,8 +1140,9 @@ def main() -> None:
         request_path = write_cv_requests(
             args.generation_manifest_path,
             args.cv_spec_path,
+            execution_mode=normalized_mode,
         )
-        print(f"CV requests: {request_path}")
+        print(f"{normalized_mode} requests: {request_path}")
         return
 
     if args.run_request:
@@ -1262,39 +1152,26 @@ def main() -> None:
             )
         if not args.experiment_slug or not args.search_slug:
             raise ValueError("--run_request requires both --experiment_slug and --search_slug.")
-        generation_rows = read_csv_manifest(args.generation_manifest_path)
-        experiment_row = next(
-            (row for row in generation_rows if row.get("experiment_slug") == args.experiment_slug),
-            None,
-        )
-        if experiment_row is None:
-            raise ValueError(
-                f"Experiment slug '{args.experiment_slug}' not found in {args.generation_manifest_path}."
-            )
-
-        searches = _expand_searches(args.cv_spec_path)
-        search = next(
-            (s for s in searches if s.get("slug") == args.search_slug),
-            None,
-        )
-        if search is None:
-            raise ValueError(f"Search slug '{args.search_slug}' not found in {args.cv_spec_path}.")
-
-        num_folds = args.num_folds if args.num_folds is not None else _get_num_folds_from_search(search)
-        _run_search_for_experiment(
-            experiment_row,
-            search,
-            num_folds=num_folds,
+        run_cv_search_for_experiment_slug(
+            args.generation_manifest_path,
+            args.cv_spec_path,
+            args.experiment_slug,
+            args.search_slug,
+            execution_mode=normalized_mode,
+            num_folds=args.num_folds,
             overwrite=args.overwrite,
         )
         return
 
     if not args.generation_manifest_path or not args.cv_spec_path:
-        raise ValueError("Default CV execution requires both --generation_manifest_path and --cv_spec_path.")
+        raise ValueError(
+            "Default execution requires both --generation_manifest_path and --cv_spec_path."
+        )
 
     run_cv_folds(
         args.generation_manifest_path,
         args.cv_spec_path,
+        execution_mode=normalized_mode,
         overwrite=args.overwrite,
     )
 

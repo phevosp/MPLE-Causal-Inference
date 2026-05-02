@@ -91,6 +91,7 @@ from model_utils import (
 from pipeline_specs import read_csv_manifest, validate_cv_spec, validate_fits_spec
 import build_cv_folds as cv_folds
 import run_cv_folds as cv_runner
+import validation_metric_utils as validation_metrics
 from posterior_predictive_utils import (
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
@@ -2974,12 +2975,15 @@ class PipelineStageRequestTests(unittest.TestCase):
             "base": {
                 "cv_root_name": "cv_runs",
                 "cv_manifest_path": f"{self.root.as_posix()}/generated/cv_manifest.csv",
+                "validation_root_name": "validation_runs",
+                "validation_manifest_path": f"{self.root.as_posix()}/generated/validation_manifest.csv",
                 "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0, "n_starts": 1},
                 "latent_rank": 0,
                 "optimizer_mode": "no_external_field",
                 "lambda_nuclear": 0.0,
                 "lambda_frobenius": 0.0,
                 "lambda_uv_ridge": 0.0,
+                "validation_sampling": {"num_samples": 2, "gibbs_sweeps": 1, "seed": 0},
                 "estimation": {"fixed_scalar_params": {}},
             },
             "searches": normalized_searches,
@@ -3246,22 +3250,42 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("mean_fold_validation_brier_score", manifest_rows[0])
         self.assertIn("weighted_mean_validation_ece", manifest_rows[0])
         self.assertIn("mean_fold_validation_ece", manifest_rows[0])
+        self.assertIn("weighted_mean_validation_mean_magnetization_abs_diff", manifest_rows[0])
+        self.assertIn("mean_fold_validation_mean_magnetization_abs_diff", manifest_rows[0])
         self.assertIn("weighted_mean_post_s_validation_loss", manifest_rows[0])
         self.assertIn("mean_fold_post_s_validation_loss", manifest_rows[0])
         self.assertIn("weighted_mean_post_s_validation_brier_score", manifest_rows[0])
         self.assertIn("mean_fold_post_s_validation_brier_score", manifest_rows[0])
         self.assertIn("weighted_mean_post_s_validation_ece", manifest_rows[0])
         self.assertIn("mean_fold_post_s_validation_ece", manifest_rows[0])
+        self.assertIn(
+            "weighted_mean_post_s_validation_mean_magnetization_abs_diff",
+            manifest_rows[0],
+        )
+        self.assertIn(
+            "mean_fold_post_s_validation_mean_magnetization_abs_diff",
+            manifest_rows[0],
+        )
         self.assertIn("weighted_mean_validation_brier_score", best_candidate)
         self.assertIn("mean_fold_validation_brier_score", best_candidate)
         self.assertIn("weighted_mean_validation_ece", best_candidate)
         self.assertIn("mean_fold_validation_ece", best_candidate)
+        self.assertIn("weighted_mean_validation_mean_magnetization_abs_diff", best_candidate)
+        self.assertIn("mean_fold_validation_mean_magnetization_abs_diff", best_candidate)
         self.assertIn("weighted_mean_post_s_validation_loss", best_candidate)
         self.assertIn("mean_fold_post_s_validation_loss", best_candidate)
         self.assertIn("weighted_mean_post_s_validation_brier_score", best_candidate)
         self.assertIn("mean_fold_post_s_validation_brier_score", best_candidate)
         self.assertIn("weighted_mean_post_s_validation_ece", best_candidate)
         self.assertIn("mean_fold_post_s_validation_ece", best_candidate)
+        self.assertIn(
+            "weighted_mean_post_s_validation_mean_magnetization_abs_diff",
+            best_candidate,
+        )
+        self.assertIn(
+            "mean_fold_post_s_validation_mean_magnetization_abs_diff",
+            best_candidate,
+        )
 
         completed_rows = [row for row in fold_rows if row["status"] == "completed"]
         self.assertEqual(len(completed_rows), 10)
@@ -3275,10 +3299,16 @@ class PipelineStageRequestTests(unittest.TestCase):
             for fold_row in candidate_rows_group:
                 self.assertIn("validation_brier_score", fold_row)
                 self.assertIn("validation_ece", fold_row)
+                self.assertIn("validation_mean_magnetization_abs_diff", fold_row)
+                self.assertIn("validation_observed_mean_magnetization", fold_row)
+                self.assertIn("validation_sampled_mean_magnetization_mean", fold_row)
                 self.assertIn("num_post_s_validation_slots", fold_row)
                 self.assertIn("post_s_validation_loss", fold_row)
                 self.assertIn("post_s_validation_brier_score", fold_row)
                 self.assertIn("post_s_validation_ece", fold_row)
+                self.assertIn("post_s_validation_mean_magnetization_abs_diff", fold_row)
+                self.assertIn("post_s_validation_observed_mean_magnetization", fold_row)
+                self.assertIn("post_s_validation_sampled_mean_magnetization_mean", fold_row)
             weighted = sum(
                 float(fold_row["validation_loss"]) * int(fold_row["num_validation_slots"])
                 for fold_row in candidate_rows_group
@@ -3297,8 +3327,17 @@ class PipelineStageRequestTests(unittest.TestCase):
                 * int(fold_row["num_validation_slots"])
                 for fold_row in candidate_rows_group
             ) / sum(int(fold_row["num_validation_slots"]) for fold_row in candidate_rows_group)
+            weighted_mag_diff = sum(
+                float(fold_row["validation_mean_magnetization_abs_diff"])
+                * int(fold_row["num_validation_slots"])
+                for fold_row in candidate_rows_group
+            ) / sum(int(fold_row["num_validation_slots"]) for fold_row in candidate_rows_group)
             mean_fold_ece = sum(
                 float(fold_row["validation_ece"])
+                for fold_row in candidate_rows_group
+            ) / len(candidate_rows_group)
+            mean_fold_mag_diff = sum(
+                float(fold_row["validation_mean_magnetization_abs_diff"])
                 for fold_row in candidate_rows_group
             ) / len(candidate_rows_group)
             post_s_rows = [
@@ -3329,6 +3368,16 @@ class PipelineStageRequestTests(unittest.TestCase):
             self.assertAlmostEqual(
                 float(row["mean_fold_validation_ece"]),
                 mean_fold_ece,
+                places=12,
+            )
+            self.assertAlmostEqual(
+                float(row["weighted_mean_validation_mean_magnetization_abs_diff"]),
+                weighted_mag_diff,
+                places=12,
+            )
+            self.assertAlmostEqual(
+                float(row["mean_fold_validation_mean_magnetization_abs_diff"]),
+                mean_fold_mag_diff,
                 places=12,
             )
             if post_s_rows:
@@ -3364,8 +3413,20 @@ class PipelineStageRequestTests(unittest.TestCase):
                     int(fold_row["num_post_s_validation_slots"])
                     for fold_row in post_s_rows
                 )
+                weighted_post_s_mag_diff = sum(
+                    float(fold_row["post_s_validation_mean_magnetization_abs_diff"])
+                    * int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                ) / sum(
+                    int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                )
                 mean_fold_post_s_ece = sum(
                     float(fold_row["post_s_validation_ece"])
+                    for fold_row in post_s_rows
+                ) / len(post_s_rows)
+                mean_fold_post_s_mag_diff = sum(
+                    float(fold_row["post_s_validation_mean_magnetization_abs_diff"])
                     for fold_row in post_s_rows
                 ) / len(post_s_rows)
                 self.assertAlmostEqual(
@@ -3398,6 +3459,16 @@ class PipelineStageRequestTests(unittest.TestCase):
                     mean_fold_post_s_ece,
                     places=12,
                 )
+                self.assertAlmostEqual(
+                    float(row["weighted_mean_post_s_validation_mean_magnetization_abs_diff"]),
+                    weighted_post_s_mag_diff,
+                    places=12,
+                )
+                self.assertAlmostEqual(
+                    float(row["mean_fold_post_s_validation_mean_magnetization_abs_diff"]),
+                    mean_fold_post_s_mag_diff,
+                    places=12,
+                )
             else:
                 self.assertEqual(row["weighted_mean_post_s_validation_loss"], "")
                 self.assertEqual(row["mean_fold_post_s_validation_loss"], "")
@@ -3405,6 +3476,14 @@ class PipelineStageRequestTests(unittest.TestCase):
                 self.assertEqual(row["mean_fold_post_s_validation_brier_score"], "")
                 self.assertEqual(row["weighted_mean_post_s_validation_ece"], "")
                 self.assertEqual(row["mean_fold_post_s_validation_ece"], "")
+                self.assertEqual(
+                    row["weighted_mean_post_s_validation_mean_magnetization_abs_diff"],
+                    "",
+                )
+                self.assertEqual(
+                    row["mean_fold_post_s_validation_mean_magnetization_abs_diff"],
+                    "",
+                )
 
     def test_refresh_cv_scores_from_requests_rebuilds_score_artifacts(self) -> None:
         generation_spec_path = self._write_generation_spec(
@@ -3487,6 +3566,19 @@ class PipelineStageRequestTests(unittest.TestCase):
                 float(baseline["validation_ece"]),
                 places=12,
             )
+            self.assertAlmostEqual(
+                float(row["validation_mean_magnetization_abs_diff"]),
+                float(baseline["validation_mean_magnetization_abs_diff"]),
+                places=12,
+            )
+            self.assertEqual(
+                row["validation_observed_mean_magnetization"],
+                baseline["validation_observed_mean_magnetization"],
+            )
+            self.assertEqual(
+                row["validation_sampled_mean_magnetization_mean"],
+                baseline["validation_sampled_mean_magnetization_mean"],
+            )
             self.assertEqual(
                 int(row["num_post_s_validation_slots"]),
                 int(baseline["num_post_s_validation_slots"]),
@@ -3503,6 +3595,122 @@ class PipelineStageRequestTests(unittest.TestCase):
                 row["post_s_validation_ece"],
                 baseline["post_s_validation_ece"],
             )
+            self.assertEqual(
+                row["post_s_validation_mean_magnetization_abs_diff"],
+                baseline["post_s_validation_mean_magnetization_abs_diff"],
+            )
+            self.assertEqual(
+                row["post_s_validation_observed_mean_magnetization"],
+                baseline["post_s_validation_observed_mean_magnetization"],
+            )
+            self.assertEqual(
+                row["post_s_validation_sampled_mean_magnetization_mean"],
+                baseline["post_s_validation_sampled_mean_magnetization_mean"],
+            )
+
+    def test_validation_mode_runs_only_fold_one_and_writes_validation_manifest(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "no_external_field_mask_grid",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {
+                        "estimation": {
+                            "beta_mask_pre_s": [False, True],
+                        }
+                    },
+                }
+            ]
+        )
+
+        manifest_path = cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        self.assertEqual(
+            Path(manifest_path),
+            self.root / "generated" / "validation_manifest.csv",
+        )
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(len(manifest_rows), 1)
+        self.assertEqual(manifest_rows[0]["execution_mode"], "validation")
+
+        requests_path = cv_runner.validation_requests_path_for_spec(cv_spec_path)
+        request_rows = read_csv_manifest(requests_path)
+        self.assertEqual(len(request_rows), 2)
+        self.assertTrue(all(row["cv_fold_id"] == "1" for row in request_rows))
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "no_external_field_mask_grid"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(len(fold_rows), 2)
+        self.assertTrue(all(row["cv_fold_id"] == "1" for row in fold_rows))
+        self.assertTrue((output_root / "best_candidate.yaml").exists())
+
+    def test_validation_refresh_scores_rebuilds_validation_artifacts(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "no_external_field_mask_grid",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {
+                        "estimation": {
+                            "beta_mask_pre_s": [False, True],
+                        }
+                    },
+                }
+            ]
+        )
+
+        manifest_path = cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+        requests_path = cv_runner.validation_requests_path_for_spec(cv_spec_path)
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "no_external_field_mask_grid"
+        )
+        original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertTrue(original_fold_rows)
+
+        (output_root / "fold_scores.csv").unlink()
+        (output_root / "candidate_scores.csv").unlink()
+        (output_root / "best_candidate.yaml").unlink()
+        Path(manifest_path).unlink()
+
+        refreshed_manifest_path = cv_runner.refresh_cv_scores_from_requests(
+            requests_path,
+            execution_mode="validation",
+        )
+
+        self.assertEqual(Path(refreshed_manifest_path), Path(manifest_path))
+        refreshed_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(len(refreshed_fold_rows), len(original_fold_rows))
+        self.assertTrue(all(row["execution_mode"] == "validation" for row in refreshed_fold_rows))
 
     def test_validation_brier_score_matches_spin_probability_formula(self) -> None:
         x = np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
@@ -3515,7 +3723,11 @@ class PipelineStageRequestTests(unittest.TestCase):
             np.mean(((observed_positive - predicted_positive) ** 2)[mask])
         )
 
-        actual = cv_runner._validation_brier_score(x=x, h_x=h_x, loss_mask=mask)
+        actual = validation_metrics.validation_brier_score(
+            x=x,
+            h_x=h_x,
+            loss_mask=mask,
+        )
         self.assertAlmostEqual(actual, expected, places=12)
 
     def test_validation_expected_calibration_error_matches_hand_computation(self) -> None:
@@ -3531,7 +3743,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             + 0.25 * abs(1.0 - 0.95)
         )
 
-        actual = cv_runner._validation_expected_calibration_error(
+        actual = validation_metrics.validation_expected_calibration_error(
             x=x,
             h_x=h_x,
             loss_mask=mask,
@@ -3543,8 +3755,12 @@ class PipelineStageRequestTests(unittest.TestCase):
         h_x = np.asarray([[0.4, -0.2], [0.9, -1.2]], dtype=float)
         mask = np.asarray([[False, True], [False, True]], dtype=bool)
 
-        masked_brier = cv_runner._validation_brier_score(x=x, h_x=h_x, loss_mask=mask)
-        masked_ece = cv_runner._validation_expected_calibration_error(
+        masked_brier = validation_metrics.validation_brier_score(
+            x=x,
+            h_x=h_x,
+            loss_mask=mask,
+        )
+        masked_ece = validation_metrics.validation_expected_calibration_error(
             x=x,
             h_x=h_x,
             loss_mask=mask,
@@ -3558,7 +3774,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         perturbed_h_x[1, 0] = -3.0
 
         self.assertAlmostEqual(
-            cv_runner._validation_brier_score(
+            validation_metrics.validation_brier_score(
                 x=perturbed_x,
                 h_x=perturbed_h_x,
                 loss_mask=mask,
@@ -3567,7 +3783,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             places=12,
         )
         self.assertAlmostEqual(
-            cv_runner._validation_expected_calibration_error(
+            validation_metrics.validation_expected_calibration_error(
                 x=perturbed_x,
                 h_x=perturbed_h_x,
                 loss_mask=mask,
@@ -3605,31 +3821,28 @@ class PipelineStageRequestTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            cv_runner,
+            validation_metrics,
             "load_experiment_panel_context",
             return_value=panel_context,
         ), mock.patch.object(
-            cv_runner,
+            validation_metrics,
             "load_fit_parameter_bundle",
             return_value=bundle,
         ):
-            (
-                fit_loss,
-                validation_loss,
-                validation_brier,
-                validation_ece,
-                num_post_s_validation_slots,
-                post_s_validation_loss,
-                post_s_validation_brier,
-                post_s_validation_ece,
-            ) = (
-                cv_runner._evaluate_fold_metrics(
-                    fit_root,
-                    experiment_root,
-                    training_loss_mask=training_loss_mask,
-                    validation_loss_mask=validation_loss_mask,
-                )
+            metrics = validation_metrics.evaluate_saved_fit_fold_metrics(
+                fit_root,
+                experiment_root,
+                training_loss_mask=training_loss_mask,
+                validation_loss_mask=validation_loss_mask,
             )
+            fit_loss = float(metrics["fit_loss"])
+            validation_loss = float(metrics["validation_loss"])
+            validation_brier = float(metrics["validation_brier_score"])
+            validation_ece = float(metrics["validation_ece"])
+            num_post_s_validation_slots = int(metrics["num_post_s_validation_slots"])
+            post_s_validation_loss = metrics["post_s_validation_loss"]
+            post_s_validation_brier = metrics["post_s_validation_brier_score"]
+            post_s_validation_ece = metrics["post_s_validation_ece"]
 
         interaction_effect_x = interaction_effect(panel_context["x"], bundle.gamma_matrix)
         expected_fit_loss = evaluate_mple_loss_from_parts(
@@ -3664,7 +3877,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             beta_mask_pre_s=bundle.beta_mask_pre_s,
             beta_mask_post_e=bundle.beta_mask_post_e,
         )
-        post_s_validation_loss_mask = validation_loss_mask & cv_runner._time_window_mask(
+        post_s_validation_loss_mask = validation_loss_mask & validation_metrics.time_window_mask(
             t_steps=panel_context["x"].shape[0],
             n_nodes=panel_context["x"].shape[1],
             start_t=int(panel_context["s"]),
@@ -3687,22 +3900,22 @@ class PipelineStageRequestTests(unittest.TestCase):
         )
         prev_x = np.vstack([panel_context["x_0"], panel_context["x"][:-1, :]])
         h_x = bundle.field_matrix + (bundle.xi * interaction_effect_x) + (bundle.eta * prev_x)
-        expected_brier = cv_runner._validation_brier_score(
+        expected_brier = validation_metrics.validation_brier_score(
             x=panel_context["x"],
             h_x=h_x,
             loss_mask=validation_loss_mask,
         )
-        expected_ece = cv_runner._validation_expected_calibration_error(
+        expected_ece = validation_metrics.validation_expected_calibration_error(
             x=panel_context["x"],
             h_x=h_x,
             loss_mask=validation_loss_mask,
         )
-        expected_post_s_brier = cv_runner._validation_brier_score(
+        expected_post_s_brier = validation_metrics.validation_brier_score(
             x=panel_context["x"],
             h_x=h_x,
             loss_mask=post_s_validation_loss_mask,
         )
-        expected_post_s_ece = cv_runner._validation_expected_calibration_error(
+        expected_post_s_ece = validation_metrics.validation_expected_calibration_error(
             x=panel_context["x"],
             h_x=h_x,
             loss_mask=post_s_validation_loss_mask,
@@ -3725,29 +3938,28 @@ class PipelineStageRequestTests(unittest.TestCase):
         separator_flipped_context["x"] = np.asarray(panel_context["x"], dtype=float).copy()
         separator_flipped_context["x"][1, 1] = -1.0
         with mock.patch.object(
-            cv_runner,
+            validation_metrics,
             "load_experiment_panel_context",
             return_value=separator_flipped_context,
         ), mock.patch.object(
-            cv_runner,
+            validation_metrics,
             "load_fit_parameter_bundle",
             return_value=bundle,
         ):
-            (
-                _,
-                flipped_validation_loss,
-                flipped_validation_brier,
-                flipped_validation_ece,
-                _,
-                flipped_post_s_validation_loss,
-                flipped_post_s_validation_brier,
-                flipped_post_s_validation_ece,
-            ) = cv_runner._evaluate_fold_metrics(
+            flipped_metrics = validation_metrics.evaluate_saved_fit_fold_metrics(
                 fit_root,
                 experiment_root,
                 training_loss_mask=training_loss_mask,
                 validation_loss_mask=validation_loss_mask,
             )
+            flipped_validation_loss = float(flipped_metrics["validation_loss"])
+            flipped_validation_brier = float(flipped_metrics["validation_brier_score"])
+            flipped_validation_ece = float(flipped_metrics["validation_ece"])
+            flipped_post_s_validation_loss = flipped_metrics["post_s_validation_loss"]
+            flipped_post_s_validation_brier = flipped_metrics[
+                "post_s_validation_brier_score"
+            ]
+            flipped_post_s_validation_ece = flipped_metrics["post_s_validation_ece"]
 
         self.assertNotAlmostEqual(flipped_validation_loss, validation_loss, places=12)
         self.assertNotAlmostEqual(flipped_validation_brier, validation_brier, places=12)
@@ -3793,29 +4005,27 @@ class PipelineStageRequestTests(unittest.TestCase):
         validation_loss_mask = np.asarray([[False, True], [False, False]], dtype=bool)
 
         with mock.patch.object(
-            cv_runner,
+            validation_metrics,
             "load_experiment_panel_context",
             return_value=panel_context,
         ), mock.patch.object(
-            cv_runner,
+            validation_metrics,
             "load_fit_parameter_bundle",
             return_value=bundle,
         ):
-            (
-                _,
-                validation_loss,
-                validation_brier,
-                validation_ece,
-                num_post_s_validation_slots,
-                post_s_validation_loss,
-                post_s_validation_brier,
-                post_s_validation_ece,
-            ) = cv_runner._evaluate_fold_metrics(
+            metrics = validation_metrics.evaluate_saved_fit_fold_metrics(
                 fit_root,
                 experiment_root,
                 training_loss_mask=training_loss_mask,
                 validation_loss_mask=validation_loss_mask,
             )
+            validation_loss = float(metrics["validation_loss"])
+            validation_brier = float(metrics["validation_brier_score"])
+            validation_ece = float(metrics["validation_ece"])
+            num_post_s_validation_slots = int(metrics["num_post_s_validation_slots"])
+            post_s_validation_loss = metrics["post_s_validation_loss"]
+            post_s_validation_brier = metrics["post_s_validation_brier_score"]
+            post_s_validation_ece = metrics["post_s_validation_ece"]
 
         self.assertGreater(float(validation_loss), 0.0)
         self.assertGreater(float(validation_brier), 0.0)
@@ -3853,7 +4063,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             },
         ]
 
-        ordered = sorted(rows, key=cv_runner._candidate_score_sort_key)
+        ordered = sorted(rows, key=validation_metrics.candidate_score_sort_key)
 
         self.assertEqual(
             [row["candidate_slug"] for row in ordered],
@@ -3966,6 +4176,54 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("--refresh_manifest", log_lines[2])
         self.assertEqual(result.stdout.strip(), "job3")
 
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
+    def test_submit_cv_jobs_submits_workers_and_refresh_scores(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "no_external_field_mask_grid",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"lambda_uv_ridge": [0.0, 0.1]},
+                }
+            ]
+        )
+        fake_sbatch_path, fake_counter_path, fake_log_path = self._write_fake_sbatch()
+
+        result = subprocess.run(
+            [bash_path, "submit_cv_jobs.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "GENERATION_MANIFEST_PATH": str(generation_manifest),
+                "CV_SPEC_PATH": str(cv_spec_path),
+                "EXECUTION_MODE": "validation",
+                "SBATCH_BIN": str(fake_sbatch_path),
+                "WORKER_SCRIPT": "run_cv_job.sh",
+                "FAKE_SBATCH_COUNTER": str(fake_counter_path),
+                "FAKE_SBATCH_LOG": str(fake_log_path),
+            },
+        )
+
+        log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 2)
+        self.assertIn("run_cv_job.sh", log_lines[0])
+        self.assertIn("<exp_a>", log_lines[0])
+        self.assertIn("<no_external_field_mask_grid>", log_lines[0])
+        self.assertIn("--refresh_scores", log_lines[1])
+        self.assertIn("--execution_mode 'validation'", log_lines[1])
+        self.assertEqual(result.stdout.strip(), "job2")
+
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell orchestration test")
     def test_run_tests_sh_waits_between_stage_submissions(self) -> None:
         bash_path = shutil.which("bash")
@@ -3973,8 +4231,11 @@ class PipelineStageRequestTests(unittest.TestCase):
             self.skipTest("portable bash is not available in this environment")
         log_path = self.root / "orchestration.log"
         generation_submitter = self.root / "fake_generation_submitter.sh"
+        cv_submitter = self.root / "fake_cv_submitter.sh"
         fit_submitter = self.root / "fake_fit_submitter.sh"
         posterior_submitter = self.root / "fake_posterior_submitter.sh"
+        build_cv_script = self.root / "fake_build_cv.sh"
+        refresh_script = self.root / "fake_refresh.sh"
         intervention_script = self.root / "fake_intervention.sh"
         sacct_script = self.root / "fake_sacct.sh"
         squeue_script = self.root / "fake_squeue.sh"
@@ -3987,8 +4248,20 @@ class PipelineStageRequestTests(unittest.TestCase):
             "#!/bin/bash\nset -euo pipefail\nprintf 'fit_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-fit\\n'\n",
             encoding="utf-8",
         )
+        cv_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'model_selection_submit:%s\\n' \"${EXECUTION_MODE}\" >> \"${STAGE_LOG}\"\nprintf 'job-model-%s\\n' \"${EXECUTION_MODE}\"\n",
+            encoding="utf-8",
+        )
         posterior_submitter.write_text(
             "#!/bin/bash\nset -euo pipefail\nprintf 'posterior_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-posterior\\n'\n",
+            encoding="utf-8",
+        )
+        build_cv_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'build_cv\\n' >> \"${STAGE_LOG}\"\n",
+            encoding="utf-8",
+        )
+        refresh_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'refresh_model_selection:%s\\n' \"$1\" >> \"${STAGE_LOG}\"\n",
             encoding="utf-8",
         )
         intervention_script.write_text(
@@ -4005,8 +4278,11 @@ class PipelineStageRequestTests(unittest.TestCase):
         )
         for script_path in [
             generation_submitter,
+            cv_submitter,
             fit_submitter,
             posterior_submitter,
+            build_cv_script,
+            refresh_script,
             intervention_script,
             sacct_script,
             squeue_script,
@@ -4023,8 +4299,11 @@ class PipelineStageRequestTests(unittest.TestCase):
                 "GEN_MANIFEST": str(self.root / "generation_manifest.csv"),
                 "FIT_MANIFEST": str(self.root / "fit_manifest.csv"),
                 "GENERATION_SUBMITTER": str(generation_submitter),
+                "CV_SUBMITTER": str(cv_submitter),
                 "FIT_SUBMITTER": str(fit_submitter),
                 "POSTERIOR_PREDICTIVE_SUBMITTER": str(posterior_submitter),
+                "BUILD_CV_FOLDS_SCRIPT": str(build_cv_script),
+                "MODEL_SELECTION_REFRESH_SCRIPT": str(refresh_script),
                 "INTERVENTION_LIBRARY_SCRIPT": str(intervention_script),
                 "SACCT_BIN": str(sacct_script),
                 "SQUEUE_BIN": str(squeue_script),
@@ -4038,6 +4317,10 @@ class PipelineStageRequestTests(unittest.TestCase):
             [
                 "generation_submit",
                 "wait:job-generation",
+                "build_cv",
+                "model_selection_submit:cv",
+                "wait:job-model-cv",
+                "refresh_model_selection:cv",
                 "fit_submit",
                 "wait:job-fit",
                 "intervention",
@@ -5165,6 +5448,98 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         self.assertTrue(np.array_equal(masked, expected_masked))
         self.assertFalse(np.array_equal(masked, unmasked))
+
+    def test_validation_metric_utils_sampler_clamps_non_validation_and_is_reproducible(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0, 1.0], [-1.0, 1.0, -1.0]], dtype=float),
+            "z": np.asarray([[1.0, 1.0, 1.0], [-1.0, -1.0, -1.0]], dtype=float),
+            "x_0": np.asarray([1.0, -1.0, 1.0], dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+        bundle = OutcomeParameterBundle(
+            source_type="fit",
+            source_name="rank_0",
+            beta=1.2,
+            xi=0.0,
+            eta=0.0,
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+            latent_rank=0,
+            t_steps=2,
+            field_matrix=np.zeros((2, 3), dtype=float),
+            gamma_matrix=np.zeros((3, 3), dtype=float),
+        )
+        validation_mask = np.asarray(
+            [[False, True, False], [True, False, False]],
+            dtype=bool,
+        )
+
+        sampled_one = validation_metrics.sample_validation_panel_conditional(
+            panel_context=panel_context,
+            bundle=bundle,
+            validation_loss_mask=validation_mask,
+            gibbs_sweeps=2,
+            seed=17,
+        )
+        sampled_two = validation_metrics.sample_validation_panel_conditional(
+            panel_context=panel_context,
+            bundle=bundle,
+            validation_loss_mask=validation_mask,
+            gibbs_sweeps=2,
+            seed=17,
+        )
+
+        self.assertTrue(np.array_equal(sampled_one, sampled_two))
+        self.assertTrue(
+            np.array_equal(
+                sampled_one[~validation_mask],
+                np.asarray(panel_context["x"], dtype=float)[~validation_mask],
+            )
+        )
+
+    def test_validation_metric_utils_reports_magnetization_metrics(self) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0]], dtype=float),
+            "z": np.zeros((2, 2), dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+        bundle = OutcomeParameterBundle(
+            source_type="fit",
+            source_name="rank_0",
+            beta=0.0,
+            xi=0.0,
+            eta=0.0,
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+            latent_rank=0,
+            t_steps=2,
+            field_matrix=np.zeros((2, 2), dtype=float),
+            gamma_matrix=np.zeros((2, 2), dtype=float),
+        )
+        training_mask = np.asarray([[True, False], [False, False]], dtype=bool)
+        validation_mask = np.asarray([[False, True], [True, False]], dtype=bool)
+
+        metrics = validation_metrics.evaluate_fold_metrics(
+            panel_context=panel_context,
+            bundle=bundle,
+            training_loss_mask=training_mask,
+            validation_loss_mask=validation_mask,
+            validation_sampling={"num_samples": 3, "gibbs_sweeps": 1, "seed": 5},
+        )
+
+        self.assertIn("validation_mean_magnetization_abs_diff", metrics)
+        self.assertIn("post_s_validation_mean_magnetization_abs_diff", metrics)
+        self.assertGreaterEqual(float(metrics["validation_mean_magnetization_abs_diff"]), 0.0)
+        self.assertAlmostEqual(
+            float(metrics["validation_observed_mean_magnetization"]),
+            float(np.mean(np.asarray(panel_context["x"], dtype=float)[validation_mask])),
+            places=12,
+        )
 
     def test_predictive_summary_prefers_lower_mean_abs_zscore(self) -> None:
         manifest_path = self._write_manifest(
