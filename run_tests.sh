@@ -183,20 +183,6 @@ submit_model_selection_stage() {
   bash "${CV_SUBMITTER}"
 }
 
-refresh_model_selection_stage() {
-  local execution_mode="$1"
-  if [[ -n "${MODEL_SELECTION_REFRESH_SCRIPT:-}" ]]; then
-    bash "${MODEL_SELECTION_REFRESH_SCRIPT}" "${execution_mode}"
-    return 0
-  fi
-  local requests_path=""
-  requests_path="$(resolve_model_selection_requests_path "${execution_mode}")"
-  pixi run python -u run_cv_folds.py \
-    --refresh_scores \
-    --cv_requests_path "${requests_path}" \
-    --execution_mode "${execution_mode}"
-}
-
 submit_fit_stage() {
   GENERATION_MANIFEST_PATH="${GEN_MANIFEST}" \
   FITS_SPEC_PATH="${FITS_SPEC_PATH}" \
@@ -240,20 +226,14 @@ run_requested_model_selection_modes() {
       echo "Submitting ${MODEL_SELECTION_MODE} model-selection jobs..."
       model_selection_barrier_job_id="$(submit_model_selection_stage "${MODEL_SELECTION_MODE}")"
       wait_for_job "${model_selection_barrier_job_id}" "Model selection (${MODEL_SELECTION_MODE})"
-      echo "Refreshing ${MODEL_SELECTION_MODE} model-selection metrics..."
-      refresh_model_selection_stage "${MODEL_SELECTION_MODE}"
       ;;
     both)
       echo "Submitting cv model-selection jobs..."
       cv_barrier_job_id="$(submit_model_selection_stage "cv")"
       wait_for_job "${cv_barrier_job_id}" "Model selection (cv)"
-      echo "Refreshing cv model-selection metrics..."
-      refresh_model_selection_stage "cv"
       echo "Submitting validation model-selection jobs..."
       validation_barrier_job_id="$(submit_model_selection_stage "validation")"
       wait_for_job "${validation_barrier_job_id}" "Model selection (validation)"
-      echo "Refreshing validation model-selection metrics..."
-      refresh_model_selection_stage "validation"
       ;;
     skip)
       echo "Skipping model selection stage."

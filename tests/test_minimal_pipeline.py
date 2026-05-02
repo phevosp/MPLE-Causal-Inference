@@ -4249,7 +4249,6 @@ class PipelineStageRequestTests(unittest.TestCase):
         fit_submitter = self.root / "fake_fit_submitter.sh"
         posterior_submitter = self.root / "fake_posterior_submitter.sh"
         build_cv_script = self.root / "fake_build_cv.sh"
-        refresh_script = self.root / "fake_refresh.sh"
         intervention_script = self.root / "fake_intervention.sh"
         sacct_script = self.root / "fake_sacct.sh"
         squeue_script = self.root / "fake_squeue.sh"
@@ -4274,10 +4273,6 @@ class PipelineStageRequestTests(unittest.TestCase):
             "#!/bin/bash\nset -euo pipefail\nprintf 'build_cv\\n' >> \"${STAGE_LOG}\"\n",
             encoding="utf-8",
         )
-        refresh_script.write_text(
-            "#!/bin/bash\nset -euo pipefail\nprintf 'refresh_model_selection:%s\\n' \"$1\" >> \"${STAGE_LOG}\"\n",
-            encoding="utf-8",
-        )
         intervention_script.write_text(
             "#!/bin/bash\nset -euo pipefail\nprintf 'intervention\\n' >> \"${STAGE_LOG}\"\n",
             encoding="utf-8",
@@ -4296,7 +4291,6 @@ class PipelineStageRequestTests(unittest.TestCase):
             fit_submitter,
             posterior_submitter,
             build_cv_script,
-            refresh_script,
             intervention_script,
             sacct_script,
             squeue_script,
@@ -4317,7 +4311,6 @@ class PipelineStageRequestTests(unittest.TestCase):
                 "FIT_SUBMITTER": str(fit_submitter),
                 "POSTERIOR_PREDICTIVE_SUBMITTER": str(posterior_submitter),
                 "BUILD_CV_FOLDS_SCRIPT": str(build_cv_script),
-                "MODEL_SELECTION_REFRESH_SCRIPT": str(refresh_script),
                 "INTERVENTION_LIBRARY_SCRIPT": str(intervention_script),
                 "SACCT_BIN": str(sacct_script),
                 "SQUEUE_BIN": str(squeue_script),
@@ -4334,7 +4327,6 @@ class PipelineStageRequestTests(unittest.TestCase):
                 "build_cv",
                 "model_selection_submit:cv",
                 "wait:job-model-cv",
-                "refresh_model_selection:cv",
                 "fit_submit",
                 "wait:job-fit",
                 "intervention",
