@@ -1,6 +1,6 @@
 base:
-  experiment_root: experiments/SyntheticHybridExperimentsFinal
-  manifest_path: experiments/SyntheticHybridExperimentsFinal/generation_manifest_hybrid_r1.csv
+  experiment_root: experiments/HybridExperiments_r1
+  manifest_path: experiments/HybridExperiments_r1/generation_manifest.csv
   dimensions:
     N: 500
     T: 50
@@ -18,9 +18,9 @@ base:
     params:
       p: null
     artifact:
-      gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
-      node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/node_index.csv
-      artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed
+      gamma_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2020_03_01/gamma_matrix_sparse.npz
+      node_index_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2020_03_01/node_index.csv
+      artifact_dir: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2020_03_01
       network_name: contiguity
       trim_scope: trimmed
   intervention:
@@ -30,9 +30,9 @@ base:
       singular_values: null
       probability_amplitude: null
     artifact:
-      panel_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/panel_data.npz
-      z0_path: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed/z_0.npy
-      artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_interventions/intervention_complete_cov_ge_20__lag_2w__scope_trimmed
+      panel_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2020_03_01/panel_data.npz
+      z0_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2020_03_01/z_0.npy
+      artifact_dir: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__contiguity__start_2020_03_01
       shared_panel_dir: null
       outcome_code: null
       intervention_code: complete_cov_ge_20
@@ -43,7 +43,7 @@ base:
     field_mode: random_low_rank
     field_params:
       singular_values: [1.0]
-      target_rms_fraction: 0.25
+      target_rms_fraction: 0.5
     scalars:
       beta: -0.3
       xi: 0.8
@@ -57,37 +57,27 @@ experiments:
       source: generated
       generator: erdos_renyi
       params:
-        p: 0.005
+        p: 0.004
     truth:
       field_mode: confounded_low_rank
       field_params:
         shared_rank: 1
         singular_values: [1.0]
-        target_rms_fraction: 0.25
 
   - name: r1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
-    graph:    
-      source: fixed_artifact
-      artifact:
-        gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/gamma_matrix_sparse.npz
-        node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed/node_index.csv
-        artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_contiguity__scope_trimmed
-        network_name: contiguity
-        trim_scope: trimmed
     truth:
       field_mode: confounded_low_rank
       field_params:
         shared_rank: 1
         singular_values: [1.0]
-        target_rms_fraction: 0.25
 
   - name: r1_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
     graph:    
       source: fixed_artifact
       artifact:
-        gamma_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed/gamma_matrix_sparse.npz
-        node_index_path: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed/node_index.csv
-        artifact_dir: experiments/USCountyVaccination_US_trimmed/realized_networks/network_distance_kernel_8__scope_trimmed
+        gamma_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__distance_kernel_8__start_2020_03_01/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__distance_kernel_8__start_2020_03_01/node_index.csv
+        artifact_dir: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20__lag_2w__distance_kernel_8__start_2020_03_01
         network_name: distance_kernel_8
         trim_scope: trimmed
     truth:
@@ -95,4 +85,3 @@ experiments:
       field_params:
         shared_rank: 1
         singular_values: [1.0]
-        target_rms_fraction: 0.25
