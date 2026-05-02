@@ -248,12 +248,12 @@ echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
 wait_for_job "${fit_barrier_job_id}" "Fit"
 
-echo "Running intervention library..."
-run_intervention_stage
+# echo "Running intervention library..."
+# run_intervention_stage
 
-echo "Submitting posterior predictive jobs..."
-posterior_predictive_report_job_id="$(submit_posterior_predictive_stage)"
-wait_for_job "${posterior_predictive_report_job_id}" "Posterior predictive"
+# echo "Submitting posterior predictive jobs..."
+# posterior_predictive_report_job_id="$(submit_posterior_predictive_stage)"
+# wait_for_job "${posterior_predictive_report_job_id}" "Posterior predictive"
 
 echo "Job finished at $(date)"
 
