@@ -434,10 +434,12 @@ def _blank_aggregate_metrics() -> dict[str, object]:
         "mean_fold_validation_loss": "",
         "weighted_mean_validation_brier_score": "",
         "mean_fold_validation_brier_score": "",
+        "standard_error_fold_validation_brier_score": "",
         "weighted_mean_validation_ece": "",
         "mean_fold_validation_ece": "",
         "weighted_mean_validation_mean_magnetization_abs_diff": "",
         "mean_fold_validation_mean_magnetization_abs_diff": "",
+        "standard_error_fold_validation_mean_magnetization_abs_diff": "",
         "total_validation_slots": "",
         "weighted_mean_post_s_validation_loss": "",
         "mean_fold_post_s_validation_loss": "",
@@ -463,6 +465,18 @@ def _weighted_and_mean(
         float(np.sum(weights * values) / np.sum(weights)),
         float(np.mean(values)),
     )
+
+
+def _mean_and_standard_error(
+    rows: list[dict[str, object]],
+    *,
+    value_key: str,
+) -> tuple[float, float]:
+    values = np.asarray([float(row[value_key]) for row in rows], dtype=float)
+    mean_value = float(np.mean(values))
+    if values.size <= 1:
+        return mean_value, 0.0
+    return mean_value, float(np.std(values, ddof=1) / np.sqrt(values.size))
 
 
 def build_candidate_score_row(
@@ -502,6 +516,10 @@ def build_candidate_score_row(
         value_key="validation_brier_score",
         weight_key="num_validation_slots",
     )
+    _, se_validation_brier = _mean_and_standard_error(
+        success_rows,
+        value_key="validation_brier_score",
+    )
     weighted_validation_ece, mean_validation_ece = _weighted_and_mean(
         success_rows,
         value_key="validation_ece",
@@ -512,6 +530,10 @@ def build_candidate_score_row(
         value_key="validation_mean_magnetization_abs_diff",
         weight_key="num_validation_slots",
     )
+    _, se_validation_mag_diff = _mean_and_standard_error(
+        success_rows,
+        value_key="validation_mean_magnetization_abs_diff",
+    )
 
     aggregated: dict[str, object] = {
         **base_row,
@@ -521,10 +543,12 @@ def build_candidate_score_row(
         "mean_fold_validation_loss": mean_validation_loss,
         "weighted_mean_validation_brier_score": weighted_validation_brier,
         "mean_fold_validation_brier_score": mean_validation_brier,
+        "standard_error_fold_validation_brier_score": se_validation_brier,
         "weighted_mean_validation_ece": weighted_validation_ece,
         "mean_fold_validation_ece": mean_validation_ece,
         "weighted_mean_validation_mean_magnetization_abs_diff": weighted_validation_mag_diff,
         "mean_fold_validation_mean_magnetization_abs_diff": mean_validation_mag_diff,
+        "standard_error_fold_validation_mean_magnetization_abs_diff": se_validation_mag_diff,
         "total_validation_slots": int(
             np.sum(np.asarray([int(row["num_validation_slots"]) for row in success_rows], dtype=int))
         ),

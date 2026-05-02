@@ -47,10 +47,12 @@ AGGREGATED_METRIC_KEYS = (
     "mean_fold_validation_loss",
     "weighted_mean_validation_brier_score",
     "mean_fold_validation_brier_score",
+    "standard_error_fold_validation_brier_score",
     "weighted_mean_validation_ece",
     "mean_fold_validation_ece",
     "weighted_mean_validation_mean_magnetization_abs_diff",
     "mean_fold_validation_mean_magnetization_abs_diff",
+    "standard_error_fold_validation_mean_magnetization_abs_diff",
     "total_validation_slots",
     "weighted_mean_post_s_validation_loss",
     "mean_fold_post_s_validation_loss",
@@ -78,6 +80,11 @@ FOLD_METRIC_KEYS = (
     "post_s_validation_observed_mean_magnetization",
     "post_s_validation_sampled_mean_magnetization_mean",
 )
+
+WINNER_MAG_DIFF_MEAN_KEY = "mean_fold_validation_mean_magnetization_abs_diff"
+WINNER_MAG_DIFF_SE_KEY = "standard_error_fold_validation_mean_magnetization_abs_diff"
+WINNER_BRIER_MEAN_KEY = "mean_fold_validation_brier_score"
+WINNER_BRIER_SE_KEY = "standard_error_fold_validation_brier_score"
 
 
 def _normalize_execution_mode(execution_mode: str) -> str:
@@ -490,32 +497,6 @@ def _manifest_row_from_best_row(
     }
 
 
-def _manifest_row_from_best_candidate_payload(
-    experiment_row: dict[str, str],
-    search: dict[str, Any],
-    best_candidate_payload: dict[str, object],
-    output_root: Path,
-    *,
-    execution_mode: str,
-) -> dict[str, object]:
-    return {
-        "experiment_name": experiment_row.get("experiment_name", ""),
-        "experiment_slug": experiment_row.get("experiment_slug", ""),
-        "experiment_path": str(Path(experiment_row["experiment_path"]).resolve()),
-        "execution_mode": _normalize_execution_mode(execution_mode),
-        "search_name": search["name"],
-        "search_slug": search["slug"],
-        "output_path": str(output_root.resolve()),
-        "best_candidate_name": str(best_candidate_payload.get("candidate_name", "")),
-        "best_candidate_slug": str(best_candidate_payload.get("candidate_slug", "")),
-        **{
-            key: best_candidate_payload.get(key, "")
-            for key in AGGREGATED_METRIC_KEYS
-        },
-        "status": "completed",
-    }
-
-
 def _best_candidate_payload(
     experiment_row: dict[str, str],
     search: dict[str, Any],
@@ -543,6 +524,80 @@ def _best_candidate_payload(
     return payload
 
 
+def _candidate_regularization_sort_key(candidate: dict[str, Any]) -> tuple[float, float, float, float, int]:
+    v_column_l2_max = candidate.get("v_column_l2_max")
+    max_column_penalty = (
+        -float("inf")
+        if v_column_l2_max in (None, "")
+        else -float(v_column_l2_max)
+    )
+    return (
+        float(candidate.get("lambda_nuclear", 0.0) or 0.0),
+        float(candidate.get("lambda_frobenius", 0.0) or 0.0),
+        float(candidate.get("lambda_uv_ridge", 0.0) or 0.0),
+        max_column_penalty,
+        int(candidate["_candidate_index"]),
+    )
+
+
+def _select_best_candidate_within_standard_error(
+    candidates: list[dict[str, Any]],
+    candidate_score_rows: list[dict[str, object]],
+) -> tuple[dict[str, Any], dict[str, object]]:
+    candidate_by_slug = {str(candidate["slug"]): candidate for candidate in candidates}
+    completed_pairs = [
+        (candidate_by_slug[str(row["candidate_slug"])], row)
+        for row in candidate_score_rows
+        if row.get("status") == "completed"
+        and str(row.get("candidate_slug", "")) in candidate_by_slug
+    ]
+    if not completed_pairs:
+        raise RuntimeError("No completed candidate score rows are available.")
+
+    best_mag_candidate, best_mag_row = min(
+        completed_pairs,
+        key=lambda pair: (
+            float(pair[1][WINNER_MAG_DIFF_MEAN_KEY]),
+            float(pair[1][WINNER_BRIER_MEAN_KEY]),
+            _candidate_regularization_sort_key(pair[0]),
+        ),
+    )
+    mag_diff_threshold = float(best_mag_row[WINNER_MAG_DIFF_MEAN_KEY]) + float(
+        best_mag_row[WINNER_MAG_DIFF_SE_KEY]
+    )
+    mag_eligible_pairs = [
+        pair
+        for pair in completed_pairs
+        if float(pair[1][WINNER_MAG_DIFF_MEAN_KEY]) <= mag_diff_threshold
+    ]
+    if not mag_eligible_pairs:
+        return best_mag_candidate, best_mag_row
+
+    _, best_brier_row = min(
+        mag_eligible_pairs,
+        key=lambda pair: (
+            float(pair[1][WINNER_BRIER_MEAN_KEY]),
+            _candidate_regularization_sort_key(pair[0]),
+        ),
+    )
+    brier_threshold = float(best_brier_row[WINNER_BRIER_MEAN_KEY]) + float(
+        best_brier_row[WINNER_BRIER_SE_KEY]
+    )
+    brier_eligible_pairs = [
+        pair
+        for pair in mag_eligible_pairs
+        if float(pair[1][WINNER_BRIER_MEAN_KEY]) <= brier_threshold
+    ]
+    return min(
+        brier_eligible_pairs,
+        key=lambda pair: (
+            _candidate_regularization_sort_key(pair[0]),
+            float(pair[1][WINNER_MAG_DIFF_MEAN_KEY]),
+            float(pair[1][WINNER_BRIER_MEAN_KEY]),
+        ),
+    )
+
+
 def _write_search_score_artifacts(
     experiment_row: dict[str, str],
     search: dict[str, Any],
@@ -555,8 +610,6 @@ def _write_search_score_artifacts(
 ) -> dict[str, object]:
     output_root_path = Path(output_root)
     candidate_score_rows: list[dict[str, object]] = []
-    best_row: dict[str, object] | None = None
-    best_candidate: dict[str, Any] | None = None
 
     score_search = dict(search)
     score_search["_execution_mode"] = _normalize_execution_mode(execution_mode)
@@ -572,13 +625,6 @@ def _write_search_score_artifacts(
             expected_num_folds=expected_num_folds,
         )
         candidate_score_rows.append(candidate_score)
-        if candidate_score["status"] != "completed":
-            continue
-        if best_row is None or candidate_score_sort_key(candidate_score) < candidate_score_sort_key(
-            best_row
-        ):
-            best_row = candidate_score
-            best_candidate = candidate
 
     write_csv_manifest(output_root_path / "fold_scores.csv", fold_rows)
     completed_rows = sorted(
@@ -589,7 +635,12 @@ def _write_search_score_artifacts(
         row["rank"] = int(rank)
     write_csv_manifest(output_root_path / "candidate_scores.csv", candidate_score_rows)
 
-    if best_row is None or best_candidate is None:
+    try:
+        best_candidate, best_row = _select_best_candidate_within_standard_error(
+            candidates,
+            candidate_score_rows,
+        )
+    except RuntimeError:
         raise RuntimeError(
             f"All candidates failed for experiment '{experiment_row.get('experiment_name', '')}' "
             f"search '{search['name']}'. See {output_root_path / 'fold_scores.csv'}."
@@ -1112,6 +1163,9 @@ def collect_cv_manifest_from_requests(
                 f"Request row for experiment '{experiment_row['experiment_slug']}' is missing cv_spec_path."
             )
         search = _load_search_from_spec(cv_spec_path, str(first_row["search_slug"]))
+        configured_num_folds = int(
+            first_row.get("configured_num_folds", _get_num_folds_from_search(search))
+        )
         output_roots = {
             Path(str(row["fit_path"])).resolve().parents[2]
             for row in group_rows
@@ -1122,19 +1176,27 @@ def collect_cv_manifest_from_requests(
                 f"search '{search['slug']}', found {len(output_roots)}."
             )
         output_root = next(iter(output_roots))
-        best_candidate_path = output_root / "best_candidate.yaml"
-        if not best_candidate_path.exists():
+        fold_scores_path = output_root / "fold_scores.csv"
+        if not fold_scores_path.exists():
             raise FileNotFoundError(
-                f"Missing best-candidate artifact for experiment '{experiment_row['experiment_slug']}' "
-                f"search '{search['slug']}': {best_candidate_path}"
+                f"Missing fold-score artifact for experiment '{experiment_row['experiment_slug']}' "
+                f"search '{search['slug']}': {fold_scores_path}"
             )
-        best_candidate_payload = load_spec(best_candidate_path)
+        candidates = expand_search_candidates(search)
+        fold_rows = read_csv_manifest(fold_scores_path)
         manifest_rows.append(
-            _manifest_row_from_best_candidate_payload(
+            _write_search_score_artifacts(
                 experiment_row,
                 search,
-                best_candidate_payload,
-                output_root,
+                candidates,
+                fold_rows,
+                expected_num_folds=len(
+                    _selected_fold_ids(
+                        configured_num_folds,
+                        execution_mode=normalized_mode,
+                    )
+                ),
+                output_root=output_root,
                 execution_mode=normalized_mode,
             )
         )

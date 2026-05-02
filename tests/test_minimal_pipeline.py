@@ -3749,6 +3749,8 @@ class PipelineStageRequestTests(unittest.TestCase):
         original_score_rows = read_csv_manifest(output_root / "candidate_scores.csv")
         original_best_candidate = OmegaConf.load(output_root / "best_candidate.yaml")
         Path(manifest_path).unlink()
+        (output_root / "candidate_scores.csv").unlink()
+        (output_root / "best_candidate.yaml").unlink()
 
         with mock.patch.object(
             cv_runner,
@@ -3768,10 +3770,15 @@ class PipelineStageRequestTests(unittest.TestCase):
             read_csv_manifest(output_root / "candidate_scores.csv"),
             original_score_rows,
         )
+        collected_best_candidate = OmegaConf.load(output_root / "best_candidate.yaml")
         collected_manifest_rows = read_csv_manifest(collected_manifest_path)
         self.assertEqual(len(collected_manifest_rows), 1)
         self.assertEqual(
             collected_manifest_rows[0]["best_candidate_slug"],
+            str(collected_best_candidate.candidate_slug),
+        )
+        self.assertEqual(
+            str(collected_best_candidate.candidate_slug),
             str(original_best_candidate.candidate_slug),
         )
 
@@ -4151,6 +4158,90 @@ class PipelineStageRequestTests(unittest.TestCase):
                 "worse_mag",
             ],
         )
+
+    def test_standard_error_winner_rule_prefers_least_regularized_brier_eligible_fit(
+        self,
+    ) -> None:
+        candidates = [
+            {
+                "name": "best_mag_more_regularized",
+                "slug": "best_mag_more_regularized",
+                "_candidate_index": 1,
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.5,
+                "v_column_l2_max": None,
+            },
+            {
+                "name": "within_se_less_regularized",
+                "slug": "within_se_less_regularized",
+                "_candidate_index": 2,
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.1,
+                "v_column_l2_max": None,
+            },
+            {
+                "name": "within_mag_se_but_bad_brier",
+                "slug": "within_mag_se_but_bad_brier",
+                "_candidate_index": 3,
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.0,
+                "v_column_l2_max": None,
+            },
+            {
+                "name": "outside_mag_se",
+                "slug": "outside_mag_se",
+                "_candidate_index": 4,
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.0,
+                "v_column_l2_max": None,
+            },
+        ]
+        candidate_score_rows = [
+            {
+                "candidate_slug": "best_mag_more_regularized",
+                "status": "completed",
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.10,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.02,
+                "mean_fold_validation_brier_score": 0.20,
+                "standard_error_fold_validation_brier_score": 0.01,
+            },
+            {
+                "candidate_slug": "within_se_less_regularized",
+                "status": "completed",
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.11,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.01,
+                "mean_fold_validation_brier_score": 0.205,
+                "standard_error_fold_validation_brier_score": 0.02,
+            },
+            {
+                "candidate_slug": "within_mag_se_but_bad_brier",
+                "status": "completed",
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.11,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.01,
+                "mean_fold_validation_brier_score": 0.23,
+                "standard_error_fold_validation_brier_score": 0.01,
+            },
+            {
+                "candidate_slug": "outside_mag_se",
+                "status": "completed",
+                "mean_fold_validation_mean_magnetization_abs_diff": 0.14,
+                "standard_error_fold_validation_mean_magnetization_abs_diff": 0.01,
+                "mean_fold_validation_brier_score": 0.18,
+                "standard_error_fold_validation_brier_score": 0.01,
+            },
+        ]
+
+        best_candidate, best_row = cv_runner._select_best_candidate_within_standard_error(
+            candidates,
+            candidate_score_rows,
+        )
+
+        self.assertEqual(best_candidate["slug"], "within_se_less_regularized")
+        self.assertEqual(best_row["candidate_slug"], "within_se_less_regularized")
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_generation_jobs_submits_workers_and_report(self) -> None:
