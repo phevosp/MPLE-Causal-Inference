@@ -1,0 +1,62 @@
+2026-05-02 00:50:53 | INFO | Loading data...
+2026-05-02 00:50:53 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding/panel_data.npz
+2026-05-02 00:50:53 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding/x_0.npy
+2026-05-02 00:50:53 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0004/fold_7/fit_realized_config.yaml
+2026-05-02 00:50:53 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding
+2026-05-02 00:50:53 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding
+2026-05-02 00:50:53 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0004/fold_7/loss_mask.npy
+2026-05-02 00:50:53 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-05-02 00:50:53 | INFO | Configured latent rank: 5
+2026-05-02 00:50:53 | INFO | Using a fixed known graph with scalar xi.
+2026-05-02 00:50:53 | INFO | Fit-time hard bounds active: False
+2026-05-02 00:50:53 | INFO | Fixed scalar parameters: {}
+2026-05-02 00:50:53 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-05-02 00:50:53 | INFO | Beta mask before s: True with s=55
+2026-05-02 00:50:53 | INFO | Beta mask after e: True with e=114
+2026-05-02 00:50:53 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-05-02 00:50:53 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.01, v_column_l2_max=1.0, proximal_lr=1.0
+2026-05-02 00:50:53 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.694350 | initial_penalized=0.694354
+2026-05-02 00:50:53 | INFO | Alternating low-rank iter 0 | Loss: 0.599287 | Penalized: 0.600442
+2026-05-02 00:51:07 | INFO | Alternating low-rank iter 100 | Loss: 0.363292 | Penalized: 0.413404
+2026-05-02 00:51:20 | INFO | Alternating low-rank iter 200 | Loss: 0.358833 | Penalized: 0.409077
+2026-05-02 00:51:32 | INFO | Alternating low-rank iter 300 | Loss: 0.355958 | Penalized: 0.406515
+2026-05-02 00:51:44 | INFO | Alternating low-rank iter 400 | Loss: 0.353491 | Penalized: 0.404456
+2026-05-02 00:51:56 | INFO | Alternating low-rank iter 500 | Loss: 0.351959 | Penalized: 0.403164
+2026-05-02 00:52:09 | INFO | Alternating low-rank iter 600 | Loss: 0.350987 | Penalized: 0.402285
+2026-05-02 00:52:21 | INFO | Alternating low-rank iter 700 | Loss: 0.350252 | Penalized: 0.401575
+2026-05-02 00:52:35 | INFO | Alternating low-rank iter 800 | Loss: 0.349626 | Penalized: 0.400939
+2026-05-02 00:52:48 | INFO | Alternating low-rank iter 900 | Loss: 0.349054 | Penalized: 0.400347
+2026-05-02 00:53:01 | INFO | Alternating low-rank iter 1000 | Loss: 0.348508 | Penalized: 0.399784
+2026-05-02 00:53:13 | INFO | Alternating low-rank iter 1100 | Loss: 0.347972 | Penalized: 0.399240
+2026-05-02 00:53:24 | INFO | Alternating low-rank iter 1200 | Loss: 0.347433 | Penalized: 0.398708
+2026-05-02 00:53:37 | INFO | Alternating low-rank iter 1300 | Loss: 0.346895 | Penalized: 0.398192
+2026-05-02 00:53:51 | INFO | Alternating low-rank iter 1400 | Loss: 0.346382 | Penalized: 0.397710
+2026-05-02 00:54:07 | INFO | Alternating low-rank iter 1500 | Loss: 0.345919 | Penalized: 0.397284
+2026-05-02 00:54:20 | INFO | Alternating low-rank iter 1600 | Loss: 0.345503 | Penalized: 0.396909
+2026-05-02 00:54:32 | INFO | Alternating low-rank iter 1700 | Loss: 0.345124 | Penalized: 0.396575
+2026-05-02 00:54:43 | INFO | Alternating low-rank iter 1800 | Loss: 0.344782 | Penalized: 0.396278
+2026-05-02 00:54:55 | INFO | Alternating low-rank iter 1900 | Loss: 0.344479 | Penalized: 0.396012
+2026-05-02 00:55:07 | INFO | Done fitting.
+2026-05-02 00:55:07 | INFO | Optimizer status: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT
+2026-05-02 00:55:07 | INFO | Best optimizer start: 1 / 1
+2026-05-02 00:55:07 | INFO | Final Loss: 0.344215
+2026-05-02 00:55:07 | INFO | Estimated vs True Parameters:
+2026-05-02 00:55:07 | INFO |   beta: -0.3887 (True: -0.3000) | SQE: 0.007863
+2026-05-02 00:55:07 | INFO |   xi: 1.1764 (True: 0.8000) | SQE: 0.141700
+2026-05-02 00:55:07 | INFO |   eta: 0.0582 (True: 0.3000) | SQE: 0.058475
+2026-05-02 00:55:07 | INFO | Alternating low-rank optimizer diagnostics:
+2026-05-02 00:55:07 | INFO |   penalized_objective: 0.395777
+2026-05-02 00:55:07 | INFO |   mple_loss_without_penalty: 0.344215
+2026-05-02 00:55:07 | INFO |   lambda_uv_ridge: 0.010000
+2026-05-02 00:55:07 | INFO |   u_frobenius_norm: 365.362768
+2026-05-02 00:55:07 | INFO |   v_frobenius_norm: 2.236068
+2026-05-02 00:55:07 | INFO |   effective_rank: 5.000000
+2026-05-02 00:55:07 | INFO | Field and interaction diagnostics:
+2026-05-02 00:55:07 | INFO |   field_rmse: 0.655310
+2026-05-02 00:55:07 | INFO |   interaction_fro_error: 2.354887
+2026-05-02 00:55:07 | INFO |   estimated_field_max_abs_entry: 4.096215
+2026-05-02 00:55:07 | INFO |   estimated_field_rank: 5.000000
+2026-05-02 00:55:07 | INFO |   true_field_max_abs_entry: 1.442488
+2026-05-02 00:55:07 | INFO |   true_field_rank: 5.000000
+2026-05-02 00:55:08 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0004/fold_7/mple_summary.csv
+2026-05-02 00:55:08 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/r5_c1_hybrid_us_county_intervention_generated_graph_confounding/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0004/fold_7/mple.log

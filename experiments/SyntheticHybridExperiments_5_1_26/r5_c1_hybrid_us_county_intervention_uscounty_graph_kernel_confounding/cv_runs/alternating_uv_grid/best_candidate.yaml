@@ -1,0 +1,23 @@
+experiment_name: r5_c1_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
+experiment_slug: r5_c1_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
+search_name: alternating_uv_grid
+search_slug: alternating_uv_grid
+candidate_name: alternating_uv_grid__candidate_0006
+candidate_slug: alternating_uv_grid_candidate_0006
+candidate_index: 6
+weighted_mean_validation_loss: 0.5863068428915574
+mean_fold_validation_loss: 0.586306644384728
+weighted_mean_validation_brier_score: 0.20060819973117353
+mean_fold_validation_brier_score: 0.20060811008057264
+weighted_mean_validation_ece: 0.010045595357289723
+mean_fold_validation_ece: 0.010045627536428564
+total_validation_slots: 349624
+weighted_mean_post_s_validation_loss: 0.5782461987588149
+mean_fold_post_s_validation_loss: 0.5782368974471632
+weighted_mean_post_s_validation_brier_score: 0.19706758846745603
+mean_fold_post_s_validation_brier_score: 0.19706379645147507
+weighted_mean_post_s_validation_ece: 0.015373306925308016
+mean_fold_post_s_validation_ece: 0.015377568194655264
+total_post_s_validation_slots: 189882
+hyperparameters:
+  lambda_uv_ridge: 0.1
