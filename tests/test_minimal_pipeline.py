@@ -4035,31 +4035,44 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIsNone(post_s_validation_brier)
         self.assertIsNone(post_s_validation_ece)
 
-    def test_candidate_score_sort_key_prefers_lower_brier_then_loss(self) -> None:
+    def test_candidate_score_sort_key_prefers_lower_mag_diff_then_brier_then_loss(
+        self,
+    ) -> None:
         rows = [
             {
-                "candidate_slug": "higher_loss_better_brier",
+                "candidate_slug": "higher_loss_same_mag_same_brier",
                 "candidate_index": 2,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
                 "weighted_mean_validation_brier_score": 0.10,
                 "weighted_mean_validation_loss": 0.60,
             },
             {
-                "candidate_slug": "lower_loss_same_brier",
+                "candidate_slug": "lower_loss_same_mag_same_brier",
                 "candidate_index": 3,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
                 "weighted_mean_validation_brier_score": 0.10,
                 "weighted_mean_validation_loss": 0.40,
             },
             {
-                "candidate_slug": "worse_brier",
+                "candidate_slug": "worse_mag",
                 "candidate_index": 1,
-                "weighted_mean_validation_brier_score": 0.12,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.12,
+                "weighted_mean_validation_brier_score": 0.05,
                 "weighted_mean_validation_loss": 0.20,
             },
             {
-                "candidate_slug": "same_brier_same_loss_lower_index",
+                "candidate_slug": "same_mag_same_brier_same_loss_lower_index",
                 "candidate_index": 1,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
                 "weighted_mean_validation_brier_score": 0.10,
                 "weighted_mean_validation_loss": 0.40,
+            },
+            {
+                "candidate_slug": "better_brier_same_mag",
+                "candidate_index": 4,
+                "weighted_mean_validation_mean_magnetization_abs_diff": 0.10,
+                "weighted_mean_validation_brier_score": 0.09,
+                "weighted_mean_validation_loss": 0.90,
             },
         ]
 
@@ -4068,10 +4081,11 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(
             [row["candidate_slug"] for row in ordered],
             [
-                "same_brier_same_loss_lower_index",
-                "lower_loss_same_brier",
-                "higher_loss_better_brier",
-                "worse_brier",
+                "better_brier_same_mag",
+                "same_mag_same_brier_same_loss_lower_index",
+                "lower_loss_same_mag_same_brier",
+                "higher_loss_same_mag_same_brier",
+                "worse_mag",
             ],
         )
 

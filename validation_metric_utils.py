@@ -596,6 +596,7 @@ def build_candidate_score_row(
 
 def candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int]:
     return (
+        float(row["weighted_mean_validation_mean_magnetization_abs_diff"]),
         float(row["weighted_mean_validation_brier_score"]),
         float(row["weighted_mean_validation_loss"]),
         int(row["candidate_index"]),
