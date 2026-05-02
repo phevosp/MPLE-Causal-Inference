@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import itertools
 import shutil
 import subprocess
@@ -244,6 +245,13 @@ def _masked_beta_feature(
     return beta_feature
 
 
+def _time_window_mask(*, t_steps: int, n_nodes: int, start_t: int = 0) -> np.ndarray:
+    mask = np.zeros((int(t_steps), int(n_nodes)), dtype=bool)
+    if int(start_t) < int(t_steps):
+        mask[int(start_t) :, :] = True
+    return mask
+
+
 def _validation_brier_score(
     *,
     x: np.ndarray,
@@ -308,7 +316,16 @@ def _evaluate_fold_metrics(
     *,
     training_loss_mask: np.ndarray,
     validation_loss_mask: np.ndarray,
-) -> tuple[float, float, float, float]:
+) -> tuple[
+    float,
+    float,
+    float,
+    float,
+    int,
+    float | None,
+    float | None,
+    float | None,
+]:
     panel_context = load_experiment_panel_context(experiment_root)
     bundle = load_fit_parameter_bundle(fit_root, experiment_root)
     x = np.asarray(panel_context["x"], dtype=float)
@@ -342,6 +359,20 @@ def _evaluate_fold_metrics(
         loss_mask=np.asarray(validation_loss_mask, dtype=bool),
         **common_kwargs,
     )
+    post_s_validation_loss_mask = np.asarray(validation_loss_mask, dtype=bool) & _time_window_mask(
+        t_steps=x.shape[0],
+        n_nodes=x.shape[1],
+        start_t=int(panel_context["s"]),
+    )
+    num_post_s_validation_slots = int(np.count_nonzero(post_s_validation_loss_mask))
+    post_s_validation_loss: float | None = None
+    if num_post_s_validation_slots > 0:
+        post_s_validation_loss = float(
+            evaluate_mple_loss_from_parts(
+                loss_mask=post_s_validation_loss_mask,
+                **common_kwargs,
+            )
+        )
     prev_x = np.vstack([x_0, x[:-1, :]])
     h_x = (
         field_matrix
@@ -366,12 +397,41 @@ def _evaluate_fold_metrics(
         h_x=h_x,
         loss_mask=np.asarray(validation_loss_mask, dtype=bool),
     )
+    post_s_validation_brier_score: float | None = None
+    post_s_validation_ece: float | None = None
+    if num_post_s_validation_slots > 0:
+        post_s_validation_brier_score = _validation_brier_score(
+            x=x,
+            h_x=h_x,
+            loss_mask=post_s_validation_loss_mask,
+        )
+        post_s_validation_ece = _validation_expected_calibration_error(
+            x=x,
+            h_x=h_x,
+            loss_mask=post_s_validation_loss_mask,
+        )
     return (
         float(fit_loss),
         float(validation_loss),
         float(validation_brier_score),
         float(validation_ece),
+        int(num_post_s_validation_slots),
+        post_s_validation_loss,
+        post_s_validation_brier_score,
+        post_s_validation_ece,
     )
+
+
+def _parse_manifest_scalar(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if stripped == "":
+        return ""
+    try:
+        return ast.literal_eval(stripped)
+    except (SyntaxError, ValueError):
+        return stripped
 
 
 def _candidate_grid_row(search: dict[str, Any], candidate: dict[str, Any]) -> dict[str, object]:
@@ -414,6 +474,13 @@ def _candidate_score_row(
             "weighted_mean_validation_ece": "",
             "mean_fold_validation_ece": "",
             "total_validation_slots": "",
+            "weighted_mean_post_s_validation_loss": "",
+            "mean_fold_post_s_validation_loss": "",
+            "weighted_mean_post_s_validation_brier_score": "",
+            "mean_fold_post_s_validation_brier_score": "",
+            "weighted_mean_post_s_validation_ece": "",
+            "mean_fold_post_s_validation_ece": "",
+            "total_post_s_validation_slots": "",
         }
     validation_slots = np.asarray(
         [int(row["num_validation_slots"]) for row in success_rows],
@@ -443,7 +510,12 @@ def _candidate_score_row(
         np.sum(validation_slots * validation_eces) / np.sum(validation_slots)
     )
     mean_fold_ece = float(np.mean(validation_eces))
-    return {
+    post_s_rows = [
+        row
+        for row in success_rows
+        if int(row.get("num_post_s_validation_slots", 0)) > 0
+    ]
+    aggregated: dict[str, object] = {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
         "search_name": search["name"],
@@ -461,6 +533,56 @@ def _candidate_score_row(
         "mean_fold_validation_ece": mean_fold_ece,
         "total_validation_slots": int(np.sum(validation_slots)),
     }
+    if not post_s_rows:
+        aggregated.update(
+            {
+                "weighted_mean_post_s_validation_loss": "",
+                "mean_fold_post_s_validation_loss": "",
+                "weighted_mean_post_s_validation_brier_score": "",
+                "mean_fold_post_s_validation_brier_score": "",
+                "weighted_mean_post_s_validation_ece": "",
+                "mean_fold_post_s_validation_ece": "",
+                "total_post_s_validation_slots": 0,
+            }
+        )
+        return aggregated
+
+    post_s_slots = np.asarray(
+        [int(row["num_post_s_validation_slots"]) for row in post_s_rows],
+        dtype=float,
+    )
+    post_s_validation_losses = np.asarray(
+        [float(row["post_s_validation_loss"]) for row in post_s_rows],
+        dtype=float,
+    )
+    post_s_validation_brier_scores = np.asarray(
+        [float(row["post_s_validation_brier_score"]) for row in post_s_rows],
+        dtype=float,
+    )
+    post_s_validation_eces = np.asarray(
+        [float(row["post_s_validation_ece"]) for row in post_s_rows],
+        dtype=float,
+    )
+    aggregated.update(
+        {
+            "weighted_mean_post_s_validation_loss": float(
+                np.sum(post_s_slots * post_s_validation_losses) / np.sum(post_s_slots)
+            ),
+            "mean_fold_post_s_validation_loss": float(np.mean(post_s_validation_losses)),
+            "weighted_mean_post_s_validation_brier_score": float(
+                np.sum(post_s_slots * post_s_validation_brier_scores) / np.sum(post_s_slots)
+            ),
+            "mean_fold_post_s_validation_brier_score": float(
+                np.mean(post_s_validation_brier_scores)
+            ),
+            "weighted_mean_post_s_validation_ece": float(
+                np.sum(post_s_slots * post_s_validation_eces) / np.sum(post_s_slots)
+            ),
+            "mean_fold_post_s_validation_ece": float(np.mean(post_s_validation_eces)),
+            "total_post_s_validation_slots": int(np.sum(post_s_slots)),
+        }
+    )
+    return aggregated
 
 
 def _candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int]:
@@ -471,132 +593,67 @@ def _candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int
     )
 
 
-def _run_search_for_experiment(
+def _load_scored_candidates(
+    output_root: str | Path,
+    request_rows: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    candidate_map: dict[str, dict[str, Any]] = {}
+    for row in request_rows:
+        candidate_slug = str(row["candidate_slug"])
+        candidate_map[candidate_slug] = {
+            "name": row["candidate_name"],
+            "slug": candidate_slug,
+            "_candidate_index": int(row["candidate_index"]),
+            "_flat_params": {},
+        }
+
+    candidate_grid_path = Path(output_root) / "candidate_grid.csv"
+    if candidate_grid_path.exists():
+        base_fields = {
+            "search_name",
+            "search_slug",
+            "candidate_name",
+            "candidate_slug",
+            "candidate_index",
+        }
+        for row in read_csv_manifest(candidate_grid_path):
+            candidate_slug = str(row["candidate_slug"])
+            candidate = candidate_map.setdefault(
+                candidate_slug,
+                {
+                    "name": row["candidate_name"],
+                    "slug": candidate_slug,
+                    "_candidate_index": int(row["candidate_index"]),
+                    "_flat_params": {},
+                },
+            )
+            candidate["_flat_params"] = {
+                key: _parse_manifest_scalar(value)
+                for key, value in row.items()
+                if key not in base_fields and value not in {"", None}
+            }
+
+    return sorted(candidate_map.values(), key=lambda candidate: int(candidate["_candidate_index"]))
+
+
+def _write_search_score_artifacts(
     experiment_row: dict[str, str],
     search: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    fold_rows: list[dict[str, object]],
     *,
-    num_folds: int | None = None,
-    overwrite: bool = False,
+    num_folds: int,
+    output_root: str | Path,
 ) -> dict[str, object]:
-    if num_folds is None:
-        num_folds = _get_num_folds_from_search(search)
-    experiment_root = Path(experiment_row["experiment_path"]).resolve()
-    output_root = _candidate_output_root(experiment_root, search)
-    if output_root.exists() and overwrite:
-        shutil.rmtree(output_root)
-    output_root.mkdir(parents=True, exist_ok=True)
-
-    role_codes = _load_fold_roles(experiment_root, num_folds=num_folds)
-    panel_context = load_experiment_panel_context(experiment_root)
-    if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
-        panel_context["N"]
-    ):
-        raise ValueError(
-            f"CV fold tensor shape {role_codes.shape} does not match panel dimensions "
-            f"(T={panel_context['T']}, N={panel_context['N']}) for {experiment_root}."
-        )
-
-    candidates = expand_search_candidates(search)
-    candidate_grid_rows = [_candidate_grid_row(search, candidate) for candidate in candidates]
-    write_csv_manifest(output_root / "candidate_grid.csv", candidate_grid_rows)
-
-    fold_rows: list[dict[str, object]] = []
+    output_root = Path(output_root)
     candidate_score_rows: list[dict[str, object]] = []
     best_row: dict[str, object] | None = None
     best_candidate: dict[str, Any] | None = None
 
     for candidate in candidates:
-        candidate_fold_rows: list[dict[str, object]] = []
-        for fold_id in range(1, num_folds + 1):
-            fold_root = _candidate_fit_root(experiment_root, search, candidate, fold_id)
-            if fold_root.exists():
-                if overwrite:
-                    shutil.rmtree(fold_root)
-                else:
-                    raise FileExistsError(
-                        f"{fold_root} already exists. Re-run with --overwrite to rebuild it."
-                    )
-            fold_root.mkdir(parents=True, exist_ok=False)
-            fold_roles = np.asarray(role_codes[fold_id - 1], dtype=np.int8)
-            training_loss_mask = fold_roles == cv_folds.ROLE_CODE_TRAINING
-            validation_loss_mask = fold_roles == cv_folds.ROLE_CODE_VALIDATION
-            num_training_slots = int(np.count_nonzero(training_loss_mask))
-            num_validation_slots = int(np.count_nonzero(validation_loss_mask))
-            if num_training_slots <= 0 or num_validation_slots <= 0:
-                raise ValueError(
-                    f"Fold {fold_id} for {experiment_root} has empty training or validation support."
-                )
-            mask_path = _save_loss_mask(fold_root / "loss_mask.npy", training_loss_mask)
-            extra_metadata = {
-                "search_name": search["name"],
-                "search_slug": search["slug"],
-                "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
-                "cv_fold_id": int(fold_id),
-                "candidate_name": candidate["name"],
-                "candidate_slug": candidate["slug"],
-                "candidate_index": int(candidate["_candidate_index"]),
-                "num_training_slots": num_training_slots,
-                "num_separator_slots": int(
-                    np.count_nonzero(fold_roles == cv_folds.ROLE_CODE_SEPARATOR)
-                ),
-                "num_validation_slots": num_validation_slots,
-            }
-            row = {
-                "experiment_name": experiment_row.get("experiment_name", ""),
-                "experiment_slug": experiment_row.get("experiment_slug", ""),
-                "search_name": search["name"],
-                "search_slug": search["slug"],
-                "candidate_name": candidate["name"],
-                "candidate_slug": candidate["slug"],
-                "candidate_index": int(candidate["_candidate_index"]),
-                "cv_fold_id": int(fold_id),
-                "num_training_slots": num_training_slots,
-                "num_validation_slots": num_validation_slots,
-                "fit_path": str(fold_root.resolve()),
-            }
-            try:
-                materialize_fit_root(
-                    experiment_row,
-                    candidate,
-                    fold_root,
-                    extra_input_artifacts={"loss_mask_path": str(mask_path.resolve())},
-                    extra_metadata=extra_metadata,
-                )
-                execute_fit_root(fold_root)
-                (
-                    fit_loss,
-                    validation_loss,
-                    validation_brier_score,
-                    validation_ece,
-                ) = _evaluate_fold_metrics(
-                    fold_root,
-                    experiment_root,
-                    training_loss_mask=training_loss_mask,
-                    validation_loss_mask=validation_loss_mask,
-                )
-                row.update(
-                    {
-                        "status": "completed",
-                        "fit_loss": float(fit_loss),
-                        "validation_loss": float(validation_loss),
-                        "validation_brier_score": float(validation_brier_score),
-                        "validation_ece": float(validation_ece),
-                    }
-                )
-            except Exception as exc:  # noqa: BLE001
-                row.update(
-                    {
-                        "status": "failed",
-                        "fit_loss": "",
-                        "validation_loss": "",
-                        "validation_brier_score": "",
-                        "validation_ece": "",
-                        "error_message": str(exc),
-                    }
-                )
-            fold_rows.append(row)
-            candidate_fold_rows.append(row)
-
+        candidate_fold_rows = [
+            row for row in fold_rows if row.get("candidate_slug") == candidate["slug"]
+        ]
         candidate_score = _candidate_score_row(
             experiment_row,
             search,
@@ -647,6 +704,37 @@ def _run_search_for_experiment(
         "weighted_mean_validation_ece": float(best_row["weighted_mean_validation_ece"]),
         "mean_fold_validation_ece": float(best_row["mean_fold_validation_ece"]),
         "total_validation_slots": int(best_row["total_validation_slots"]),
+        "weighted_mean_post_s_validation_loss": (
+            ""
+            if best_row["weighted_mean_post_s_validation_loss"] == ""
+            else float(best_row["weighted_mean_post_s_validation_loss"])
+        ),
+        "mean_fold_post_s_validation_loss": (
+            ""
+            if best_row["mean_fold_post_s_validation_loss"] == ""
+            else float(best_row["mean_fold_post_s_validation_loss"])
+        ),
+        "weighted_mean_post_s_validation_brier_score": (
+            ""
+            if best_row["weighted_mean_post_s_validation_brier_score"] == ""
+            else float(best_row["weighted_mean_post_s_validation_brier_score"])
+        ),
+        "mean_fold_post_s_validation_brier_score": (
+            ""
+            if best_row["mean_fold_post_s_validation_brier_score"] == ""
+            else float(best_row["mean_fold_post_s_validation_brier_score"])
+        ),
+        "weighted_mean_post_s_validation_ece": (
+            ""
+            if best_row["weighted_mean_post_s_validation_ece"] == ""
+            else float(best_row["weighted_mean_post_s_validation_ece"])
+        ),
+        "mean_fold_post_s_validation_ece": (
+            ""
+            if best_row["mean_fold_post_s_validation_ece"] == ""
+            else float(best_row["mean_fold_post_s_validation_ece"])
+        ),
+        "total_post_s_validation_slots": int(best_row["total_post_s_validation_slots"]),
         "hyperparameters": {
             key: value for key, value in sorted(best_candidate["_flat_params"].items())
         },
@@ -658,7 +746,7 @@ def _run_search_for_experiment(
     return {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
-        "experiment_path": str(experiment_root),
+        "experiment_path": str(Path(experiment_row["experiment_path"]).resolve()),
         "search_name": search["name"],
         "search_slug": search["slug"],
         "output_path": str(output_root.resolve()),
@@ -675,8 +763,188 @@ def _run_search_for_experiment(
         "weighted_mean_validation_ece": float(best_row["weighted_mean_validation_ece"]),
         "mean_fold_validation_ece": float(best_row["mean_fold_validation_ece"]),
         "total_validation_slots": int(best_row["total_validation_slots"]),
+        "weighted_mean_post_s_validation_loss": best_row[
+            "weighted_mean_post_s_validation_loss"
+        ],
+        "mean_fold_post_s_validation_loss": best_row["mean_fold_post_s_validation_loss"],
+        "weighted_mean_post_s_validation_brier_score": best_row[
+            "weighted_mean_post_s_validation_brier_score"
+        ],
+        "mean_fold_post_s_validation_brier_score": best_row[
+            "mean_fold_post_s_validation_brier_score"
+        ],
+        "weighted_mean_post_s_validation_ece": best_row[
+            "weighted_mean_post_s_validation_ece"
+        ],
+        "mean_fold_post_s_validation_ece": best_row["mean_fold_post_s_validation_ece"],
+        "total_post_s_validation_slots": int(best_row["total_post_s_validation_slots"]),
         "status": "completed",
     }
+
+
+def _run_search_for_experiment(
+    experiment_row: dict[str, str],
+    search: dict[str, Any],
+    *,
+    num_folds: int | None = None,
+    overwrite: bool = False,
+) -> dict[str, object]:
+    if num_folds is None:
+        num_folds = _get_num_folds_from_search(search)
+    experiment_root = Path(experiment_row["experiment_path"]).resolve()
+    output_root = _candidate_output_root(experiment_root, search)
+    if output_root.exists() and overwrite:
+        shutil.rmtree(output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    role_codes = _load_fold_roles(experiment_root, num_folds=num_folds)
+    panel_context = load_experiment_panel_context(experiment_root)
+    if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
+        panel_context["N"]
+    ):
+        raise ValueError(
+            f"CV fold tensor shape {role_codes.shape} does not match panel dimensions "
+            f"(T={panel_context['T']}, N={panel_context['N']}) for {experiment_root}."
+        )
+
+    candidates = expand_search_candidates(search)
+    candidate_grid_rows = [_candidate_grid_row(search, candidate) for candidate in candidates]
+    write_csv_manifest(output_root / "candidate_grid.csv", candidate_grid_rows)
+
+    fold_rows: list[dict[str, object]] = []
+
+    for candidate in candidates:
+        for fold_id in range(1, num_folds + 1):
+            fold_root = _candidate_fit_root(experiment_root, search, candidate, fold_id)
+            if fold_root.exists():
+                if overwrite:
+                    shutil.rmtree(fold_root)
+                else:
+                    raise FileExistsError(
+                        f"{fold_root} already exists. Re-run with --overwrite to rebuild it."
+                    )
+            fold_root.mkdir(parents=True, exist_ok=False)
+            fold_roles = np.asarray(role_codes[fold_id - 1], dtype=np.int8)
+            training_loss_mask = fold_roles == cv_folds.ROLE_CODE_TRAINING
+            validation_loss_mask = fold_roles == cv_folds.ROLE_CODE_VALIDATION
+            num_training_slots = int(np.count_nonzero(training_loss_mask))
+            num_validation_slots = int(np.count_nonzero(validation_loss_mask))
+            post_s_validation_loss_mask = validation_loss_mask & _time_window_mask(
+                t_steps=fold_roles.shape[0],
+                n_nodes=fold_roles.shape[1],
+                start_t=int(panel_context["s"]),
+            )
+            num_post_s_validation_slots = int(
+                np.count_nonzero(post_s_validation_loss_mask)
+            )
+            if num_training_slots <= 0 or num_validation_slots <= 0:
+                raise ValueError(
+                    f"Fold {fold_id} for {experiment_root} has empty training or validation support."
+                )
+            mask_path = _save_loss_mask(fold_root / "loss_mask.npy", training_loss_mask)
+            extra_metadata = {
+                "search_name": search["name"],
+                "search_slug": search["slug"],
+                "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
+                "cv_fold_id": int(fold_id),
+                "candidate_name": candidate["name"],
+                "candidate_slug": candidate["slug"],
+                "candidate_index": int(candidate["_candidate_index"]),
+                "num_training_slots": num_training_slots,
+                "num_separator_slots": int(
+                    np.count_nonzero(fold_roles == cv_folds.ROLE_CODE_SEPARATOR)
+                ),
+                "num_validation_slots": num_validation_slots,
+                "num_post_s_validation_slots": num_post_s_validation_slots,
+            }
+            row = {
+                "experiment_name": experiment_row.get("experiment_name", ""),
+                "experiment_slug": experiment_row.get("experiment_slug", ""),
+                "search_name": search["name"],
+                "search_slug": search["slug"],
+                "candidate_name": candidate["name"],
+                "candidate_slug": candidate["slug"],
+                "candidate_index": int(candidate["_candidate_index"]),
+                "cv_fold_id": int(fold_id),
+                "num_training_slots": num_training_slots,
+                "num_validation_slots": num_validation_slots,
+                "num_post_s_validation_slots": num_post_s_validation_slots,
+                "fit_path": str(fold_root.resolve()),
+            }
+            try:
+                materialize_fit_root(
+                    experiment_row,
+                    candidate,
+                    fold_root,
+                    extra_input_artifacts={"loss_mask_path": str(mask_path.resolve())},
+                    extra_metadata=extra_metadata,
+                )
+                execute_fit_root(fold_root)
+                (
+                    fit_loss,
+                    validation_loss,
+                    validation_brier_score,
+                    validation_ece,
+                    computed_num_post_s_validation_slots,
+                    post_s_validation_loss,
+                    post_s_validation_brier_score,
+                    post_s_validation_ece,
+                ) = _evaluate_fold_metrics(
+                    fold_root,
+                    experiment_root,
+                    training_loss_mask=training_loss_mask,
+                    validation_loss_mask=validation_loss_mask,
+                )
+                row.update(
+                    {
+                        "status": "completed",
+                        "fit_loss": float(fit_loss),
+                        "validation_loss": float(validation_loss),
+                        "validation_brier_score": float(validation_brier_score),
+                        "validation_ece": float(validation_ece),
+                        "num_post_s_validation_slots": int(
+                            computed_num_post_s_validation_slots
+                        ),
+                        "post_s_validation_loss": (
+                            ""
+                            if post_s_validation_loss is None
+                            else float(post_s_validation_loss)
+                        ),
+                        "post_s_validation_brier_score": (
+                            ""
+                            if post_s_validation_brier_score is None
+                            else float(post_s_validation_brier_score)
+                        ),
+                        "post_s_validation_ece": (
+                            ""
+                            if post_s_validation_ece is None
+                            else float(post_s_validation_ece)
+                        ),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                row.update(
+                    {
+                        "status": "failed",
+                        "fit_loss": "",
+                        "validation_loss": "",
+                        "validation_brier_score": "",
+                        "validation_ece": "",
+                        "post_s_validation_loss": "",
+                        "post_s_validation_brier_score": "",
+                        "post_s_validation_ece": "",
+                        "error_message": str(exc),
+                    }
+                )
+            fold_rows.append(row)
+    return _write_search_score_artifacts(
+        experiment_row,
+        search,
+        candidates,
+        fold_rows,
+        num_folds=num_folds,
+        output_root=output_root,
+    )
 
 
 def run_cv_folds(
@@ -751,12 +1019,179 @@ def run_cv_search_for_experiment_slug(
     )
 
 
+def refresh_cv_scores_from_requests(
+    cv_requests_path: str | Path,
+    *,
+    cv_manifest_path: str | Path | None = None,
+) -> Path:
+    request_rows = read_csv_manifest(cv_requests_path)
+    if not request_rows:
+        raise ValueError(f"No CV requests found in {cv_requests_path}.")
+
+    grouped_rows: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for row in request_rows:
+        key = (str(row["experiment_slug"]), str(row["search_slug"]))
+        grouped_rows.setdefault(key, []).append(row)
+
+    manifest_rows: list[dict[str, object]] = []
+    for _, group_rows in grouped_rows.items():
+        first_row = group_rows[0]
+        experiment_row = {
+            "experiment_name": first_row.get("experiment_name", ""),
+            "experiment_slug": first_row.get("experiment_slug", ""),
+            "experiment_path": first_row.get("experiment_path", ""),
+        }
+        search = {
+            "name": first_row["search_name"],
+            "slug": first_row["search_slug"],
+        }
+        num_folds = len({int(row["cv_fold_id"]) for row in group_rows})
+        experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
+        output_roots = {
+            Path(str(row["fit_path"])).resolve().parents[2]
+            for row in group_rows
+        }
+        if len(output_roots) != 1:
+            raise ValueError(
+                f"Expected a single CV output root for experiment '{experiment_row['experiment_slug']}' "
+                f"search '{search['slug']}', found {len(output_roots)}."
+            )
+        output_root = next(iter(output_roots))
+        output_root.mkdir(parents=True, exist_ok=True)
+        candidates = _load_scored_candidates(output_root, group_rows)
+
+        role_codes = _load_fold_roles(experiment_root, num_folds=num_folds)
+        panel_context = load_experiment_panel_context(experiment_root)
+        if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
+            panel_context["N"]
+        ):
+            raise ValueError(
+                f"CV fold tensor shape {role_codes.shape} does not match panel dimensions "
+                f"(T={panel_context['T']}, N={panel_context['N']}) for {experiment_root}."
+            )
+
+        fold_rows: list[dict[str, object]] = []
+        sorted_group_rows = sorted(
+            group_rows,
+            key=lambda row: (int(row["candidate_index"]), int(row["cv_fold_id"])),
+        )
+        for request_row in sorted_group_rows:
+            fold_id = int(request_row["cv_fold_id"])
+            fit_root = Path(str(request_row["fit_path"])).resolve()
+            fold_roles = np.asarray(role_codes[fold_id - 1], dtype=np.int8)
+            training_loss_mask = fold_roles == cv_folds.ROLE_CODE_TRAINING
+            validation_loss_mask = fold_roles == cv_folds.ROLE_CODE_VALIDATION
+            post_s_validation_loss_mask = validation_loss_mask & _time_window_mask(
+                t_steps=fold_roles.shape[0],
+                n_nodes=fold_roles.shape[1],
+                start_t=int(panel_context["s"]),
+            )
+            row: dict[str, object] = {
+                "experiment_name": request_row.get("experiment_name", ""),
+                "experiment_slug": request_row.get("experiment_slug", ""),
+                "search_name": request_row["search_name"],
+                "search_slug": request_row["search_slug"],
+                "candidate_name": request_row["candidate_name"],
+                "candidate_slug": request_row["candidate_slug"],
+                "candidate_index": int(request_row["candidate_index"]),
+                "cv_fold_id": fold_id,
+                "num_training_slots": int(np.count_nonzero(training_loss_mask)),
+                "num_validation_slots": int(np.count_nonzero(validation_loss_mask)),
+                "num_post_s_validation_slots": int(
+                    np.count_nonzero(post_s_validation_loss_mask)
+                ),
+                "fit_path": str(fit_root),
+            }
+            try:
+                (
+                    fit_loss,
+                    validation_loss,
+                    validation_brier_score,
+                    validation_ece,
+                    computed_num_post_s_validation_slots,
+                    post_s_validation_loss,
+                    post_s_validation_brier_score,
+                    post_s_validation_ece,
+                ) = _evaluate_fold_metrics(
+                    fit_root,
+                    experiment_root,
+                    training_loss_mask=training_loss_mask,
+                    validation_loss_mask=validation_loss_mask,
+                )
+                row.update(
+                    {
+                        "status": "completed",
+                        "fit_loss": float(fit_loss),
+                        "validation_loss": float(validation_loss),
+                        "validation_brier_score": float(validation_brier_score),
+                        "validation_ece": float(validation_ece),
+                        "num_post_s_validation_slots": int(
+                            computed_num_post_s_validation_slots
+                        ),
+                        "post_s_validation_loss": (
+                            ""
+                            if post_s_validation_loss is None
+                            else float(post_s_validation_loss)
+                        ),
+                        "post_s_validation_brier_score": (
+                            ""
+                            if post_s_validation_brier_score is None
+                            else float(post_s_validation_brier_score)
+                        ),
+                        "post_s_validation_ece": (
+                            ""
+                            if post_s_validation_ece is None
+                            else float(post_s_validation_ece)
+                        ),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                row.update(
+                    {
+                        "status": "failed",
+                        "fit_loss": "",
+                        "validation_loss": "",
+                        "validation_brier_score": "",
+                        "validation_ece": "",
+                        "post_s_validation_loss": "",
+                        "post_s_validation_brier_score": "",
+                        "post_s_validation_ece": "",
+                        "error_message": str(exc),
+                    }
+                )
+            fold_rows.append(row)
+
+        manifest_rows.append(
+            _write_search_score_artifacts(
+                experiment_row,
+                search,
+                candidates,
+                fold_rows,
+                num_folds=num_folds,
+                output_root=output_root,
+            )
+        )
+
+    manifest_path = (
+        Path(cv_manifest_path)
+        if cv_manifest_path is not None
+        else Path(cv_requests_path).with_name("cv_manifest.csv")
+    )
+    write_csv_manifest(manifest_path, manifest_rows)
+    return manifest_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run 5-fold hyperparameter CV over prebuilt spatiotemporal fold artifacts."
     )
-    parser.add_argument("--generation_manifest_path", required=True, type=str)
-    parser.add_argument("--cv_spec_path", required=True, type=str)
+    parser.add_argument("--generation_manifest_path", type=str)
+    parser.add_argument("--cv_spec_path", type=str)
+    parser.add_argument(
+        "--cv_requests_path",
+        type=str,
+        help="Path to an existing cv_requests.csv file (used with --refresh_scores).",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--dry_run",
@@ -773,12 +1208,26 @@ def main() -> None:
         action="store_true",
         help="Run a specific experiment+search CV job.",
     )
+    parser.add_argument(
+        "--refresh_scores",
+        action="store_true",
+        help="Recompute fold and candidate CV scores from an existing cv_requests.csv without rerunning fits.",
+    )
     parser.add_argument("--experiment_slug", type=str, help="Experiment slug (used with --run_request).")
     parser.add_argument("--search_slug", type=str, help="Search slug (used with --run_request).")
     parser.add_argument("--num_folds", type=int, help="Override number of CV folds from cv_spec.")
     args = parser.parse_args()
 
+    if args.refresh_scores:
+        if not args.cv_requests_path:
+            raise ValueError("--refresh_scores requires --cv_requests_path.")
+        manifest_path = refresh_cv_scores_from_requests(args.cv_requests_path)
+        print(f"CV manifest: {manifest_path}")
+        return
+
     if args.dry_run:
+        if not args.generation_manifest_path or not args.cv_spec_path:
+            raise ValueError("--dry_run requires both --generation_manifest_path and --cv_spec_path.")
         generation_rows = read_csv_manifest(args.generation_manifest_path)
         searches = _expand_searches(args.cv_spec_path)
         total_folds = 0
@@ -795,6 +1244,10 @@ def main() -> None:
         return
 
     if args.write_requests:
+        if not args.generation_manifest_path or not args.cv_spec_path:
+            raise ValueError(
+                "--write_requests requires both --generation_manifest_path and --cv_spec_path."
+            )
         request_path = write_cv_requests(
             args.generation_manifest_path,
             args.cv_spec_path,
@@ -803,6 +1256,10 @@ def main() -> None:
         return
 
     if args.run_request:
+        if not args.generation_manifest_path or not args.cv_spec_path:
+            raise ValueError(
+                "--run_request requires both --generation_manifest_path and --cv_spec_path."
+            )
         if not args.experiment_slug or not args.search_slug:
             raise ValueError("--run_request requires both --experiment_slug and --search_slug.")
         generation_rows = read_csv_manifest(args.generation_manifest_path)
@@ -831,6 +1288,9 @@ def main() -> None:
             overwrite=args.overwrite,
         )
         return
+
+    if not args.generation_manifest_path or not args.cv_spec_path:
+        raise ValueError("Default CV execution requires both --generation_manifest_path and --cv_spec_path.")
 
     run_cv_folds(
         args.generation_manifest_path,

@@ -442,6 +442,15 @@ pixi run python -u run_cv_folds.py \
   --cv_spec_path data/configs/cv_spec.yaml
 ```
 
+To recompute CV fold and candidate metrics from existing fold fit artifacts without
+rerunning any fits, refresh scores from a saved request file:
+
+```bash
+pixi run python -u run_cv_folds.py \
+  --refresh_scores \
+  --cv_requests_path experiments/SyntheticHybridExperiments/cv_requests.csv
+```
+
 The CV spec mirrors the fit-spec layout but adds a required `grid:` section inside each named search. Fixed values outside `grid` apply to every candidate, and list-valued leaves inside `grid` are expanded as a Cartesian product.
 
 Example:
@@ -482,9 +491,11 @@ So the fitted MPLE parameters are learned by conditioning on separator unit-time
 
 Selection is based on pooled validation Brier score:
 
-- for each candidate and fold, save `fit_loss`, `validation_loss`, `validation_brier_score`, `validation_ece`, and the numbers of active training and validation slots
-- aggregate across the 5 folds using slot-weighted means for `validation_loss`, `validation_brier_score`, and `validation_ece`
-- also report mean-per-fold summaries for Brier score and ECE
+- keep the existing `validation_*` columns as full-horizon validation metrics over all validation slots
+- additionally save `post_s_validation_loss`, `post_s_validation_brier_score`, and `post_s_validation_ece` over validation slots with `t >= s`
+- for each candidate and fold, save those metrics plus the numbers of active training, validation, and post-`s` validation slots
+- aggregate across the 5 folds using slot-weighted means for both the full-horizon and post-`s` validation metrics
+- also report mean-per-fold summaries for the full-horizon and post-`s` Brier score and ECE metrics
 - choose the candidate with the lowest `weighted_mean_validation_brier_score`
 
 The reported validation Brier score and ECE use the model-implied probability of a positive spin:
@@ -493,6 +504,7 @@ The reported validation Brier score and ECE use the model-implied probability of
 - `P(x_it = 1 | h_it) = (1 + tanh(h_it)) / 2`
 - observed outcome on the probability scale is `(x_it + 1) / 2`
 - ECE uses 10 equal-width bins on `[0, 1]`, skips empty bins, and is computed only on validation unit-times
+- post-`s` validation metrics further restrict scoring to validation unit-times with `t >= s`
 
 Artifacts are written under:
 
@@ -510,6 +522,11 @@ Top-level outputs:
 
 - `cv_requests.csv`: one row per `(experiment, search, candidate, fold)`
 - `cv_manifest.csv`: one row per `(experiment, search)` with the selected winner
+
+The refresh workflow reads `cv_requests.csv`, reloads each saved fold fit, recomputes
+`fit_loss`, the full-horizon validation metrics, and the post-`s` validation metrics, and
+then rewrites `fold_scores.csv`, `candidate_scores.csv`, `best_candidate.yaml`, and
+`cv_manifest.csv`.
 
 The runner requires:
 

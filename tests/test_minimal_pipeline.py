@@ -3246,10 +3246,22 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("mean_fold_validation_brier_score", manifest_rows[0])
         self.assertIn("weighted_mean_validation_ece", manifest_rows[0])
         self.assertIn("mean_fold_validation_ece", manifest_rows[0])
+        self.assertIn("weighted_mean_post_s_validation_loss", manifest_rows[0])
+        self.assertIn("mean_fold_post_s_validation_loss", manifest_rows[0])
+        self.assertIn("weighted_mean_post_s_validation_brier_score", manifest_rows[0])
+        self.assertIn("mean_fold_post_s_validation_brier_score", manifest_rows[0])
+        self.assertIn("weighted_mean_post_s_validation_ece", manifest_rows[0])
+        self.assertIn("mean_fold_post_s_validation_ece", manifest_rows[0])
         self.assertIn("weighted_mean_validation_brier_score", best_candidate)
         self.assertIn("mean_fold_validation_brier_score", best_candidate)
         self.assertIn("weighted_mean_validation_ece", best_candidate)
         self.assertIn("mean_fold_validation_ece", best_candidate)
+        self.assertIn("weighted_mean_post_s_validation_loss", best_candidate)
+        self.assertIn("mean_fold_post_s_validation_loss", best_candidate)
+        self.assertIn("weighted_mean_post_s_validation_brier_score", best_candidate)
+        self.assertIn("mean_fold_post_s_validation_brier_score", best_candidate)
+        self.assertIn("weighted_mean_post_s_validation_ece", best_candidate)
+        self.assertIn("mean_fold_post_s_validation_ece", best_candidate)
 
         completed_rows = [row for row in fold_rows if row["status"] == "completed"]
         self.assertEqual(len(completed_rows), 10)
@@ -3263,6 +3275,10 @@ class PipelineStageRequestTests(unittest.TestCase):
             for fold_row in candidate_rows_group:
                 self.assertIn("validation_brier_score", fold_row)
                 self.assertIn("validation_ece", fold_row)
+                self.assertIn("num_post_s_validation_slots", fold_row)
+                self.assertIn("post_s_validation_loss", fold_row)
+                self.assertIn("post_s_validation_brier_score", fold_row)
+                self.assertIn("post_s_validation_ece", fold_row)
             weighted = sum(
                 float(fold_row["validation_loss"]) * int(fold_row["num_validation_slots"])
                 for fold_row in candidate_rows_group
@@ -3285,6 +3301,11 @@ class PipelineStageRequestTests(unittest.TestCase):
                 float(fold_row["validation_ece"])
                 for fold_row in candidate_rows_group
             ) / len(candidate_rows_group)
+            post_s_rows = [
+                fold_row
+                for fold_row in candidate_rows_group
+                if int(fold_row["num_post_s_validation_slots"]) > 0
+            ]
             self.assertAlmostEqual(
                 float(row["weighted_mean_validation_loss"]),
                 weighted,
@@ -3309,6 +3330,178 @@ class PipelineStageRequestTests(unittest.TestCase):
                 float(row["mean_fold_validation_ece"]),
                 mean_fold_ece,
                 places=12,
+            )
+            if post_s_rows:
+                weighted_post_s_loss = sum(
+                    float(fold_row["post_s_validation_loss"])
+                    * int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                ) / sum(
+                    int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                )
+                mean_fold_post_s_loss = sum(
+                    float(fold_row["post_s_validation_loss"])
+                    for fold_row in post_s_rows
+                ) / len(post_s_rows)
+                weighted_post_s_brier = sum(
+                    float(fold_row["post_s_validation_brier_score"])
+                    * int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                ) / sum(
+                    int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                )
+                mean_fold_post_s_brier = sum(
+                    float(fold_row["post_s_validation_brier_score"])
+                    for fold_row in post_s_rows
+                ) / len(post_s_rows)
+                weighted_post_s_ece = sum(
+                    float(fold_row["post_s_validation_ece"])
+                    * int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                ) / sum(
+                    int(fold_row["num_post_s_validation_slots"])
+                    for fold_row in post_s_rows
+                )
+                mean_fold_post_s_ece = sum(
+                    float(fold_row["post_s_validation_ece"])
+                    for fold_row in post_s_rows
+                ) / len(post_s_rows)
+                self.assertAlmostEqual(
+                    float(row["weighted_mean_post_s_validation_loss"]),
+                    weighted_post_s_loss,
+                    places=12,
+                )
+                self.assertAlmostEqual(
+                    float(row["mean_fold_post_s_validation_loss"]),
+                    mean_fold_post_s_loss,
+                    places=12,
+                )
+                self.assertAlmostEqual(
+                    float(row["weighted_mean_post_s_validation_brier_score"]),
+                    weighted_post_s_brier,
+                    places=12,
+                )
+                self.assertAlmostEqual(
+                    float(row["mean_fold_post_s_validation_brier_score"]),
+                    mean_fold_post_s_brier,
+                    places=12,
+                )
+                self.assertAlmostEqual(
+                    float(row["weighted_mean_post_s_validation_ece"]),
+                    weighted_post_s_ece,
+                    places=12,
+                )
+                self.assertAlmostEqual(
+                    float(row["mean_fold_post_s_validation_ece"]),
+                    mean_fold_post_s_ece,
+                    places=12,
+                )
+            else:
+                self.assertEqual(row["weighted_mean_post_s_validation_loss"], "")
+                self.assertEqual(row["mean_fold_post_s_validation_loss"], "")
+                self.assertEqual(row["weighted_mean_post_s_validation_brier_score"], "")
+                self.assertEqual(row["mean_fold_post_s_validation_brier_score"], "")
+                self.assertEqual(row["weighted_mean_post_s_validation_ece"], "")
+                self.assertEqual(row["mean_fold_post_s_validation_ece"], "")
+
+    def test_refresh_cv_scores_from_requests_rebuilds_score_artifacts(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "no_external_field_mask_grid",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {
+                        "estimation": {
+                            "beta_mask_pre_s": [False, True],
+                        }
+                    },
+                }
+            ]
+        )
+
+        manifest_path = cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            overwrite=True,
+        )
+        requests_path = cv_runner.cv_requests_path_for_spec(cv_spec_path)
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "cv_runs"
+            / "no_external_field_mask_grid"
+        )
+        original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        original_score_rows = read_csv_manifest(output_root / "candidate_scores.csv")
+        original_best_candidate = OmegaConf.load(output_root / "best_candidate.yaml")
+        self.assertTrue(original_fold_rows)
+        self.assertTrue(original_score_rows)
+
+        (output_root / "fold_scores.csv").unlink()
+        (output_root / "candidate_scores.csv").unlink()
+        (output_root / "best_candidate.yaml").unlink()
+        Path(manifest_path).unlink()
+
+        refreshed_manifest_path = cv_runner.refresh_cv_scores_from_requests(requests_path)
+
+        self.assertEqual(Path(refreshed_manifest_path), Path(manifest_path))
+        refreshed_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        refreshed_score_rows = read_csv_manifest(output_root / "candidate_scores.csv")
+        refreshed_best_candidate = OmegaConf.load(output_root / "best_candidate.yaml")
+        refreshed_manifest_rows = read_csv_manifest(refreshed_manifest_path)
+
+        self.assertEqual(len(refreshed_fold_rows), len(original_fold_rows))
+        self.assertEqual(len(refreshed_score_rows), len(original_score_rows))
+        self.assertEqual(len(refreshed_manifest_rows), 1)
+        self.assertEqual(
+            str(refreshed_best_candidate.candidate_slug),
+            str(original_best_candidate.candidate_slug),
+        )
+
+        original_fold_lookup = {
+            (row["candidate_slug"], row["cv_fold_id"]): row for row in original_fold_rows
+        }
+        for row in refreshed_fold_rows:
+            baseline = original_fold_lookup[(row["candidate_slug"], row["cv_fold_id"])]
+            self.assertEqual(row["status"], baseline["status"])
+            self.assertAlmostEqual(
+                float(row["validation_loss"]),
+                float(baseline["validation_loss"]),
+                places=12,
+            )
+            self.assertAlmostEqual(
+                float(row["validation_brier_score"]),
+                float(baseline["validation_brier_score"]),
+                places=12,
+            )
+            self.assertAlmostEqual(
+                float(row["validation_ece"]),
+                float(baseline["validation_ece"]),
+                places=12,
+            )
+            self.assertEqual(
+                int(row["num_post_s_validation_slots"]),
+                int(baseline["num_post_s_validation_slots"]),
+            )
+            self.assertEqual(
+                row["post_s_validation_loss"],
+                baseline["post_s_validation_loss"],
+            )
+            self.assertEqual(
+                row["post_s_validation_brier_score"],
+                baseline["post_s_validation_brier_score"],
+            )
+            self.assertEqual(
+                row["post_s_validation_ece"],
+                baseline["post_s_validation_ece"],
             )
 
     def test_validation_brier_score_matches_spin_probability_formula(self) -> None:
@@ -3387,23 +3580,29 @@ class PipelineStageRequestTests(unittest.TestCase):
         experiment_root = Path("unused-experiment-root")
         fit_root = Path("unused-fit-root")
         panel_context = {
-            "x": np.asarray([[1.0, -1.0], [1.0, 1.0]], dtype=float),
-            "z": np.zeros((2, 2), dtype=float),
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], dtype=float),
+            "z": np.zeros((3, 2), dtype=float),
             "x_0": np.asarray([1.0, -1.0], dtype=float),
-            "s": 0,
-            "e": 2,
+            "s": 1,
+            "e": 3,
         }
         bundle = SimpleNamespace(
-            field_matrix=np.zeros((2, 2), dtype=float),
+            field_matrix=np.zeros((3, 2), dtype=float),
             beta=0.0,
             xi=1.0,
-            eta=0.0,
+            eta=0.5,
             gamma_matrix=np.asarray([[0.0, 1.0], [1.0, 0.0]], dtype=float),
             beta_mask_pre_s=False,
             beta_mask_post_e=False,
         )
-        training_loss_mask = np.asarray([[True, False], [False, False]], dtype=bool)
-        validation_loss_mask = np.asarray([[False, False], [False, True]], dtype=bool)
+        training_loss_mask = np.asarray(
+            [[True, False], [False, False], [False, False]],
+            dtype=bool,
+        )
+        validation_loss_mask = np.asarray(
+            [[False, True], [False, False], [False, True]],
+            dtype=bool,
+        )
 
         with mock.patch.object(
             cv_runner,
@@ -3414,7 +3613,16 @@ class PipelineStageRequestTests(unittest.TestCase):
             "load_fit_parameter_bundle",
             return_value=bundle,
         ):
-            fit_loss, validation_loss, validation_brier, validation_ece = (
+            (
+                fit_loss,
+                validation_loss,
+                validation_brier,
+                validation_ece,
+                num_post_s_validation_slots,
+                post_s_validation_loss,
+                post_s_validation_brier,
+                post_s_validation_ece,
+            ) = (
                 cv_runner._evaluate_fold_metrics(
                     fit_root,
                     experiment_root,
@@ -3456,6 +3664,27 @@ class PipelineStageRequestTests(unittest.TestCase):
             beta_mask_pre_s=bundle.beta_mask_pre_s,
             beta_mask_post_e=bundle.beta_mask_post_e,
         )
+        post_s_validation_loss_mask = validation_loss_mask & cv_runner._time_window_mask(
+            t_steps=panel_context["x"].shape[0],
+            n_nodes=panel_context["x"].shape[1],
+            start_t=int(panel_context["s"]),
+        )
+        expected_post_s_validation_loss = evaluate_mple_loss_from_parts(
+            x=panel_context["x"],
+            z=panel_context["z"],
+            x_0=panel_context["x_0"],
+            field_matrix=bundle.field_matrix,
+            beta=bundle.beta,
+            xi=bundle.xi,
+            eta=bundle.eta,
+            interaction_effect_x=interaction_effect_x,
+            fixed_scalar_params={},
+            loss_mask=post_s_validation_loss_mask,
+            s=int(panel_context["s"]),
+            e=int(panel_context["e"]),
+            beta_mask_pre_s=bundle.beta_mask_pre_s,
+            beta_mask_post_e=bundle.beta_mask_post_e,
+        )
         prev_x = np.vstack([panel_context["x_0"], panel_context["x"][:-1, :]])
         h_x = bundle.field_matrix + (bundle.xi * interaction_effect_x) + (bundle.eta * prev_x)
         expected_brier = cv_runner._validation_brier_score(
@@ -3468,15 +3697,33 @@ class PipelineStageRequestTests(unittest.TestCase):
             h_x=h_x,
             loss_mask=validation_loss_mask,
         )
+        expected_post_s_brier = cv_runner._validation_brier_score(
+            x=panel_context["x"],
+            h_x=h_x,
+            loss_mask=post_s_validation_loss_mask,
+        )
+        expected_post_s_ece = cv_runner._validation_expected_calibration_error(
+            x=panel_context["x"],
+            h_x=h_x,
+            loss_mask=post_s_validation_loss_mask,
+        )
 
         self.assertAlmostEqual(fit_loss, float(expected_fit_loss), places=12)
         self.assertAlmostEqual(validation_loss, float(expected_validation_loss), places=12)
         self.assertAlmostEqual(validation_brier, expected_brier, places=12)
         self.assertAlmostEqual(validation_ece, expected_ece, places=12)
+        self.assertEqual(num_post_s_validation_slots, 1)
+        self.assertAlmostEqual(
+            float(post_s_validation_loss),
+            float(expected_post_s_validation_loss),
+            places=12,
+        )
+        self.assertAlmostEqual(post_s_validation_brier, expected_post_s_brier, places=12)
+        self.assertAlmostEqual(post_s_validation_ece, expected_post_s_ece, places=12)
 
         separator_flipped_context = dict(panel_context)
         separator_flipped_context["x"] = np.asarray(panel_context["x"], dtype=float).copy()
-        separator_flipped_context["x"][1, 0] = -1.0
+        separator_flipped_context["x"][1, 1] = -1.0
         with mock.patch.object(
             cv_runner,
             "load_experiment_panel_context",
@@ -3491,6 +3738,10 @@ class PipelineStageRequestTests(unittest.TestCase):
                 flipped_validation_loss,
                 flipped_validation_brier,
                 flipped_validation_ece,
+                _,
+                flipped_post_s_validation_loss,
+                flipped_post_s_validation_brier,
+                flipped_post_s_validation_ece,
             ) = cv_runner._evaluate_fold_metrics(
                 fit_root,
                 experiment_root,
@@ -3501,6 +3752,78 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertNotAlmostEqual(flipped_validation_loss, validation_loss, places=12)
         self.assertNotAlmostEqual(flipped_validation_brier, validation_brier, places=12)
         self.assertNotAlmostEqual(flipped_validation_ece, validation_ece, places=12)
+        self.assertNotAlmostEqual(
+            float(flipped_post_s_validation_loss),
+            float(post_s_validation_loss),
+            places=12,
+        )
+        self.assertNotAlmostEqual(
+            flipped_post_s_validation_brier,
+            post_s_validation_brier,
+            places=12,
+        )
+        self.assertNotAlmostEqual(
+            flipped_post_s_validation_ece,
+            post_s_validation_ece,
+            places=12,
+        )
+
+    def test_evaluate_fold_metrics_leaves_post_s_metrics_blank_when_no_post_s_validation_support(
+        self,
+    ) -> None:
+        experiment_root = Path("unused-experiment-root")
+        fit_root = Path("unused-fit-root")
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0]], dtype=float),
+            "z": np.zeros((2, 2), dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+        bundle = SimpleNamespace(
+            field_matrix=np.zeros((2, 2), dtype=float),
+            beta=0.0,
+            xi=1.0,
+            eta=0.0,
+            gamma_matrix=np.asarray([[0.0, 1.0], [1.0, 0.0]], dtype=float),
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+        )
+        training_loss_mask = np.asarray([[False, False], [True, False]], dtype=bool)
+        validation_loss_mask = np.asarray([[False, True], [False, False]], dtype=bool)
+
+        with mock.patch.object(
+            cv_runner,
+            "load_experiment_panel_context",
+            return_value=panel_context,
+        ), mock.patch.object(
+            cv_runner,
+            "load_fit_parameter_bundle",
+            return_value=bundle,
+        ):
+            (
+                _,
+                validation_loss,
+                validation_brier,
+                validation_ece,
+                num_post_s_validation_slots,
+                post_s_validation_loss,
+                post_s_validation_brier,
+                post_s_validation_ece,
+            ) = cv_runner._evaluate_fold_metrics(
+                fit_root,
+                experiment_root,
+                training_loss_mask=training_loss_mask,
+                validation_loss_mask=validation_loss_mask,
+            )
+
+        self.assertGreater(float(validation_loss), 0.0)
+        self.assertGreater(float(validation_brier), 0.0)
+        self.assertGreater(float(validation_ece), 0.0)
+        self.assertEqual(num_post_s_validation_slots, 0)
+        self.assertIsNone(post_s_validation_loss)
+        self.assertIsNone(post_s_validation_brier)
+        self.assertIsNone(post_s_validation_ece)
 
     def test_candidate_score_sort_key_prefers_lower_brier_then_loss(self) -> None:
         rows = [
