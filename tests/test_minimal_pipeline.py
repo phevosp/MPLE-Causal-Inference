@@ -5037,8 +5037,6 @@ class USCountyVaccinationSharedPipelineTests(unittest.TestCase):
         intervention_spec_path.write_text(
             "\n".join(
                 [
-                    "base:",
-                    f"  experiment_name: {experiment_root.name}",
                     "interventions:",
                     "  - name: all_ones_from_s",
                     "    source_kind: full_on",
@@ -6110,6 +6108,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "      psi: 0.2",
                     "experiments:",
                     "  - name: smoke_rank_0",
+                    "  - name: smoke_rank_1",
                 ]
             ),
             encoding="utf-8",
@@ -6117,8 +6116,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
         intervention_spec_path.write_text(
             "\n".join(
                 [
-                    "base:",
-                    "  experiment_name: smoke_rank_0",
                     "interventions:",
                     "  - name: observed_copy",
                     "    source_kind: observed_experiment",
@@ -6142,27 +6139,40 @@ class PosteriorPredictiveTests(unittest.TestCase):
             overwrite=True,
         )
 
-        experiment_root = self.root / "generated" / "smoke_rank_0"
-        observed_copy = load_saved_intervention_context(
-            experiment_root, "observed_copy"
-        )
-        full_on = load_saved_intervention_context(experiment_root, "full_on_from_s")
-        single_unit = load_saved_intervention_context(
-            experiment_root, "single_unit_2_from_step_2"
-        )
-
         self.assertEqual(
             Path(library_manifest),
             self.root / "generated" / "intervention_library_manifest.csv",
         )
-        self.assertTrue(np.array_equal(observed_copy.z_0, np.zeros(6, dtype=float)))
-        self.assertTrue(np.array_equal(full_on.z, np.ones((4, 6), dtype=float)))
-        self.assertEqual(full_on.s, 0)
-        self.assertTrue(np.array_equal(single_unit.z[:2, 2], -np.ones(2, dtype=float)))
-        self.assertTrue(np.array_equal(single_unit.z[2:, 2], np.ones(2, dtype=float)))
-        self.assertTrue(
-            np.array_equal(single_unit.z[:, :2], -np.ones((4, 2), dtype=float))
+        manifest_rows = read_csv_manifest(library_manifest)
+        self.assertEqual(len(manifest_rows), 6)
+        self.assertEqual(
+            {row["experiment_name"] for row in manifest_rows},
+            {"smoke_rank_0", "smoke_rank_1"},
         )
+        for experiment_name in ("smoke_rank_0", "smoke_rank_1"):
+            experiment_root = self.root / "generated" / experiment_name
+            observed_copy = load_saved_intervention_context(
+                experiment_root, "observed_copy"
+            )
+            full_on = load_saved_intervention_context(
+                experiment_root, "full_on_from_s"
+            )
+            single_unit = load_saved_intervention_context(
+                experiment_root, "single_unit_2_from_step_2"
+            )
+
+            self.assertTrue(np.array_equal(observed_copy.z_0, np.zeros(6, dtype=float)))
+            self.assertTrue(np.array_equal(full_on.z, np.ones((4, 6), dtype=float)))
+            self.assertEqual(full_on.s, 0)
+            self.assertTrue(
+                np.array_equal(single_unit.z[:2, 2], -np.ones(2, dtype=float))
+            )
+            self.assertTrue(
+                np.array_equal(single_unit.z[2:, 2], np.ones(2, dtype=float))
+            )
+            self.assertTrue(
+                np.array_equal(single_unit.z[:, :2], -np.ones((4, 2), dtype=float))
+            )
 
     def test_run_posterior_predictive_writes_counterfactual_outputs(self) -> None:
         generation_spec_path = self.root / "generation_spec.yaml"
@@ -6259,8 +6269,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
         intervention_spec_path.write_text(
             "\n".join(
                 [
-                    "base:",
-                    "  experiment_name: smoke_rank_0",
                     "interventions:",
                     "  - name: full_on_from_s",
                     "    source_kind: full_on",

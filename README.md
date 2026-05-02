@@ -193,7 +193,7 @@ bash submit_fit_jobs.sh
 
 ### 3. Intervention Library
 
-`run_intervention_library.py` creates reusable intervention panels under a generated experiment root. These panels are useful for counterfactual posterior-predictive runs where the outcomes are simulated under an intervention different from the one observed in the original experiment.
+`run_intervention_library.py` creates reusable intervention panels under each generated experiment root listed in a generation manifest. These panels are useful for counterfactual posterior-predictive runs where the outcomes are simulated under an intervention different from the one observed in the original experiment.
 
 Default config:
 

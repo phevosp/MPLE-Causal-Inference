@@ -14,36 +14,59 @@ from loading_utils import load_experiment_panel_context
 from pipeline_specs import expand_named_entries, read_csv_manifest, write_csv_manifest
 
 
-def _index_generation_rows(
+def _generation_manifest_rows(
     generation_manifest_path: str | Path,
-) -> dict[str, dict[str, str]]:
-    index: dict[str, dict[str, str]] = {}
-    for row in read_csv_manifest(generation_manifest_path):
+) -> list[dict[str, str]]:
+    rows = read_csv_manifest(generation_manifest_path)
+    if not rows:
+        raise ValueError(
+            f"No rows found in generation manifest {generation_manifest_path}."
+        )
+    seen_experiment_names: set[str] = set()
+    normalized_rows: list[dict[str, str]] = []
+    for row in rows:
         experiment_name = str(row.get("experiment_name", "")).strip()
         if not experiment_name:
             raise ValueError(
                 f"Generation manifest {generation_manifest_path} contains a row without experiment_name."
             )
-        if experiment_name in index:
+        experiment_path = str(row.get("experiment_path", "")).strip()
+        if not experiment_path:
+            raise ValueError(
+                f"Generation manifest {generation_manifest_path} contains a row without experiment_path."
+            )
+        if experiment_name in seen_experiment_names:
             raise ValueError(
                 f"Generation manifest {generation_manifest_path} contains duplicate experiment_name '{experiment_name}'."
             )
-        index[experiment_name] = row
-    return index
+        seen_experiment_names.add(experiment_name)
+        normalized_rows.append(row)
+    return normalized_rows
+
+
+def _validate_intervention_entries(
+    entries: list[dict[str, object]],
+    spec_path: str | Path,
+) -> None:
+    stale_experiment_targets = [
+        str(entry["name"])
+        for entry in entries
+        if str(entry.get("experiment_name", "")).strip()
+    ]
+    if stale_experiment_targets:
+        raise ValueError(
+            f"Intervention-library spec {spec_path} should not define experiment_name. "
+            "Interventions are now materialized for every experiment in the generation manifest."
+        )
 
 
 def _materialize_saved_intervention(
     entry: dict[str, object],
-    generation_lookup: dict[str, dict[str, str]],
+    experiment_row: dict[str, str],
     *,
     overwrite: bool,
 ) -> dict[str, object]:
-    experiment_name = str(entry["experiment_name"])
-    experiment_row = generation_lookup.get(experiment_name)
-    if experiment_row is None:
-        raise ValueError(
-            f"Intervention spec references unknown experiment '{experiment_name}'."
-        )
+    experiment_name = str(experiment_row["experiment_name"]).strip()
     experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
     panel_context = load_experiment_panel_context(experiment_root)
     source_kind = str(entry["source_kind"]).strip().lower()
@@ -129,13 +152,15 @@ def run_intervention_library(
     entries = expand_named_entries(spec_path, "interventions")
     if not entries:
         raise ValueError(f"No interventions found in intervention-library spec {spec_path}.")
-    generation_lookup = _index_generation_rows(generation_manifest_path)
+    _validate_intervention_entries(entries, spec_path)
+    generation_rows = _generation_manifest_rows(generation_manifest_path)
     manifest_rows = [
         _materialize_saved_intervention(
             entry,
-            generation_lookup,
+            experiment_row,
             overwrite=overwrite,
         )
+        for experiment_row in generation_rows
         for entry in entries
     ]
     manifest_path = Path(

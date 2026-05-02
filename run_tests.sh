@@ -36,6 +36,7 @@ MODEL_SELECTION_MODE="${MODEL_SELECTION_MODE:-cv}"
 GENERATION_OVERWRITE="${GENERATION_OVERWRITE:-false}"
 CV_OVERWRITE="${CV_OVERWRITE:-false}"
 FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
+INTERVENTION_LIBRARY_OVERWRITE="${INTERVENTION_LIBRARY_OVERWRITE:-false}"
 POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE:-false}"
 CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"
 
@@ -211,9 +212,14 @@ run_intervention_stage() {
     bash "${INTERVENTION_LIBRARY_SCRIPT}"
     return 0
   fi
-  pixi run python -u run_intervention_library.py \
-    --generation_manifest_path "${GEN_MANIFEST}" \
+  local intervention_args=(
+    --generation_manifest_path "${GEN_MANIFEST}"
     --spec_path "${INTERVENTION_LIBRARY_SPEC_PATH}"
+  )
+  if [[ "${INTERVENTION_LIBRARY_OVERWRITE}" == "true" ]]; then
+    intervention_args+=(--overwrite)
+  fi
+  pixi run python -u run_intervention_library.py "${intervention_args[@]}"
 }
 
 submit_posterior_predictive_stage() {

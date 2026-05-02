@@ -173,12 +173,13 @@ File:
 
 Shape:
 
-- `base`: defaults shared by every saved intervention
+- `base`: optional defaults shared by every saved intervention entry
 - `interventions`: list of named intervention entries
+
+Each intervention entry is materialized for every experiment listed in the supplied generation manifest.
 
 Important keys:
 
-- `experiment_name`
 - `manifest_path`, optional
 - `source_kind`
 - `activation_scope`
