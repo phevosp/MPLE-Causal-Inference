@@ -99,6 +99,6 @@ fi
 
 report_job_id="$(
   "${SBATCH_BIN}" "${report_args[@]}" \
-    --wrap "pixi run python -u run_cv_folds.py --refresh_scores --cv_requests_path '${REQUESTS_PATH}' --execution_mode '${EXECUTION_MODE}'"
+    --wrap "pixi run python -u run_cv_folds.py --refresh_manifest --cv_requests_path '${REQUESTS_PATH}' --execution_mode '${EXECUTION_MODE}'"
 )"
 printf "%s\n" "${report_job_id%%;*}"

@@ -79,16 +79,6 @@ print(fit_manifest_path_for_spec(sys.argv[1]))
 PY
 }
 
-resolve_model_selection_requests_path() {
-  local execution_mode="$1"
-  pixi run python - <<'PY' "${CV_SPEC_PATH}" "${execution_mode}"
-import sys
-from run_cv_folds import model_selection_requests_path_for_spec
-
-print(model_selection_requests_path_for_spec(sys.argv[1], execution_mode=sys.argv[2]))
-PY
-}
-
 resolve_cv_num_folds_list() {
   if [[ -n "${CV_NUM_FOLDS}" ]]; then
     printf "%s\n" "${CV_NUM_FOLDS}"

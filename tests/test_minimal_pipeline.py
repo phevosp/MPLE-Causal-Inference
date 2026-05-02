@@ -3712,6 +3712,69 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(len(refreshed_fold_rows), len(original_fold_rows))
         self.assertTrue(all(row["execution_mode"] == "validation" for row in refreshed_fold_rows))
 
+    def test_collect_cv_manifest_from_requests_rebuilds_manifest_only(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "no_external_field_mask_grid",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {
+                        "estimation": {
+                            "beta_mask_pre_s": [False, True],
+                        }
+                    },
+                }
+            ]
+        )
+
+        manifest_path = cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            overwrite=True,
+        )
+        requests_path = cv_runner.cv_requests_path_for_spec(cv_spec_path)
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "cv_runs"
+            / "no_external_field_mask_grid"
+        )
+        original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        original_score_rows = read_csv_manifest(output_root / "candidate_scores.csv")
+        original_best_candidate = OmegaConf.load(output_root / "best_candidate.yaml")
+        Path(manifest_path).unlink()
+
+        with mock.patch.object(
+            cv_runner,
+            "evaluate_saved_fit_fold_metrics",
+            side_effect=AssertionError("score refresh should not run"),
+        ):
+            collected_manifest_path = cv_runner.collect_cv_manifest_from_requests(
+                requests_path
+            )
+
+        self.assertEqual(Path(collected_manifest_path), Path(manifest_path))
+        self.assertEqual(
+            read_csv_manifest(output_root / "fold_scores.csv"),
+            original_fold_rows,
+        )
+        self.assertEqual(
+            read_csv_manifest(output_root / "candidate_scores.csv"),
+            original_score_rows,
+        )
+        collected_manifest_rows = read_csv_manifest(collected_manifest_path)
+        self.assertEqual(len(collected_manifest_rows), 1)
+        self.assertEqual(
+            collected_manifest_rows[0]["best_candidate_slug"],
+            str(original_best_candidate.candidate_slug),
+        )
+
     def test_validation_brier_score_matches_spin_probability_formula(self) -> None:
         x = np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         h_x = np.asarray([[0.0, 0.2], [-0.7, 1.1]], dtype=float)
@@ -4191,7 +4254,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "job3")
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
-    def test_submit_cv_jobs_submits_workers_and_refresh_scores(self) -> None:
+    def test_submit_cv_jobs_submits_workers_and_refresh_manifest(self) -> None:
         bash_path = shutil.which("bash")
         if bash_path is None or "system32" in bash_path.lower():
             self.skipTest("portable bash is not available in this environment")
@@ -4234,7 +4297,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("run_cv_job.sh", log_lines[0])
         self.assertIn("<exp_a>", log_lines[0])
         self.assertIn("<no_external_field_mask_grid>", log_lines[0])
-        self.assertIn("--refresh_scores", log_lines[1])
+        self.assertIn("--refresh_manifest", log_lines[1])
         self.assertIn("--execution_mode 'validation'", log_lines[1])
         self.assertEqual(result.stdout.strip(), "job2")
 

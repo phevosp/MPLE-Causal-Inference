@@ -490,6 +490,32 @@ def _manifest_row_from_best_row(
     }
 
 
+def _manifest_row_from_best_candidate_payload(
+    experiment_row: dict[str, str],
+    search: dict[str, Any],
+    best_candidate_payload: dict[str, object],
+    output_root: Path,
+    *,
+    execution_mode: str,
+) -> dict[str, object]:
+    return {
+        "experiment_name": experiment_row.get("experiment_name", ""),
+        "experiment_slug": experiment_row.get("experiment_slug", ""),
+        "experiment_path": str(Path(experiment_row["experiment_path"]).resolve()),
+        "execution_mode": _normalize_execution_mode(execution_mode),
+        "search_name": search["name"],
+        "search_slug": search["slug"],
+        "output_path": str(output_root.resolve()),
+        "best_candidate_name": str(best_candidate_payload.get("candidate_name", "")),
+        "best_candidate_slug": str(best_candidate_payload.get("candidate_slug", "")),
+        **{
+            key: best_candidate_payload.get(key, "")
+            for key in AGGREGATED_METRIC_KEYS
+        },
+        "status": "completed",
+    }
+
+
 def _best_candidate_payload(
     experiment_row: dict[str, str],
     search: dict[str, Any],
@@ -1050,6 +1076,80 @@ def refresh_cv_scores_from_requests(
     write_csv_manifest(manifest_path, manifest_rows)
     return manifest_path
 
+
+def collect_cv_manifest_from_requests(
+    cv_requests_path: str | Path,
+    *,
+    execution_mode: str | None = None,
+    cv_manifest_path: str | Path | None = None,
+) -> Path:
+    request_rows = read_csv_manifest(cv_requests_path)
+    if not request_rows:
+        raise ValueError(f"No CV requests found in {cv_requests_path}.")
+
+    normalized_mode = (
+        _normalize_execution_mode(execution_mode)
+        if execution_mode is not None
+        else _normalize_execution_mode(request_rows[0].get("execution_mode", EXECUTION_MODE_CV))
+    )
+    grouped_rows: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for row in request_rows:
+        key = (str(row["experiment_slug"]), str(row["search_slug"]))
+        grouped_rows.setdefault(key, []).append(row)
+
+    manifest_rows: list[dict[str, object]] = []
+    first_row: dict[str, str] | None = None
+    for _, group_rows in grouped_rows.items():
+        first_row = group_rows[0]
+        experiment_row = {
+            "experiment_name": first_row.get("experiment_name", ""),
+            "experiment_slug": first_row.get("experiment_slug", ""),
+            "experiment_path": first_row.get("experiment_path", ""),
+        }
+        cv_spec_path = first_row.get("cv_spec_path", "")
+        if not cv_spec_path:
+            raise ValueError(
+                f"Request row for experiment '{experiment_row['experiment_slug']}' is missing cv_spec_path."
+            )
+        search = _load_search_from_spec(cv_spec_path, str(first_row["search_slug"]))
+        output_roots = {
+            Path(str(row["fit_path"])).resolve().parents[2]
+            for row in group_rows
+        }
+        if len(output_roots) != 1:
+            raise ValueError(
+                f"Expected a single output root for experiment '{experiment_row['experiment_slug']}' "
+                f"search '{search['slug']}', found {len(output_roots)}."
+            )
+        output_root = next(iter(output_roots))
+        best_candidate_path = output_root / "best_candidate.yaml"
+        if not best_candidate_path.exists():
+            raise FileNotFoundError(
+                f"Missing best-candidate artifact for experiment '{experiment_row['experiment_slug']}' "
+                f"search '{search['slug']}': {best_candidate_path}"
+            )
+        best_candidate_payload = load_spec(best_candidate_path)
+        manifest_rows.append(
+            _manifest_row_from_best_candidate_payload(
+                experiment_row,
+                search,
+                best_candidate_payload,
+                output_root,
+                execution_mode=normalized_mode,
+            )
+        )
+
+    manifest_path = (
+        Path(cv_manifest_path)
+        if cv_manifest_path is not None
+        else model_selection_manifest_path_for_spec(
+            first_row["cv_spec_path"],
+            execution_mode=normalized_mode,
+        )
+    )
+    write_csv_manifest(manifest_path, manifest_rows)
+    return manifest_path
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run CV or single-fold validation search over prebuilt spatiotemporal fold artifacts."
@@ -1059,7 +1159,7 @@ def main() -> None:
     parser.add_argument(
         "--cv_requests_path",
         type=str,
-        help="Path to an existing request CSV file (used with --refresh_scores).",
+        help="Path to an existing request CSV file (used with --refresh_scores or --refresh_manifest).",
     )
     parser.add_argument(
         "--execution_mode",
@@ -1088,6 +1188,11 @@ def main() -> None:
         action="store_true",
         help="Recompute fold and candidate scores from an existing request CSV without rerunning fits.",
     )
+    parser.add_argument(
+        "--refresh_manifest",
+        action="store_true",
+        help="Rebuild only the top-level model-selection manifest from existing best_candidate.yaml artifacts.",
+    )
     parser.add_argument("--experiment_slug", type=str, help="Experiment slug (used with --run_request).")
     parser.add_argument("--search_slug", type=str, help="Search slug (used with --run_request).")
     parser.add_argument("--num_folds", type=int, help="Override number of folds from cv_spec.")
@@ -1099,6 +1204,16 @@ def main() -> None:
         if not args.cv_requests_path:
             raise ValueError("--refresh_scores requires --cv_requests_path.")
         manifest_path = refresh_cv_scores_from_requests(
+            args.cv_requests_path,
+            execution_mode=normalized_mode,
+        )
+        print(f"{normalized_mode} manifest: {manifest_path}")
+        return
+
+    if args.refresh_manifest:
+        if not args.cv_requests_path:
+            raise ValueError("--refresh_manifest requires --cv_requests_path.")
+        manifest_path = collect_cv_manifest_from_requests(
             args.cv_requests_path,
             execution_mode=normalized_mode,
         )
