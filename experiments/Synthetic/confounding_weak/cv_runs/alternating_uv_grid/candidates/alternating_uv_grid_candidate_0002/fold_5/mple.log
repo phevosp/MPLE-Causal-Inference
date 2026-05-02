@@ -1,0 +1,49 @@
+2026-05-02 12:16:50 | INFO | Loading data...
+2026-05-02 12:16:50 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak/panel_data.npz
+2026-05-02 12:16:50 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak/x_0.npy
+2026-05-02 12:16:50 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0002/fold_5/fit_realized_config.yaml
+2026-05-02 12:16:50 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak
+2026-05-02 12:16:50 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak
+2026-05-02 12:16:50 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0002/fold_5/loss_mask.npy
+2026-05-02 12:16:50 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-05-02 12:16:50 | INFO | Configured latent rank: 3
+2026-05-02 12:16:50 | INFO | Using a fixed known graph with scalar xi.
+2026-05-02 12:16:50 | INFO | Fit-time hard bounds active: False
+2026-05-02 12:16:50 | INFO | Fixed scalar parameters: {}
+2026-05-02 12:16:50 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-05-02 12:16:50 | INFO | Beta mask before s: False with s=0
+2026-05-02 12:16:50 | INFO | Beta mask after e: False with e=11
+2026-05-02 12:16:50 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-05-02 12:16:50 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.005, v_column_l2_max=1.0, proximal_lr=1.0
+2026-05-02 12:16:50 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.826488 | initial_penalized=0.826489
+2026-05-02 12:16:50 | INFO | Alternating low-rank iter 0 | Loss: 0.588632 | Penalized: 0.589166
+2026-05-02 12:16:51 | INFO | Alternating low-rank iter 100 | Loss: 0.511658 | Penalized: 0.517313
+2026-05-02 12:16:53 | INFO | Alternating low-rank iter 200 | Loss: 0.509539 | Penalized: 0.515711
+2026-05-02 12:16:54 | INFO | Alternating low-rank iter 300 | Loss: 0.509215 | Penalized: 0.515391
+2026-05-02 12:16:55 | INFO | Alternating low-rank iter 400 | Loss: 0.508283 | Penalized: 0.514750
+2026-05-02 12:16:56 | INFO | Alternating low-rank iter 500 | Loss: 0.506969 | Penalized: 0.513939
+2026-05-02 12:16:58 | INFO | Alternating low-rank iter 600 | Loss: 0.506878 | Penalized: 0.513874
+2026-05-02 12:16:58 | INFO | Done fitting.
+2026-05-02 12:16:58 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-05-02 12:16:58 | INFO | Best optimizer start: 1 / 1
+2026-05-02 12:16:58 | INFO | Final Loss: 0.506876
+2026-05-02 12:16:58 | INFO | Estimated vs True Parameters:
+2026-05-02 12:16:58 | INFO |   beta: -0.3282 (True: -0.3000) | SQE: 0.000796
+2026-05-02 12:16:58 | INFO |   xi: 0.9322 (True: 0.8000) | SQE: 0.017481
+2026-05-02 12:16:58 | INFO |   eta: 0.3266 (True: 0.3000) | SQE: 0.000707
+2026-05-02 12:16:58 | INFO | Alternating low-rank optimizer diagnostics:
+2026-05-02 12:16:58 | INFO |   penalized_objective: 0.513873
+2026-05-02 12:16:58 | INFO |   mple_loss_without_penalty: 0.506876
+2026-05-02 12:16:58 | INFO |   lambda_uv_ridge: 0.005000
+2026-05-02 12:16:58 | INFO |   u_frobenius_norm: 155.350762
+2026-05-02 12:16:58 | INFO |   v_frobenius_norm: 1.732051
+2026-05-02 12:16:58 | INFO |   effective_rank: 3.000000
+2026-05-02 12:16:58 | INFO | Field and interaction diagnostics:
+2026-05-02 12:16:58 | INFO |   field_rmse: 0.873387
+2026-05-02 12:16:58 | INFO |   interaction_fro_error: 0.468407
+2026-05-02 12:16:58 | INFO |   estimated_field_max_abs_entry: 13.016819
+2026-05-02 12:16:58 | INFO |   estimated_field_rank: 3.000000
+2026-05-02 12:16:58 | INFO |   true_field_max_abs_entry: 2.973509
+2026-05-02 12:16:58 | INFO |   true_field_rank: 3.000000
+2026-05-02 12:16:58 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0002/fold_5/mple_summary.csv
+2026-05-02 12:16:58 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_weak/cv_runs/alternating_uv_grid/candidates/alternating_uv_grid_candidate_0002/fold_5/mple.log

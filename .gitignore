@@ -217,8 +217,9 @@ experiments/**
 !experiments/**/*.yaml
 !experiments/**/*.md
 !experiments/**/*.log
-!experiments/**/**_summary_**.csv
-!experiments/**/**_manifest_**.csv
+!experiments/**/**_summary**.csv
+!experiments/**/**_manifest**.csv
+!experiments/**/**_requests**.csv
 !experiments/**/intervention_summaries/**.csv
 experiments/OLD/**
 

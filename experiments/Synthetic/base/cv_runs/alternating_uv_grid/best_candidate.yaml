@@ -1,0 +1,30 @@
+experiment_name: base
+experiment_slug: base
+execution_mode: cv
+search_name: alternating_uv_grid
+search_slug: alternating_uv_grid
+candidate_name: alternating_uv_grid__candidate_0007
+candidate_slug: alternating_uv_grid_candidate_0007
+candidate_index: 7
+hyperparameters:
+  lambda_uv_ridge: 1.0
+weighted_mean_validation_loss: 0.6112038948066273
+mean_fold_validation_loss: 0.61120576227995
+weighted_mean_validation_brier_score: 0.21145043274030995
+mean_fold_validation_brier_score: 0.21145125084229782
+standard_error_fold_validation_brier_score: 0.000907854427931254
+weighted_mean_validation_ece: 0.027507731629694172
+mean_fold_validation_ece: 0.027508343757044286
+weighted_mean_validation_mean_magnetization_abs_diff: 0.024884146341463416
+mean_fold_validation_mean_magnetization_abs_diff: 0.02488737814531132
+standard_error_fold_validation_mean_magnetization_abs_diff: 0.0056036242321602136
+total_validation_slots: 20500
+weighted_mean_post_s_validation_loss: 0.6112038948066273
+mean_fold_post_s_validation_loss: 0.61120576227995
+weighted_mean_post_s_validation_brier_score: 0.21145043274030995
+mean_fold_post_s_validation_brier_score: 0.21145125084229782
+weighted_mean_post_s_validation_ece: 0.027507731629694172
+mean_fold_post_s_validation_ece: 0.027508343757044286
+weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.024884146341463416
+mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.02488737814531132
+total_post_s_validation_slots: 20500

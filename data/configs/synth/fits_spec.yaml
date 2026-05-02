@@ -1,0 +1,64 @@
+base:
+  fit_root_name: fits
+  fit_manifest_path: experiments/Synthetic/fit_manifest.csv
+  optimizer:
+    steps: 20000
+    tol: 1.0e-9
+    seed: 0
+    n_starts: 1
+    proximal_lr: 1.0
+  latent_rank: 0
+  optimizer_mode: no_external_field
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.0
+  v_column_l2_max: 1.0
+  estimation:
+    fixed_scalar_params: {}  # scalars fixed at these values (not estimated starting points)
+    beta_mask_pre_s: false
+    beta_mask_post_e: false
+
+variants:
+  - name: alternating_rank_3_uv_1_e3
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .001
+
+  - name: alternating_rank_3_uv_5_e3
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .005
+
+  - name: alternating_rank_3_uv_1_e2
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .01
+
+  - name: alternating_rank_3_uv_5_e2
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .05
+
+  - name: alternating_rank_3_uv_1_e1
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .1
+
+  - name: alternating_rank_3_uv_5_e1
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: .5
+
+  - name: alternating_rank_3_uv_1
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: 1
+
+  - name: alternating_rank_3_uv_1p5
+    optimizer_mode: alternating_latent_rank
+    latent_rank: 3
+    lambda_uv_ridge: 1.5
+
+  - name: base
+    optimizer_mode: no_external_field
+    latent_rank: 0
