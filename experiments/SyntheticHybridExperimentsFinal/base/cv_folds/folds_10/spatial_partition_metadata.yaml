@@ -1,0 +1,56 @@
+experiment_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticHybridExperimentsFinal/base
+num_folds: 10
+seed: 0
+partitioner: pymetis
+pymetis_seed_supported: false
+requested_seed: 0
+runtime_seconds: 0.03015652601607144
+gamma_artifact_kind: dense_npy
+gamma_validation:
+  passed: true
+  tolerance: 1.0e-12
+  max_symmetry_violation: 0.0
+  max_abs_diagonal: 0.0
+graph_preprocessing:
+  support_threshold: 1.0e-12
+  interpreted_as_unweighted_support_graph: true
+  symmetry_enforced_via_validation_only: true
+  zero_diagonal_enforced_via_validation_only: true
+metis:
+  mode: kway
+  contiguous: false
+  reported_cutcount: 542
+metrics:
+  num_vertices: 500
+  num_edges: 1230
+  partition_sizes:
+  - 49
+  - 51
+  - 51
+  - 51
+  - 49
+  - 49
+  - 49
+  - 50
+  - 51
+  - 50
+  cut_edge_count: 542
+  separator_sizes:
+  - 85
+  - 97
+  - 101
+  - 88
+  - 97
+  - 94
+  - 95
+  - 92
+  - 126
+  - 109
+  separator_union_vertex_count: 426
+  separator_union_vertex_fraction: 0.852
+  total_separator_memberships: 984
+  partition_size_mean: 50.0
+  partition_size_min: 49
+  partition_size_max: 51
+  partition_size_std: 0.8944271909999159
+  max_relative_deviation_from_mean: 0.02

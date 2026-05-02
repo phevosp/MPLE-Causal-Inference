@@ -1,0 +1,16 @@
+experiment_name: confounding_strong
+experiment_slug: confounding_strong
+search_name: alternating_uv_grid
+search_slug: alternating_uv_grid
+candidate_name: alternating_uv_grid__candidate_0004
+candidate_slug: alternating_uv_grid_candidate_0004
+candidate_index: 4
+weighted_mean_validation_loss: 0.483770752438926
+mean_fold_validation_loss: 0.483770854842699
+weighted_mean_validation_brier_score: 0.15913210187239746
+mean_fold_validation_brier_score: 0.1591322258018321
+weighted_mean_validation_ece: 0.02981730356093339
+mean_fold_validation_ece: 0.029815953322402788
+total_validation_slots: 20500
+hyperparameters:
+  lambda_uv_ridge: 0.05
