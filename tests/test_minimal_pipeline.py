@@ -4156,7 +4156,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             beta_mask_post_e=bundle.beta_mask_post_e,
         )
         prev_x = np.vstack([panel_context["x_0"], panel_context["x"][:-1, :]])
-        h_x = bundle.field_matrix + (bundle.xi * interaction_effect_x) + (bundle.eta * prev_x)
+        h_x = bundle.field_matrix + (bundle.beta * panel_context["z"]) + (bundle.xi * interaction_effect_x) + (bundle.eta * prev_x)
         expected_brier = validation_metrics.validation_brier_score(
             x=panel_context["x"],
             h_x=h_x,

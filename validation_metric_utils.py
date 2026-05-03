@@ -654,16 +654,9 @@ def _compute_h_x_from_bundle(bundle: OutcomeParameterBundle, panel_context: dict
     field_matrix = np.asarray(bundle.field_matrix, dtype=float)
     interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
     prev_x = np.vstack([x_0, x[:-1, :]])
-    beta_feature = masked_beta_feature(
-        z,
-        s=int(panel_context["s"]),
-        e=int(panel_context["e"]),
-        beta_mask_pre_s=bool(bundle.beta_mask_pre_s),
-        beta_mask_post_e=bool(bundle.beta_mask_post_e),
-    )
     h_x = (
         field_matrix
-        + float(bundle.beta) * beta_feature
+        + float(bundle.beta) * z
         + float(bundle.xi) * interaction_effect_x
         + float(bundle.eta) * prev_x
     )
