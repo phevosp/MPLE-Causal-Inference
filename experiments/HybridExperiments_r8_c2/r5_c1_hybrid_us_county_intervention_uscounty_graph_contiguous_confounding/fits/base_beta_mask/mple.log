@@ -1,0 +1,33 @@
+2026-05-03 03:34:41 | INFO | Loading data...
+2026-05-03 03:34:41 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r8_c2/r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding/panel_data.npz
+2026-05-03 03:34:41 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r8_c2/r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding/x_0.npy
+2026-05-03 03:34:41 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r8_c2/r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding/fits/base_beta_mask/fit_realized_config.yaml
+2026-05-03 03:34:41 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r8_c2/r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
+2026-05-03 03:34:41 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r8_c2/r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
+2026-05-03 03:34:41 | INFO | Configured optimizer mode: no_external_field
+2026-05-03 03:34:41 | INFO | Configured latent rank: 0
+2026-05-03 03:34:41 | INFO | Using a fixed known graph with scalar xi.
+2026-05-03 03:34:41 | INFO | Fit-time hard bounds active: False
+2026-05-03 03:34:41 | INFO | Fixed scalar parameters: {}
+2026-05-03 03:34:41 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-05-03 03:34:41 | INFO | Beta mask before s: True with s=50
+2026-05-03 03:34:41 | INFO | Beta mask after e: True with e=115
+2026-05-03 03:34:41 | INFO | Ignoring v_column_l2_max=1.0 for optimizer_mode=no_external_field
+2026-05-03 03:34:41 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=5, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-05-03 03:34:41 | INFO | Done fitting.
+2026-05-03 03:34:41 | INFO | Optimizer status: Optimization terminated successfully.
+2026-05-03 03:34:41 | INFO | Best optimizer start: 1 / 1
+2026-05-03 03:34:41 | INFO | Final Loss: 0.635145
+2026-05-03 03:34:41 | INFO | Estimated vs True Parameters:
+2026-05-03 03:34:41 | INFO |   beta: 0.0299 (True: -0.3000) | SQE: 0.108831
+2026-05-03 03:34:41 | INFO |   xi: 0.9073 (True: 0.8000) | SQE: 0.011510
+2026-05-03 03:34:41 | INFO |   eta: 0.2878 (True: 0.3000) | SQE: 0.000149
+2026-05-03 03:34:41 | INFO | Field and interaction diagnostics:
+2026-05-03 03:34:41 | INFO |   field_rmse: 0.500000
+2026-05-03 03:34:41 | INFO |   interaction_fro_error: 1.014547
+2026-05-03 03:34:41 | INFO |   estimated_field_max_abs_entry: 0.000000
+2026-05-03 03:34:41 | INFO |   estimated_field_rank: 0.000000
+2026-05-03 03:34:41 | INFO |   true_field_max_abs_entry: 3.040690
+2026-05-03 03:34:41 | INFO |   true_field_rank: 5.000000
+2026-05-03 03:34:41 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r8_c2/r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding/fits/base_beta_mask/mple_summary.csv
+2026-05-03 03:34:41 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r8_c2/r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding/fits/base_beta_mask/mple.log

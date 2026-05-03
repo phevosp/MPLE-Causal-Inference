@@ -106,7 +106,7 @@ variants:
       beta_mask_pre_s: true
       beta_mask_post_e: true
 
-  - name: alternating_rank_1_uv_5_e1_beta_mask
+  - name: alternating_rank_1_uv_1_beta_mask
     optimizer_mode: alternating_latent_rank
     latent_rank: 1
     lambda_uv_ridge: 1

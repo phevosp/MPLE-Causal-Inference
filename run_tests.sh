@@ -239,14 +239,14 @@ echo "Submitting generation jobs..."
 generation_barrier_job_id="$(submit_generation_stage)"
 wait_for_job "${generation_barrier_job_id}" "Generation"
 
-echo "Building CV folds..."
-build_cv_folds_stage
-
-run_requested_model_selection_modes
-
 echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
 wait_for_job "${fit_barrier_job_id}" "Fit"
+
+# echo "Building CV folds..."
+# build_cv_folds_stage
+
+# run_requested_model_selection_modes
 
 # echo "Running intervention library..."
 # run_intervention_stage

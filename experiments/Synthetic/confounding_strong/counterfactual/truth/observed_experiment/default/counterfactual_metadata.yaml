@@ -1,0 +1,21 @@
+experiment_name: confounding_strong
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong
+run_name: default
+run_slug: default
+source_type: truth
+source_name: truth
+source_slug: truth
+intervention_source: saved_intervention
+intervention_name: observed_experiment
+intervention_slug: observed_experiment
+latent_rank: 3
+num_samples: 16
+gibbs_sweeps: 10
+seed: 0
+s: 0
+num_units: 500
+num_time_steps: 50
+summary:
+  s: 0
+  num_samples: 16
+  num_units: 500

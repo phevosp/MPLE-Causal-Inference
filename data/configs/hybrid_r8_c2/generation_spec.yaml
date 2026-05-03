@@ -1,0 +1,87 @@
+base:
+  experiment_root: experiments/HybridExperiments_r8_c2
+  manifest_path: experiments/HybridExperiments_r8_c2/generation_manifest.csv
+  dimensions:
+    N: 500
+    T: 50
+  generation:
+    gibbs_sweeps: 20
+    seed: 42
+  x0:
+    generator: bernoulli
+    params:
+      p: 0.5
+      fixed_val: null
+  graph:
+    source: fixed_artifact
+    generator: null
+    params:
+      p: null
+    artifact:
+      gamma_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_03_01/gamma_matrix_sparse.npz
+      node_index_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_03_01/node_index.csv
+      artifact_dir: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_03_01
+      network_name: contiguity
+      trim_scope: trimmed
+  intervention:
+    source: fixed_artifact
+    generator: null
+    params:
+      singular_values: null
+      probability_amplitude: null
+    artifact:
+      panel_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_03_01/panel_data.npz
+      z0_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_03_01/z_0.npy
+      artifact_dir: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__contiguity__start_2020_03_01
+      shared_panel_dir: null
+      outcome_code: null
+      intervention_code: complete_cov_ge_30
+      lag_code: 2w
+      trim_scope: trimmed
+  truth:
+    B: 1.0
+    field_mode: random_low_rank
+    field_params:
+      singular_values: [1.0]
+      target_rms_fraction: 0.5
+    scalars:
+      beta: -0.3
+      xi: 0.8
+      eta: 0.3
+      zeta: 0
+      psi: 0
+
+experiments:
+  - name: r5_c1_hybrid_us_county_intervention_generated_graph_confounding
+    graph:
+      source: generated
+      generator: erdos_renyi
+      params:
+        p: 0.004
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        shared_rank: 2
+        singular_values: [1.0, 0.9, 0.9, 0.7, 0.6]
+
+  - name: r5_c1_hybrid_us_county_intervention_uscounty_graph_contiguous_confounding
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        shared_rank: 2
+        singular_values: [1.0, 0.9, 0.9, 0.7, 0.6]
+
+  - name: r5_c1_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
+    graph:    
+      source: fixed_artifact
+      artifact:
+        gamma_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/gamma_matrix_sparse.npz
+        node_index_path: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/node_index.csv
+        artifact_dir: experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+        network_name: distance_kernel_8
+        trim_scope: trimmed
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        shared_rank: 2
+        singular_values: [1.0, 0.9, 0.9, 0.7, 0.6]

@@ -1,0 +1,21 @@
+experiment_name: confounding_strong
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong
+run_name: default
+run_slug: default
+source_type: fit
+source_name: base
+source_slug: fit_base
+intervention_source: saved_intervention
+intervention_name: all_zeros
+intervention_slug: all_zeros
+latent_rank: 0
+num_samples: 16
+gibbs_sweeps: 10
+seed: 0
+s: 50
+num_units: 500
+num_time_steps: 50
+summary:
+  s: 50
+  num_samples: 16
+  num_units: 500
