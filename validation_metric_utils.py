@@ -473,6 +473,156 @@ def evaluate_test_metrics(
     }
 
 
+def evaluate_test_metrics_by_treatment(
+    *,
+    panel_context: dict[str, object],
+    bundle: OutcomeParameterBundle,
+    test_loss_mask: np.ndarray,
+    sampling: dict[str, Any] | None = None,
+) -> dict[str, float | int | None]:
+    x = np.asarray(panel_context["x"], dtype=float)
+    z = np.asarray(panel_context["z"], dtype=float)
+    x_0 = np.asarray(panel_context["x_0"], dtype=float)
+    field_matrix = np.asarray(bundle.field_matrix, dtype=float)
+    test_mask = np.asarray(test_loss_mask, dtype=bool)
+    s = int(panel_context["s"])
+    post_s_window = time_window_mask(
+        t_steps=x.shape[0], n_nodes=x.shape[1], start_t=s
+    )
+
+    interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
+    common_kwargs = {
+        "x": x,
+        "z": z,
+        "x_0": x_0,
+        "field_matrix": field_matrix,
+        "beta": float(bundle.beta),
+        "xi": float(bundle.xi),
+        "eta": float(bundle.eta),
+        "interaction_effect_x": interaction_effect_x,
+        "fixed_scalar_params": {},
+        "s": int(panel_context["s"]),
+        "e": int(panel_context["e"]),
+        "beta_mask_pre_s": bool(bundle.beta_mask_pre_s),
+        "beta_mask_post_e": bool(bundle.beta_mask_post_e),
+    }
+
+    treated_mask = z > 0.5
+    untreated_mask = z <= 0.5
+
+    metrics = {}
+
+    for treatment_name, treatment_selector in [("treated", treated_mask), ("untreated", untreated_mask)]:
+        test_and_treatment = test_mask & treatment_selector
+        test_and_treatment_post_s = test_and_treatment & post_s_window
+
+        if np.any(test_and_treatment):
+            test_loss = float(
+                evaluate_mple_loss_from_parts(
+                    loss_mask=test_and_treatment,
+                    **common_kwargs,
+                )
+            )
+            test_brier = validation_brier_score(
+                x=x,
+                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                loss_mask=test_and_treatment,
+            )
+            test_ece = validation_expected_calibration_error(
+                x=x,
+                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                loss_mask=test_and_treatment,
+            )
+            num_test_slots = int(np.count_nonzero(test_and_treatment))
+
+            metrics[f"test_loss_{treatment_name}"] = test_loss
+            metrics[f"test_brier_score_{treatment_name}"] = test_brier
+            metrics[f"test_ece_{treatment_name}"] = test_ece
+            metrics[f"num_test_slots_{treatment_name}"] = num_test_slots
+        else:
+            metrics[f"test_loss_{treatment_name}"] = None
+            metrics[f"test_brier_score_{treatment_name}"] = None
+            metrics[f"test_ece_{treatment_name}"] = None
+            metrics[f"num_test_slots_{treatment_name}"] = 0
+
+        if np.any(test_and_treatment_post_s):
+            post_s_test_loss = float(
+                evaluate_mple_loss_from_parts(
+                    loss_mask=test_and_treatment_post_s,
+                    **common_kwargs,
+                )
+            )
+            post_s_test_brier = validation_brier_score(
+                x=x,
+                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                loss_mask=test_and_treatment_post_s,
+            )
+            post_s_test_ece = validation_expected_calibration_error(
+                x=x,
+                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                loss_mask=test_and_treatment_post_s,
+            )
+            magnetization_metrics = _compute_magnetization_metrics(
+                x=x,
+                bundle=bundle,
+                loss_mask=test_and_treatment_post_s,
+                sampling=sampling,
+                panel_context=panel_context,
+            )
+            num_post_s_test_slots = int(np.count_nonzero(test_and_treatment_post_s))
+
+            metrics[f"post_s_test_loss_{treatment_name}"] = post_s_test_loss
+            metrics[f"post_s_test_brier_score_{treatment_name}"] = post_s_test_brier
+            metrics[f"post_s_test_ece_{treatment_name}"] = post_s_test_ece
+            metrics[f"post_s_test_mean_magnetization_abs_diff_{treatment_name}"] = (
+                magnetization_metrics["post_s_magnetization_abs_diff"]
+            )
+            metrics[f"num_post_s_test_slots_{treatment_name}"] = num_post_s_test_slots
+        else:
+            metrics[f"post_s_test_loss_{treatment_name}"] = None
+            metrics[f"post_s_test_brier_score_{treatment_name}"] = None
+            metrics[f"post_s_test_ece_{treatment_name}"] = None
+            metrics[f"post_s_test_mean_magnetization_abs_diff_{treatment_name}"] = None
+            metrics[f"num_post_s_test_slots_{treatment_name}"] = 0
+
+        magnetization_metrics_full = _compute_magnetization_metrics(
+            x=x,
+            bundle=bundle,
+            loss_mask=test_and_treatment,
+            sampling=sampling,
+            panel_context=panel_context,
+        )
+        if np.any(test_and_treatment):
+            metrics[f"test_mean_magnetization_abs_diff_{treatment_name}"] = (
+                magnetization_metrics_full["magnetization_abs_diff"]
+            )
+        else:
+            metrics[f"test_mean_magnetization_abs_diff_{treatment_name}"] = None
+
+    return metrics
+
+
+def _compute_h_x_from_bundle(bundle: OutcomeParameterBundle, panel_context: dict[str, object]) -> np.ndarray:
+    x = np.asarray(panel_context["x"], dtype=float)
+    z = np.asarray(panel_context["z"], dtype=float)
+    x_0 = np.asarray(panel_context["x_0"], dtype=float)
+    field_matrix = np.asarray(bundle.field_matrix, dtype=float)
+    interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
+    beta_feature = masked_beta_feature(
+        z,
+        s=int(panel_context["s"]),
+        e=int(panel_context["e"]),
+        beta_mask_pre_s=bool(bundle.beta_mask_pre_s),
+        beta_mask_post_e=bool(bundle.beta_mask_post_e),
+    )
+    h_x = (
+        x_0[None, :] * (field_matrix + interaction_effect_x)
+        + bundle.beta * beta_feature
+        + bundle.xi * (x - x_0[None, :])
+    )
+    return h_x
+
+
 def evaluate_saved_fit_test_metrics(
     fit_root: str | Path,
     experiment_root: str | Path,
@@ -483,13 +633,21 @@ def evaluate_saved_fit_test_metrics(
 ) -> dict[str, float | int | None]:
     panel_context = load_experiment_panel_context(experiment_root)
     bundle = load_fit_parameter_bundle(fit_root, experiment_root)
-    return evaluate_test_metrics(
+    metrics = evaluate_test_metrics(
         panel_context=panel_context,
         bundle=bundle,
         training_loss_mask=training_loss_mask,
         test_loss_mask=test_loss_mask,
         sampling=sampling,
     )
+    stratified_metrics = evaluate_test_metrics_by_treatment(
+        panel_context=panel_context,
+        bundle=bundle,
+        test_loss_mask=test_loss_mask,
+        sampling=sampling,
+    )
+    metrics.update(stratified_metrics)
+    return metrics
 
 
 def _blank_aggregate_metrics() -> dict[str, object]:
