@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-import build_cv_folds as cv_folds
 from io_utils import io_path, path_exists
 from loading_utils import load_experiment_panel_context
 
@@ -99,6 +98,8 @@ def load_model_selection_split_masks(
     expected_shape = _expected_panel_shape(experiment_root)
 
     if normalized_source == SPLIT_SOURCE_CV_FOLDS:
+        import build_cv_folds as cv_folds
+
         output_root = Path(experiment_root) / "cv_folds" / f"folds_{int(num_folds)}"
         blanket_summary = _load_optional_metadata(output_root / "markov_blanket_summary.yaml")
         if not bool(blanket_summary.get("blanket_validation_passed", False)):
