@@ -1,0 +1,44 @@
+2026-05-02 22:37:32 | INFO | Loading data...
+2026-05-02 22:37:32 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r1_v2/r1_hybrid_us_county_intervention_generated_graph_confounding/panel_data.npz
+2026-05-02 22:37:32 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r1_v2/r1_hybrid_us_county_intervention_generated_graph_confounding/x_0.npy
+2026-05-02 22:37:32 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r1_v2/r1_hybrid_us_county_intervention_generated_graph_confounding/fits/alternating_rank_1_uv_1_beta_mask/fit_realized_config.yaml
+2026-05-02 22:37:32 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r1_v2/r1_hybrid_us_county_intervention_generated_graph_confounding
+2026-05-02 22:37:32 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r1_v2/r1_hybrid_us_county_intervention_generated_graph_confounding
+2026-05-02 22:37:32 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-05-02 22:37:32 | INFO | Configured latent rank: 1
+2026-05-02 22:37:32 | INFO | Using a fixed known graph with scalar xi.
+2026-05-02 22:37:32 | INFO | Fit-time hard bounds active: False
+2026-05-02 22:37:32 | INFO | Fixed scalar parameters: {}
+2026-05-02 22:37:32 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-05-02 22:37:32 | INFO | Beta mask before s: True with s=50
+2026-05-02 22:37:32 | INFO | Beta mask after e: True with e=115
+2026-05-02 22:37:32 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-05-02 22:37:32 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=1.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-05-02 22:37:32 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.696872 | initial_penalized=0.696880
+2026-05-02 22:37:32 | INFO | Alternating low-rank iter 0 | Loss: 0.568236 | Penalized: 0.575048
+2026-05-02 22:37:39 | INFO | Alternating low-rank iter 100 | Loss: 0.540015 | Penalized: 0.541859
+2026-05-02 22:37:46 | INFO | Alternating low-rank iter 200 | Loss: 0.540004 | Penalized: 0.541748
+2026-05-02 22:37:50 | INFO | Done fitting.
+2026-05-02 22:37:50 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-05-02 22:37:50 | INFO | Best optimizer start: 1 / 1
+2026-05-02 22:37:50 | INFO | Final Loss: 0.540009
+2026-05-02 22:37:50 | INFO | Estimated vs True Parameters:
+2026-05-02 22:37:50 | INFO |   beta: -0.0949 (True: -0.3000) | SQE: 0.042058
+2026-05-02 22:37:50 | INFO |   xi: 1.5957 (True: 0.8000) | SQE: 0.633160
+2026-05-02 22:37:50 | INFO |   eta: 0.3311 (True: 0.3000) | SQE: 0.000967
+2026-05-02 22:37:50 | INFO | Alternating low-rank optimizer diagnostics:
+2026-05-02 22:37:50 | INFO |   penalized_objective: 0.541748
+2026-05-02 22:37:50 | INFO |   mple_loss_without_penalty: 0.540009
+2026-05-02 22:37:50 | INFO |   lambda_uv_ridge: 1.000000
+2026-05-02 22:37:50 | INFO |   u_frobenius_norm: 24.529862
+2026-05-02 22:37:50 | INFO |   v_frobenius_norm: 1.000000
+2026-05-02 22:37:50 | INFO |   effective_rank: 1.000000
+2026-05-02 22:37:50 | INFO | Field and interaction diagnostics:
+2026-05-02 22:37:50 | INFO |   field_rmse: 0.476975
+2026-05-02 22:37:50 | INFO |   interaction_fro_error: 6.029136
+2026-05-02 22:37:50 | INFO |   estimated_field_max_abs_entry: 0.253721
+2026-05-02 22:37:50 | INFO |   estimated_field_rank: 1.000000
+2026-05-02 22:37:50 | INFO |   true_field_max_abs_entry: 0.609457
+2026-05-02 22:37:50 | INFO |   true_field_rank: 1.000000
+2026-05-02 22:37:50 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r1_v2/r1_hybrid_us_county_intervention_generated_graph_confounding/fits/alternating_rank_1_uv_1_beta_mask/mple_summary.csv
+2026-05-02 22:37:50 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r1_v2/r1_hybrid_us_county_intervention_generated_graph_confounding/fits/alternating_rank_1_uv_1_beta_mask/mple.log
