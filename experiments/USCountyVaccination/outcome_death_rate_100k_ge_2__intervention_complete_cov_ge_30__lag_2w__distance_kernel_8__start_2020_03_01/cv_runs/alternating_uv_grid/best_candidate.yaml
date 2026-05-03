@@ -1,0 +1,50 @@
+experiment_name: outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+experiment_slug: outcome_death_rate_100k_ge_2_intervention_complete_cov_ge_30_lag_2w_distance_kernel_8_start_2020_03_01
+execution_mode: cv
+search_name: alternating_uv_grid
+search_slug: alternating_uv_grid
+split_source: validation_test_splits
+outer_num_folds: 6
+test_fold_id: 1
+candidate_name: alternating_uv_grid__candidate_0003
+candidate_slug: alternating_uv_grid_candidate_0003
+candidate_index: 3
+hyperparameters:
+  lambda_uv_ridge: 0.05
+  latent_rank: 5
+  optimizer:
+    steps: 2000
+    tol: 1.0e-7
+    seed: 0
+    n_starts: 1
+    proximal_lr: 1.0
+  optimizer_mode: alternating_latent_rank
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  v_column_l2_max: 1.0
+  estimation:
+    fixed_scalar_params: {}
+    beta_mask_pre_s: true
+    beta_mask_post_e: true
+weighted_mean_validation_loss: 0.4880879021068906
+mean_fold_validation_loss: 0.4857487618093756
+weighted_mean_validation_brier_score: 0.15931912161340542
+mean_fold_validation_brier_score: 0.15842351306219968
+standard_error_fold_validation_brier_score: 0.005635610907514265
+weighted_mean_validation_ece: 0.029227187909926847
+mean_fold_validation_ece: 0.028567424633300552
+weighted_mean_validation_mean_magnetization_abs_diff: 0.08563960697732445
+mean_fold_validation_mean_magnetization_abs_diff: 0.08572169484351713
+standard_error_fold_validation_mean_magnetization_abs_diff: 0.012547753258730778
+total_validation_slots: 264514
+weighted_mean_post_s_validation_loss: 0.5072374894325046
+mean_fold_post_s_validation_loss: 0.5099397262768688
+weighted_mean_post_s_validation_brier_score: 0.16680176879658942
+mean_fold_post_s_validation_brier_score: 0.16782755914225575
+standard_error_fold_post_s_validation_brier_score: 0.003802778683453601
+weighted_mean_post_s_validation_ece: 0.0295606301888779
+mean_fold_post_s_validation_ece: 0.03080443144321839
+weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.05783773587470772
+mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.06460075365539082
+standard_error_fold_post_s_validation_mean_magnetization_abs_diff: 0.015915465620483165
+total_post_s_validation_slots: 147112
