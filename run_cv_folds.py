@@ -26,6 +26,13 @@ from pipeline_specs import (
     write_csv_manifest,
 )
 from run_fit_pipeline import execute_fit_root, materialize_fit_root
+from split_artifact_utils import (
+    DEFAULT_OUTER_NUM_FOLDS,
+    DEFAULT_TEST_FOLD_ID,
+    SPLIT_SOURCE_CV_FOLDS,
+    load_model_selection_split_masks,
+    normalize_split_source,
+)
 from validation_metric_utils import (
     build_candidate_score_row,
     candidate_score_sort_key,
@@ -242,26 +249,22 @@ def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
-def _load_fold_roles(experiment_root: str | Path, *, num_folds: int) -> np.ndarray:
-    output_root = Path(experiment_root) / "cv_folds" / f"folds_{num_folds}"
-    blanket_summary = load_spec(output_root / "markov_blanket_summary.yaml")
-    if not bool(blanket_summary.get("blanket_validation_passed", False)):
-        raise ValueError(
-            f"CV folds at {output_root} failed Markov blanket validation."
-        )
-    metadata = load_spec(output_root / "spatiotemporal_cv_metadata.yaml")
-    if int(metadata.get("num_cv_folds", 0)) != int(num_folds):
-        raise ValueError(
-            f"Expected {num_folds} folds in {output_root}; found "
-            f"{metadata.get('num_cv_folds')}."
-        )
-    with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
-        role_codes = np.asarray(data["role_codes"], dtype=np.int8)
-    if role_codes.ndim != 3 or role_codes.shape[0] != int(num_folds):
-        raise ValueError(
-            f"fold_roles.npz at {output_root} has invalid role tensor shape {role_codes.shape}."
-        )
-    return role_codes
+def _search_split_source(search: dict[str, Any]) -> str:
+    return normalize_split_source(search.get("split_source", SPLIT_SOURCE_CV_FOLDS))
+
+
+def _search_outer_num_folds(search: dict[str, Any]) -> int:
+    value = search.get("outer_num_folds")
+    if value is None:
+        return DEFAULT_OUTER_NUM_FOLDS
+    return int(value)
+
+
+def _search_test_fold_id(search: dict[str, Any]) -> int:
+    value = search.get("test_fold_id")
+    if value is None:
+        return DEFAULT_TEST_FOLD_ID
+    return int(value)
 
 
 def _output_root_name(search: dict[str, Any], *, execution_mode: str) -> str:
@@ -310,6 +313,57 @@ def _selected_fold_ids(num_folds: int, *, execution_mode: str) -> tuple[int, ...
     return tuple(range(1, int(num_folds) + 1))
 
 
+def _nonempty_fold_ids_from_masks(
+    training_masks: np.ndarray,
+    validation_masks: np.ndarray,
+) -> tuple[int, ...]:
+    training_array = np.asarray(training_masks, dtype=bool)
+    validation_array = np.asarray(validation_masks, dtype=bool)
+    supported_fold_ids: list[int] = []
+    for fold_index in range(int(training_array.shape[0])):
+        if int(np.count_nonzero(training_array[fold_index])) <= 0:
+            continue
+        if int(np.count_nonzero(validation_array[fold_index])) <= 0:
+            continue
+        supported_fold_ids.append(int(fold_index + 1))
+    return tuple(supported_fold_ids)
+
+
+def _resolved_fold_ids_for_experiment(
+    experiment_row: dict[str, str],
+    search: dict[str, Any],
+    *,
+    execution_mode: str,
+) -> tuple[int, ...]:
+    configured_num_folds = _get_num_folds_from_search(search)
+    requested_fold_ids = _selected_fold_ids(
+        configured_num_folds,
+        execution_mode=execution_mode,
+    )
+    experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
+    split_artifacts = load_model_selection_split_masks(
+        experiment_root,
+        split_source=_search_split_source(search),
+        num_folds=configured_num_folds,
+        outer_num_folds=_search_outer_num_folds(search),
+        test_fold_id=_search_test_fold_id(search),
+    )
+    supported_fold_ids = _nonempty_fold_ids_from_masks(
+        np.asarray(split_artifacts["training_masks"], dtype=bool),
+        np.asarray(split_artifacts["validation_masks"], dtype=bool),
+    )
+    if not supported_fold_ids:
+        raise ValueError(
+            f"No usable fold ids remain for {experiment_root} with split_source="
+            f"{_search_split_source(search)}."
+        )
+    if _normalize_execution_mode(execution_mode) == EXECUTION_MODE_VALIDATION:
+        return (supported_fold_ids[0],)
+    return tuple(
+        fold_id for fold_id in requested_fold_ids if int(fold_id) in set(supported_fold_ids)
+    )
+
+
 def _cv_request_row(
     experiment_row: dict[str, str],
     search: dict[str, Any],
@@ -329,6 +383,9 @@ def _cv_request_row(
     return {
         "execution_mode": _normalize_execution_mode(execution_mode),
         "configured_num_folds": int(configured_num_folds),
+        "split_source": _search_split_source(search),
+        "outer_num_folds": int(_search_outer_num_folds(search)),
+        "test_fold_id": int(_search_test_fold_id(search)),
         "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
@@ -360,8 +417,9 @@ def write_cv_requests(
         configured_num_folds = _get_num_folds_from_search(search)
         for candidate in expand_search_candidates(search):
             for experiment_row in generation_rows:
-                for fold_id in _selected_fold_ids(
-                    configured_num_folds,
+                for fold_id in _resolved_fold_ids_for_experiment(
+                    experiment_row,
+                    search,
                     execution_mode=normalized_mode,
                 ):
                     request_rows.append(
@@ -411,6 +469,9 @@ def _candidate_grid_row(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
+        "split_source": _search_split_source(search),
+        "outer_num_folds": int(_search_outer_num_folds(search)),
+        "test_fold_id": int(_search_test_fold_id(search)),
         "candidate_name": candidate["name"],
         "candidate_slug": candidate["slug"],
         "candidate_index": int(candidate["_candidate_index"]),
@@ -440,6 +501,9 @@ def _load_scored_candidates(
             "execution_mode",
             "search_name",
             "search_slug",
+            "split_source",
+            "outer_num_folds",
+            "test_fold_id",
             "candidate_name",
             "candidate_slug",
             "candidate_index",
@@ -491,6 +555,9 @@ def _manifest_row_from_best_row(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
+        "split_source": _search_split_source(search),
+        "outer_num_folds": int(_search_outer_num_folds(search)),
+        "test_fold_id": int(_search_test_fold_id(search)),
         "output_path": str(output_root.resolve()),
         "best_candidate_name": best_candidate["name"],
         "best_candidate_slug": best_candidate["slug"],
@@ -513,6 +580,9 @@ def _best_candidate_payload(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
+        "split_source": _search_split_source(search),
+        "outer_num_folds": int(_search_outer_num_folds(search)),
+        "test_fold_id": int(_search_test_fold_id(search)),
         "candidate_name": best_candidate["name"],
         "candidate_slug": best_candidate["slug"],
         "candidate_index": int(best_candidate["_candidate_index"]),
@@ -704,6 +774,9 @@ def _fit_metric_row(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
+        "split_source": _search_split_source(search),
+        "outer_num_folds": int(_search_outer_num_folds(search)),
+        "test_fold_id": int(_search_test_fold_id(search)),
         "candidate_name": candidate["name"],
         "candidate_slug": candidate["slug"],
         "candidate_index": int(candidate["_candidate_index"]),
@@ -789,8 +862,9 @@ def _run_search_for_experiment(
     configured_num_folds = (
         int(num_folds) if num_folds is not None else _get_num_folds_from_search(search)
     )
-    selected_fold_ids = _selected_fold_ids(
-        configured_num_folds,
+    selected_fold_ids = _resolved_fold_ids_for_experiment(
+        experiment_row,
+        {**search, "num_folds": int(configured_num_folds)},
         execution_mode=normalized_mode,
     )
     experiment_root = Path(experiment_row["experiment_path"]).resolve()
@@ -803,13 +877,22 @@ def _run_search_for_experiment(
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    role_codes = _load_fold_roles(experiment_root, num_folds=configured_num_folds)
+    split_artifacts = load_model_selection_split_masks(
+        experiment_root,
+        split_source=_search_split_source(search),
+        num_folds=configured_num_folds,
+        outer_num_folds=_search_outer_num_folds(search),
+        test_fold_id=_search_test_fold_id(search),
+    )
+    training_masks = np.asarray(split_artifacts["training_masks"], dtype=bool)
+    validation_masks = np.asarray(split_artifacts["validation_masks"], dtype=bool)
+    separator_masks = np.asarray(split_artifacts["separator_masks"], dtype=bool)
     panel_context = load_experiment_panel_context(experiment_root)
-    if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
+    if training_masks.shape[1] != int(panel_context["T"]) or training_masks.shape[2] != int(
         panel_context["N"]
     ):
         raise ValueError(
-            f"CV fold tensor shape {role_codes.shape} does not match panel dimensions "
+            f"Split mask tensor shape {training_masks.shape} does not match panel dimensions "
             f"(T={panel_context['T']}, N={panel_context['N']}) for {experiment_root}."
         )
 
@@ -843,14 +926,14 @@ def _run_search_for_experiment(
                         f"{fold_root} already exists. Re-run with --overwrite to rebuild it."
                     )
             fold_root.mkdir(parents=True, exist_ok=False)
-            fold_roles = np.asarray(role_codes[int(fold_id) - 1], dtype=np.int8)
-            training_loss_mask = fold_roles == cv_folds.ROLE_CODE_TRAINING
-            validation_loss_mask = fold_roles == cv_folds.ROLE_CODE_VALIDATION
+            training_loss_mask = np.asarray(training_masks[int(fold_id) - 1], dtype=bool)
+            validation_loss_mask = np.asarray(validation_masks[int(fold_id) - 1], dtype=bool)
+            separator_loss_mask = np.asarray(separator_masks[int(fold_id) - 1], dtype=bool)
             num_training_slots = int(np.count_nonzero(training_loss_mask))
             num_validation_slots = int(np.count_nonzero(validation_loss_mask))
             post_s_validation_loss_mask = validation_loss_mask & time_window_mask(
-                t_steps=fold_roles.shape[0],
-                n_nodes=fold_roles.shape[1],
+                t_steps=training_loss_mask.shape[0],
+                n_nodes=training_loss_mask.shape[1],
                 start_t=int(panel_context["s"]),
             )
             num_post_s_validation_slots = int(
@@ -867,14 +950,15 @@ def _run_search_for_experiment(
                 "search_slug": search["slug"],
                 "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
                 "configured_num_folds": int(configured_num_folds),
+                "split_source": _search_split_source(search),
+                "outer_num_folds": int(_search_outer_num_folds(search)),
+                "test_fold_id": int(_search_test_fold_id(search)),
                 "cv_fold_id": int(fold_id),
                 "candidate_name": candidate["name"],
                 "candidate_slug": candidate["slug"],
                 "candidate_index": int(candidate["_candidate_index"]),
                 "num_training_slots": num_training_slots,
-                "num_separator_slots": int(
-                    np.count_nonzero(fold_roles == cv_folds.ROLE_CODE_SEPARATOR)
-                ),
+                "num_separator_slots": int(np.count_nonzero(separator_loss_mask)),
                 "num_validation_slots": num_validation_slots,
                 "num_post_s_validation_slots": num_post_s_validation_slots,
             }
@@ -1041,6 +1125,15 @@ def refresh_cv_scores_from_requests(
         configured_num_folds = int(
             first_row.get("configured_num_folds", _get_num_folds_from_search(search))
         )
+        search["split_source"] = str(
+            first_row.get("split_source", _search_split_source(search))
+        )
+        search["outer_num_folds"] = int(
+            first_row.get("outer_num_folds", _search_outer_num_folds(search))
+        )
+        search["test_fold_id"] = int(
+            first_row.get("test_fold_id", _search_test_fold_id(search))
+        )
         experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
         output_roots = {
             Path(str(row["fit_path"])).resolve().parents[2]
@@ -1054,14 +1147,23 @@ def refresh_cv_scores_from_requests(
         output_root = next(iter(output_roots))
         output_root.mkdir(parents=True, exist_ok=True)
         candidates = _load_scored_candidates(output_root, group_rows)
+        expected_num_folds = len({int(row["cv_fold_id"]) for row in group_rows})
 
-        role_codes = _load_fold_roles(experiment_root, num_folds=configured_num_folds)
+        split_artifacts = load_model_selection_split_masks(
+            experiment_root,
+            split_source=_search_split_source(search),
+            num_folds=configured_num_folds,
+            outer_num_folds=_search_outer_num_folds(search),
+            test_fold_id=_search_test_fold_id(search),
+        )
+        training_masks = np.asarray(split_artifacts["training_masks"], dtype=bool)
+        validation_masks = np.asarray(split_artifacts["validation_masks"], dtype=bool)
         panel_context = load_experiment_panel_context(experiment_root)
-        if role_codes.shape[1] != int(panel_context["T"]) or role_codes.shape[2] != int(
+        if training_masks.shape[1] != int(panel_context["T"]) or training_masks.shape[2] != int(
             panel_context["N"]
         ):
             raise ValueError(
-                f"CV fold tensor shape {role_codes.shape} does not match panel dimensions "
+                f"Split mask tensor shape {training_masks.shape} does not match panel dimensions "
                 f"(T={panel_context['T']}, N={panel_context['N']}) for {experiment_root}."
             )
         validation_sampling = resolve_validation_sampling(search.get("validation_sampling"))
@@ -1074,12 +1176,11 @@ def refresh_cv_scores_from_requests(
         for request_row in sorted_group_rows:
             fold_id = int(request_row["cv_fold_id"])
             fit_root = Path(str(request_row["fit_path"])).resolve()
-            fold_roles = np.asarray(role_codes[fold_id - 1], dtype=np.int8)
-            training_loss_mask = fold_roles == cv_folds.ROLE_CODE_TRAINING
-            validation_loss_mask = fold_roles == cv_folds.ROLE_CODE_VALIDATION
+            training_loss_mask = np.asarray(training_masks[fold_id - 1], dtype=bool)
+            validation_loss_mask = np.asarray(validation_masks[fold_id - 1], dtype=bool)
             post_s_validation_loss_mask = validation_loss_mask & time_window_mask(
-                t_steps=fold_roles.shape[0],
-                n_nodes=fold_roles.shape[1],
+                t_steps=training_loss_mask.shape[0],
+                n_nodes=training_loss_mask.shape[1],
                 start_t=int(panel_context["s"]),
             )
             candidate = {
@@ -1123,12 +1224,7 @@ def refresh_cv_scores_from_requests(
                 search,
                 candidates,
                 fold_rows,
-                expected_num_folds=len(
-                    _selected_fold_ids(
-                        configured_num_folds,
-                        execution_mode=normalized_mode,
-                    )
-                ),
+                expected_num_folds=expected_num_folds,
                 output_root=output_root,
                 execution_mode=normalized_mode,
             )
@@ -1184,6 +1280,15 @@ def collect_cv_manifest_from_requests(
         configured_num_folds = int(
             first_row.get("configured_num_folds", _get_num_folds_from_search(search))
         )
+        search["split_source"] = str(
+            first_row.get("split_source", _search_split_source(search))
+        )
+        search["outer_num_folds"] = int(
+            first_row.get("outer_num_folds", _search_outer_num_folds(search))
+        )
+        search["test_fold_id"] = int(
+            first_row.get("test_fold_id", _search_test_fold_id(search))
+        )
         output_roots = {
             Path(str(row["fit_path"])).resolve().parents[2]
             for row in group_rows
@@ -1202,18 +1307,14 @@ def collect_cv_manifest_from_requests(
             )
         candidates = expand_search_candidates(search)
         fold_rows = read_csv_manifest(fold_scores_path)
+        expected_num_folds = len({int(row["cv_fold_id"]) for row in group_rows})
         manifest_rows.append(
             _write_search_score_artifacts(
                 experiment_row,
                 search,
                 candidates,
                 fold_rows,
-                expected_num_folds=len(
-                    _selected_fold_ids(
-                        configured_num_folds,
-                        execution_mode=normalized_mode,
-                    )
-                ),
+                expected_num_folds=expected_num_folds,
                 output_root=output_root,
                 execution_mode=normalized_mode,
             )

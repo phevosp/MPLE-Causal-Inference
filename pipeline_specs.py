@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from omegaconf import OmegaConf
+from split_artifact_utils import VALID_SPLIT_SOURCES
 
 
 def slugify(text: str) -> str:
@@ -179,6 +180,20 @@ def validate_fits_spec(spec_path: str | Path) -> None:
 def validate_cv_spec(spec_path: str | Path) -> None:
     searches = expand_named_entries(spec_path, "searches")
     for search in searches:
+        split_source = str(search.get("split_source", "cv_folds")).strip().lower()
+        if split_source not in VALID_SPLIT_SOURCES:
+            raise ValueError(
+                f"Search '{search.get('name', '<unnamed>')}' split_source must be one of "
+                f"{sorted(VALID_SPLIT_SOURCES)}."
+            )
+        if "outer_num_folds" in search and int(search["outer_num_folds"]) <= 0:
+            raise ValueError(
+                f"Search '{search.get('name', '<unnamed>')}' outer_num_folds must be positive."
+            )
+        if "test_fold_id" in search and int(search["test_fold_id"]) <= 0:
+            raise ValueError(
+                f"Search '{search.get('name', '<unnamed>')}' test_fold_id must be positive."
+            )
         validation_sampling = search.get("validation_sampling", {})
         if validation_sampling is None:
             validation_sampling = {}

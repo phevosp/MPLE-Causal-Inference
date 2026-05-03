@@ -428,6 +428,70 @@ def evaluate_saved_fit_fold_metrics(
     )
 
 
+def evaluate_test_metrics(
+    *,
+    panel_context: dict[str, object],
+    bundle: OutcomeParameterBundle,
+    training_loss_mask: np.ndarray,
+    test_loss_mask: np.ndarray,
+    sampling: dict[str, Any] | None = None,
+) -> dict[str, float | int | None]:
+    metrics = evaluate_fold_metrics(
+        panel_context=panel_context,
+        bundle=bundle,
+        training_loss_mask=training_loss_mask,
+        validation_loss_mask=test_loss_mask,
+        validation_sampling=sampling,
+    )
+    training_mask = np.asarray(training_loss_mask, dtype=bool)
+    scored_test_mask = np.asarray(test_loss_mask, dtype=bool)
+    return {
+        "training_loss": float(metrics["fit_loss"]),
+        "num_training_slots": int(np.count_nonzero(training_mask)),
+        "test_loss": float(metrics["validation_loss"]),
+        "test_brier_score": float(metrics["validation_brier_score"]),
+        "test_ece": float(metrics["validation_ece"]),
+        "num_test_slots": int(np.count_nonzero(scored_test_mask)),
+        "post_s_test_loss": metrics["post_s_validation_loss"],
+        "post_s_test_brier_score": metrics["post_s_validation_brier_score"],
+        "post_s_test_ece": metrics["post_s_validation_ece"],
+        "num_post_s_test_slots": int(metrics["num_post_s_validation_slots"]),
+        "test_mean_magnetization_abs_diff": metrics["validation_mean_magnetization_abs_diff"],
+        "test_observed_mean_magnetization": metrics["validation_observed_mean_magnetization"],
+        "test_sampled_mean_magnetization_mean": metrics[
+            "validation_sampled_mean_magnetization_mean"
+        ],
+        "post_s_test_mean_magnetization_abs_diff": metrics[
+            "post_s_validation_mean_magnetization_abs_diff"
+        ],
+        "post_s_test_observed_mean_magnetization": metrics[
+            "post_s_validation_observed_mean_magnetization"
+        ],
+        "post_s_test_sampled_mean_magnetization_mean": metrics[
+            "post_s_validation_sampled_mean_magnetization_mean"
+        ],
+    }
+
+
+def evaluate_saved_fit_test_metrics(
+    fit_root: str | Path,
+    experiment_root: str | Path,
+    *,
+    training_loss_mask: np.ndarray,
+    test_loss_mask: np.ndarray,
+    sampling: dict[str, Any] | None = None,
+) -> dict[str, float | int | None]:
+    panel_context = load_experiment_panel_context(experiment_root)
+    bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+    return evaluate_test_metrics(
+        panel_context=panel_context,
+        bundle=bundle,
+        training_loss_mask=training_loss_mask,
+        test_loss_mask=test_loss_mask,
+        sampling=sampling,
+    )
+
+
 def _blank_aggregate_metrics() -> dict[str, object]:
     return {
         "weighted_mean_validation_loss": "",

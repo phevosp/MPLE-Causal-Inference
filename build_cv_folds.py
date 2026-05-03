@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sys
 import time
 from pathlib import Path
@@ -270,6 +271,11 @@ def _load_time_index(
         raw_rows = list(reader)
         fieldnames = list(reader.fieldnames or [])
 
+    if len(raw_rows) == inferred_t_steps + 1:
+        # Real-data experiment roots may include the initial-state calendar row in time_index.csv
+        # while panel_data.npz only stores the transition panel x[0:T]. Align the index to the
+        # modeled transition horizon by dropping the initial row.
+        raw_rows = raw_rows[1:]
     if len(raw_rows) != inferred_t_steps:
         raise ValueError(
             f"time_index.csv row count {len(raw_rows)} does not match panel horizon "
@@ -655,20 +661,19 @@ def _summarize_role_coverage_counts(role_codes: np.ndarray) -> dict[str, Any]:
 
 
 def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(io_path(path.parent), exist_ok=True)
     OmegaConf.save(OmegaConf.create(payload), io_path(path))
 
 
-def _run_build_cv_folds_for_experiment(
+def _build_cv_fold_artifacts(
     experiment_root: str | Path,
     *,
     num_folds: int = DEFAULT_NUM_FOLDS,
     seed: int = 0,
-    output_dir: str | Path | None = None,
     recursive: bool = False,
     contiguous: bool = False,
     tolerance: float = DEFAULT_GAMMA_TOLERANCE,
-) -> Path:
+) -> dict[str, Any]:
     if int(num_folds) < 1:
         raise ValueError(f"num_folds must be >= 1, got {num_folds}.")
     experiment_path = Path(experiment_root).resolve()
@@ -688,12 +693,6 @@ def _run_build_cv_folds_for_experiment(
     )
     t_steps, time_rows, time_columns, time_source = _load_time_index(experiment_path)
     time_plan = _build_time_block_plan(t_steps, num_folds=num_folds)
-    output_path = (
-        Path(output_dir).resolve()
-        if output_dir is not None
-        else experiment_path / "cv_folds" / f"folds_{num_folds}"
-    )
-    output_path.mkdir(parents=True, exist_ok=True)
 
     start_time = time.perf_counter()
     pymetis = _load_pymetis()
@@ -783,50 +782,6 @@ def _run_build_cv_folds_for_experiment(
     fold_role_count_rows = _build_fold_role_count_rows(
         role_codes,
         time_plan["time_block_ids"],
-    )
-
-    np.savez(
-        io_path(output_path / "fold_roles.npz"),
-        role_codes=np.asarray(role_codes, dtype=np.int8),
-        time_block_ids=np.asarray(time_plan["time_block_ids"], dtype=np.int16),
-        is_transition_step=np.asarray(time_plan["is_transition_step"], dtype=bool),
-        validation_partition_ids_by_fold_block=np.asarray(
-            validation_schedule,
-            dtype=np.int16,
-        ),
-    )
-    write_csv(output_path / "vertex_assignments.csv", assignment_rows, assignment_columns)
-    write_csv(output_path / "separator_vertices.csv", separator_rows, separator_columns)
-    write_csv(
-        output_path / "time_blocks.csv",
-        time_block_rows,
-        ["time_index", "time_block_id", "block_position", "is_transition_step", *time_columns],
-    )
-    write_csv(
-        output_path / "fold_schedule.csv",
-        fold_schedule_rows,
-        [
-            "cv_fold_id",
-            "time_block_id",
-            "validation_partition_id",
-            "spatial_separator_set_id",
-            "transition_from_partition_id",
-            "transition_to_partition_id",
-            "transition_time_index",
-        ],
-    )
-    write_csv(
-        output_path / "fold_role_counts.csv",
-        fold_role_count_rows,
-        [
-            "cv_fold_id",
-            "time_block_id",
-            "role_code",
-            "role_name",
-            "num_time_indices",
-            "total_vertex_assignments",
-            "mean_vertices_per_time_index",
-        ],
     )
 
     spatial_partition_metadata = {
@@ -921,19 +876,137 @@ def _run_build_cv_folds_for_experiment(
         "coverage_counts": coverage_count_summary,
     }
 
-    _write_yaml(output_path / "spatial_partition_metadata.yaml", spatial_partition_metadata)
-    _write_yaml(output_path / "spatiotemporal_cv_metadata.yaml", spatiotemporal_metadata)
     markov_blanket_summary = _summarize_markov_blanket_validation(
         adjacency,
         role_codes,
     )
-    _write_yaml(output_path / "markov_blanket_summary.yaml", markov_blanket_summary)
     if not bool(markov_blanket_summary["blanket_validation_passed"]):
         raise ValueError(
-            "Constructed CV folds failed the spatiotemporal Markov-blanket validation. "
-            f"See {output_path / 'markov_blanket_summary.yaml'}."
+            "Constructed CV folds failed the spatiotemporal Markov-blanket validation."
         )
-    return output_path
+
+    return {
+        "experiment_root": experiment_path,
+        "num_folds": int(num_folds),
+        "assignment_columns": assignment_columns,
+        "assignment_rows": assignment_rows,
+        "separator_columns": separator_columns,
+        "separator_rows": separator_rows,
+        "time_columns": time_columns,
+        "time_block_rows": time_block_rows,
+        "fold_schedule_rows": fold_schedule_rows,
+        "fold_role_count_rows": fold_role_count_rows,
+        "time_plan": time_plan,
+        "validation_schedule": validation_schedule,
+        "role_codes": role_codes,
+        "spatial_partition_metadata": spatial_partition_metadata,
+        "spatiotemporal_metadata": spatiotemporal_metadata,
+        "markov_blanket_summary": markov_blanket_summary,
+    }
+
+
+def _write_cv_fold_artifacts(output_path: str | Path, artifacts: dict[str, Any]) -> Path:
+    resolved_output_path = Path(output_path).resolve()
+    resolved_output_path.mkdir(parents=True, exist_ok=True)
+
+    time_plan = artifacts["time_plan"]
+    validation_schedule = np.asarray(artifacts["validation_schedule"], dtype=np.int16)
+    role_codes = np.asarray(artifacts["role_codes"], dtype=np.int8)
+
+    np.savez(
+        io_path(resolved_output_path / "fold_roles.npz"),
+        role_codes=role_codes,
+        time_block_ids=np.asarray(time_plan["time_block_ids"], dtype=np.int16),
+        is_transition_step=np.asarray(time_plan["is_transition_step"], dtype=bool),
+        validation_partition_ids_by_fold_block=validation_schedule,
+    )
+    write_csv(
+        resolved_output_path / "vertex_assignments.csv",
+        artifacts["assignment_rows"],
+        artifacts["assignment_columns"],
+    )
+    write_csv(
+        resolved_output_path / "separator_vertices.csv",
+        artifacts["separator_rows"],
+        artifacts["separator_columns"],
+    )
+    write_csv(
+        resolved_output_path / "time_blocks.csv",
+        artifacts["time_block_rows"],
+        [
+            "time_index",
+            "time_block_id",
+            "block_position",
+            "is_transition_step",
+            *artifacts["time_columns"],
+        ],
+    )
+    write_csv(
+        resolved_output_path / "fold_schedule.csv",
+        artifacts["fold_schedule_rows"],
+        [
+            "cv_fold_id",
+            "time_block_id",
+            "validation_partition_id",
+            "spatial_separator_set_id",
+            "transition_from_partition_id",
+            "transition_to_partition_id",
+            "transition_time_index",
+        ],
+    )
+    write_csv(
+        resolved_output_path / "fold_role_counts.csv",
+        artifacts["fold_role_count_rows"],
+        [
+            "cv_fold_id",
+            "time_block_id",
+            "role_code",
+            "role_name",
+            "num_time_indices",
+            "total_vertex_assignments",
+            "mean_vertices_per_time_index",
+        ],
+    )
+    _write_yaml(
+        resolved_output_path / "spatial_partition_metadata.yaml",
+        artifacts["spatial_partition_metadata"],
+    )
+    _write_yaml(
+        resolved_output_path / "spatiotemporal_cv_metadata.yaml",
+        artifacts["spatiotemporal_metadata"],
+    )
+    _write_yaml(
+        resolved_output_path / "markov_blanket_summary.yaml",
+        artifacts["markov_blanket_summary"],
+    )
+    return resolved_output_path
+
+
+def _run_build_cv_folds_for_experiment(
+    experiment_root: str | Path,
+    *,
+    num_folds: int = DEFAULT_NUM_FOLDS,
+    seed: int = 0,
+    output_dir: str | Path | None = None,
+    recursive: bool = False,
+    contiguous: bool = False,
+    tolerance: float = DEFAULT_GAMMA_TOLERANCE,
+) -> Path:
+    experiment_path = Path(experiment_root).resolve()
+    artifacts = _build_cv_fold_artifacts(
+        experiment_path,
+        num_folds=num_folds,
+        seed=seed,
+        recursive=recursive,
+        contiguous=contiguous,
+        tolerance=tolerance,
+    )
+    output_path = (
+        Path(output_dir).resolve()
+        if output_dir is not None
+        else experiment_path / "cv_folds" / f"folds_{num_folds}"
+    )
+    return _write_cv_fold_artifacts(output_path, artifacts)
 
 
 def _generation_manifest_rows(
