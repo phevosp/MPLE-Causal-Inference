@@ -75,6 +75,11 @@ def _simulate_target(
     )
     if target["source_type"] == "truth":
         bundle = load_truth_parameter_bundle(experiment_root)
+    elif target["source_type"] == "truth_xi_zero":
+        from dataclasses import replace
+
+        bundle = load_truth_parameter_bundle(experiment_root)
+        bundle = replace(bundle, xi=0.0)
     else:
         fit_row = target["fit_row"]
         fit_root = Path(str(fit_row["fit_path"]))

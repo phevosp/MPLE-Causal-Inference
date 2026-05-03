@@ -119,6 +119,18 @@ def resolve_target_pairs(
             source_name = "truth"
             source_slug = "truth"
             fit_row = None
+        elif source_type == "truth_xi_zero":
+            if not experiment_has_truth(experiment_row):
+                raise ValueError(
+                    f"Truth posterior-predictive targets are not available for experiment '{experiment_name}' because has_truth=false. Use source_type='fit' instead."
+                )
+            if variant_name:
+                raise ValueError(
+                    f"Truth target for experiment '{experiment_name}' must leave variant_name blank."
+                )
+            source_name = "truth_xi_zero"
+            source_slug = "truth_xi_zero"
+            fit_row = None
         elif source_type == "fit":
             if not variant_name:
                 raise ValueError(
@@ -133,7 +145,7 @@ def resolve_target_pairs(
             source_slug = f"fit_{str(fit_row['variant_slug']).strip()}"
         else:
             raise ValueError(
-                f"Target-pairs manifest {target_pairs_path} has invalid source_type '{source_type}' for experiment '{experiment_name}'."
+                f"Target-pairs manifest {target_pairs_path} has invalid source_type '{source_type}' for experiment '{experiment_name}'. Valid types are: 'truth', 'truth_xi_zero', 'fit'."
             )
 
         if intervention_source == "observed_experiment":
