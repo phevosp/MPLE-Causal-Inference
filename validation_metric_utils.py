@@ -602,12 +602,58 @@ def evaluate_test_metrics_by_treatment(
     return metrics
 
 
+def _compute_magnetization_metrics(
+    *,
+    x: np.ndarray,
+    bundle: OutcomeParameterBundle,
+    loss_mask: np.ndarray,
+    sampling: dict[str, Any] | None = None,
+    panel_context: dict[str, object],
+) -> dict[str, float | None]:
+    """Compute magnetization metrics for a given loss mask."""
+    sampling_config = resolve_validation_sampling(sampling)
+    mask = np.asarray(loss_mask, dtype=bool)
+    observed_mean = _mean_on_mask(x, mask)
+
+    sample_means: list[float] = []
+    for sample_index in range(int(sampling_config["num_samples"])):
+        sampled_x = sample_validation_panel_conditional(
+            panel_context=panel_context,
+            bundle=bundle,
+            validation_loss_mask=mask,
+            gibbs_sweeps=int(sampling_config["gibbs_sweeps"]),
+            seed=int(sampling_config["seed"]) + int(sample_index),
+        )
+        sample_mean = _mean_on_mask(sampled_x, mask)
+        if sample_mean is not None:
+            sample_means.append(float(sample_mean))
+
+    sampled_mean = (
+        float(np.mean(np.asarray(sample_means, dtype=float)))
+        if sample_means
+        else None
+    )
+    return {
+        "magnetization_abs_diff": (
+            None
+            if observed_mean is None or sampled_mean is None
+            else abs(float(observed_mean) - float(sampled_mean))
+        ),
+        "post_s_magnetization_abs_diff": (
+            None
+            if observed_mean is None or sampled_mean is None
+            else abs(float(observed_mean) - float(sampled_mean))
+        ),
+    }
+
+
 def _compute_h_x_from_bundle(bundle: OutcomeParameterBundle, panel_context: dict[str, object]) -> np.ndarray:
     x = np.asarray(panel_context["x"], dtype=float)
     z = np.asarray(panel_context["z"], dtype=float)
     x_0 = np.asarray(panel_context["x_0"], dtype=float)
     field_matrix = np.asarray(bundle.field_matrix, dtype=float)
     interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
+    prev_x = np.vstack([x_0, x[:-1, :]])
     beta_feature = masked_beta_feature(
         z,
         s=int(panel_context["s"]),
@@ -616,9 +662,10 @@ def _compute_h_x_from_bundle(bundle: OutcomeParameterBundle, panel_context: dict
         beta_mask_post_e=bool(bundle.beta_mask_post_e),
     )
     h_x = (
-        x_0[None, :] * (field_matrix + interaction_effect_x)
-        + bundle.beta * beta_feature
-        + bundle.xi * (x - x_0[None, :])
+        field_matrix
+        + float(bundle.beta) * beta_feature
+        + float(bundle.xi) * interaction_effect_x
+        + float(bundle.eta) * prev_x
     )
     return h_x
 
