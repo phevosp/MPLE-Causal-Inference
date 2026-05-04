@@ -78,6 +78,7 @@ from model_utils import (
     get_xi,
     normalize_matrix_max_abs,
     interaction_effect,
+    interaction_term,
     interaction_matrix_infinity_norm,
     latent_field_bound_norm,
     load_model_artifacts,
@@ -91,6 +92,7 @@ from model_utils import (
 )
 from pipeline_specs import read_csv_manifest, validate_cv_spec, validate_fits_spec
 import build_cv_folds as cv_folds
+import run_posterior_predictive as posterior_predictive_runner
 import run_cv_folds as cv_runner
 import validation_metric_utils as validation_metrics
 from posterior_predictive_utils import (
@@ -199,6 +201,25 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         features = interaction_effect(x, gamma)
         self.assertEqual(features.shape, (2, 4))
+
+    def test_interaction_term_uses_same_canonical_operator_as_sampling(self) -> None:
+        x = np.array([[1.0, -1.0, 1.0], [-1.0, 1.0, -1.0]], dtype=float)
+        gamma = np.array(
+            [
+                [3.0, 2.0, 0.0],
+                [0.0, -5.0, 4.0],
+                [1.0, 0.0, 7.0],
+            ],
+            dtype=float,
+        )
+        xi = 0.25
+        interaction_matrix = compose_interaction_matrix(xi, gamma)
+        expected = np.asarray(x @ interaction_matrix.T, dtype=float)
+
+        self.assertTrue(np.allclose(interaction_term(x, xi, gamma), expected))
+        self.assertTrue(
+            np.allclose(interaction_effect(x, gamma), interaction_term(x, 1.0, gamma))
+        )
 
     def test_fixed_z_loader_checks_shape(self) -> None:
         config = base_config()
@@ -322,6 +343,42 @@ class MinimalPipelineTests(unittest.TestCase):
         )
 
         self.assertTrue(np.array_equal(generated_x, predictive_x))
+
+    def test_posterior_predictive_sample_seed_depends_on_target_identity(self) -> None:
+        run_spec = {"name": "default", "slug": "default", "seed": 7}
+        target_a = {
+            "experiment_row": {"experiment_slug": "exp_a"},
+            "source_type": "truth",
+            "source_slug": "truth",
+            "intervention_source": "observed_experiment",
+            "intervention_slug": "observed_experiment",
+        }
+        target_b = {
+            "experiment_row": {"experiment_slug": "exp_b"},
+            "source_type": "truth",
+            "source_slug": "truth",
+            "intervention_source": "observed_experiment",
+            "intervention_slug": "observed_experiment",
+        }
+
+        seed_a = posterior_predictive_runner._posterior_sample_seed(
+            target=target_a,
+            run_spec=run_spec,
+            sample_index=0,
+        )
+        seed_b = posterior_predictive_runner._posterior_sample_seed(
+            target=target_b,
+            run_spec=run_spec,
+            sample_index=0,
+        )
+        seed_a_repeat = posterior_predictive_runner._posterior_sample_seed(
+            target=target_a,
+            run_spec=run_spec,
+            sample_index=0,
+        )
+
+        self.assertNotEqual(seed_a, seed_b)
+        self.assertEqual(seed_a, seed_a_repeat)
 
     def test_sample_spectral_low_rank_structure_returns_orthonormal_factors(self) -> None:
         structure = sample_spectral_low_rank_structure(
@@ -5974,7 +6031,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
             z=z,
             gibbs_sweeps=1,
             seed=0,
-            s=1,
         )
         unmasked_result = simulate_outcomes_for_bundle(
             unmasked_bundle,
@@ -5982,7 +6038,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
             z=z,
             gibbs_sweeps=1,
             seed=0,
-            s=1,
         )
 
         self.assertTrue(np.array_equal(masked_result, unmasked_result))
@@ -6037,6 +6092,41 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 np.asarray(panel_context["x"], dtype=float)[~validation_mask],
             )
         )
+
+    def test_validation_metric_utils_sampler_does_not_warm_start_validation_nodes(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.ones((2, 8), dtype=float),
+            "z": np.zeros((2, 8), dtype=float),
+            "x_0": -np.ones(8, dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+        bundle = OutcomeParameterBundle(
+            source_type="fit",
+            source_name="rank_0",
+            beta=0.0,
+            xi=0.0,
+            eta=0.0,
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+            latent_rank=0,
+            t_steps=2,
+            field_matrix=np.zeros((2, 8), dtype=float),
+            gamma_matrix=np.zeros((8, 8), dtype=float),
+        )
+        validation_mask = np.ones((2, 8), dtype=bool)
+
+        sampled_x = validation_metrics.sample_validation_panel_conditional(
+            panel_context=panel_context,
+            bundle=bundle,
+            validation_loss_mask=validation_mask,
+            gibbs_sweeps=0,
+            seed=0,
+        )
+
+        self.assertFalse(np.array_equal(sampled_x, np.asarray(panel_context["x"], dtype=float)))
 
     def test_validation_metric_utils_reports_magnetization_metrics(self) -> None:
         panel_context = {

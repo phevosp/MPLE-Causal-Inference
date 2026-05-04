@@ -163,7 +163,7 @@ synthetic_rank_40_B1,truth,,saved_intervention,all_minus_ones
 synthetic_rank_40_B1,fit,rank_40_B1,saved_intervention,all_minus_ones
 ```
 
-The run `seed` is a starting seed. Sample `k` uses `seed + k`, so repeated runs are reproducible while samples within a run are distinct.
+The run `seed` is a base seed. Sample `k` uses a deterministic hash of the base seed, run slug, target identity, and `k`, so repeated runs are reproducible while samples within a run are distinct and different targets do not reuse the same random stream.
 
 ### Intervention Library Spec
 

@@ -18,9 +18,12 @@ def simulate_outcomes_for_bundle(
     z: np.ndarray,
     gibbs_sweeps: int,
     seed: int,
-    s: int = 0,
-    e: int | None = None,
 ) -> np.ndarray:
+    """Simulate from the predictive model using the realized intervention panel.
+
+    Fit-time beta masking is intentionally ignored here because it is only a
+    parameter-estimation choice, not part of the generative model.
+    """
     rng = np.random.default_rng(seed)
     interaction_matrix = compose_interaction_matrix(bundle.xi, bundle.gamma_matrix)
     return simulate_outcomes_given_fixed_interventions(
@@ -32,8 +35,6 @@ def simulate_outcomes_for_bundle(
         eta=float(bundle.eta),
         rng=rng,
         gibbs_sweeps=int(gibbs_sweeps),
-        s=int(s),
-        e=e,
     )
 
 

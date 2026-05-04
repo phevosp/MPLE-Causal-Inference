@@ -47,7 +47,8 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 - `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, `alternating_latent_rank`, or `concurrent_latent_rank`.
 - `latent_rank`: must be ≥ 1 for `exact_rank_manifold`, `alternating_latent_rank`, and `concurrent_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
 - `estimation.fixed_scalar_params`: scalars held **fixed** at these values (not initial guesses). Leave as `{}` to estimate all scalars freely.
-- `estimation.beta_mask_pre_s`: if `true`, the fit model masks the `beta * z` term for `t < s`, and fit-based posterior predictive uses the same masked beta effect.
+- `estimation.beta_mask_pre_s`: if `true`, the fit objective masks the `beta * z` term for `t < s`. This is a parameter-estimation choice only; posterior predictive sampling, Brier/ECE metrics, and manifest-driven data generation still use the realized `z`.
+- `estimation.beta_mask_post_e`: if `true`, the fit objective masks the `beta * z` term for `t >= e`. This is also fit-only and does not alter predictive sampling, Brier/ECE evaluation, or data generation.
 - `lambda_nuclear`: only active for `nuclear_norm`.
 - `lambda_frobenius`: only active for `exact_rank_manifold`.
 - `lambda_uv_ridge`: only active for `alternating_latent_rank` and `concurrent_latent_rank`.
@@ -311,7 +312,14 @@ synthetic_rank_40_B1,truth,,saved_intervention,all_minus_ones
 synthetic_rank_40_B1,fit,rank_40_B1,saved_intervention,all_minus_ones
 ```
 
-The `seed` in `posterior_predictive_spec.yaml` is the starting seed for a run. Individual samples use `seed + sample_index`, so `num_samples` produces reproducible but distinct draws.
+The `seed` in `posterior_predictive_spec.yaml` is the base seed for a run. Individual samples use a deterministic hash of:
+
+- the base seed
+- the run slug
+- the experiment / source / intervention target identity
+- `sample_index`
+
+So repeated runs are reproducible, samples within a run are distinct, and different targets do not accidentally reuse the same random stream.
 
 ## CV Fold Construction
 
@@ -489,20 +497,22 @@ Each CV fold uses the saved role tensor from `fold_roles.npz`:
 
 So the fitted MPLE parameters are learned by conditioning on separator unit-times while optimizing only over training unit-times. Validation uses the same fitted parameters and evaluates masked statistics only on validation unit-times. Separator entries remain visible to the model through `x`, `z`, `x_{t-1}`, and `Gamma x`, but they are never scored as part of validation.
 
-Selection is based on pooled validation Brier score:
+Selection is not based on pooled validation Brier score alone. The current winner rule is:
 
 - keep the existing `validation_*` columns as full-horizon validation metrics over all validation slots
-- additionally save `post_s_validation_loss`, `post_s_validation_brier_score`, and `post_s_validation_ece` over validation slots with `t >= s`
+- additionally save `post_s_validation_loss`, `post_s_validation_brier_score`, `post_s_validation_ece`, and post-`s` magnetization diagnostics over validation slots with `t >= s`
 - for each candidate and fold, save those metrics plus the numbers of active training, validation, and post-`s` validation slots
-- aggregate across the 5 folds using slot-weighted means for both the full-horizon and post-`s` validation metrics
-- also report mean-per-fold summaries for the full-horizon and post-`s` Brier score and ECE metrics
-- choose the candidate with the lowest `weighted_mean_validation_brier_score`
+- aggregate across the folds using slot-weighted means for both the full-horizon and post-`s` validation metrics
+- also report mean-per-fold summaries and standard errors for the full-horizon and post-`s` validation metrics
+- rank candidates by post-`s` weighted magnetization error first, then post-`s` weighted Brier score, then post-`s` weighted loss; if post-`s` metrics are unavailable, fall back to the full-horizon versions
+- choose the final winner with a 1-standard-error rule on mean-per-fold post-`s` magnetization error, then mean-per-fold post-`s` Brier score, and finally prefer the less regularized candidate among those still eligible
 
 The reported validation Brier score and ECE use the model-implied probability of a positive spin:
 
 - `h_it = M_it + beta z_it + xi (Gamma x_t)_i + eta x_{i,t-1}`
 - `P(x_it = 1 | h_it) = (1 + tanh(h_it)) / 2`
 - observed outcome on the probability scale is `(x_it + 1) / 2`
+- fit-only beta masking does not enter this predictive `h_it`; Brier/ECE always use the realized intervention panel
 - ECE uses 10 equal-width bins on `[0, 1]`, skips empty bins, and is computed only on validation unit-times
 - post-`s` validation metrics further restrict scoring to validation unit-times with `t >= s`
 

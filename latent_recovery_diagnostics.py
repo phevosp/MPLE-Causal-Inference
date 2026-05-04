@@ -10,7 +10,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from io_utils import first_existing_path, load_gamma_matrix
-from model_utils import interaction_effect, load_model_artifacts
+from model_utils import interaction_term, load_model_artifacts
 
 _DEGENERACY_THRESHOLD = 1e-12  # denominators below this are treated as degenerate
 
@@ -114,10 +114,10 @@ def _outcome_loss(
     beta: float,
     xi: float,
     eta: float,
-    interaction_effect_x: np.ndarray,
+    interaction_term_x: np.ndarray,
 ) -> float:
     prev_x = np.vstack([x_0, x[:-1, :]])
-    h_x = field + beta * z + eta * prev_x + xi * interaction_effect_x
+    h_x = field + beta * z + eta * prev_x + interaction_term_x
     return float(np.mean(np.logaddexp(h_x, -h_x) - x * h_x))
 
 
@@ -157,7 +157,7 @@ def build_diagnostic_rows(
         x = np.asarray(data["x"], dtype=float)
         z = np.asarray(data["z"], dtype=float)
     x_0 = np.asarray(np.load(experiment_root / "x_0.npy"), dtype=float)
-    interaction_effect_x = interaction_effect(x, gamma_matrix)
+    interaction_term_x = interaction_term(x, float(config.estimation_params.xi), gamma_matrix)
     beta = float(config.estimation_params.beta)
     xi = float(config.estimation_params.xi)
     eta = float(config.estimation_params.eta)
@@ -173,9 +173,7 @@ def build_diagnostic_rows(
         "feature_rms_field": float(np.sqrt(np.mean(true_field * true_field))),
         "feature_rms_beta_z": float(np.sqrt(np.mean((beta * z) ** 2))),
         "feature_rms_eta_prev_x": float(np.sqrt(np.mean((eta * prev_x) ** 2))),
-        "feature_rms_xi_gamma_x": float(
-            np.sqrt(np.mean((xi * interaction_effect_x) ** 2))
-        ),
+        "feature_rms_xi_gamma_x": float(np.sqrt(np.mean(interaction_term_x**2))),
         "oracle_loss_true_field": _outcome_loss(
             true_field,
             x=x,
@@ -184,7 +182,7 @@ def build_diagnostic_rows(
             beta=beta,
             xi=xi,
             eta=eta,
-            interaction_effect_x=interaction_effect_x,
+            interaction_term_x=interaction_term_x,
         ),
         "oracle_loss_zero_field": _outcome_loss(
             zero_field,
@@ -194,7 +192,7 @@ def build_diagnostic_rows(
             beta=beta,
             xi=xi,
             eta=eta,
-            interaction_effect_x=interaction_effect_x,
+            interaction_term_x=interaction_term_x,
         ),
         **_field_stats("true_field", true_field),
     }
@@ -227,7 +225,7 @@ def build_diagnostic_rows(
                 beta=beta,
                 xi=xi,
                 eta=eta,
-                interaction_effect_x=interaction_effect_x,
+                interaction_term_x=interaction_term_x,
             )
         rows.append(row)
     return rows

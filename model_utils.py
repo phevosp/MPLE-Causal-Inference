@@ -713,11 +713,27 @@ def compose_interaction_matrix(xi: float, gamma_matrix):
     return interaction_matrix
 
 
+def _apply_interaction_matrix(x: np.ndarray, interaction_matrix) -> np.ndarray:
+    x_array = np.asarray(x, dtype=float)
+    if sparse.issparse(interaction_matrix):
+        return np.asarray(x_array @ sparse.csr_matrix(interaction_matrix).T)
+    return x_array @ np.asarray(interaction_matrix, dtype=float).T
+
+
 def interaction_effect(x: np.ndarray, gamma_matrix) -> np.ndarray:
-    x = np.asarray(x, dtype=float)
-    if sparse.issparse(gamma_matrix):
-        return np.asarray(x @ sparse.csr_matrix(gamma_matrix).T)
-    return x @ np.asarray(gamma_matrix, dtype=float).T
+    """Apply the canonical Gamma interaction operator without the xi scalar."""
+    return _apply_interaction_matrix(
+        x,
+        compose_interaction_matrix(1.0, gamma_matrix),
+    )
+
+
+def interaction_term(x: np.ndarray, xi: float, gamma_matrix) -> np.ndarray:
+    """Apply the full xi-scaled interaction term used by predictive h(x)."""
+    return _apply_interaction_matrix(
+        x,
+        compose_interaction_matrix(xi, gamma_matrix),
+    )
 
 
 def parameter_names(

@@ -88,7 +88,7 @@ def compose_interaction_matrix(xi, gamma_matrix):
 
 So: `interaction_x_t[i] = (ξ·γ @ x_t)[i] = ξ·(γ @ x_t)[i]` ✅
 
-✅ **CORRECT**: Sampling uses same h_x computation as loss
+✅ **CORRECT**: Sampling uses the same generative h_x components as predictive metrics
 
 ---
 
@@ -108,13 +108,16 @@ Gamma matrix transformations:
 
 ### 5. Beta Masking
 
-**Files**: `mple.py:96-100`, `synthetic_data_generation.py:346-350`
+**Files**: `mple.py:96-100`
 
-Treatment effect is masked out:
-- Before time s: `z_i^{(t)} = 0` for t < s (if `beta_mask_pre_s=True`)
-- After time e: `z_i^{(t)} = 0` for t ≥ e (if `beta_mask_post_e=True`)
+Beta masking is a fit-only choice used inside the MPLE objective:
+- Before time s: the fit loss can set `z_i^{(t)} = 0` for t < s
+- After time e: the fit loss can set `z_i^{(t)} = 0` for t ≥ e
 
-✅ **CORRECT**: Masking applied consistently in both loss and sampling
+Posterior predictive sampling and predictive metrics should not use those masks;
+they should always use the realized intervention panel `z`.
+
+✅ **CORRECT**: Masking is restricted to fit-loss evaluation rather than changing the generative model
 
 ---
 
@@ -137,13 +140,16 @@ So: `prev_x[t, i] = x_0[i]` if t=0, else `x[t-1, i]`
 
 **Files**: `validation_metric_utils.py`, `run_test_evaluation.py`
 
-All metrics use the same h_x computation:
+Predictive metrics use the same unmasked h_x computation:
 - Brier score: `(predicted_prob - observed)²` where predicted = sigmoid(h)
-- Loss: `logaddexp(h, -h) - x·h`
 - ECE: Calibration error based on sigmoid(h) predictions
-- Magnetization: tanh(h) as proxy for E[x|h]
+- Magnetization sampling: posterior predictive draws conditional on observed non-held-out entries
 
-✅ **CORRECT**: Consistent use of h_x across all metrics
+Loss metrics are slightly different by design:
+- Loss: `logaddexp(h, -h) - x·h`
+- When beta masking is enabled, the fit-loss path applies it so reported fit/validation loss mirrors the training objective
+
+✅ **CORRECT**: Predictive metrics use the generative h_x, while loss metrics mirror the fit objective
 
 ---
 
@@ -155,7 +161,7 @@ All metrics use the same h_x computation:
 | Loss computation | mple.py | NLL for Ising model | ✅ |
 | Sampling | synthetic_data_generation.py | Same h_x formula | ✅ |
 | Gamma symmetry | model_utils.py | (γ + γ^T)/2, diag=0 | ✅ |
-| Beta masking | mple.py & synthetic_data_generation.py | Before s, after e | ✅ |
+| Beta masking | mple.py | Fit-loss only before s / after e | ✅ |
 | prev_x construction | mple.py & synthetic_data_generation.py | x_0 then lag-1 | ✅ |
 | Metrics | validation_metric_utils.py | Use h_x consistently | ✅ |
 
@@ -163,10 +169,12 @@ All metrics use the same h_x computation:
 
 ✅ **The model logic is consistent across the entire codebase and matches the mathematical specification.**
 
-The h_x computation is identical in:
+The predictive h_x computation is identical in:
+- Posterior predictive sampling (`synthetic_data_generation.py`)
+- Predictive validation metrics (`validation_metric_utils.py`)
+
+The fit-objective h_x computation is identical in:
 - Loss evaluation (`mple.py`)
 - Gradient computation (`mple.py`)
-- Posterior predictive sampling (`synthetic_data_generation.py`)
-- Model validation metrics (`validation_metric_utils.py`)
 
-All parameters (α, β, ξ, η) are applied consistently, and masking/constraints are respected throughout.
+All parameters (α, β, ξ, η) are applied consistently, and fit-only masking is isolated to the MPLE objective.

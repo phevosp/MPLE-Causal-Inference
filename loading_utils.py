@@ -26,6 +26,12 @@ GENERATION_CONFIG_FILENAMES = (
 
 @dataclass(frozen=True)
 class OutcomeParameterBundle:
+    """Estimated or truth parameters plus fit-only masking metadata.
+
+    The beta-mask flags are preserved so fit-loss metrics can mirror the exact
+    MPLE objective that produced the bundle. Predictive sampling and Brier/ECE
+    metrics should ignore those flags and use the realized intervention panel.
+    """
     source_type: str
     source_name: str
     beta: float

@@ -316,8 +316,6 @@ def _simulate_panel(
     rng,
     gibbs_sweeps: int,
     z_sampler,
-    s: int = 0,
-    e: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     x_0 = np.asarray(x_0, dtype=float)
     z_0 = np.asarray(z_0, dtype=float)
@@ -330,8 +328,6 @@ def _simulate_panel(
         raise ValueError("x_0 shape must match the panel width.")
     if z_0.shape != (n_nodes,):
         raise ValueError("z_0 shape must match the panel width.")
-
-    resolved_e = e if e is not None else t_steps
 
     x = np.zeros((t_steps, n_nodes), dtype=float)
     z = np.zeros((t_steps, n_nodes), dtype=float)
@@ -368,9 +364,8 @@ def simulate_outcomes_given_fixed_interventions(
     eta: float,
     rng,
     gibbs_sweeps: int,
-    s: int = 0,
-    e: int | None = None,
 ) -> np.ndarray:
+    """Simulate outcomes from the realized intervention panel without beta masking."""
     z = np.asarray(z, dtype=float)
     field_matrix = np.asarray(field_matrix, dtype=float)
     if z.ndim != 2 or field_matrix.shape != z.shape:
@@ -385,8 +380,6 @@ def simulate_outcomes_given_fixed_interventions(
         rng=rng,
         gibbs_sweeps=int(gibbs_sweeps),
         z_sampler=lambda t, _x_prev, _z_prev: z[t, :],
-        s=int(s),
-        e=e,
     )
     return x
 

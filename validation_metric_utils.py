@@ -9,10 +9,13 @@ import numpy as np
 from scipy import sparse
 
 from data.synthetic_data_generation import spin_sample_from_field
-from loading_utils import OutcomeParameterBundle, load_experiment_panel_context, load_fit_parameter_bundle
-from model_utils import compose_interaction_matrix, interaction_effect
+from loading_utils import (
+    OutcomeParameterBundle,
+    load_experiment_panel_context,
+    load_fit_parameter_bundle,
+)
+from model_utils import compose_interaction_matrix, interaction_effect, interaction_term
 from mple import evaluate_mple_loss_from_parts
-
 
 DEFAULT_VALIDATION_SAMPLING = {
     "num_samples": 16,
@@ -38,7 +41,9 @@ POST_S_VALIDATION_METRIC_SPECS = (
 def resolve_validation_sampling(config: dict[str, Any] | None) -> dict[str, int]:
     resolved = dict(DEFAULT_VALIDATION_SAMPLING)
     if config:
-        resolved.update({key: value for key, value in config.items() if value is not None})
+        resolved.update(
+            {key: value for key, value in config.items() if value is not None}
+        )
     return {
         "num_samples": int(resolved["num_samples"]),
         "gibbs_sweeps": int(resolved["gibbs_sweeps"]),
@@ -115,7 +120,9 @@ def _mean_on_mask(x: np.ndarray, mask: np.ndarray) -> float | None:
     x_array = np.asarray(x, dtype=float)
     mask_array = np.asarray(mask, dtype=bool)
     if x_array.shape != mask_array.shape:
-        raise ValueError("x and mask must have the same shape when averaging over a mask.")
+        raise ValueError(
+            "x and mask must have the same shape when averaging over a mask."
+        )
     if not np.any(mask_array):
         return None
     return float(np.mean(x_array[mask_array]))
@@ -123,8 +130,18 @@ def _mean_on_mask(x: np.ndarray, mask: np.ndarray) -> float | None:
 
 def _interaction_column(interaction_matrix, column_index: int) -> np.ndarray:
     if sparse.issparse(interaction_matrix):
-        return np.asarray(interaction_matrix[:, int(column_index)].toarray()).reshape(-1)
+        return np.asarray(interaction_matrix[:, int(column_index)].toarray()).reshape(
+            -1
+        )
     return np.asarray(interaction_matrix[:, int(column_index)], dtype=float).reshape(-1)
+
+
+def _random_spin_configuration(
+    rng: np.random.Generator,
+    *,
+    size: int,
+) -> np.ndarray:
+    return rng.choice(np.asarray([-1.0, 1.0], dtype=float), size=int(size))
 
 
 def _sample_validation_time_step(
@@ -144,6 +161,11 @@ def _sample_validation_time_step(
     active_validation_nodes = np.asarray(validation_nodes, dtype=int)
     if active_validation_nodes.size == 0:
         return x_t
+    # Held-out nodes must not be warm-started from their observed outcomes.
+    x_t[active_validation_nodes] = _random_spin_configuration(
+        rng,
+        size=active_validation_nodes.size,
+    )
     interaction_x_t = np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
     beta_feature = np.asarray(z_t, dtype=float)
     for _ in range(int(gibbs_sweeps)):
@@ -181,7 +203,9 @@ def sample_validation_panel_conditional(
         raise ValueError(
             f"validation_loss_mask shape {validation_mask.shape} does not match x shape {x.shape}."
         )
-    interaction_matrix = compose_interaction_matrix(float(bundle.xi), bundle.gamma_matrix)
+    interaction_matrix = compose_interaction_matrix(
+        float(bundle.xi), bundle.gamma_matrix
+    )
     sampled_x = np.asarray(x, dtype=float).copy()
     rng = np.random.default_rng(int(seed))
     x_prev = x_0
@@ -276,6 +300,8 @@ def _build_loss_kwargs(
     x_0: np.ndarray,
     interaction_effect_x: np.ndarray,
 ) -> dict[str, Any]:
+    # Beta masking is a fit-objective choice only, so it is threaded into MPLE loss
+    # evaluation but not into predictive h(x), Brier/ECE, or posterior sampling.
     return {
         "x": x,
         "z": z,
@@ -436,8 +462,12 @@ def evaluate_test_metrics(
         "post_s_test_brier_score": metrics["post_s_validation_brier_score"],
         "post_s_test_ece": metrics["post_s_validation_ece"],
         "num_post_s_test_slots": int(metrics["num_post_s_validation_slots"]),
-        "test_mean_magnetization_abs_diff": metrics["validation_mean_magnetization_abs_diff"],
-        "test_observed_mean_magnetization": metrics["validation_observed_mean_magnetization"],
+        "test_mean_magnetization_abs_diff": metrics[
+            "validation_mean_magnetization_abs_diff"
+        ],
+        "test_observed_mean_magnetization": metrics[
+            "validation_observed_mean_magnetization"
+        ],
         "test_sampled_mean_magnetization_mean": metrics[
             "validation_sampled_mean_magnetization_mean"
         ],
@@ -465,9 +495,7 @@ def evaluate_test_metrics_by_treatment(
     x_0 = np.asarray(panel_context["x_0"], dtype=float)
     test_mask = np.asarray(test_loss_mask, dtype=bool)
     s = int(panel_context["s"])
-    post_s_window = time_window_mask(
-        t_steps=x.shape[0], n_nodes=x.shape[1], start_t=s
-    )
+    post_s_window = time_window_mask(t_steps=x.shape[0], n_nodes=x.shape[1], start_t=s)
 
     interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
     common_kwargs = _build_loss_kwargs(
@@ -485,7 +513,10 @@ def evaluate_test_metrics_by_treatment(
     h_x = _compute_h_x_from_bundle(bundle, panel_context)
     metrics = {}
 
-    for treatment_name, treatment_selector in [("treated", treated_mask), ("untreated", untreated_mask)]:
+    for treatment_name, treatment_selector in [
+        ("treated", treated_mask),
+        ("untreated", untreated_mask),
+    ]:
         test_and_treatment = test_mask & treatment_selector
         test_and_treatment_post_s = test_and_treatment & post_s_window
 
@@ -606,9 +637,7 @@ def _compute_magnetization_metrics(
             post_s_sample_means.append(float(post_s_sample_mean))
 
     sampled_mean = (
-        float(np.mean(np.asarray(sample_means, dtype=float)))
-        if sample_means
-        else None
+        float(np.mean(np.asarray(sample_means, dtype=float))) if sample_means else None
     )
     sampled_post_s_mean = (
         float(np.mean(np.asarray(post_s_sample_means, dtype=float)))
@@ -629,17 +658,20 @@ def _compute_magnetization_metrics(
     }
 
 
-def _compute_h_x_from_bundle(bundle: OutcomeParameterBundle, panel_context: dict[str, object]) -> np.ndarray:
+def _compute_h_x_from_bundle(
+    bundle: OutcomeParameterBundle, panel_context: dict[str, object]
+) -> np.ndarray:
+    """Build predictive h(x) using the raw realized treatment panel."""
     x = np.asarray(panel_context["x"], dtype=float)
     z = np.asarray(panel_context["z"], dtype=float)
     x_0 = np.asarray(panel_context["x_0"], dtype=float)
     field_matrix = np.asarray(bundle.field_matrix, dtype=float)
-    interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
+    interaction_term_x = interaction_term(x, float(bundle.xi), bundle.gamma_matrix)
     prev_x = np.vstack([x_0, x[:-1, :]])
     h_x = (
         field_matrix
         + float(bundle.beta) * z
-        + float(bundle.xi) * interaction_effect_x
+        + interaction_term_x
         + float(bundle.eta) * prev_x
     )
     return h_x
@@ -796,7 +828,12 @@ def build_candidate_score_row(
         "mean_fold_validation_mean_magnetization_abs_diff": mean_validation_mag_diff,
         "standard_error_fold_validation_mean_magnetization_abs_diff": se_validation_mag_diff,
         "total_validation_slots": int(
-            np.sum(np.asarray([int(row["num_validation_slots"]) for row in success_rows], dtype=int))
+            np.sum(
+                np.asarray(
+                    [int(row["num_validation_slots"]) for row in success_rows],
+                    dtype=int,
+                )
+            )
         ),
     }
 
@@ -866,7 +903,10 @@ def build_candidate_score_row(
             "total_post_s_validation_slots": int(
                 np.sum(
                     np.asarray(
-                        [int(row["num_post_s_validation_slots"]) for row in post_s_rows],
+                        [
+                            int(row["num_post_s_validation_slots"])
+                            for row in post_s_rows
+                        ],
                         dtype=int,
                     )
                 )
@@ -877,7 +917,9 @@ def build_candidate_score_row(
 
 
 def candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int]:
-    mag_diff = row.get("weighted_mean_post_s_validation_mean_magnetization_abs_diff", "")
+    mag_diff = row.get(
+        "weighted_mean_post_s_validation_mean_magnetization_abs_diff", ""
+    )
     brier = row.get("weighted_mean_post_s_validation_brier_score", "")
     loss = row.get("weighted_mean_post_s_validation_loss", "")
     if mag_diff in ("", None):

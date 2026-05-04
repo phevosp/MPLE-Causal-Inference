@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -31,6 +32,31 @@ from posterior_predictive_utils import (
     simulate_outcomes_for_bundle,
     summarize_predictive_statistics,
 )
+
+
+def _posterior_sample_seed(
+    *,
+    target: dict[str, object],
+    run_spec: dict[str, object],
+    sample_index: int,
+) -> int:
+    """Derive a reproducible but target-specific seed for one posterior sample."""
+    base_seed = int(run_spec["seed"])
+    experiment_row = target["experiment_row"]
+    token = "|".join(
+        [
+            str(base_seed),
+            str(run_spec.get("slug", "")),
+            str(experiment_row.get("experiment_slug", "")),
+            str(target.get("source_type", "")),
+            str(target.get("source_slug", "")),
+            str(target.get("intervention_source", "")),
+            str(target.get("intervention_slug", "")),
+            str(int(sample_index)),
+        ]
+    )
+    digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="little", signed=False)
 
 
 def _simulate_target(
@@ -113,13 +139,17 @@ def _simulate_target(
         print(
             f"Simulating posterior-predictive sample {sample_index + 1} / {num_samples} for target '{target['source_name']}', intervention '{intervention_name}', and run '{run_spec['name']}'..."
         )
+        sample_seed = _posterior_sample_seed(
+            target=target,
+            run_spec=run_spec,
+            sample_index=sample_index,
+        )
         sample_x = simulate_outcomes_for_bundle(
             bundle,
             x_0=panel_context["x_0"],
             z=intervention_context.z,
             gibbs_sweeps=gibbs_sweeps,
-            seed=seed + sample_index,
-            s=int(intervention_context.s),
+            seed=sample_seed,
         )
         if intervention_source == "observed_experiment":
             simulated_stats.append(
@@ -201,6 +231,7 @@ def _simulate_target(
         "num_samples": num_samples,
         "gibbs_sweeps": gibbs_sweeps,
         "seed": seed,
+        "seed_strategy": "blake2b(base_seed, run_slug, target identity, sample_index)",
         "s": int(intervention_context.s),
         "num_units": int(panel_context["N"]),
         "num_time_steps": int(panel_context["T"]),
