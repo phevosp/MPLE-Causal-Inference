@@ -12,11 +12,11 @@ model_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USC
 truth_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
 panel_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/panel_data.npz
 x0_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/x_0.npy
-latent_rank: 5
+latent_rank: 1
 optimizer_mode: alternating_latent_rank
 lambda_nuclear: 0.0
 lambda_frobenius: 0.0
-lambda_uv_ridge: 0.5
+lambda_uv_ridge: 0.1
 fixed_scalar_params: {}
 'N': 3014
 T: 115

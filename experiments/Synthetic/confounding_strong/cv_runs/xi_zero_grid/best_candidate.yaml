@@ -1,0 +1,35 @@
+experiment_name: confounding_strong
+experiment_slug: confounding_strong
+execution_mode: cv
+search_name: xi_zero_grid
+search_slug: xi_zero_grid
+split_source: cv_folds
+outer_num_folds: 5
+test_fold_id: 1
+candidate_name: xi_zero_grid__candidate_0004
+candidate_slug: xi_zero_grid_candidate_0004
+candidate_index: 4
+hyperparameters:
+  lambda_uv_ridge: 0.05
+weighted_mean_validation_loss: 0.5727983326941273
+mean_fold_validation_loss: 0.5727981233170112
+weighted_mean_validation_brier_score: 0.19493862482413135
+mean_fold_validation_brier_score: 0.1949385708282466
+standard_error_fold_validation_brier_score: 0.0007135475079027076
+weighted_mean_validation_ece: 0.029604376517790625
+mean_fold_validation_ece: 0.029604100714323435
+weighted_mean_validation_mean_magnetization_abs_diff: 0.02376219512195122
+mean_fold_validation_mean_magnetization_abs_diff: 0.02376110812498619
+standard_error_fold_validation_mean_magnetization_abs_diff: 0.005363687191197507
+total_validation_slots: 20500
+weighted_mean_post_s_validation_loss: 0.5727983326941273
+mean_fold_post_s_validation_loss: 0.5727981233170112
+weighted_mean_post_s_validation_brier_score: 0.19493862482413135
+mean_fold_post_s_validation_brier_score: 0.1949385708282466
+standard_error_fold_post_s_validation_brier_score: 0.0007135475079027076
+weighted_mean_post_s_validation_ece: 0.029604376517790625
+mean_fold_post_s_validation_ece: 0.029604100714323435
+weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.02376219512195122
+mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.02376110812498619
+standard_error_fold_post_s_validation_mean_magnetization_abs_diff: 0.005363687191197507
+total_post_s_validation_slots: 20500

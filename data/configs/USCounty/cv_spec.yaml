@@ -25,5 +25,5 @@ searches:
     outer_num_folds: 6
     test_fold_id: 1
     grid:
-      latent_rank: [5, 8]
-      lambda_uv_ridge: [0.005, 0.01, 0.05, 0.1, 0.5]
+      latent_rank: [1, 5, 8]
+      lambda_uv_ridge: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1]

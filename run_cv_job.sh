@@ -10,6 +10,14 @@
 
 set -euo pipefail
 
+# Ensure the log directory exists
+DATE=$(date +%F)
+LOG_DIR="slurm-logs/$DATE"
+mkdir -p "$LOG_DIR"
+OUT_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.out"
+ERR_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.err"
+exec >"$OUT_PATH" 2>"$ERR_PATH"
+
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
@@ -32,14 +40,6 @@ NUM_FOLDS_FLAG=()
 if [[ -n "${CV_NUM_FOLDS}" ]]; then
   NUM_FOLDS_FLAG=(--num_folds "${CV_NUM_FOLDS}")
 fi
-
-# Ensure the log directory exists
-DATE=$(date +%F)
-LOG_DIR="slurm-logs/$DATE"
-mkdir -p "$LOG_DIR"
-OUT_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.out"
-ERR_PATH="$LOG_DIR/${SLURM_JOB_ID}_${SLURM_JOB_NAME}.err"
-exec >"$OUT_PATH" 2>"$ERR_PATH"
 
 pixi run python -u run_cv_folds.py \
   --generation_manifest_path "${GENERATION_MANIFEST_PATH}" \

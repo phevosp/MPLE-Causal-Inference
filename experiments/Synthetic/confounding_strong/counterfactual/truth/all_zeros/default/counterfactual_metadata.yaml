@@ -10,8 +10,9 @@ intervention_name: all_zeros
 intervention_slug: all_zeros
 latent_rank: 3
 num_samples: 16
-gibbs_sweeps: 10
+gibbs_sweeps: 40
 seed: 0
+seed_strategy: blake2b(base_seed, run_slug, target identity, sample_index)
 s: 50
 num_units: 500
 num_time_steps: 50
