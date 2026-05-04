@@ -98,7 +98,9 @@ import validation_metric_utils as validation_metrics
 from posterior_predictive_utils import (
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
+    compute_observed_sample_summary,
     simulate_outcomes_for_bundle,
+    summarize_observed_mean_statistics,
     summarize_predictive_statistics,
 )
 from report_posterior_predictive import (
@@ -5955,6 +5957,81 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertTrue(np.allclose(summary["unit_mean_magnetization"], np.mean(x, axis=0)))
         self.assertTrue(np.allclose(summary["time_mean_magnetization"], np.mean(x, axis=1)))
 
+    def test_summarize_observed_mean_statistics_reports_aggregate_errors(self) -> None:
+        observed_summary = compute_observed_sample_summary(
+            np.asarray(
+                [
+                    [1.0, -1.0],
+                    [1.0, 1.0],
+                    [-1.0, 1.0],
+                ],
+                dtype=float,
+            ),
+            s=1,
+        )
+        sample_summaries = {
+            "overall_mean_magnetization": np.asarray([0.0, 0.5, 0.25], dtype=float),
+            "post_intervention_mean_magnetization": np.asarray(
+                [0.5, 0.75, 0.25], dtype=float
+            ),
+            "unit_mean_magnetization": np.asarray(
+                [
+                    [0.00, 0.50],
+                    [0.25, 0.75],
+                    [0.50, 0.25],
+                ],
+                dtype=float,
+            ),
+            "time_mean_magnetization": np.asarray(
+                [
+                    [0.0, 1.0 / 3.0, 0.0],
+                    [0.5, 1.0, 0.0],
+                    [0.0, 2.0 / 3.0, 0.5],
+                ],
+                dtype=float,
+            ),
+        }
+
+        mean_rows, unit_rows, time_rows, summary = summarize_observed_mean_statistics(
+            observed_summary,
+            sample_summaries,
+        )
+
+        self.assertEqual(len(mean_rows), 2)
+        self.assertEqual(len(unit_rows), 2)
+        self.assertEqual(len(time_rows), 3)
+        self.assertAlmostEqual(
+            float(summary["overall_mean_abs_error"]),
+            1.0 / 12.0,
+        )
+        self.assertAlmostEqual(
+            float(summary["post_intervention_mean_abs_error"]),
+            0.0,
+        )
+        self.assertAlmostEqual(float(summary["unit_mean_abs_error_mean"]), 1.0 / 8.0)
+        self.assertAlmostEqual(
+            float(summary["unit_mean_rmse"]),
+            float(np.sqrt(5.0 / 288.0)),
+        )
+        self.assertAlmostEqual(float(summary["unit_mean_max_abs_error"]), 1.0 / 6.0)
+        self.assertAlmostEqual(
+            float(summary["unit_mean_95_interval_coverage_rate"]),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            float(summary["time_mean_abs_error_mean"]),
+            2.0 / 9.0,
+        )
+        self.assertAlmostEqual(
+            float(summary["time_mean_rmse"]),
+            float(np.sqrt(1.0 / 18.0)),
+        )
+        self.assertAlmostEqual(float(summary["time_mean_max_abs_error"]), 1.0 / 3.0)
+        self.assertAlmostEqual(
+            float(summary["time_mean_95_interval_coverage_rate"]),
+            2.0 / 3.0,
+        )
+
     def test_load_fit_parameter_bundle_propagates_beta_mask_pre_s(self) -> None:
         experiment_root = self.root / "exp_bundle"
         fit_root = experiment_root / "fits" / "rank_0"
@@ -6941,13 +7018,8 @@ class PosteriorPredictiveTests(unittest.TestCase):
         report_outputs = refresh_and_write_posterior_predictive_reports(generation_manifest)
 
         experiment_root = self.root / "generated" / "smoke_rank_0"
-        observed_output = (
-            experiment_root
-            / "posterior_predictive"
-            / "truth"
-            / "default"
-            / "posterior_predictive_stats.csv"
-        )
+        observed_root = experiment_root / "posterior_predictive" / "truth" / "default"
+        observed_output = observed_root / "posterior_predictive_stats.csv"
         counterfactual_root = (
             experiment_root
             / "counterfactual"
@@ -6966,6 +7038,19 @@ class PosteriorPredictiveTests(unittest.TestCase):
             counterfactual_root.resolve(),
         )
         self.assertTrue(observed_output.exists())
+        self.assertTrue((observed_root / "posterior_predictive_metadata.yaml").exists())
+        self.assertTrue(
+            (observed_root / "posterior_predictive_sample_summaries.npz").exists()
+        )
+        self.assertTrue(
+            (observed_root / "posterior_predictive_mean_summary.csv").exists()
+        )
+        self.assertTrue(
+            (observed_root / "posterior_predictive_unit_summary.csv").exists()
+        )
+        self.assertTrue(
+            (observed_root / "posterior_predictive_time_summary.csv").exists()
+        )
         self.assertTrue(predictive_manifest.exists())
         self.assertTrue((counterfactual_root / "counterfactual_metadata.yaml").exists())
         self.assertTrue(
@@ -6980,6 +7065,105 @@ class PosteriorPredictiveTests(unittest.TestCase):
         )
         self.assertFalse(
             (counterfactual_root / "posterior_predictive_stats.csv").exists()
+        )
+
+        observed_panel = load_experiment_panel_context(experiment_root)
+        with np.load(
+            io_path(observed_root / "posterior_predictive_sample_summaries.npz"),
+            allow_pickle=False,
+        ) as data:
+            self.assertEqual(
+                np.asarray(data["overall_mean_magnetization"], dtype=float).shape,
+                (4,),
+            )
+            self.assertEqual(
+                np.asarray(data["post_intervention_mean_magnetization"], dtype=float).shape,
+                (4,),
+            )
+            self.assertEqual(
+                np.asarray(data["unit_mean_magnetization"], dtype=float).shape,
+                (4, 6),
+            )
+            self.assertEqual(
+                np.asarray(data["time_mean_magnetization"], dtype=float).shape,
+                (4, 4),
+            )
+
+        with (observed_root / "posterior_predictive_mean_summary.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            mean_rows = {row["statistic"]: row for row in csv.DictReader(handle)}
+        self.assertAlmostEqual(
+            float(mean_rows["overall_mean_magnetization"]["observed_value"]),
+            float(np.mean(np.asarray(observed_panel["x"], dtype=float))),
+        )
+        self.assertAlmostEqual(
+            float(mean_rows["post_intervention_mean_magnetization"]["observed_value"]),
+            float(
+                np.mean(
+                    np.asarray(observed_panel["x"], dtype=float)[
+                        int(observed_panel["s"]) :, :
+                    ]
+                )
+            ),
+        )
+
+        with (observed_root / "posterior_predictive_unit_summary.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            unit_rows = list(csv.DictReader(handle))
+        with (observed_root / "posterior_predictive_time_summary.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as handle:
+            time_rows = list(csv.DictReader(handle))
+        self.assertEqual(len(unit_rows), int(observed_panel["N"]))
+        self.assertEqual(len(time_rows), int(observed_panel["T"]))
+        self.assertAlmostEqual(
+            float(unit_rows[0]["observed_value"]),
+            float(np.mean(np.asarray(observed_panel["x"], dtype=float), axis=0)[0]),
+        )
+        self.assertAlmostEqual(
+            float(time_rows[0]["observed_value"]),
+            float(np.mean(np.asarray(observed_panel["x"], dtype=float), axis=1)[0]),
+        )
+
+        observed_metadata = OmegaConf.to_container(
+            OmegaConf.load(io_path(observed_root / "posterior_predictive_metadata.yaml")),
+            resolve=True,
+        )
+        self.assertIsInstance(observed_metadata, dict)
+        observed_summary = dict(observed_metadata["summary"])
+        self.assertAlmostEqual(
+            float(observed_summary["overall_mean_abs_error"]),
+            float(mean_rows["overall_mean_magnetization"]["abs_error"]),
+        )
+        self.assertAlmostEqual(
+            float(observed_summary["post_intervention_mean_abs_error"]),
+            float(mean_rows["post_intervention_mean_magnetization"]["abs_error"]),
+        )
+        self.assertAlmostEqual(
+            float(observed_summary["unit_mean_abs_error_mean"]),
+            float(np.mean([float(row["abs_error"]) for row in unit_rows])),
+        )
+        self.assertAlmostEqual(
+            float(observed_summary["unit_mean_rmse"]),
+            float(
+                np.sqrt(
+                    np.mean([float(row["squared_error"]) for row in unit_rows])
+                )
+            ),
+        )
+        self.assertAlmostEqual(
+            float(observed_summary["time_mean_abs_error_mean"]),
+            float(np.mean([float(row["abs_error"]) for row in time_rows])),
+        )
+        self.assertAlmostEqual(
+            float(observed_summary["time_mean_rmse"]),
+            float(
+                np.sqrt(
+                    np.mean([float(row["squared_error"]) for row in time_rows])
+                )
+            ),
         )
 
         self.assertEqual(

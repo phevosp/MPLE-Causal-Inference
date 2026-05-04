@@ -99,6 +99,152 @@ def compute_counterfactual_sample_summary(
     }
 
 
+def compute_observed_sample_summary(
+    x: np.ndarray,
+    *,
+    s: int,
+) -> dict[str, np.ndarray | float]:
+    """Compute draw-level mean magnetization summaries for observed-run evaluation."""
+    return compute_counterfactual_sample_summary(x, s=s)
+
+
+def _finite_scalar_summary(
+    observed_value: float,
+    sample_values: np.ndarray,
+) -> dict[str, object]:
+    observed = float(observed_value)
+    finite = np.asarray(sample_values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if not np.isfinite(observed) or finite.size == 0:
+        return {
+            "observed_value": observed if np.isfinite(observed) else "",
+            "sample_mean": "",
+            "sample_std": "",
+            "abs_error": "",
+            "q025": "",
+            "q500": "",
+            "q975": "",
+            "in_95_interval": "",
+            "num_finite_samples": int(finite.size),
+        }
+    q025, q500, q975 = np.quantile(finite, [0.025, 0.5, 0.975])
+    sample_mean = float(np.mean(finite))
+    return {
+        "observed_value": observed,
+        "sample_mean": sample_mean,
+        "sample_std": float(np.std(finite, ddof=0)),
+        "abs_error": abs(observed - sample_mean),
+        "q025": float(q025),
+        "q500": float(q500),
+        "q975": float(q975),
+        "in_95_interval": bool(float(q025) <= observed <= float(q975)),
+        "num_finite_samples": int(finite.size),
+    }
+
+
+def _finite_vector_summaries(
+    observed_values: np.ndarray,
+    sample_values: np.ndarray,
+    *,
+    index_name: str,
+) -> tuple[list[dict[str, object]], dict[str, float]]:
+    observed = np.asarray(observed_values, dtype=float).reshape(-1)
+    samples = np.asarray(sample_values, dtype=float)
+    if samples.ndim != 2:
+        raise ValueError(
+            f"Expected a 2D sample array for {index_name} summaries, got shape {samples.shape}."
+        )
+    if samples.shape[1] != observed.shape[0]:
+        raise ValueError(
+            f"Observed {index_name} values have length {observed.shape[0]}, but sample array has "
+            f"shape {samples.shape}."
+        )
+
+    rows: list[dict[str, object]] = []
+    abs_errors: list[float] = []
+    squared_errors: list[float] = []
+    covered: list[float] = []
+    for item_index in range(observed.shape[0]):
+        row = {index_name: int(item_index)}
+        row.update(
+            _finite_scalar_summary(
+                float(observed[item_index]),
+                samples[:, item_index],
+            )
+        )
+        if row["abs_error"] != "":
+            abs_error = float(row["abs_error"])
+            abs_errors.append(abs_error)
+            squared_errors.append(abs_error**2)
+        if row["in_95_interval"] != "":
+            covered.append(float(bool(row["in_95_interval"])))
+        row["squared_error"] = (
+            ""
+            if row["abs_error"] == ""
+            else float(row["abs_error"]) ** 2
+        )
+        rows.append(row)
+
+    aggregates = {
+        "abs_error_mean": float(np.mean(abs_errors)) if abs_errors else math.nan,
+        "rmse": float(np.sqrt(np.mean(squared_errors))) if squared_errors else math.nan,
+        "max_abs_error": float(np.max(abs_errors)) if abs_errors else math.nan,
+        "coverage_rate": float(np.mean(covered)) if covered else math.nan,
+    }
+    return rows, aggregates
+
+
+def summarize_observed_mean_statistics(
+    observed_summary: dict[str, np.ndarray | float],
+    sample_summaries: dict[str, np.ndarray],
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+    dict[str, float],
+]:
+    mean_rows: list[dict[str, object]] = []
+    scalar_metrics: dict[str, float] = {}
+    for key, metric_name in [
+        ("overall_mean_magnetization", "overall_mean_abs_error"),
+        (
+            "post_intervention_mean_magnetization",
+            "post_intervention_mean_abs_error",
+        ),
+    ]:
+        observed_value = float(observed_summary[key])
+        sample_values = np.asarray(sample_summaries[key], dtype=float)
+        row = {"statistic": key}
+        row.update(_finite_scalar_summary(observed_value, sample_values))
+        mean_rows.append(row)
+        scalar_metrics[metric_name] = (
+            math.nan if row["abs_error"] == "" else float(row["abs_error"])
+        )
+
+    unit_rows, unit_metrics = _finite_vector_summaries(
+        np.asarray(observed_summary["unit_mean_magnetization"], dtype=float),
+        np.asarray(sample_summaries["unit_mean_magnetization"], dtype=float),
+        index_name="unit_index",
+    )
+    time_rows, time_metrics = _finite_vector_summaries(
+        np.asarray(observed_summary["time_mean_magnetization"], dtype=float),
+        np.asarray(sample_summaries["time_mean_magnetization"], dtype=float),
+        index_name="time_index",
+    )
+    summary = {
+        **scalar_metrics,
+        "unit_mean_abs_error_mean": unit_metrics["abs_error_mean"],
+        "unit_mean_rmse": unit_metrics["rmse"],
+        "unit_mean_max_abs_error": unit_metrics["max_abs_error"],
+        "unit_mean_95_interval_coverage_rate": unit_metrics["coverage_rate"],
+        "time_mean_abs_error_mean": time_metrics["abs_error_mean"],
+        "time_mean_rmse": time_metrics["rmse"],
+        "time_mean_max_abs_error": time_metrics["max_abs_error"],
+        "time_mean_95_interval_coverage_rate": time_metrics["coverage_rate"],
+    }
+    return mean_rows, unit_rows, time_rows, summary
+
+
 def summarize_predictive_statistics(
     observed_stats: dict[str, float | None],
     simulated_stats: list[dict[str, float | None]],

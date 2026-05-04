@@ -11,7 +11,12 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from intervention_utils import COUNTERFACTUAL_ROOT_NAME, resolve_intervention_context
-from io_utils import io_path, write_counterfactual_summary_tables, write_predictive_stats_tables
+from io_utils import (
+    io_path,
+    write_counterfactual_summary_tables,
+    write_observed_predictive_summary_tables,
+    write_predictive_stats_tables,
+)
 from loading_utils import (
     load_experiment_panel_context,
     load_fit_parameter_bundle,
@@ -29,7 +34,9 @@ from posterior_predictive_job_utils import (
 from posterior_predictive_utils import (
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
+    compute_observed_sample_summary,
     simulate_outcomes_for_bundle,
+    summarize_observed_mean_statistics,
     summarize_predictive_statistics,
 )
 
@@ -126,6 +133,13 @@ def _simulate_target(
         "time_mean_magnetization": [],
     }
     observed_stats = None
+    observed_sample_summary = None
+    observed_draw_summaries: dict[str, list[object]] = {
+        "overall_mean_magnetization": [],
+        "post_intervention_mean_magnetization": [],
+        "unit_mean_magnetization": [],
+        "time_mean_magnetization": [],
+    }
     if intervention_source == "observed_experiment":
         observed_stats = compute_panel_statistics(
             panel_context["x"],
@@ -134,6 +148,10 @@ def _simulate_target(
             s=int(intervention_context.s),
             field_matrix=bundle.field_matrix,
             gamma_matrix=bundle.gamma_matrix,
+        )
+        observed_sample_summary = compute_observed_sample_summary(
+            panel_context["x"],
+            s=int(intervention_context.s),
         )
     for sample_index in range(num_samples):
         print(
@@ -162,6 +180,22 @@ def _simulate_target(
                     gamma_matrix=bundle.gamma_matrix,
                 )
             )
+            sample_summary = compute_observed_sample_summary(
+                sample_x,
+                s=int(intervention_context.s),
+            )
+            observed_draw_summaries["overall_mean_magnetization"].append(
+                sample_summary["overall_mean_magnetization"]
+            )
+            observed_draw_summaries["post_intervention_mean_magnetization"].append(
+                sample_summary["post_intervention_mean_magnetization"]
+            )
+            observed_draw_summaries["unit_mean_magnetization"].append(
+                sample_summary["unit_mean_magnetization"]
+            )
+            observed_draw_summaries["time_mean_magnetization"].append(
+                sample_summary["time_mean_magnetization"]
+            )
         else:
             sample_summary = compute_counterfactual_sample_summary(
                 sample_x,
@@ -186,7 +220,39 @@ def _simulate_target(
             observed_stats, simulated_stats
         )
         write_predictive_stats_tables(output_root, stat_rows)
+        observed_sample_summaries = {
+            "overall_mean_magnetization": np.asarray(
+                observed_draw_summaries["overall_mean_magnetization"],
+                dtype=float,
+            ),
+            "post_intervention_mean_magnetization": np.asarray(
+                observed_draw_summaries["post_intervention_mean_magnetization"],
+                dtype=float,
+            ),
+            "unit_mean_magnetization": np.asarray(
+                observed_draw_summaries["unit_mean_magnetization"],
+                dtype=float,
+            ),
+            "time_mean_magnetization": np.asarray(
+                observed_draw_summaries["time_mean_magnetization"],
+                dtype=float,
+            ),
+        }
+        mean_rows, unit_rows, time_rows, mean_summary = (
+            summarize_observed_mean_statistics(
+                observed_sample_summary,
+                observed_sample_summaries,
+            )
+        )
+        write_observed_predictive_summary_tables(
+            output_root,
+            sample_summaries=observed_sample_summaries,
+            mean_rows=mean_rows,
+            unit_rows=unit_rows,
+            time_rows=time_rows,
+        )
         summary.update(predictive_summary)
+        summary.update(mean_summary)
     else:
         sample_summaries = {
             "overall_mean_magnetization": np.asarray(

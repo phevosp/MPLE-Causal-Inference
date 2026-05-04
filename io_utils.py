@@ -116,6 +116,74 @@ def write_predictive_stats_tables(
     return csv_path
 
 
+def write_observed_predictive_summary_tables(
+    output_root: str | Path,
+    *,
+    sample_summaries: dict[str, np.ndarray],
+    mean_rows: list[dict[str, object]],
+    unit_rows: list[dict[str, object]],
+    time_rows: list[dict[str, object]],
+) -> tuple[Path, Path, Path, Path]:
+    output_path = Path(output_root)
+    output_path.mkdir(parents=True, exist_ok=True)
+    sample_npz_path = output_path / "posterior_predictive_sample_summaries.npz"
+    mean_csv_path = output_path / "posterior_predictive_mean_summary.csv"
+    unit_csv_path = output_path / "posterior_predictive_unit_summary.csv"
+    time_csv_path = output_path / "posterior_predictive_time_summary.csv"
+    np.savez(io_path(sample_npz_path), **sample_summaries)
+    write_csv(
+        mean_csv_path,
+        mean_rows,
+        [
+            "statistic",
+            "observed_value",
+            "sample_mean",
+            "sample_std",
+            "abs_error",
+            "q025",
+            "q500",
+            "q975",
+            "in_95_interval",
+            "num_finite_samples",
+        ],
+    )
+    write_csv(
+        unit_csv_path,
+        unit_rows,
+        [
+            "unit_index",
+            "observed_value",
+            "sample_mean",
+            "sample_std",
+            "abs_error",
+            "squared_error",
+            "q025",
+            "q500",
+            "q975",
+            "in_95_interval",
+            "num_finite_samples",
+        ],
+    )
+    write_csv(
+        time_csv_path,
+        time_rows,
+        [
+            "time_index",
+            "observed_value",
+            "sample_mean",
+            "sample_std",
+            "abs_error",
+            "squared_error",
+            "q025",
+            "q500",
+            "q975",
+            "in_95_interval",
+            "num_finite_samples",
+        ],
+    )
+    return sample_npz_path, mean_csv_path, unit_csv_path, time_csv_path
+
+
 def _finite_summary(values: np.ndarray) -> dict[str, object]:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
