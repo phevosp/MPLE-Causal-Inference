@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-from io_utils import io_path, path_exists
+from io_utils import io_path, path_exists, save_loss_mask
 from loading_utils import load_experiment_panel_context
 
 
@@ -60,12 +60,6 @@ def _load_best_candidate_from_yaml(
 
     return reconstructed
 
-
-def _save_loss_mask(path: str | Path, loss_mask: np.ndarray) -> Path:
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(io_path(output_path), np.asarray(loss_mask, dtype=bool))
-    return output_path
 
 
 def _default_output_path(
@@ -139,7 +133,7 @@ def run_full_train_fit(
     if num_training_slots <= 0:
         raise ValueError("Training mask is empty.")
 
-    mask_path = _save_loss_mask(output_root / "loss_mask.npy", training_mask)
+    mask_path = save_loss_mask(output_root / "loss_mask.npy", training_mask)
 
     experiment_row = {
         "experiment_name": "",

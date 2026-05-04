@@ -34,8 +34,6 @@ def simulate_outcomes_for_bundle(
         gibbs_sweeps=int(gibbs_sweeps),
         s=int(s),
         e=e,
-        beta_mask_pre_s=bool(bundle.beta_mask_pre_s),
-        beta_mask_post_e=bool(bundle.beta_mask_post_e),
     )
 
 

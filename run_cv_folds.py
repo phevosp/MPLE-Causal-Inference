@@ -13,7 +13,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 import build_cv_folds as cv_folds
-from io_utils import io_path
+from io_utils import io_path, save_loss_mask
 from loading_utils import load_experiment_panel_context
 from pipeline_specs import (
     deep_merge,
@@ -439,12 +439,6 @@ def write_cv_requests(
     write_csv_manifest(request_path, request_rows)
     return request_path
 
-
-def _save_loss_mask(path: str | Path, loss_mask: np.ndarray) -> Path:
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(io_path(output_path), np.asarray(loss_mask, dtype=bool))
-    return output_path
 
 
 def _parse_manifest_scalar(value: object) -> object:
@@ -943,7 +937,7 @@ def _run_search_for_experiment(
                 raise ValueError(
                     f"Fold {fold_id} for {experiment_root} has empty training or validation support."
                 )
-            mask_path = _save_loss_mask(fold_root / "loss_mask.npy", training_loss_mask)
+            mask_path = save_loss_mask(fold_root / "loss_mask.npy", training_loss_mask)
             extra_metadata = {
                 "execution_mode": normalized_mode,
                 "search_name": search["name"],

@@ -5935,7 +5935,8 @@ class PosteriorPredictiveTests(unittest.TestCase):
         bundle = load_fit_parameter_bundle(fit_root, experiment_root)
         self.assertTrue(bundle.beta_mask_pre_s)
 
-    def test_simulate_outcomes_for_bundle_masks_beta_pre_s(self) -> None:
+    def test_simulate_outcomes_for_bundle_ignores_beta_mask_flags(self) -> None:
+        """Beta masking is only for MPLE fitting loss, not for sampling."""
         field_matrix = np.zeros((2, 8), dtype=float)
         gamma_matrix = np.zeros((8, 8), dtype=float)
         z = np.vstack([np.ones(8, dtype=float), -np.ones(8, dtype=float)])
@@ -5953,8 +5954,21 @@ class PosteriorPredictiveTests(unittest.TestCase):
             field_matrix=field_matrix,
             gamma_matrix=gamma_matrix,
         )
+        unmasked_bundle = OutcomeParameterBundle(
+            source_type="fit",
+            source_name="rank_0",
+            beta=12.0,
+            xi=0.0,
+            eta=0.0,
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+            latent_rank=0,
+            t_steps=2,
+            field_matrix=field_matrix,
+            gamma_matrix=gamma_matrix,
+        )
 
-        masked = simulate_outcomes_for_bundle(
+        masked_result = simulate_outcomes_for_bundle(
             masked_bundle,
             x_0=x_0,
             z=z,
@@ -5962,33 +5976,16 @@ class PosteriorPredictiveTests(unittest.TestCase):
             seed=0,
             s=1,
         )
-        expected_masked = simulate_outcomes_given_fixed_interventions(
+        unmasked_result = simulate_outcomes_for_bundle(
+            unmasked_bundle,
             x_0=x_0,
             z=z,
-            field_matrix=field_matrix,
-            interaction_matrix=gamma_matrix,
-            beta=12.0,
-            eta=0.0,
-            rng=np.random.default_rng(0),
             gibbs_sweeps=1,
+            seed=0,
             s=1,
-            beta_mask_pre_s=True,
-        )
-        unmasked = simulate_outcomes_given_fixed_interventions(
-            x_0=x_0,
-            z=z,
-            field_matrix=field_matrix,
-            interaction_matrix=gamma_matrix,
-            beta=12.0,
-            eta=0.0,
-            rng=np.random.default_rng(0),
-            gibbs_sweeps=1,
-            s=1,
-            beta_mask_pre_s=False,
         )
 
-        self.assertTrue(np.array_equal(masked, expected_masked))
-        self.assertFalse(np.array_equal(masked, unmasked))
+        self.assertTrue(np.array_equal(masked_result, unmasked_result))
 
     def test_validation_metric_utils_sampler_clamps_non_validation_and_is_reproducible(
         self,

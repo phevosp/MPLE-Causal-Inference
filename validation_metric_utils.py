@@ -53,22 +53,6 @@ def time_window_mask(*, t_steps: int, n_nodes: int, start_t: int = 0) -> np.ndar
     return mask
 
 
-def masked_beta_feature(
-    z: np.ndarray,
-    *,
-    s: int,
-    e: int,
-    beta_mask_pre_s: bool,
-    beta_mask_post_e: bool,
-) -> np.ndarray:
-    beta_feature = np.asarray(z, dtype=float).copy()
-    if bool(beta_mask_pre_s) and int(s) > 0:
-        beta_feature[: int(s), :] = 0.0
-    if bool(beta_mask_post_e) and int(e) < beta_feature.shape[0]:
-        beta_feature[int(e) :, :] = 0.0
-    return beta_feature
-
-
 def validation_brier_score(
     *,
     x: np.ndarray,
@@ -155,14 +139,13 @@ def _sample_validation_time_step(
     rng: np.random.Generator,
     validation_nodes: np.ndarray,
     gibbs_sweeps: int,
-    beta_active: np.ndarray,
 ) -> np.ndarray:
     x_t = np.asarray(observed_x_t, dtype=float).copy()
     active_validation_nodes = np.asarray(validation_nodes, dtype=int)
     if active_validation_nodes.size == 0:
         return x_t
     interaction_x_t = np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
-    beta_feature = np.asarray(z_t, dtype=float) * np.asarray(beta_active, dtype=float)
+    beta_feature = np.asarray(z_t, dtype=float)
     for _ in range(int(gibbs_sweeps)):
         for node_index in rng.permutation(active_validation_nodes):
             old_x_i = float(x_t[node_index])
@@ -202,14 +185,7 @@ def sample_validation_panel_conditional(
     sampled_x = np.asarray(x, dtype=float).copy()
     rng = np.random.default_rng(int(seed))
     x_prev = x_0
-    s = int(panel_context["s"])
-    e = int(panel_context["e"])
     for time_index in range(x.shape[0]):
-        beta_active = np.ones(x.shape[1], dtype=float)
-        if bool(bundle.beta_mask_pre_s) and int(time_index) < int(s):
-            beta_active.fill(0.0)
-        if bool(bundle.beta_mask_post_e) and int(time_index) >= int(e):
-            beta_active.fill(0.0)
         validation_nodes = np.flatnonzero(validation_mask[time_index, :]).astype(int)
         sampled_x[time_index, :] = _sample_validation_time_step(
             x[time_index, :],
@@ -222,7 +198,6 @@ def sample_validation_panel_conditional(
             rng=rng,
             validation_nodes=validation_nodes,
             gibbs_sweeps=int(gibbs_sweeps),
-            beta_active=beta_active,
         )
         x_prev = sampled_x[time_index, :]
     sampled_x[~validation_mask] = x[~validation_mask]
@@ -292,6 +267,32 @@ def _sample_validation_magnetization_metrics(
     }
 
 
+def _build_loss_kwargs(
+    bundle: OutcomeParameterBundle,
+    panel_context: dict[str, object],
+    *,
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    interaction_effect_x: np.ndarray,
+) -> dict[str, Any]:
+    return {
+        "x": x,
+        "z": z,
+        "x_0": x_0,
+        "field_matrix": np.asarray(bundle.field_matrix, dtype=float),
+        "beta": float(bundle.beta),
+        "xi": float(bundle.xi),
+        "eta": float(bundle.eta),
+        "interaction_effect_x": interaction_effect_x,
+        "fixed_scalar_params": {},
+        "s": int(panel_context["s"]),
+        "e": int(panel_context["e"]),
+        "beta_mask_pre_s": bool(bundle.beta_mask_pre_s),
+        "beta_mask_post_e": bool(bundle.beta_mask_post_e),
+    }
+
+
 def evaluate_fold_metrics(
     *,
     panel_context: dict[str, object],
@@ -303,28 +304,20 @@ def evaluate_fold_metrics(
     x = np.asarray(panel_context["x"], dtype=float)
     z = np.asarray(panel_context["z"], dtype=float)
     x_0 = np.asarray(panel_context["x_0"], dtype=float)
-    field_matrix = np.asarray(bundle.field_matrix, dtype=float)
     training_mask = np.asarray(training_loss_mask, dtype=bool)
     validation_mask = np.asarray(validation_loss_mask, dtype=bool)
     if x.shape != training_mask.shape or x.shape != validation_mask.shape:
         raise ValueError("Training and validation masks must match the panel shape.")
 
     interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
-    common_kwargs = {
-        "x": x,
-        "z": z,
-        "x_0": x_0,
-        "field_matrix": field_matrix,
-        "beta": float(bundle.beta),
-        "xi": float(bundle.xi),
-        "eta": float(bundle.eta),
-        "interaction_effect_x": interaction_effect_x,
-        "fixed_scalar_params": {},
-        "s": int(panel_context["s"]),
-        "e": int(panel_context["e"]),
-        "beta_mask_pre_s": bool(bundle.beta_mask_pre_s),
-        "beta_mask_post_e": bool(bundle.beta_mask_post_e),
-    }
+    common_kwargs = _build_loss_kwargs(
+        bundle,
+        panel_context,
+        x=x,
+        z=z,
+        x_0=x_0,
+        interaction_effect_x=interaction_effect_x,
+    )
     fit_loss = float(
         evaluate_mple_loss_from_parts(
             loss_mask=training_mask,
@@ -352,20 +345,7 @@ def evaluate_fold_metrics(
             )
         )
 
-    prev_x = np.vstack([x_0, x[:-1, :]])
-    h_x = (
-        field_matrix
-        + float(bundle.beta)
-        * masked_beta_feature(
-            z,
-            s=int(panel_context["s"]),
-            e=int(panel_context["e"]),
-            beta_mask_pre_s=bool(bundle.beta_mask_pre_s),
-            beta_mask_post_e=bool(bundle.beta_mask_post_e),
-        )
-        + float(bundle.xi) * interaction_effect_x
-        + float(bundle.eta) * prev_x
-    )
+    h_x = _compute_h_x_from_bundle(bundle, panel_context)
     validation_brier = validation_brier_score(
         x=x,
         h_x=h_x,
@@ -483,7 +463,6 @@ def evaluate_test_metrics_by_treatment(
     x = np.asarray(panel_context["x"], dtype=float)
     z = np.asarray(panel_context["z"], dtype=float)
     x_0 = np.asarray(panel_context["x_0"], dtype=float)
-    field_matrix = np.asarray(bundle.field_matrix, dtype=float)
     test_mask = np.asarray(test_loss_mask, dtype=bool)
     s = int(panel_context["s"])
     post_s_window = time_window_mask(
@@ -491,25 +470,19 @@ def evaluate_test_metrics_by_treatment(
     )
 
     interaction_effect_x = interaction_effect(x, bundle.gamma_matrix)
-    common_kwargs = {
-        "x": x,
-        "z": z,
-        "x_0": x_0,
-        "field_matrix": field_matrix,
-        "beta": float(bundle.beta),
-        "xi": float(bundle.xi),
-        "eta": float(bundle.eta),
-        "interaction_effect_x": interaction_effect_x,
-        "fixed_scalar_params": {},
-        "s": int(panel_context["s"]),
-        "e": int(panel_context["e"]),
-        "beta_mask_pre_s": bool(bundle.beta_mask_pre_s),
-        "beta_mask_post_e": bool(bundle.beta_mask_post_e),
-    }
+    common_kwargs = _build_loss_kwargs(
+        bundle,
+        panel_context,
+        x=x,
+        z=z,
+        x_0=x_0,
+        interaction_effect_x=interaction_effect_x,
+    )
 
     treated_mask = z > 0.5
     untreated_mask = z <= 0.5
 
+    h_x = _compute_h_x_from_bundle(bundle, panel_context)
     metrics = {}
 
     for treatment_name, treatment_selector in [("treated", treated_mask), ("untreated", untreated_mask)]:
@@ -525,12 +498,12 @@ def evaluate_test_metrics_by_treatment(
             )
             test_brier = validation_brier_score(
                 x=x,
-                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                h_x=h_x,
                 loss_mask=test_and_treatment,
             )
             test_ece = validation_expected_calibration_error(
                 x=x,
-                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                h_x=h_x,
                 loss_mask=test_and_treatment,
             )
             num_test_slots = int(np.count_nonzero(test_and_treatment))
@@ -545,6 +518,21 @@ def evaluate_test_metrics_by_treatment(
             metrics[f"test_ece_{treatment_name}"] = None
             metrics[f"num_test_slots_{treatment_name}"] = 0
 
+        magnetization_metrics = _compute_magnetization_metrics(
+            x=x,
+            bundle=bundle,
+            loss_mask=test_and_treatment,
+            sampling=sampling,
+            panel_context=panel_context,
+        )
+
+        if np.any(test_and_treatment):
+            metrics[f"test_mean_magnetization_abs_diff_{treatment_name}"] = (
+                magnetization_metrics["magnetization_abs_diff"]
+            )
+        else:
+            metrics[f"test_mean_magnetization_abs_diff_{treatment_name}"] = None
+
         if np.any(test_and_treatment_post_s):
             post_s_test_loss = float(
                 evaluate_mple_loss_from_parts(
@@ -554,20 +542,13 @@ def evaluate_test_metrics_by_treatment(
             )
             post_s_test_brier = validation_brier_score(
                 x=x,
-                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                h_x=h_x,
                 loss_mask=test_and_treatment_post_s,
             )
             post_s_test_ece = validation_expected_calibration_error(
                 x=x,
-                h_x=_compute_h_x_from_bundle(bundle, panel_context),
+                h_x=h_x,
                 loss_mask=test_and_treatment_post_s,
-            )
-            magnetization_metrics = _compute_magnetization_metrics(
-                x=x,
-                bundle=bundle,
-                loss_mask=test_and_treatment_post_s,
-                sampling=sampling,
-                panel_context=panel_context,
             )
             num_post_s_test_slots = int(np.count_nonzero(test_and_treatment_post_s))
 
@@ -585,20 +566,6 @@ def evaluate_test_metrics_by_treatment(
             metrics[f"post_s_test_mean_magnetization_abs_diff_{treatment_name}"] = None
             metrics[f"num_post_s_test_slots_{treatment_name}"] = 0
 
-        magnetization_metrics_full = _compute_magnetization_metrics(
-            x=x,
-            bundle=bundle,
-            loss_mask=test_and_treatment,
-            sampling=sampling,
-            panel_context=panel_context,
-        )
-        if np.any(test_and_treatment):
-            metrics[f"test_mean_magnetization_abs_diff_{treatment_name}"] = (
-                magnetization_metrics_full["magnetization_abs_diff"]
-            )
-        else:
-            metrics[f"test_mean_magnetization_abs_diff_{treatment_name}"] = None
-
     return metrics
 
 
@@ -610,12 +577,19 @@ def _compute_magnetization_metrics(
     sampling: dict[str, Any] | None = None,
     panel_context: dict[str, object],
 ) -> dict[str, float | None]:
-    """Compute magnetization metrics for a given loss mask."""
+    """Compute magnetization metrics for a given loss mask and post-s restricted window."""
     sampling_config = resolve_validation_sampling(sampling)
     mask = np.asarray(loss_mask, dtype=bool)
+    post_s_mask = mask & time_window_mask(
+        t_steps=x.shape[0],
+        n_nodes=x.shape[1],
+        start_t=int(panel_context["s"]),
+    )
     observed_mean = _mean_on_mask(x, mask)
+    observed_post_s_mean = _mean_on_mask(x, post_s_mask)
 
     sample_means: list[float] = []
+    post_s_sample_means: list[float] = []
     for sample_index in range(int(sampling_config["num_samples"])):
         sampled_x = sample_validation_panel_conditional(
             panel_context=panel_context,
@@ -627,10 +601,18 @@ def _compute_magnetization_metrics(
         sample_mean = _mean_on_mask(sampled_x, mask)
         if sample_mean is not None:
             sample_means.append(float(sample_mean))
+        post_s_sample_mean = _mean_on_mask(sampled_x, post_s_mask)
+        if post_s_sample_mean is not None:
+            post_s_sample_means.append(float(post_s_sample_mean))
 
     sampled_mean = (
         float(np.mean(np.asarray(sample_means, dtype=float)))
         if sample_means
+        else None
+    )
+    sampled_post_s_mean = (
+        float(np.mean(np.asarray(post_s_sample_means, dtype=float)))
+        if post_s_sample_means
         else None
     )
     return {
@@ -641,8 +623,8 @@ def _compute_magnetization_metrics(
         ),
         "post_s_magnetization_abs_diff": (
             None
-            if observed_mean is None or sampled_mean is None
-            else abs(float(observed_mean) - float(sampled_mean))
+            if observed_post_s_mean is None or sampled_post_s_mean is None
+            else abs(float(observed_post_s_mean) - float(sampled_post_s_mean))
         ),
     }
 

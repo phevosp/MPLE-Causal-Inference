@@ -318,8 +318,6 @@ def _simulate_panel(
     z_sampler,
     s: int = 0,
     e: int | None = None,
-    beta_mask_pre_s: bool = False,
-    beta_mask_post_e: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     x_0 = np.asarray(x_0, dtype=float)
     z_0 = np.asarray(z_0, dtype=float)
@@ -343,11 +341,6 @@ def _simulate_panel(
         z_curr = np.asarray(z_sampler(t, x_prev, z_prev), dtype=float)
         if z_curr.shape != (n_nodes,):
             raise ValueError("Each sampled z_t must have shape (N,).")
-        beta_active = np.ones(n_nodes, dtype=float)
-        if bool(beta_mask_pre_s) and t < int(s):
-            beta_active.fill(0.0)
-        if bool(beta_mask_post_e) and t >= int(resolved_e):
-            beta_active.fill(0.0)
         x_curr = sample_x_t_with_parameters(
             x_prev=x_prev,
             z_curr=z_curr,
@@ -357,7 +350,7 @@ def _simulate_panel(
             interaction_matrix=interaction_matrix,
             rng=rng,
             gibbs_sweeps=int(gibbs_sweeps),
-            beta_active=beta_active,
+            beta_active=None,
         )
         z[t, :] = z_curr
         x[t, :] = x_curr
@@ -377,8 +370,6 @@ def simulate_outcomes_given_fixed_interventions(
     gibbs_sweeps: int,
     s: int = 0,
     e: int | None = None,
-    beta_mask_pre_s: bool = False,
-    beta_mask_post_e: bool = False,
 ) -> np.ndarray:
     z = np.asarray(z, dtype=float)
     field_matrix = np.asarray(field_matrix, dtype=float)
@@ -396,8 +387,6 @@ def simulate_outcomes_given_fixed_interventions(
         z_sampler=lambda t, _x_prev, _z_prev: z[t, :],
         s=int(s),
         e=e,
-        beta_mask_pre_s=bool(beta_mask_pre_s),
-        beta_mask_post_e=bool(beta_mask_post_e),
     )
     return x
 

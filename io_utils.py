@@ -55,6 +55,13 @@ def load_gamma_matrix(data_folder: str | Path):
     raise FileNotFoundError(f"Missing gamma matrix artifact in {data_path}.")
 
 
+def save_loss_mask(path: str | Path, loss_mask: np.ndarray) -> Path:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(io_path(output_path), np.asarray(loss_mask, dtype=bool))
+    return output_path
+
+
 def _as_float(value: object) -> float | None:
     if value in (None, ""):
         return None
