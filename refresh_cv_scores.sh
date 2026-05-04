@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8G
-#SBATCH --time=00:30:00
+#SBATCH --time=04:00:00
 #SBATCH --output=logs/refresh_cv_scores_%j.log
 #SBATCH --error=logs/refresh_cv_scores_%j.log
 
@@ -31,7 +31,7 @@ echo "Execution mode: $EXECUTION_MODE"
 echo "Job ID: $SLURM_JOB_ID"
 echo ""
 
-python -u run_cv_folds.py \
+pixi run python -u run_cv_folds.py \
     --refresh_scores \
     --cv_requests_path "$CV_REQUESTS_PATH" \
     --execution_mode "$EXECUTION_MODE"
