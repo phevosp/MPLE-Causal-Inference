@@ -1,0 +1,34 @@
+experiment_name: outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+run_name: default
+run_slug: default
+source_type: fit
+source_name: alternating_rank_5_uv_5_e2_beta_mask_xi_zero
+source_slug: fit_alternating_rank_5_uv_5_e2_beta_mask_xi_zero
+intervention_source: observed_experiment
+intervention_name: observed_experiment
+intervention_slug: observed_experiment
+latent_rank: 5
+num_samples: 16
+gibbs_sweeps: 40
+seed: 0
+seed_strategy: blake2b(base_seed, run_slug, target identity, sample_index)
+s: 50
+num_units: 3014
+num_time_steps: 115
+summary:
+  s: 50
+  mean_abs_zscore: 34.723024682310395
+  max_abs_zscore: 94.5179778394714
+  coverage_rate: 0.1
+  num_statistics: 10
+  overall_mean_abs_error: 0.022767303309194797
+  post_intervention_mean_abs_error: 0.011555050788627397
+  unit_mean_abs_error_mean: 0.03373640402758143
+  unit_mean_rmse: 0.04146080000630482
+  unit_mean_max_abs_error: 0.12173913043478257
+  unit_mean_95_interval_coverage_rate: 0.9767750497677505
+  time_mean_abs_error_mean: 0.027907807045382427
+  time_mean_rmse: 0.03672488104915954
+  time_mean_max_abs_error: 0.1153367617783676
+  time_mean_95_interval_coverage_rate: 0.4956521739130435
