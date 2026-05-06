@@ -171,11 +171,11 @@ def model_selection_requests_path_for_spec(
         cv_spec_path,
         execution_mode=execution_mode,
     )
-    requests_name = (
-        CV_REQUESTS_NAME
-        if _normalize_execution_mode(execution_mode) == EXECUTION_MODE_CV
-        else VALIDATION_REQUESTS_NAME
-    )
+    # Derive requests name from manifest name by replacing "cv_manifest" or "validation_manifest"
+    manifest_name = manifest_path.stem  # e.g., "cv_manifest" or "cv_manifest_xi_zero"
+    prefix = "cv" if _normalize_execution_mode(execution_mode) == EXECUTION_MODE_CV else "validation"
+    manifest_prefix = "cv_manifest" if "cv_manifest" in manifest_name else "validation_manifest"
+    requests_name = manifest_name.replace(manifest_prefix, f"{prefix}_requests") + ".csv"
     return manifest_path.with_name(requests_name)
 
 
