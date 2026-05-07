@@ -1,0 +1,22 @@
+experiment_name: confounding_strong_10
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_10
+run_name: default
+run_slug: default
+source_type: fit
+source_name: base
+source_slug: fit_base
+intervention_source: saved_intervention
+intervention_name: all_ones
+intervention_slug: all_ones
+latent_rank: 0
+num_samples: 8
+gibbs_sweeps: 100
+seed: 0
+seed_strategy: blake2b(base_seed, run_slug, target identity, sample_index)
+s: 0
+num_units: 500
+num_time_steps: 50
+summary:
+  s: 0
+  num_samples: 8
+  num_units: 500

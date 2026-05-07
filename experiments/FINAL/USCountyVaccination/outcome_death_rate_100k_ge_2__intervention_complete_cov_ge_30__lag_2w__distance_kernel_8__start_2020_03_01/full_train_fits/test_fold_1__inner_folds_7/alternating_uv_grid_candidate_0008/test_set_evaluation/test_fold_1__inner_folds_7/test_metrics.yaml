@@ -1,0 +1,566 @@
+fit_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/full_train_fits/test_fold_1__inner_folds_7/alternating_uv_grid_candidate_0008
+fit_name: alternating_uv_grid_candidate_0008
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+split_source: validation_test_splits
+outer_num_folds: 6
+test_fold_id: 1
+inner_num_folds: 7
+sampling:
+  num_samples: 8
+  gibbs_sweeps: 100
+  seed: 0
+split_output_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/validation_test_splits/test_fold_1__inner_folds_7
+split_metadata:
+  experiment_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+  output_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/validation_test_splits/test_fold_1__inner_folds_7
+  outer_num_folds: 6
+  test_fold_id: 1
+  seed: 0
+  recursive: false
+  contiguous: false
+  tolerance: 1.0e-12
+  role_code_map:
+    training: 0
+    separator: 1
+    validation: 2
+  outer_spatial_partition_metadata:
+    experiment_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+    num_folds: 6
+    seed: 0
+    partitioner: pymetis
+    pymetis_seed_supported: false
+    requested_seed: 0
+    gamma_artifact_kind: sparse_npz
+    gamma_validation:
+      passed: true
+      tolerance: 1.0e-12
+      max_symmetry_violation: 0.0
+      max_abs_diagonal: 0.0
+    graph_preprocessing:
+      support_threshold: 1.0e-12
+      interpreted_as_unweighted_support_graph: true
+      symmetry_enforced_via_validation_only: true
+      zero_diagonal_enforced_via_validation_only: true
+    metis:
+      mode: kway
+      contiguous: false
+      reported_cutcount: 416
+    metrics:
+      num_vertices: 3014
+      num_edges: 13073
+      partition_sizes:
+      - 487
+      - 501
+      - 498
+      - 508
+      - 507
+      - 513
+      cut_edge_count: 416
+      separator_sizes:
+      - 33
+      - 60
+      - 78
+      - 47
+      - 67
+      - 94
+      separator_union_vertex_count: 360
+      separator_union_vertex_fraction: 0.11944260119442601
+      total_separator_memberships: 379
+      partition_size_mean: 502.3333333333333
+      partition_size_min: 487
+      partition_size_max: 513
+      partition_size_std: 8.399735445569434
+      max_relative_deviation_from_mean: 0.030524220305242166
+  outer_spatiotemporal_metadata:
+    experiment_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+    num_cv_folds: 6
+    num_vertices: 3014
+    num_time_steps: 115
+    time_block_sizes:
+    - 20
+    - 19
+    - 19
+    - 19
+    - 19
+    - 19
+    transition_time_indices:
+    - 20
+    - 39
+    - 58
+    - 77
+    - 96
+    validation_partition_ids_by_fold_block:
+    - - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+    - - 6
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+    - - 5
+      - 6
+      - 1
+      - 2
+      - 3
+      - 4
+    - - 4
+      - 5
+      - 6
+      - 1
+      - 2
+      - 3
+    - - 3
+      - 4
+      - 5
+      - 6
+      - 1
+      - 2
+    - - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 1
+    time_source: time_index_csv
+    minimum_supported_time_steps: 11
+    time_block_rule:
+      minimum_block_sizes:
+      - 1
+      - 2
+      - 2
+      - 2
+      - 2
+      - 2
+      transition_step_location: first_step_of_next_block
+      wraparound_transition: false
+    validation_schedule:
+    - - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+    - - 6
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+    - - 5
+      - 6
+      - 1
+      - 2
+      - 3
+      - 4
+    - - 4
+      - 5
+      - 6
+      - 1
+      - 2
+      - 3
+    - - 3
+      - 4
+      - 5
+      - 6
+      - 1
+      - 2
+    - - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 1
+    time_blocks:
+      sizes:
+      - 20
+      - 19
+      - 19
+      - 19
+      - 19
+      - 19
+      start_indices:
+      - 0
+      - 20
+      - 39
+      - 58
+      - 77
+      - 96
+      end_indices:
+      - 19
+      - 38
+      - 57
+      - 76
+      - 95
+      - 114
+      transition_time_indices:
+      - 20
+      - 39
+      - 58
+      - 77
+      - 96
+    role_codes:
+      training: 0
+      separator: 1
+      validation: 2
+    tensor_shape:
+    - 6
+    - 115
+    - 3014
+    validation_assignments_by_fold:
+    - 55226
+    - 55278
+    - 55266
+    - 55268
+    - 55248
+    - 55254
+    separator_assignments_by_fold:
+    - 12179
+    - 12252
+    - 12217
+    - 12187
+    - 12249
+    - 12226
+    training_assignments_by_fold:
+    - 279205
+    - 279080
+    - 279127
+    - 279155
+    - 279113
+    - 279130
+    validation_empty_on_transition_steps: true
+    role_code_map:
+      training: 0
+      separator: 1
+      validation: 2
+    coverage_counts:
+      num_folds: 6
+      num_vertices: 3014
+      num_time_steps: 115
+      total_assignment_slots_per_vertex: 690
+      validation_count_min: 110
+      validation_count_mean: 110.0
+      validation_count_max: 110
+      separator_count_min: 10
+      separator_count_mean: 24.323158593231586
+      separator_count_max: 240
+      training_count_min: 340
+      training_count_mean: 555.6768414067684
+      training_count_max: 570
+      num_vertices_with_zero_validation_count: 0
+      num_vertices_with_zero_training_count: 0
+      num_vertices_with_validation_count_lt_2: 0
+      num_vertices_with_training_count_lt_2: 0
+  outer_markov_blanket_summary:
+    blanket_validation_passed: true
+    num_folds: 6
+    num_vertices: 3014
+    num_time_steps: 115
+    spatial_violation_edge_count: 0
+    temporal_violation_edge_count: 0
+    total_violation_count: 0
+    num_folds_with_any_violation: 0
+    violations_by_fold:
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    spatial_violations_by_fold:
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    temporal_violations_by_fold:
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    validation_rule:
+      graph_scope: full_spatiotemporal
+      spatial_rule: no_same_time_gamma_edge_between_validation_and_training
+      temporal_rule: no_adjacent_time_self_edge_between_validation_and_training
+    role_code_map:
+      training: 0
+      separator: 1
+      validation: 2
+  time_block_ids:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 2
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 3
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 4
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  - 6
+  is_transition_step:
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - true
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - true
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - true
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - true
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - true
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  - false
+  num_training_slots: 279205
+  num_separator_slots: 12179
+  num_test_slots: 55226
+training_loss: 0.39359087323667646
+num_training_slots: 279205
+test_loss: 0.5242144263255035
+test_brier_score: 0.1618875091091344
+test_ece: 0.05912380113663124
+num_test_slots: 55226
+post_s_test_loss: 0.4957792564391653
+post_s_test_brier_score: 0.1623026709322632
+post_s_test_ece: 0.029315208580489395
+num_post_s_test_slots: 31488
+test_mean_magnetization_abs_diff: 0.01583945967479089
+test_observed_mean_magnetization: -0.3122080179625539
+test_sampled_mean_magnetization_mean: -0.296368558287763
+post_s_test_mean_magnetization_abs_diff: 0.0020325203252032353
+post_s_test_observed_mean_magnetization: -0.20642784552845528
+post_s_test_sampled_mean_magnetization_mean: -0.2084603658536585
+test_loss_treated: 0.4776846428033704
+test_brier_score_treated: 0.15572296892776946
+test_ece_treated: 0.026388990836882235
+num_test_slots_treated: 20078
+test_mean_magnetization_abs_diff_treated: 0.005416376133080991
+post_s_test_loss_treated: 0.4776846428033704
+post_s_test_brier_score_treated: 0.15572296892776946
+post_s_test_ece_treated: 0.026388990836882235
+post_s_test_mean_magnetization_abs_diff_treated: 0.005416376133080991
+num_post_s_test_slots_treated: 20078
+test_loss_untreated: 0.5507941746342947
+test_brier_score_untreated: 0.165408950948256
+test_ece_untreated: 0.07782328677445868
+num_test_slots_untreated: 35148
+test_mean_magnetization_abs_diff_untreated: 0.016089108910891048
+post_s_test_loss_untreated: 0.5276200673576132
+post_s_test_brier_score_untreated: 0.1738808704805739
+post_s_test_ece_untreated: 0.03697048171547954
+post_s_test_mean_magnetization_abs_diff_untreated: 0.03271253286590711
+num_post_s_test_slots_untreated: 11410

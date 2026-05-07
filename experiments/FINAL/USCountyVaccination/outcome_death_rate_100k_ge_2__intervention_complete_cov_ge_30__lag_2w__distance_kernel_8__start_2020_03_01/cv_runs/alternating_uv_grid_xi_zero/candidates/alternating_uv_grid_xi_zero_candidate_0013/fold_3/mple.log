@@ -1,0 +1,55 @@
+2026-05-06 02:45:52 | INFO | Loading data...
+2026-05-06 02:45:52 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/panel_data.npz
+2026-05-06 02:45:52 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/x_0.npy
+2026-05-06 02:45:52 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/alternating_uv_grid_xi_zero/candidates/alternating_uv_grid_xi_zero_candidate_0013/fold_3/fit_realized_config.yaml
+2026-05-06 02:45:52 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+2026-05-06 02:45:52 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+2026-05-06 02:45:52 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/alternating_uv_grid_xi_zero/candidates/alternating_uv_grid_xi_zero_candidate_0013/fold_3/loss_mask.npy
+2026-05-06 02:45:52 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-05-06 02:45:52 | INFO | Configured latent rank: 8
+2026-05-06 02:45:52 | INFO | Using a fixed known graph with scalar xi.
+2026-05-06 02:45:52 | INFO | Fit-time hard bounds active: False
+2026-05-06 02:45:52 | INFO | Fixed scalar parameters: {'xi': 0.0}
+2026-05-06 02:45:52 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-05-06 02:45:52 | INFO | Beta mask before s: True with s=50
+2026-05-06 02:45:52 | INFO | Beta mask after e: True with e=115
+2026-05-06 02:45:52 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-05-06 02:45:52 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.001, v_column_l2_max=1.0, proximal_lr=1.0
+2026-05-06 02:45:52 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.672958 | initial_penalized=0.672958
+2026-05-06 02:45:53 | INFO | Alternating low-rank iter 0 | Loss: 0.469130 | Penalized: 0.469203
+2026-05-06 02:46:06 | INFO | Alternating low-rank iter 100 | Loss: 0.339643 | Penalized: 0.343534
+2026-05-06 02:46:20 | INFO | Alternating low-rank iter 200 | Loss: 0.334847 | Penalized: 0.340113
+2026-05-06 02:46:34 | INFO | Alternating low-rank iter 300 | Loss: 0.333356 | Penalized: 0.339286
+2026-05-06 02:46:47 | INFO | Alternating low-rank iter 400 | Loss: 0.332660 | Penalized: 0.338946
+2026-05-06 02:47:01 | INFO | Alternating low-rank iter 500 | Loss: 0.332273 | Penalized: 0.338766
+2026-05-06 02:47:15 | INFO | Alternating low-rank iter 600 | Loss: 0.332033 | Penalized: 0.338654
+2026-05-06 02:47:28 | INFO | Alternating low-rank iter 700 | Loss: 0.331873 | Penalized: 0.338580
+2026-05-06 02:47:42 | INFO | Alternating low-rank iter 800 | Loss: 0.331762 | Penalized: 0.338529
+2026-05-06 02:47:56 | INFO | Alternating low-rank iter 900 | Loss: 0.331683 | Penalized: 0.338492
+2026-05-06 02:48:09 | INFO | Alternating low-rank iter 1000 | Loss: 0.331626 | Penalized: 0.338465
+2026-05-06 02:48:23 | INFO | Alternating low-rank iter 1100 | Loss: 0.331582 | Penalized: 0.338444
+2026-05-06 02:48:37 | INFO | Alternating low-rank iter 1200 | Loss: 0.331548 | Penalized: 0.338427
+2026-05-06 02:48:50 | INFO | Alternating low-rank iter 1300 | Loss: 0.331520 | Penalized: 0.338413
+2026-05-06 02:49:04 | INFO | Alternating low-rank iter 1400 | Loss: 0.331496 | Penalized: 0.338401
+2026-05-06 02:49:18 | INFO | Alternating low-rank iter 1500 | Loss: 0.331474 | Penalized: 0.338389
+2026-05-06 02:49:31 | INFO | Alternating low-rank iter 1600 | Loss: 0.331454 | Penalized: 0.338379
+2026-05-06 02:49:31 | INFO | Done fitting.
+2026-05-06 02:49:31 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-05-06 02:49:31 | INFO | Best optimizer start: 1 / 1
+2026-05-06 02:49:31 | INFO | Final Loss: 0.331454
+2026-05-06 02:49:31 | INFO | Estimated Parameters:
+2026-05-06 02:49:31 | INFO |   beta: -0.0433
+2026-05-06 02:49:31 | INFO |   xi: 0.0000
+2026-05-06 02:49:31 | INFO |   eta: -0.1094
+2026-05-06 02:49:31 | INFO | Alternating low-rank optimizer diagnostics:
+2026-05-06 02:49:31 | INFO |   penalized_objective: 0.338379
+2026-05-06 02:49:31 | INFO |   mple_loss_without_penalty: 0.331454
+2026-05-06 02:49:31 | INFO |   lambda_uv_ridge: 0.001000
+2026-05-06 02:49:31 | INFO |   u_frobenius_norm: 1271.066919
+2026-05-06 02:49:31 | INFO |   v_frobenius_norm: 2.828427
+2026-05-06 02:49:31 | INFO |   effective_rank: 8.000000
+2026-05-06 02:49:31 | INFO | Field and interaction diagnostics:
+2026-05-06 02:49:31 | INFO |   estimated_field_max_abs_entry: 26.231828
+2026-05-06 02:49:31 | INFO |   estimated_field_rank: 8.000000
+2026-05-06 02:49:32 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/alternating_uv_grid_xi_zero/candidates/alternating_uv_grid_xi_zero_candidate_0013/fold_3/mple_summary.csv
+2026-05-06 02:49:32 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/USCountyVaccination/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/alternating_uv_grid_xi_zero/candidates/alternating_uv_grid_xi_zero_candidate_0013/fold_3/mple.log

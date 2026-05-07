@@ -1,6 +1,6 @@
 base:
   cv_root_name: cv_runs
-  cv_manifest_path: experiments/HybridExperiments_r5_c1_v2/cv_manifest.csv
+  cv_manifest_path: experiments/HybridExperiments_r5_c1_v2/cv_manifest_xi_zero.csv
   num_folds: 7  # Number of folds for spatiotemporal CV; can be overridden per search
   optimizer:
     steps: 2000
@@ -15,11 +15,12 @@ base:
   lambda_uv_ridge: 0.0
   v_column_l2_max: 1.0
   estimation:
-    fixed_scalar_params: {}
+    fixed_scalar_params:
+      xi: 0.0
     beta_mask_pre_s: true
     beta_mask_post_e: true
 
 searches:
-  - name: alternating_uv_grid
+  - name: xi_zero
     grid:
       lambda_uv_ridge: [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]

@@ -1,0 +1,11 @@
+interventions:
+  - name: observed_experiment
+    source_kind: observed_experiment
+
+  - name: no_intervention
+    source_kind: full_on
+    activation_scope: no_time
+
+  - name: all_intervention_from_s
+    source_kind: full_on
+    activation_scope: from_s

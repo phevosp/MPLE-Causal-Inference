@@ -23,7 +23,7 @@ searches:
   - name: alternating_uv_grid
     split_source: validation_test_splits
     outer_num_folds: 6
-    test_fold_id: 0
+    test_fold_id: 1
     grid:
       latent_rank: [3, 5, 8]
       lambda_uv_ridge: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]

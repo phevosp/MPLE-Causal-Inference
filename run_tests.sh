@@ -61,14 +61,14 @@ CV_REPORT_JOB_NAME="${CV_REPORT_JOB_NAME:-cv-refresh}"
 FIT_REPORT_JOB_NAME="${FIT_REPORT_JOB_NAME:-fit-refresh}"
 POSTERIOR_PREDICTIVE_REPORT_JOB_NAME="${POSTERIOR_PREDICTIVE_REPORT_JOB_NAME:-posterior-predictive-report}"
 
-resolve_generation_manifest_path() {
-  pixi run python - <<'PY' "${GENERATION_SPEC_PATH}"
-import sys
-from run_generation_pipeline import generation_manifest_path_for_spec
+# resolve_generation_manifest_path() {
+#   pixi run python - <<'PY' "${GENERATION_SPEC_PATH}"
+# import sys
+# from run_generation_pipeline import generation_manifest_path_for_spec
 
-print(generation_manifest_path_for_spec(sys.argv[1]))
-PY
-}
+# print(generation_manifest_path_for_spec(sys.argv[1]))
+# PY
+# }
 
 resolve_fit_manifest_path() {
   pixi run python - <<'PY' "${FITS_SPEC_PATH}"
@@ -94,7 +94,7 @@ for value in values:
 PY
 }
 
-GEN_MANIFEST="${GEN_MANIFEST:-$(resolve_generation_manifest_path)}"
+# GEN_MANIFEST="${GEN_MANIFEST:-$(resolve_generation_manifest_path)}"
 FIT_MANIFEST="${FIT_MANIFEST:-$(resolve_fit_manifest_path)}"
 
 get_job_state() {
@@ -138,14 +138,14 @@ wait_for_job() {
   done
 }
 
-submit_generation_stage() {
-  GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH}" \
-  GENERATION_OVERWRITE="${GENERATION_OVERWRITE}" \
-  SBATCH_BIN="${SBATCH_BIN}" \
-  WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT}" \
-  REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME}" \
-  bash "${GENERATION_SUBMITTER}"
-}
+# submit_generation_stage() {
+#   GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH}" \
+#   GENERATION_OVERWRITE="${GENERATION_OVERWRITE}" \
+#   SBATCH_BIN="${SBATCH_BIN}" \
+#   WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT}" \
+#   REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME}" \
+#   bash "${GENERATION_SUBMITTER}"
+# }
 
 build_cv_folds_stage() {
   if [[ -n "${BUILD_CV_FOLDS_SCRIPT:-}" ]]; then
@@ -235,9 +235,10 @@ run_requested_model_selection_modes() {
   esac
 }
 
-echo "Submitting generation jobs..."
-generation_barrier_job_id="$(submit_generation_stage)"
-wait_for_job "${generation_barrier_job_id}" "Generation"
+# echo "Submitting generation jobs..."
+# generation_barrier_job_id="$(submit_generation_stage)"
+# wait_for_job "${generation_barrier_job_id}" "Generation"
+GEN_MANIFEST="experiments/FINAL/USCountyVaccination/generation_manifest.csv"
 
 echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"

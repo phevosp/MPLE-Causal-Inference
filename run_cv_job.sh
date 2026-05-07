@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=cv
-#SBATCH --time=08:00:00
+#SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G

@@ -1,0 +1,33 @@
+2026-05-06 01:49:15 | INFO | Loading data...
+2026-05-06 01:49:15 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_6/panel_data.npz
+2026-05-06 01:49:15 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_6/x_0.npy
+2026-05-06 01:49:15 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_6/fits/base/fit_realized_config.yaml
+2026-05-06 01:49:15 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_6
+2026-05-06 01:49:15 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_6
+2026-05-06 01:49:15 | INFO | Configured optimizer mode: no_external_field
+2026-05-06 01:49:15 | INFO | Configured latent rank: 0
+2026-05-06 01:49:15 | INFO | Using a fixed known graph with scalar xi.
+2026-05-06 01:49:15 | INFO | Fit-time hard bounds active: False
+2026-05-06 01:49:15 | INFO | Fixed scalar parameters: {}
+2026-05-06 01:49:15 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-05-06 01:49:15 | INFO | Beta mask before s: False with s=0
+2026-05-06 01:49:15 | INFO | Beta mask after e: False with e=10
+2026-05-06 01:49:15 | INFO | Ignoring v_column_l2_max=1.0 for optimizer_mode=no_external_field
+2026-05-06 01:49:15 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-05-06 01:49:15 | INFO | Done fitting.
+2026-05-06 01:49:15 | INFO | Optimizer status: Optimization terminated successfully.
+2026-05-06 01:49:15 | INFO | Best optimizer start: 1 / 1
+2026-05-06 01:49:15 | INFO | Final Loss: 0.653029
+2026-05-06 01:49:15 | INFO | Estimated vs True Parameters:
+2026-05-06 01:49:15 | INFO |   beta: -0.1552 (True: -0.3000) | SQE: 0.020976
+2026-05-06 01:49:15 | INFO |   xi: 0.7731 (True: 0.8000) | SQE: 0.000723
+2026-05-06 01:49:15 | INFO |   eta: 0.2004 (True: 0.3000) | SQE: 0.009916
+2026-05-06 01:49:15 | INFO | Field and interaction diagnostics:
+2026-05-06 01:49:15 | INFO |   field_rmse: 0.750000
+2026-05-06 01:49:15 | INFO |   interaction_fro_error: 0.111199
+2026-05-06 01:49:15 | INFO |   estimated_field_max_abs_entry: 0.000000
+2026-05-06 01:49:15 | INFO |   estimated_field_rank: 0.000000
+2026-05-06 01:49:15 | INFO |   true_field_max_abs_entry: 4.927885
+2026-05-06 01:49:15 | INFO |   true_field_rank: 3.000000
+2026-05-06 01:49:15 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_6/fits/base/mple_summary.csv
+2026-05-06 01:49:15 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Synthetic/confounding_strong_6/fits/base/mple.log

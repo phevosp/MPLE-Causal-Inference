@@ -1,0 +1,67 @@
+2026-05-06 02:04:53 | INFO | Loading data...
+2026-05-06 02:04:53 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Hybrid/hybrid_1/panel_data.npz
+2026-05-06 02:04:53 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Hybrid/hybrid_1/x_0.npy
+2026-05-06 02:04:53 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Hybrid/hybrid_1/fits/alternating_rank_5_uv_5_e2_beta_mask/fit_realized_config.yaml
+2026-05-06 02:04:53 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Hybrid/hybrid_1
+2026-05-06 02:04:53 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Hybrid/hybrid_1
+2026-05-06 02:04:53 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-05-06 02:04:53 | INFO | Configured latent rank: 5
+2026-05-06 02:04:53 | INFO | Using a fixed known graph with scalar xi.
+2026-05-06 02:04:53 | INFO | Fit-time hard bounds active: False
+2026-05-06 02:04:53 | INFO | Fixed scalar parameters: {}
+2026-05-06 02:04:53 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-05-06 02:04:53 | INFO | Beta mask before s: True with s=50
+2026-05-06 02:04:53 | INFO | Beta mask after e: True with e=115
+2026-05-06 02:04:53 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-05-06 02:04:53 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=5, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.05, v_column_l2_max=1.0, proximal_lr=1.0
+2026-05-06 02:04:53 | INFO | Alternating low-rank start 1/5 | seed=0 | initial_loss=0.772190 | initial_penalized=0.772191
+2026-05-06 02:04:53 | INFO | Alternating low-rank iter 0 | Loss: 0.583826 | Penalized: 0.587648
+2026-05-06 02:05:03 | INFO | Alternating low-rank iter 100 | Loss: 0.543356 | Penalized: 0.552626
+2026-05-06 02:05:12 | INFO | Alternating low-rank iter 200 | Loss: 0.543329 | Penalized: 0.552602
+2026-05-06 02:05:22 | INFO | Alternating low-rank iter 300 | Loss: 0.543329 | Penalized: 0.552602
+2026-05-06 02:05:31 | INFO | Alternating low-rank start 2/5 | seed=1 | initial_loss=0.684267 | initial_penalized=0.684268
+2026-05-06 02:05:31 | INFO | Alternating low-rank iter 0 | Loss: 0.585997 | Penalized: 0.589288
+2026-05-06 02:05:41 | INFO | Alternating low-rank iter 100 | Loss: 0.543354 | Penalized: 0.552668
+2026-05-06 02:05:50 | INFO | Alternating low-rank iter 200 | Loss: 0.543329 | Penalized: 0.552618
+2026-05-06 02:06:00 | INFO | Alternating low-rank iter 300 | Loss: 0.543332 | Penalized: 0.552605
+2026-05-06 02:06:10 | INFO | Alternating low-rank iter 400 | Loss: 0.543332 | Penalized: 0.552602
+2026-05-06 02:06:19 | INFO | Alternating low-rank iter 500 | Loss: 0.543332 | Penalized: 0.552602
+2026-05-06 02:06:23 | INFO | Alternating low-rank start 3/5 | seed=2 | initial_loss=0.705285 | initial_penalized=0.705286
+2026-05-06 02:06:23 | INFO | Alternating low-rank iter 0 | Loss: 0.583714 | Penalized: 0.587020
+2026-05-06 02:06:33 | INFO | Alternating low-rank iter 100 | Loss: 0.543354 | Penalized: 0.552627
+2026-05-06 02:06:43 | INFO | Alternating low-rank iter 200 | Loss: 0.543333 | Penalized: 0.552602
+2026-05-06 02:06:52 | INFO | Alternating low-rank iter 300 | Loss: 0.543331 | Penalized: 0.552602
+2026-05-06 02:06:55 | INFO | Alternating low-rank start 4/5 | seed=3 | initial_loss=0.653749 | initial_penalized=0.653750
+2026-05-06 02:06:55 | INFO | Alternating low-rank iter 0 | Loss: 0.575726 | Penalized: 0.579836
+2026-05-06 02:07:04 | INFO | Alternating low-rank iter 100 | Loss: 0.543353 | Penalized: 0.552617
+2026-05-06 02:07:14 | INFO | Alternating low-rank iter 200 | Loss: 0.543334 | Penalized: 0.552602
+2026-05-06 02:07:24 | INFO | Alternating low-rank iter 300 | Loss: 0.543332 | Penalized: 0.552602
+2026-05-06 02:07:27 | INFO | Alternating low-rank start 5/5 | seed=4 | initial_loss=0.726110 | initial_penalized=0.726111
+2026-05-06 02:07:27 | INFO | Alternating low-rank iter 0 | Loss: 0.598449 | Penalized: 0.601705
+2026-05-06 02:07:37 | INFO | Alternating low-rank iter 100 | Loss: 0.543359 | Penalized: 0.552637
+2026-05-06 02:07:47 | INFO | Alternating low-rank iter 200 | Loss: 0.543330 | Penalized: 0.552602
+2026-05-06 02:07:56 | INFO | Alternating low-rank iter 300 | Loss: 0.543330 | Penalized: 0.552602
+2026-05-06 02:07:59 | INFO | Done fitting.
+2026-05-06 02:07:59 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-05-06 02:07:59 | INFO | Best optimizer start: 3 / 5
+2026-05-06 02:07:59 | INFO | Final Loss: 0.543331
+2026-05-06 02:07:59 | INFO | Estimated vs True Parameters:
+2026-05-06 02:07:59 | INFO |   beta: -0.0766 (True: -0.3000) | SQE: 0.049899
+2026-05-06 02:07:59 | INFO |   xi: 0.8827 (True: 0.8000) | SQE: 0.006835
+2026-05-06 02:07:59 | INFO |   eta: 0.3006 (True: 0.3000) | SQE: 0.000000
+2026-05-06 02:07:59 | INFO | Alternating low-rank optimizer diagnostics:
+2026-05-06 02:07:59 | INFO |   penalized_objective: 0.552602
+2026-05-06 02:07:59 | INFO |   mple_loss_without_penalty: 0.543331
+2026-05-06 02:07:59 | INFO |   lambda_uv_ridge: 0.050000
+2026-05-06 02:07:59 | INFO |   u_frobenius_norm: 253.497650
+2026-05-06 02:07:59 | INFO |   v_frobenius_norm: 2.236068
+2026-05-06 02:07:59 | INFO |   effective_rank: 5.000000
+2026-05-06 02:07:59 | INFO | Field and interaction diagnostics:
+2026-05-06 02:07:59 | INFO |   field_rmse: 0.358727
+2026-05-06 02:07:59 | INFO |   interaction_fro_error: 0.914699
+2026-05-06 02:07:59 | INFO |   estimated_field_max_abs_entry: 2.817310
+2026-05-06 02:07:59 | INFO |   estimated_field_rank: 5.000000
+2026-05-06 02:07:59 | INFO |   true_field_max_abs_entry: 3.005890
+2026-05-06 02:07:59 | INFO |   true_field_rank: 5.000000
+2026-05-06 02:07:59 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Hybrid/hybrid_1/fits/alternating_rank_5_uv_5_e2_beta_mask/mple_summary.csv
+2026-05-06 02:07:59 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/FINAL/Hybrid/hybrid_1/fits/alternating_rank_5_uv_5_e2_beta_mask/mple.log
