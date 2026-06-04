@@ -10,7 +10,8 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.io_utils import io_path, path_exists, save_loss_mask
+from utils.io_utils import save_loss_mask
+from utils.t0_path_utils import io_path, path_exists
 from utils.loading_utils import load_experiment_panel_context
 
 
@@ -87,7 +88,7 @@ def run_full_train_fit(
     output_path: str | Path | None = None,
     overwrite: bool = False,
 ) -> Path:
-    from utils.split_artifact_utils import load_outer_test_split_masks
+    from utils.t6_split_management import load_outer_test_split_masks
 
     experiment_root = Path(experiment_path).resolve()
     candidate = _load_best_candidate_from_yaml(best_candidate_path)

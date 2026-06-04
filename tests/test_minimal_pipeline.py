@@ -48,8 +48,8 @@ from data.USCountyVaccination.experiment_artifacts import (
     write_realized_network_artifact,
     write_shared_panel_artifacts,
 )
-from utils.intervention_utils import load_saved_intervention_context
-from utils.io_utils import io_path
+from utils.t6_intervention_utils import load_saved_intervention_context
+from utils.t0_path_utils import io_path
 from utils.loading_utils import (
     OutcomeParameterBundle,
     load_experiment_panel_context,

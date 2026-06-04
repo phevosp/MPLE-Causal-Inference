@@ -31,7 +31,7 @@ from common import (  # noqa: E402
     ensure_directories,
     standardize_fips,
 )
-from utils.data_utils import (  # noqa: E402
+from .data_utils import (  # noqa: E402
     build_knn_and_kernel_edges,
     build_touching_edge_list,
     count_connected_components,

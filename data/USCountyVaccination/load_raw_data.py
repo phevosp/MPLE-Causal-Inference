@@ -19,7 +19,7 @@ from common import (  # noqa: E402
     TIGER_2022_COUNTY_URL,
     ensure_directories,
 )
-from utils.data_utils import download_if_missing  # noqa: E402
+from .data_utils import download_if_missing  # noqa: E402
 
 
 NYT_COUNTY_URL = "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv"

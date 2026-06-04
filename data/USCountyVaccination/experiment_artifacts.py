@@ -32,7 +32,7 @@ from common import (  # noqa: E402
     experiment_name,
     lag_code_to_steps,
 )
-from utils.data_utils import normalize_sparse_matrix_infinity  # noqa: E402
+from .data_utils import normalize_sparse_matrix_infinity  # noqa: E402
 from utils.model_utils import ModelArtifacts, save_model_artifacts  # noqa: E402
 
 

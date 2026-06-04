@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.io_utils import io_path
+from utils.t0_path_utils import io_path
 
 
 INTERVENTION_LIBRARY_ROOT_NAME = "intervention_library"

@@ -4,7 +4,7 @@ import argparse
 import shutil
 from pathlib import Path
 
-from utils.intervention_utils import (
+from utils.t6_intervention_utils import (
     INTERVENTION_LIBRARY_ROOT_NAME,
     build_full_on_intervention,
     build_single_unit_on_intervention,

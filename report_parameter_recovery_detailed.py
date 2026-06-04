@@ -10,7 +10,8 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.io_utils import _as_float, _metric_or_inf, write_csv
+from utils.t0_csv_utils import write_csv
+from utils.io_utils import _as_float, _metric_or_inf
 from utils.model_utils import latent_field_bound_norm
 from pipeline_specs import read_csv_manifest
 

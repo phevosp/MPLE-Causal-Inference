@@ -12,7 +12,9 @@ import numpy as np
 from omegaconf import OmegaConf
 from scipy import sparse
 
-from utils.io_utils import io_path, load_gamma_matrix, write_csv
+from utils.t0_csv_utils import write_csv
+from utils.io_utils import load_gamma_matrix
+from utils.t0_path_utils import io_path
 from pipeline_specs import read_csv_manifest
 
 

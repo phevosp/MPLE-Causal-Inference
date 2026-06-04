@@ -10,8 +10,8 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-from utils.io_utils import io_path, path_exists
-from utils.split_artifact_utils import (
+from utils.t0_path_utils import io_path, path_exists
+from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
     load_outer_test_split_masks,

@@ -10,13 +10,13 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.intervention_utils import COUNTERFACTUAL_ROOT_NAME, resolve_intervention_context
+from utils.t6_intervention_utils import COUNTERFACTUAL_ROOT_NAME, resolve_intervention_context
 from utils.io_utils import (
-    io_path,
     write_counterfactual_summary_tables,
     write_observed_predictive_summary_tables,
     write_predictive_stats_tables,
 )
+from utils.t0_path_utils import io_path
 from utils.loading_utils import (
     load_experiment_panel_context,
     load_fit_parameter_bundle,

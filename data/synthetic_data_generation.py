@@ -21,14 +21,13 @@ from utils.model_utils import (
     build_synthetic_field_with_layout,
     compose_interaction_matrix,
     get_xi,
-    interaction_matrix_infinity_norm,
     leading_svd_low_rank_structure,
-    normalize_matrix_by_max_abs_entry,
     parse_synthetic_field_spec,
     parse_singular_values,
     sample_spectral_low_rank_structure,
     save_model_artifacts,
 )
+from utils.t2_normalization import interaction_matrix_infinity_norm, normalize_matrix_by_max_abs_entry
 from pipeline_specs import slugify
 
 
