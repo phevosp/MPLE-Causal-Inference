@@ -9,9 +9,10 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.io_utils import load_gamma_matrix
+from utils.t1_matrix_io import load_gamma_matrix
 from utils.t0_path_utils import first_existing_path
-from utils.model_utils import interaction_term, load_model_artifacts
+from utils.t3_interaction_matrices import interaction_term
+from utils.t3_model_artifacts import load_model_artifacts
 
 _DEGENERACY_THRESHOLD = 1e-12  # denominators below this are treated as degenerate
 

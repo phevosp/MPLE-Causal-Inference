@@ -11,8 +11,8 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from utils.t0_csv_utils import write_csv
-from utils.io_utils import _as_float, _metric_or_inf
-from utils.model_utils import latent_field_bound_norm
+from utils.t8_output_writers import _as_float, _metric_or_inf
+from utils.t3_field_operations import latent_field_bound_norm
 from pipeline_specs import read_csv_manifest
 
 

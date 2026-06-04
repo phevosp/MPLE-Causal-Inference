@@ -10,7 +10,7 @@ from utils.t6_intervention_utils import (
     build_single_unit_on_intervention,
     save_intervention_artifact,
 )
-from utils.loading_utils import load_experiment_panel_context
+from utils.t5_experiment_context import load_experiment_panel_context
 from pipeline_specs import expand_named_entries, read_csv_manifest, write_csv_manifest
 
 

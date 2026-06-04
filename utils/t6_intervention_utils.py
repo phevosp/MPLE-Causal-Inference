@@ -219,7 +219,7 @@ def resolve_intervention_context(
 ) -> InterventionContext:
     source = str(intervention_source).strip().lower()
     if source == "observed_experiment":
-        from utils.loading_utils import load_experiment_panel_context
+        from utils.t5_experiment_context import load_experiment_panel_context
 
         resolved_panel_context = (
             panel_context

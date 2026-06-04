@@ -13,19 +13,25 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from utils.model_utils import (
-    ConfoundedFieldLayout,
+from utils.t3_model_artifacts import (
     ModelArtifacts,
-    SpectralLowRankStructure,
+    save_model_artifacts,
+)
+from utils.t3_field_generation import (
+    ConfoundedFieldLayout,
     build_synthetic_field,
     build_synthetic_field_with_layout,
-    compose_interaction_matrix,
-    get_xi,
     leading_svd_low_rank_structure,
     parse_synthetic_field_spec,
     parse_singular_values,
     sample_spectral_low_rank_structure,
-    save_model_artifacts,
+    SpectralLowRankStructure,
+)
+from utils.t3_interaction_matrices import (
+    compose_interaction_matrix,
+)
+from utils.t4_scalar_parameters import (
+    get_xi,
 )
 from utils.t2_normalization import interaction_matrix_infinity_norm, normalize_matrix_by_max_abs_entry
 from pipeline_specs import slugify

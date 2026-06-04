@@ -1,27 +1,69 @@
 """Utility modules for the MPLE causal inference pipeline.
 
-Module organization:
+Organization: 9-tier hierarchical structure for clean dependency management.
 
-INFRASTRUCTURE (pure utilities with no domain dependencies):
-  - path_utils: Path resolution and file existence checks (Windows-safe I/O).
-  - config_utils: YAML configuration file loading.
-  - csv_utils: Generic CSV writing and value formatting for reports.
+TIER 0: INFRASTRUCTURE (no domain dependencies)
+  t0_path_utils: Path resolution, file existence checks (Windows-safe I/O)
+  t0_config_utils: YAML configuration file loading
+  t0_csv_utils: Generic CSV writing, value formatting for reports
 
-NUMERICAL OPERATIONS:
-  - normalization: Matrix and vector normalization (infinity norm, graph normalization).
-  - summary_statistics: Statistical summaries (quantiles, means over masks, finite-value filtering).
+TIER 1: MATRIX I/O
+  t1_matrix_io: Gamma matrix loading, loss mask saving
 
-DOMAIN DATA LOADING:
-  - io_utils: Domain-specific I/O (gamma matrix loading, loss mask saving, predictive output writers).
-  - loading_utils: Experiment panel context and parameter bundle loading/saving.
+TIER 2: NUMERICAL OPERATIONS (depends on Tier 0)
+  t2_normalization: Matrix/vector normalization, graph normalization
+  t2_summary_statistics: Statistical summaries (quantiles, means on masks, finite values)
 
-MODEL MANAGEMENT:
-  - model_utils: Model artifacts, field generation, synthetic field specs, parameter packing/unpacking.
-  - split_artifact_utils: CV and validation/test split mask management.
+TIER 3: MODEL DEFINITIONS (depends on Tier 0-2)
+  t3_model_artifacts: ModelArtifacts dataclass, artifact persistence
+  t3_interaction_matrices: Interaction matrix composition and application
+  t3_field_operations: Field composition, scaling, projection, truncation
+  t3_field_generation: Synthetic field generation and spec parsing
 
-WORKFLOWS:
-  - intervention_utils: Intervention construction and artifact management.
-  - posterior_predictive_job_utils: Posterior-predictive target resolution and manifest building.
-  - validation_metric_utils: Fold metrics, test metrics, CV result aggregation.
-  - posterior_predictive_utils: Outcome simulation and statistical reporting.
+TIER 4: PARAMETER MANAGEMENT (depends on Tier 0-3)
+  t4_scalar_parameters: Scalar parameter validation and retrieval
+  t4_parameter_packing: Theta vector packing/unpacking, parameter loading
+
+TIER 5: DOMAIN DATA LOADING (depends on Tier 0-4)
+  t5_experiment_context: Experiment panel context loading
+  t5_parameter_bundles: Parameter bundle dataclass and I/O
+
+TIER 6: WORKFLOW UTILITIES (depends on Tier 0-5)
+  t6_split_management: CV fold and validation/test split mask management
+  t6_intervention_utils: Intervention construction and artifact management
+  t6_posterior_predictive_manifest: Target resolution and fit lookup
+  t6_posterior_predictive_summary: Manifest row building and metadata
+
+TIER 7: VALIDATION & EVALUATION (depends on Tier 0-6)
+  t7_validation_metrics: Fold/test metric evaluation, Brier score, ECE
+  t7_cv_aggregation: CV fold aggregation, candidate scoring
+
+TIER 8: OUTPUT GENERATION (depends on Tier 0-7)
+  t8_posterior_predictive_sim: Outcome simulation, panel statistics
+  t8_posterior_predictive_reporting: Summary statistics reporting
+  t8_output_writers: Output table writers, formatting helpers
+
+TYPICAL IMPORT PATTERNS
+========================
+
+For model fitting (mple.py, run_fit_pipeline.py):
+  from utils.t3_model_artifacts import ModelArtifacts, load_model_artifacts
+  from utils.t4_parameter_packing import pack_theta, unpack_theta, parameter_names
+  from utils.t5_experiment_context import load_experiment_panel_context
+
+For validation (run_cv_folds.py, run_test_evaluation.py):
+  from utils.t6_split_management import load_model_selection_split_masks
+  from utils.t7_validation_metrics import evaluate_fold_metrics
+  from utils.t7_cv_aggregation import build_candidate_score_row
+
+For posterior predictive (run_posterior_predictive.py):
+  from utils.t5_parameter_bundles import load_fit_parameter_bundle
+  from utils.t6_posterior_predictive_manifest import resolve_target_pairs
+  from utils.t8_posterior_predictive_sim import simulate_outcomes_for_bundle
+  from utils.t8_output_writers import write_predictive_stats_tables
+
+For data generation (data/synthetic_data_generation.py):
+  from utils.t3_field_generation import build_synthetic_field
+  from utils.t3_model_artifacts import save_model_artifacts
+  from utils.t4_parameter_packing import load_true_parameters
 """

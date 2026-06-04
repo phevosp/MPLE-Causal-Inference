@@ -33,7 +33,7 @@ from common import (  # noqa: E402
     lag_code_to_steps,
 )
 from .data_utils import normalize_sparse_matrix_infinity  # noqa: E402
-from utils.model_utils import ModelArtifacts, save_model_artifacts  # noqa: E402
+from utils.t3_model_artifacts import ModelArtifacts, save_model_artifacts  # noqa: E402
 
 
 NON_MAINLAND_STATEFPS = frozenset({"02", "15", "60", "66", "69", "72", "78"})

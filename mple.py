@@ -20,10 +20,10 @@ from pymanopt.optimizers import ConjugateGradient
 
 from utils.t0_config_utils import load_yaml_config
 from utils.t0_csv_utils import _fmt
-from utils.io_utils import load_gamma_matrix
+from utils.t1_matrix_io import load_gamma_matrix
 from utils.t0_path_utils import first_existing_path, io_path
-from utils.loading_utils import save_estimated_parameter_bundle
-from utils.model_utils import (
+from utils.t5_parameter_bundles import save_estimated_parameter_bundle
+from utils.t3_model_artifacts import (
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     ModelArtifacts,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
@@ -31,22 +31,30 @@ from utils.model_utils import (
     OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
     build_fit_model_artifacts,
-    compose_field_matrix_from_theta,
-    compose_interaction_matrix,
-    compose_latent_field_matrix,
-    free_scalar_parameter_names,
-    interaction_effect,
-    latent_field_bound_norm,
     load_model_artifacts,
+    save_field_artifacts,
+)
+from utils.t4_scalar_parameters import (
+    free_scalar_parameter_names,
+    scalar_parameter_names,
+    validate_fixed_scalar_params,
+)
+from utils.t4_parameter_packing import (
+    compose_field_matrix_from_theta,
     pack_theta,
     parameter_names,
-    save_field_artifacts,
-    scalar_parameter_names,
     summarize_theta_for_logging,
     unpack_theta,
     uses_full_matrix_parameterization,
-    validate_fixed_scalar_params,
     with_theta_field,
+)
+from utils.t3_interaction_matrices import (
+    compose_interaction_matrix,
+    interaction_effect,
+)
+from utils.t3_field_operations import (
+    compose_latent_field_matrix,
+    latent_field_bound_norm,
 )
 
 
