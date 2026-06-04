@@ -23,8 +23,8 @@ Verify your install works end-to-end in under 2 minutes using the toy experiment
 
 ```bash
 pixi install
-pixi run quickstart-generate
-pixi run quickstart-fit
+pixi run python -u run_generation_pipeline.py --spec_path data/configs/quickstart_generation_spec.yaml
+pixi run python -u run_fit_pipeline.py --manifest_path experiments/Quickstart/generation_manifest.csv --fits_spec_path data/configs/quickstart_fits_spec.yaml
 ```
 
 Outputs land in `experiments/Quickstart/`. Once this works, proceed to the full synthetic or real-data workflows below.
@@ -40,9 +40,9 @@ All pipeline YAML specs use a `base + named entries` pattern: every named entry 
 | `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive.py`, `report_posterior_predictive.py`) |
 | `data/USCountyVaccination/experiment_configs/` | Real-data pipeline |
 
-Both directories contain identically named files (`fits_spec.yaml`, etc.) for their respective workflows. Updating fitting behavior requires editing both files independently.
+Both directories contain their own workflow specs. In `data/configs/`, the canonical example specs are `quickstart_generation_spec.yaml` and `quickstart_fits_spec.yaml`; the real-data pipeline keeps its own separate fit specs under `data/USCountyVaccination/experiment_configs/`.
 
-**Key `fits_spec.yaml` fields:**
+**Key `quickstart_fits_spec.yaml` fields:**
 
 - `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, `alternating_latent_rank`, or `concurrent_latent_rank`.
 - `latent_rank`: must be ≥ 1 for `exact_rank_manifold`, `alternating_latent_rank`, and `concurrent_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
@@ -54,7 +54,7 @@ Both directories contain identically named files (`fits_spec.yaml`, etc.) for th
 - `lambda_uv_ridge`: only active for `alternating_latent_rank` and `concurrent_latent_rank`.
 - `v_column_l2_max`: optional per-column `||v_k||_2 <= c` constraint for `alternating_latent_rank`; ignored by `concurrent_latent_rank`.
 
-**Key `generation_spec.yaml` fields:**
+**Key `quickstart_generation_spec.yaml` fields:**
 
 - `intervention.generator`: use `low_rank_probability` to sample `z` independently from a spectral low-rank probability matrix
 - `intervention.params.singular_values`: explicit singular values for the intervention low-rank generator
@@ -86,10 +86,10 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 
 | Workflow | Entry points | Main inputs | Main outputs |
 | --- | --- | --- | --- |
-| Synthetic and hybrid generation | `run_generation_pipeline.py`, `submit_generation_jobs.sh` | `data/configs/generation_spec.yaml` | `generation_requests.csv`, `generation_manifest.csv`, experiment folders |
-| MPLE variant fitting | `run_fit_pipeline.py`, `submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
+| Synthetic and hybrid generation | `run_generation_pipeline.py`, `bash_scripts/submit_generation_jobs.sh` | `data/configs/quickstart_generation_spec.yaml` | `generation_requests.csv`, `generation_manifest.csv`, experiment folders |
+| MPLE variant fitting | `run_fit_pipeline.py`, `bash_scripts/submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/quickstart_fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
 | Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
-| Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `report_posterior_predictive.py`, `submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
+| Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `report_posterior_predictive.py`, `bash_scripts/submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
 | CV fold construction for `U,V` regularizer tuning | `build_cv_folds.py` | `generation_manifest.csv` for experiments with `Gamma`, `panel_data.npz`, and optional `node_index.csv` / `time_index.csv` | `cv_folds/folds_5/` spatial partitions plus spatiotemporal fold artifacts |
 | Cross-validated MPLE hyperparameter search | `run_cv_folds.py` | `generation_manifest.csv`, prebuilt `cv_folds/folds_5/`, `data/configs/cv_spec.yaml` | `cv_requests.csv`, `cv_manifest.csv`, per-search candidate scores and fold fits |
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census geography sources | cached raw inputs |
@@ -104,12 +104,12 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 
 Default config:
 
-- `data/configs/generation_spec.yaml`
+- `data/configs/quickstart_generation_spec.yaml`
 
 Default command:
 
 ```bash
-pixi run python -u run_generation_pipeline.py --spec_path data/configs/generation_spec.yaml
+pixi run python -u run_generation_pipeline.py --spec_path data/configs/quickstart_generation_spec.yaml
 ```
 
 What generation resolves:
@@ -140,9 +140,9 @@ Outputs:
 Batch submission command:
 
 ```bash
-GENERATION_SPEC_PATH=data/configs/generation_spec.yaml \
+GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
 GENERATION_OVERWRITE=true \
-bash submit_generation_jobs.sh
+bash bash_scripts/submit_generation_jobs.sh
 ```
 
 ### 2. Fit Variants
@@ -151,14 +151,14 @@ bash submit_generation_jobs.sh
 
 Default config:
 
-- `data/configs/fits_spec.yaml`
+- `data/configs/quickstart_fits_spec.yaml`
 
 Default command:
 
 ```bash
 pixi run python -u run_fit_pipeline.py \
   --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/fits_spec.yaml
+  --fits_spec_path data/configs/quickstart_fits_spec.yaml
 ```
 
 Each fit variant controls:
@@ -186,9 +186,9 @@ Batch submission command:
 
 ```bash
 GENERATION_MANIFEST_PATH=experiments/SyntheticHybridExperiments/generation_manifest.csv \
-FITS_SPEC_PATH=data/configs/fits_spec.yaml \
+FITS_SPEC_PATH=data/configs/quickstart_fits_spec.yaml \
 FIT_OVERWRITE=true \
-bash submit_fit_jobs.sh
+bash bash_scripts/submit_fit_jobs.sh
 ```
 
 ### 3. Intervention Library
@@ -276,7 +276,7 @@ GEN_MANIFEST=experiments/SyntheticHybridExperiments/generation_manifest.csv \
 FIT_MANIFEST=experiments/SyntheticHybridExperiments/fit_manifest.csv \
 TARGET_PAIRS_PATH=data/configs/posterior_predictive_target_pairs.csv \
 POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
-bash submit_posterior_predictive_jobs.sh
+bash bash_scripts/submit_posterior_predictive_jobs.sh
 ```
 
 Manifest/report refresh command:
@@ -615,7 +615,7 @@ Posterior-predictive reporting:
 Generate synthetic and hybrid experiments:
 
 ```bash
-pixi run python -u run_generation_pipeline.py --spec_path data/configs/generation_spec.yaml
+pixi run python -u run_generation_pipeline.py --spec_path data/configs/quickstart_generation_spec.yaml
 ```
 
 Fit all configured variants:
@@ -623,7 +623,7 @@ Fit all configured variants:
 ```bash
 pixi run python -u run_fit_pipeline.py \
   --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/fits_spec.yaml
+  --fits_spec_path data/configs/quickstart_fits_spec.yaml
 ```
 
 Run one posterior predictive target:
@@ -681,12 +681,12 @@ pixi run python tests/test_minimal_pipeline.py
 Run the staged shell orchestrator:
 
 ```bash
-GENERATION_SPEC_PATH=data/configs/generation_spec.yaml \
-FITS_SPEC_PATH=data/configs/fits_spec.yaml \
+GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
+FITS_SPEC_PATH=data/configs/quickstart_fits_spec.yaml \
 INTERVENTION_LIBRARY_SPEC_PATH=data/configs/intervention_library_spec.yaml \
 TARGET_PAIRS_PATH=data/configs/posterior_predictive_target_pairs.csv \
 POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
-bash run_tests.sh
+bash bash_scripts/run_and_submit_full_pipeline.sh
 ```
 
 ## Manual MPLE Invocation
@@ -723,13 +723,13 @@ For `optimizer_mode: alternating_latent_rank`, setting `global_params.v_column_l
 
 The repo ships lightweight wrappers:
 
-- `run_generation_job.sh`
-- `submit_generation_jobs.sh`
-- `run_fit_job.sh`
-- `submit_fit_jobs.sh`
-- `run_posterior_predictive_job.sh`
-- `submit_posterior_predictive_jobs.sh`
-- `run_tests.sh`
+- `bash_scripts/run_generation_job.sh`
+- `bash_scripts/submit_generation_jobs.sh`
+- `bash_scripts/run_fit_job.sh`
+- `bash_scripts/submit_fit_jobs.sh`
+- `bash_scripts/run_posterior_predictive_job.sh`
+- `bash_scripts/submit_posterior_predictive_jobs.sh`
+- `bash_scripts/run_and_submit_full_pipeline.sh`
 
 They call the same Python entry points and accept environment-variable overrides:
 
@@ -742,14 +742,14 @@ They call the same Python entry points and accept environment-variable overrides
 
 - `data/synthetic_data_generation.py`: synthetic and hybrid artifact materialization
 - `run_generation_pipeline.py`: generation request planning, single-request execution, and manifest refresh
-- `submit_generation_jobs.sh`: SLURM fan-out for generation requests plus manifest refresh barrier
+- `bash_scripts/submit_generation_jobs.sh`: SLURM fan-out for generation requests plus manifest refresh barrier
 - `run_fit_pipeline.py`: fit request planning, single-fit execution, and manifest refresh/report rebuild
-- `submit_fit_jobs.sh`: SLURM fan-out for fit requests plus manifest/report refresh barrier
+- `bash_scripts/submit_fit_jobs.sh`: SLURM fan-out for fit requests plus manifest/report refresh barrier
 - `run_intervention_library.py`: reusable intervention-panel materialization
 - `build_cv_folds.py`: manifest-driven spatial partition plus spatiotemporal CV-fold construction
 - `run_posterior_predictive.py`: single-target posterior-predictive/counterfactual execution
 - `report_posterior_predictive.py`: manifest refresh plus grouped posterior-predictive reporting
-- `run_tests.sh`: staged generation → fit → intervention → posterior-predictive shell orchestrator
+- `bash_scripts/run_and_submit_full_pipeline.sh`: staged generation → fit → intervention → posterior-predictive shell orchestrator
 - `mple.py`: conditional MPLE optimizer and artifact writer
 - `utils/`: tiered utility modules (`t0_*` through `t8_*`) for config/path I/O, model artifacts, parameter packing, experiment loading, intervention handling, validation metrics, and posterior-predictive reporting
 - `utils/t3_field_generation.py`: synthetic-field specification parsing and field construction
@@ -796,14 +796,14 @@ Then run the shared workflow:
 GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
 FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
 FIT_OVERWRITE=true \
-bash submit_fit_jobs.sh
+bash bash_scripts/submit_fit_jobs.sh
 
 pixi run python run_intervention_library.py \
   --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
   --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
   --overwrite
 
-bash submit_posterior_predictive_jobs.sh
+bash bash_scripts/submit_posterior_predictive_jobs.sh
 ```
 
 The full US county workflow is documented in [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md).

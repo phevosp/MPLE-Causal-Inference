@@ -29,6 +29,7 @@ TIER 5: DOMAIN DATA LOADING (depends on Tier 0-4)
   t5_parameter_bundles: Parameter bundle dataclass and I/O
 
 TIER 6: WORKFLOW UTILITIES (depends on Tier 0-5)
+  t6_fit_materialization: Shared fit config/materialization/execution helpers
   t6_split_management: CV fold and validation/test split mask management
   t6_intervention_utils: Intervention construction and artifact management
   t6_posterior_predictive_manifest: Target resolution and fit lookup
@@ -41,6 +42,7 @@ TIER 7: VALIDATION & EVALUATION (depends on Tier 0-6)
 TIER 8: OUTPUT GENERATION (depends on Tier 0-7)
   t8_posterior_predictive_sim: Outcome simulation, panel statistics
   t8_posterior_predictive_reporting: Summary statistics reporting
+  t8_fit_outputs: MPLE fit diagnostics, summary tables, saved output artifacts
   t8_output_writers: Output table writers, formatting helpers
 
 TYPICAL IMPORT PATTERNS
@@ -50,6 +52,7 @@ For model fitting (mple.py, run_fit_pipeline.py):
   from utils.t3_model_artifacts import ModelArtifacts, load_model_artifacts
   from utils.t4_parameter_packing import pack_theta, unpack_theta, parameter_names
   from utils.t5_experiment_context import load_experiment_panel_context
+  from utils.t6_fit_materialization import materialize_fit_root, execute_fit_root
 
 For validation (run_cv_folds.py, run_test_evaluation.py):
   from utils.t6_split_management import load_model_selection_split_masks

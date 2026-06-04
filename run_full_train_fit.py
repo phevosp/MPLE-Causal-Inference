@@ -153,7 +153,7 @@ def run_full_train_fit(
         "num_training_slots": num_training_slots,
     }
 
-    from run_fit_pipeline import execute_fit_root, materialize_fit_root
+    from utils.t6_fit_materialization import execute_fit_root, materialize_fit_root
 
     materialize_fit_root(
         experiment_row,
@@ -183,4 +183,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-

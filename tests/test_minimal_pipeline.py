@@ -56,7 +56,15 @@ from utils.t5_parameter_bundles import (
     load_truth_parameter_bundle,
     save_estimated_parameter_bundle,
 )
-from utils.t5_experiment_context import load_experiment_panel_context
+from utils.t5_experiment_context import (
+    infer_panel_dimensions,
+    load_experiment_panel_context,
+)
+from utils.t6_fit_materialization import (
+    build_fit_config,
+    execute_fit_root,
+    materialize_fit_root,
+)
 from mple import (
     _build_fit_eval_context,
     _compute_h_x,
@@ -127,10 +135,6 @@ from report_parameter_recovery_detailed import (
     write_fit_reports,
 )
 from run_fit_pipeline import (
-    build_fit_config,
-    execute_fit_root,
-    infer_panel_dimensions,
-    materialize_fit_root,
     refresh_fit_manifest,
     run_fit_request,
     run_fits,
@@ -922,36 +926,27 @@ class MinimalPipelineTests(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_generation_spec_includes_confounded_low_rank_example(self) -> None:
+    def test_quickstart_generation_spec_includes_rank_two_example(self) -> None:
         from pipeline_specs import expand_named_entries
 
-        experiments = expand_named_entries(REPO_ROOT / "data" / "configs" / "generation_spec.yaml", "experiments")
-        partial_synthetic_spec = next(
+        experiments = expand_named_entries(
+            REPO_ROOT / "data" / "configs" / "quickstart_generation_spec.yaml",
+            "experiments",
+        )
+        quickstart_spec = next(
             experiment
             for experiment in experiments
-            if experiment["name"] == "r3_synthetic_partial_confounding"
+            if experiment["name"] == "quickstart_rank_2"
         )
         self.assertEqual(
-            partial_synthetic_spec["truth"]["field_mode"],
-            SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK,
+            quickstart_spec["truth"]["field_mode"],
+            "random_low_rank",
         )
         self.assertEqual(
-            partial_synthetic_spec["intervention"]["generator"],
+            quickstart_spec["intervention"]["generator"],
             "low_rank_probability",
         )
-        self.assertEqual(
-            partial_synthetic_spec["truth"]["field_params"]["shared_rank"],
-            2,
-        )
-        partial_hybrid_spec = next(
-            experiment
-            for experiment in experiments
-            if experiment["name"] == "r3_hybrid_us_county_intervention_uscounty_graph_partial_confounding"
-        )
-        self.assertEqual(
-            partial_hybrid_spec["truth"]["field_params"]["shared_rank"],
-            2,
-        )
+        self.assertEqual(quickstart_spec["truth"]["field_params"]["singular_values"], [1.0, 0.7])
 
     def test_generation_spec_rejects_removed_truth_latent_rank(self) -> None:
         spec_path = REPO_ROOT / "experiments" / f".tmp_removed_truth_rank_{uuid.uuid4().hex}.yaml"

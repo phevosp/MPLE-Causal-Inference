@@ -26,7 +26,7 @@ from pipeline_specs import (
     validate_fit_variant_dict,
     write_csv_manifest,
 )
-from run_fit_pipeline import execute_fit_root, materialize_fit_root
+from utils.t6_fit_materialization import execute_fit_root, materialize_fit_root
 from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
@@ -1471,4 +1471,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

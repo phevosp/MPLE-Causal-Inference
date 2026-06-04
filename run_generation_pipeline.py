@@ -1,4 +1,4 @@
-"""Materialize synthetic experiment artifacts from a generation_spec.yaml.
+"""Materialize synthetic experiment artifacts from a generation spec YAML.
 
 Supports three complementary workflows:
 
@@ -55,7 +55,7 @@ def generation_requests_path_for_spec(spec_path: str | Path) -> Path:
     """Return path to the generation requests"""
     return Path(
         str(generation_manifest_path_for_spec(spec_path)).replace(
-            "manifest", "requests"
+            "manifest.csv", "requests.csv"
         )
     )
 
@@ -80,7 +80,8 @@ def _select_generation_experiment(
     experiment_slug: str,
 ) -> dict[str, Any]:
     matches = [
-        e for e in _expand_generation_experiments(spec_path)
+        e
+        for e in _expand_generation_experiments(spec_path)
         if slugify(str(e["name"])) == experiment_slug
     ]
     if len(matches) == 0:
@@ -187,7 +188,7 @@ def translate_generation_spec(spec: dict[str, Any]):
     return config
 
 
-def _manifest_row_from_completed_experiment(
+def _manifest_row_from_completed_generation(
     request_row: dict[str, str],
 ) -> dict[str, object]:
     """Write a manifest row for a completed experiment based on its generation request and realized outputs."""
@@ -280,7 +281,7 @@ def run_generation_request(
         config_filename="generation_realized_config.yaml",
     )
     request_row = _generation_request_row(experiment_spec, spec_path)
-    return _manifest_row_from_completed_experiment(
+    return _manifest_row_from_completed_generation(
         {key: str(value) for key, value in request_row.items()}
     )
 
@@ -292,7 +293,7 @@ def refresh_generation_manifest(spec_path: str | Path) -> Path:
         write_generation_requests(spec_path)
     request_rows = read_csv_manifest(request_path)
     manifest_rows = [
-        _manifest_row_from_completed_experiment(request_row)
+        _manifest_row_from_completed_generation(request_row)
         for request_row in request_rows
     ]
     manifest_path = generation_manifest_path_for_spec(spec_path)
@@ -329,7 +330,7 @@ def main() -> None:
     parser.add_argument(
         "--spec_path",
         type=str,
-        default="data/configs/generation_spec.yaml",
+        default="data/configs/quickstart_generation_spec.yaml",
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(

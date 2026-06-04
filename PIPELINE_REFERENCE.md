@@ -67,7 +67,7 @@ Columns:
 
 File:
 
-- `data/configs/fits_spec.yaml`
+- `data/configs/quickstart_fits_spec.yaml`
 
 Shape:
 
@@ -511,7 +511,7 @@ Plan generation requests without materializing experiments:
 
 ```bash
 pixi run python -u run_generation_pipeline.py \
-  --spec_path data/configs/generation_spec.yaml \
+  --spec_path data/configs/quickstart_generation_spec.yaml \
   --write_requests
 ```
 
@@ -519,7 +519,7 @@ Run one planned generation request:
 
 ```bash
 pixi run python -u run_generation_pipeline.py \
-  --spec_path data/configs/generation_spec.yaml \
+  --spec_path data/configs/quickstart_generation_spec.yaml \
   --run_request \
   --experiment_slug synthetic_rank_40_b1 \
   --overwrite
@@ -529,14 +529,14 @@ Refresh the generation manifest from completed outputs:
 
 ```bash
 pixi run python -u run_generation_pipeline.py \
-  --spec_path data/configs/generation_spec.yaml \
+  --spec_path data/configs/quickstart_generation_spec.yaml \
   --refresh_manifest
 ```
 
 Submit all generation requests through SLURM and refresh the generation manifest afterward:
 
 ```bash
-GENERATION_SPEC_PATH=data/configs/generation_spec.yaml \
+GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
 GENERATION_OVERWRITE=true \
 bash submit_generation_jobs.sh
 ```
@@ -546,7 +546,7 @@ Plan fit requests without launching MPLE:
 ```bash
 pixi run python -u run_fit_pipeline.py \
   --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/fits_spec.yaml \
+  --fits_spec_path data/configs/quickstart_fits_spec.yaml \
   --write_requests
 ```
 
@@ -555,7 +555,7 @@ Run one planned fit request:
 ```bash
 pixi run python -u run_fit_pipeline.py \
   --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/fits_spec.yaml \
+  --fits_spec_path data/configs/quickstart_fits_spec.yaml \
   --run_request \
   --experiment_slug synthetic_rank_40_b1 \
   --variant_slug rank_40_b1 \
@@ -567,7 +567,7 @@ Refresh the fit manifest and grouped fit reports from completed outputs:
 ```bash
 pixi run python -u run_fit_pipeline.py \
   --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/fits_spec.yaml \
+  --fits_spec_path data/configs/quickstart_fits_spec.yaml \
   --refresh_manifest
 ```
 
@@ -575,7 +575,7 @@ Submit all fit requests through SLURM and refresh the fit manifest/reports after
 
 ```bash
 GENERATION_MANIFEST_PATH=experiments/SyntheticHybridExperiments/generation_manifest.csv \
-FITS_SPEC_PATH=data/configs/fits_spec.yaml \
+FITS_SPEC_PATH=data/configs/quickstart_fits_spec.yaml \
 FIT_OVERWRITE=true \
 bash submit_fit_jobs.sh
 ```

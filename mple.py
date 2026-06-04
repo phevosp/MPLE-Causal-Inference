@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +10,6 @@ from typing import Any
 
 import numpy as np
 from omegaconf import OmegaConf
-from scipy import sparse
 from scipy.optimize import OptimizeResult, minimize
 
 from pymanopt import Problem, function
@@ -19,10 +17,7 @@ from pymanopt.manifolds import Euclidean, FixedRankEmbedded, Product
 from pymanopt.optimizers import ConjugateGradient
 
 from utils.t0_config_utils import load_yaml_config
-from utils.t0_csv_utils import _fmt
 from utils.t1_matrix_io import load_gamma_matrix
-from utils.t0_path_utils import first_existing_path, io_path
-from utils.t5_parameter_bundles import save_estimated_parameter_bundle
 from utils.t3_model_artifacts import (
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     ModelArtifacts,
@@ -31,8 +26,6 @@ from utils.t3_model_artifacts import (
     OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
     build_fit_model_artifacts,
-    load_model_artifacts,
-    save_field_artifacts,
 )
 from utils.t4_scalar_parameters import (
     free_scalar_parameter_names,
@@ -46,20 +39,18 @@ from utils.t4_parameter_packing import (
     summarize_theta_for_logging,
     unpack_theta,
 )
-from utils.t3_interaction_matrices import (
-    compose_interaction_matrix,
-    interaction_effect,
-)
+from utils.t3_interaction_matrices import interaction_effect
 from utils.t3_field_operations import (
     compose_field_matrix_from_theta,
     compose_latent_field_matrix,
-    latent_field_bound_norm,
-    with_theta_field,
 )
+from utils.t8_fit_outputs import finalize_fit_outputs, load_truth_context
 
 
 @dataclass(frozen=True)
 class _FitEvalContext:
+    """Cached arrays and bookkeeping shared across repeated MPLE loss evaluations."""
+
     x: np.ndarray
     prev_x: np.ndarray
     beta_feature: np.ndarray
@@ -87,6 +78,7 @@ def _build_fit_eval_context(
     beta_mask_post_e: bool = False,
     loss_mask: np.ndarray | None = None,
 ) -> _FitEvalContext:
+    """Validate fit inputs once and cache the derived arrays used by every objective."""
     fixed = validate_fixed_scalar_params(fixed_scalar_params)
     x_array = np.asarray(x, dtype=float)
     t_steps = x_array.shape[0]
@@ -135,6 +127,7 @@ def _scalar_values_from_free_vector(
     free_scalar_values: np.ndarray,
     context: _FitEvalContext,
 ) -> dict[str, float]:
+    """Merge optimized free scalars with the scalars fixed by configuration."""
     scalars = dict(context.fixed_scalar_params)
     scalars.update(
         {
@@ -154,6 +147,7 @@ def _resolve_scalar_values(
     free_scalar_values: np.ndarray | None = None,
     scalar_values: dict[str, float] | None = None,
 ) -> dict[str, float]:
+    """Resolve scalar parameters from either a free vector or an explicit mapping."""
     if scalar_values is not None:
         resolved = dict(context.fixed_scalar_params)
         resolved.update({name: float(value) for name, value in scalar_values.items()})
@@ -168,6 +162,7 @@ def _compute_h_x(
     scalar_values: dict[str, float],
     context: _FitEvalContext,
 ) -> np.ndarray:
+    """Assemble the conditional natural-parameter matrix h_t,i(x, z)."""
     return (
         np.asarray(field_matrix, dtype=float)
         + float(scalar_values["beta"]) * context.beta_feature_masked
@@ -180,6 +175,7 @@ def _scalar_gradient_from_residual(
     residual: np.ndarray,
     context: _FitEvalContext,
 ) -> np.ndarray:
+    """Project the residual matrix onto the currently free scalar features."""
     if not context.free_scalar_names:
         return np.zeros(0, dtype=float)
     gradient_lookup = {
@@ -202,6 +198,7 @@ def _evaluate_full_field_loss(
     free_scalar_values: np.ndarray | None = None,
     scalar_values: dict[str, float] | None = None,
 ) -> tuple[float, np.ndarray, np.ndarray]:
+    """Evaluate MPLE loss for a full field matrix and return residual-based gradients."""
     resolved_scalars = _resolve_scalar_values(
         context=context,
         free_scalar_values=free_scalar_values,
@@ -223,6 +220,7 @@ def _evaluate_scalar_only_loss(
     free_scalar_values: np.ndarray,
     context: _FitEvalContext,
 ) -> tuple[float, np.ndarray]:
+    """Evaluate the zero-field objective used by the no-external-field fit mode."""
     smooth_loss, residual, scalar_gradient = _evaluate_full_field_loss(
         np.zeros_like(context.x, dtype=float),
         context,
@@ -239,6 +237,7 @@ def _evaluate_factorized_loss(
     free_scalar_values: np.ndarray | None = None,
     scalar_values: dict[str, float] | None = None,
 ) -> tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate loss and gradients for a field parameterized as time/node factors."""
     field_matrix = compose_latent_field_matrix(node_factors, time_factors)
     smooth_loss, residual, scalar_gradient = _evaluate_full_field_loss(
         field_matrix,
@@ -261,6 +260,7 @@ def _evaluate_factorized_loss_with_offset(
     scalar_offset: np.ndarray,
     context: _FitEvalContext,
 ) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate factor gradients when scalar contributions have already been folded in."""
     field_matrix = time_factors @ node_factors.T
     h_x = field_matrix + scalar_offset
     loss_x = np.logaddexp(h_x, -h_x) - context.x * h_x
@@ -279,6 +279,7 @@ def _project_node_factor_columns_to_l2_ball(
     node_factors: np.ndarray,
     v_column_l2_max: float,
 ) -> np.ndarray:
+    """Project each node-factor column onto the configured L2-radius constraint."""
     projected = np.array(node_factors, dtype=float, copy=True)
     if projected.ndim != 2:
         raise ValueError("node_factors must be a 2D array.")
@@ -300,6 +301,7 @@ def _prox_threshold_field_matrix(
     field_matrix: np.ndarray,
     threshold: float,
 ) -> tuple[np.ndarray, float]:
+    """Apply singular-value soft thresholding and return the shrunk nuclear norm."""
     matrix = np.asarray(field_matrix, dtype=float)
     if matrix.size == 0 or threshold <= 0.0:
         nuclear_norm = (
@@ -314,6 +316,7 @@ def _prox_threshold_field_matrix(
 
 
 def setup_logger(log_file: str) -> logging.Logger:
+    """Create or reuse the file-and-console logger used by standalone MPLE runs."""
     logger = logging.getLogger(log_file)
     logger.setLevel(logging.INFO)
     if logger.handlers:
@@ -331,6 +334,7 @@ def setup_logger(log_file: str) -> logging.Logger:
 
 
 def load_panel_artifact(panel_path: str | Path):
+    """Load the saved `panel_data.npz` bundle for a fit request."""
     panel_path = Path(panel_path)
     if not panel_path.exists():
         raise FileNotFoundError(f"Could not find panel data artifact at {panel_path}.")
@@ -351,6 +355,7 @@ def pseudo_nll(
     beta_mask_post_e: bool = False,
     loss_mask: np.ndarray | None = None,
 ) -> tuple[float, np.ndarray]:
+    """Evaluate the MPLE objective and gradient for a packed theta vector."""
     if x.shape[0] != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
     context = _build_fit_eval_context(
@@ -415,6 +420,7 @@ def evaluate_mple_loss_from_parts(
     beta_mask_post_e: bool = False,
     loss_mask: np.ndarray | None = None,
 ) -> float:
+    """Convenience wrapper for evaluating loss from explicit field/scalar components."""
     context = _build_fit_eval_context(
         x,
         z,
@@ -436,6 +442,7 @@ def evaluate_mple_loss_from_parts(
 
 
 def _nuclear_norm(field_matrix: np.ndarray) -> float:
+    """Return the nuclear norm of a field matrix."""
     if field_matrix.size == 0:
         return 0.0
     return float(
@@ -444,6 +451,7 @@ def _nuclear_norm(field_matrix: np.ndarray) -> float:
 
 
 def _nuclear_norm_normalizer(artifacts: ModelArtifacts) -> float:
+    """Scale nuclear/Frobenius penalties by the square root of the panel size."""
     n_nodes = int(artifacts.gamma_matrix.shape[0])
     size = int(artifacts.t_steps) * n_nodes
     if size <= 0:
@@ -665,12 +673,14 @@ def _fit_mple_nuclear_norm(
 def _fixed_rank_field_matrix(
     u: np.ndarray, singular_values: np.ndarray, vt: np.ndarray
 ) -> np.ndarray:
+    """Reconstruct a field matrix from thin-SVD factors on the fixed-rank manifold."""
     return (
         np.asarray(u, dtype=float) * np.asarray(singular_values, dtype=float)
     ) @ np.asarray(vt, dtype=float)
 
 
 def _fixed_rank_point_from_field(field_matrix: np.ndarray, rank: int, point_type):
+    """Convert a dense field matrix into a valid fixed-rank manifold point."""
     u, singular_values, vt = np.linalg.svd(
         np.asarray(field_matrix, dtype=float), full_matrices=False
     )
@@ -690,6 +700,7 @@ def _random_fixed_rank_point(
     rank: int,
     point_type,
 ):
+    """Sample a numerically well-behaved random point on the fixed-rank manifold."""
     u, _ = np.linalg.qr(rng.normal(size=(int(t_steps), int(rank))))
     v, _ = np.linalg.qr(rng.normal(size=(int(n_nodes), int(rank))))
     singular_values = np.sort(
@@ -709,6 +720,7 @@ def _low_rank_manifold_point_to_theta(
     free_scalar_names: list[str],
     fixed_scalar_params: dict[str, float],
 ) -> np.ndarray:
+    """Pack a pymanopt manifold point plus scalar values back into theta space."""
     if free_scalar_names:
         field_point = point[0]
         free_scalar_values = np.asarray(point[1], dtype=float).reshape(-1)
@@ -754,6 +766,7 @@ def _fit_zero_rank_unconstrained(
     beta_mask_post_e: bool = False,
     loss_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
+    """Fit only the scalar parameters when no external field is being estimated."""
     context = _build_fit_eval_context(
         x,
         z,
@@ -1846,6 +1859,7 @@ def _apply_warm_start(
     beta_mask_post_e: bool,
     loss_mask: np.ndarray | None,
 ) -> np.ndarray:
+    """Run a short constrained phase and reuse it as the full-fit initialization."""
     phase1_fixed = {**fixed_scalar_params, **warm_start_fixed_scalars}
     phase1_theta, _, _ = fit_mple(
         x,
@@ -1905,6 +1919,7 @@ def fit_mple(
     warm_start_steps: int = 0,
     loss_mask: np.ndarray | None = None,
 ):
+    """Dispatch to the configured optimizer mode and return theta, history, and status."""
     if x.ndim != 2 or z.shape != x.shape:
         raise ValueError("x and z must both have shape (T, N).")
     if v_column_l2_max is not None and float(v_column_l2_max) <= 0.0:
@@ -2080,336 +2095,8 @@ def fit_mple(
     raise ValueError(f"Unsupported optimizer_mode: {artifacts.optimizer_mode}")
 
 
-def scalar_summary_rows(
-    est_theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    scalar_truths: dict[str, float] | None,
-    fixed_scalar_params: dict[str, float] | None = None,
-) -> list[dict[str, object]]:
-    est_parts = unpack_theta(
-        est_theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    rows: list[dict[str, object]] = []
-    for name in scalar_parameter_names():
-        est = float(est_parts[name])
-        true = None if scalar_truths is None else scalar_truths.get(name)
-        rows.append(
-            {
-                "category": "scalar",
-                "name": name,
-                "estimate": est,
-                "true": None if true is None else float(true),
-                "squared_error": None if true is None else float((est - true) ** 2),
-            }
-        )
-    return rows
-
-
-def load_truth_context(truth_artifact_dir: str | Path) -> dict[str, object] | None:
-    truth_root = Path(truth_artifact_dir)
-    metadata_path = truth_root / "experiment_metadata.yaml"
-    metadata = (
-        OmegaConf.load(metadata_path)
-        if metadata_path.exists()
-        else OmegaConf.create({})
-    )
-    if not bool(metadata.get("has_truth", True)):
-        return None
-    config_path = first_existing_path(
-        truth_root / "generation_realized_config.yaml",
-        truth_root / "realized_config.yaml",
-    )
-    truth_config = load_yaml_config(config_path)
-    truth_artifacts = load_model_artifacts(truth_root)
-    scalar_truths = {
-        "beta": float(truth_config.estimation_params.beta),
-        "xi": float(truth_config.estimation_params.xi),
-        "eta": float(truth_config.estimation_params.eta),
-    }
-    truth_interaction = compose_interaction_matrix(
-        scalar_truths["xi"], truth_artifacts.gamma_matrix
-    )
-    return {
-        "scalar_truths": scalar_truths,
-        "field_artifacts": truth_artifacts,
-        "field_matrix": truth_artifacts.field_matrix,
-        "interaction_matrix": truth_interaction,
-    }
-
-
-def compute_truth_metrics(
-    est_theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    truth_context: dict[str, object] | None,
-    fixed_scalar_params: dict[str, float] | None = None,
-) -> dict[str, float]:
-    if truth_context is None or truth_context.get("field_matrix") is None:
-        return {}
-    est_parts = unpack_theta(
-        est_theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    est_artifacts = with_theta_field(artifacts, est_parts)
-    true_field = np.asarray(truth_context["field_matrix"], dtype=float)
-    est_interaction = compose_interaction_matrix(
-        est_parts["xi"], artifacts.gamma_matrix
-    )
-    true_interaction = truth_context.get("interaction_matrix")
-    if true_interaction is None:
-        interaction_fro_error = None
-    elif sparse.issparse(est_interaction):
-        interaction_error = est_interaction - true_interaction
-        interaction_fro_error = float(
-            np.sqrt(interaction_error.multiply(interaction_error).sum())
-        )
-    else:
-        interaction_fro_error = float(
-            np.linalg.norm(est_interaction - true_interaction, ord="fro")
-        )
-    metrics: dict[str, float] = {
-        "field_rmse": float(
-            np.sqrt(np.mean((np.asarray(est_artifacts.field_matrix) - true_field) ** 2))
-        )
-    }
-    if interaction_fro_error is not None:
-        metrics["interaction_fro_error"] = interaction_fro_error
-    return metrics
-
-
-def latent_diagnostic_rows(
-    est_theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    truth_context: dict[str, object] | None,
-    fixed_scalar_params: dict[str, float] | None = None,
-) -> list[dict[str, object]]:
-    est_parts = unpack_theta(
-        est_theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    est_artifacts = with_theta_field(artifacts, est_parts)
-    est_field = np.asarray(est_artifacts.field_matrix, dtype=float)
-    rows: list[dict[str, object]] = [
-        {
-            "category": "latent_diagnostic",
-            "name": "estimated_field_max_abs_entry",
-            "estimate": latent_field_bound_norm(est_field),
-            "true": None,
-            "squared_error": None,
-        },
-        {
-            "category": "latent_diagnostic",
-            "name": "estimated_field_rank",
-            "estimate": float(np.linalg.matrix_rank(est_field)),
-            "true": float(artifacts.latent_rank),
-            "squared_error": None,
-        },
-    ]
-    if truth_context is not None and truth_context.get("field_matrix") is not None:
-        true_field = np.asarray(truth_context["field_matrix"], dtype=float)
-        rows.extend(
-            [
-                {
-                    "category": "latent_diagnostic",
-                    "name": "true_field_max_abs_entry",
-                    "estimate": latent_field_bound_norm(true_field),
-                    "true": None,
-                    "squared_error": None,
-                },
-                {
-                    "category": "latent_diagnostic",
-                    "name": "true_field_rank",
-                    "estimate": float(np.linalg.matrix_rank(true_field)),
-                    "true": None,
-                    "squared_error": None,
-                },
-            ]
-        )
-    return rows
-
-
-def write_summary_table(
-    summary_stem,
-    est_theta,
-    metrics,
-    loss,
-    artifacts: ModelArtifacts,
-    truth_context: dict[str, object] | None,
-    fixed_scalar_params: dict[str, float] | None = None,
-):
-    csv_path = Path(f"{summary_stem}.csv")
-    rows = scalar_summary_rows(
-        est_theta,
-        artifacts,
-        scalar_truths=(
-            None if truth_context is None else truth_context.get("scalar_truths")
-        ),
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    rows.extend(
-        {
-            "category": "metric",
-            "name": name,
-            "estimate": float(value),
-            "true": None,
-            "squared_error": None,
-        }
-        for name, value in {"final_loss": loss, **metrics}.items()
-    )
-    rows.extend(
-        latent_diagnostic_rows(
-            est_theta,
-            artifacts,
-            truth_context=truth_context,
-            fixed_scalar_params=fixed_scalar_params,
-        )
-    )
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(io_path(csv_path), "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle, fieldnames=["category", "name", "estimate", "true", "squared_error"]
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def write_optimizer_start_summary(path: str | Path, result: OptimizeResult) -> None:
-    start_summaries = result.get("start_summaries", [])
-    if not start_summaries:
-        return
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "start_index",
-        "seed",
-        "initialization_kind",
-        "initial_mple_loss",
-        "initial_penalized_objective",
-        "final_mple_loss",
-        "final_penalized_objective",
-        "iterations",
-        "cost_evaluations",
-        "success",
-        "message",
-        "is_best",
-    ]
-    best_start = int(result.get("best_start", 0))
-    with open(io_path(output_path), "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in start_summaries:
-            start_index = int(row["start_index"])
-            writer.writerow(
-                {
-                    **row,
-                    "is_best": start_index == best_start,
-                }
-            )
-
-
-def log_estimates(logger, title, scalar_rows):
-    logger.info(title)
-    for row in scalar_rows:
-        if row["true"] is None:
-            logger.info("  %s: %.4f", row["name"], row["estimate"])
-        else:
-            logger.info(
-                "  %s: %.4f (True: %.4f) | SQE: %.6f",
-                row["name"],
-                row["estimate"],
-                row["true"],
-                row["squared_error"],
-            )
-
-
-def log_field_diagnostics(
-    logger,
-    metrics: dict[str, float],
-    est_theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    truth_context: dict[str, object] | None,
-    fixed_scalar_params: dict[str, float] | None = None,
-) -> None:
-    logger.info("Field and interaction diagnostics:")
-    for name in ["field_rmse", "interaction_fro_error"]:
-        if name in metrics:
-            logger.info("  %s: %.6f", name, metrics[name])
-    for row in latent_diagnostic_rows(
-        est_theta,
-        artifacts,
-        truth_context=truth_context,
-        fixed_scalar_params=fixed_scalar_params,
-    ):
-        logger.info("  %s: %s", row["name"], _fmt(row["estimate"]))
-
-
-def save_estimated_artifacts(
-    data_folder: str | Path,
-    est_theta: np.ndarray,
-    artifacts: ModelArtifacts,
-    truth_context: dict[str, object] | None,
-    fixed_scalar_params: dict[str, float] | None = None,
-) -> None:
-    est_parts = unpack_theta(
-        est_theta,
-        artifacts,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    est_artifacts = with_theta_field(
-        artifacts,
-        est_parts,
-    )
-    save_field_artifacts(
-        Path(data_folder) / "estimated_field_artifacts.npz", est_artifacts
-    )
-    estimated_interaction = compose_interaction_matrix(
-        est_parts["xi"],
-        artifacts.gamma_matrix,
-    )
-    if sparse.issparse(estimated_interaction):
-        sparse.save_npz(
-            io_path(Path(data_folder) / "estimated_interaction_matrix_sparse.npz"),
-            estimated_interaction,
-        )
-    else:
-        np.save(
-            io_path(Path(data_folder) / "estimated_interaction_matrix.npy"),
-            estimated_interaction,
-        )
-    save_estimated_parameter_bundle(
-        Path(data_folder) / "estimated_parameter_bundle.npz",
-        beta=float(est_parts["beta"]),
-        xi=float(est_parts["xi"]),
-        eta=float(est_parts["eta"]),
-        latent_rank=int(est_artifacts.latent_rank),
-        t_steps=int(est_artifacts.t_steps),
-        field_matrix=np.asarray(est_artifacts.field_matrix, dtype=float),
-    )
-    if truth_context is None or truth_context.get("field_artifacts") is None:
-        return
-    save_field_artifacts(
-        Path(data_folder) / "true_field_artifacts.npz",
-        truth_context["field_artifacts"],
-    )
-    true_interaction = truth_context.get("interaction_matrix")
-    if true_interaction is None:
-        return
-    if sparse.issparse(true_interaction):
-        sparse.save_npz(
-            io_path(Path(data_folder) / "true_interaction_matrix_sparse.npz"),
-            true_interaction,
-        )
-    else:
-        np.save(
-            io_path(Path(data_folder) / "true_interaction_matrix.npy"),
-            true_interaction,
-        )
-
-
 def main() -> None:
+    """Run the standalone MPLE CLI for one materialized fit directory."""
     parser = argparse.ArgumentParser(
         description="Fit active conditional-model parameters with MPLE."
     )
@@ -2580,160 +2267,12 @@ def main() -> None:
         warm_start_steps=warm_start_steps,
         loss_mask=loss_mask,
     )
-
-    logger.info("Done fitting.")
-    logger.info("Optimizer status: %s", result.message)
-    logger.info(
-        "Best optimizer start: %s / %s",
-        int(result.get("best_start", 0)) + 1,
-        int(result.get("n_starts", 1)),
-    )
-    logger.info("Final Loss: %.6f", loss_history[-1])
-    scalar_rows = scalar_summary_rows(
-        params_hat,
-        artifacts,
-        scalar_truths=(
-            None if truth_context is None else truth_context.get("scalar_truths")
-        ),
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    log_estimates(
-        logger,
-        (
-            "Estimated vs True Parameters:"
-            if truth_context is not None
-            else "Estimated Parameters:"
-        ),
-        scalar_rows,
-    )
-    metrics = compute_truth_metrics(
-        params_hat,
-        artifacts,
-        truth_context=truth_context,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    if result.get("optimizer_mode") == OPTIMIZER_MODE_NUCLEAR_NORM:
-        metrics.update(
-            {
-                "penalized_objective": float(result["final_penalized_objective"]),
-                "mple_loss_without_penalty": float(result["final_mple_loss"]),
-                "nuclear_norm": float(result["nuclear_norm"]),
-                "normalized_nuclear_norm": float(result["normalized_nuclear_norm"]),
-                "nuclear_norm_normalizer": float(result["nuclear_norm_normalizer"]),
-                "effective_rank": float(result["effective_rank"]),
-                "proximal_iterations": float(result["proximal_iterations"]),
-            }
-        )
-        logger.info("Nuclear-norm optimizer diagnostics:")
-        logger.info("  penalized_objective: %.6f", metrics["penalized_objective"])
-        logger.info(
-            "  mple_loss_without_penalty: %.6f", metrics["mple_loss_without_penalty"]
-        )
-        logger.info("  nuclear_norm: %.6f", metrics["nuclear_norm"])
-        logger.info(
-            "  normalized_nuclear_norm: %.6f", metrics["normalized_nuclear_norm"]
-        )
-        logger.info(
-            "  nuclear_norm_normalizer: %.6f", metrics["nuclear_norm_normalizer"]
-        )
-        logger.info("  effective_rank: %.6f", metrics["effective_rank"])
-        logger.info("  proximal_iterations: %.0f", metrics["proximal_iterations"])
-    elif result.get("optimizer_mode") == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD:
-        metrics.update(
-            {
-                "penalized_objective": float(result["final_penalized_objective"]),
-                "mple_loss_without_penalty": float(result["final_mple_loss"]),
-                "lambda_frobenius": float(result["lambda_frobenius"]),
-                "frobenius_norm": float(result["frobenius_norm"]),
-                "normalized_frobenius_norm": float(result["normalized_frobenius_norm"]),
-                "squared_normalized_frobenius_norm": float(
-                    result["squared_normalized_frobenius_norm"]
-                ),
-                "frobenius_norm_normalizer": float(result["frobenius_norm_normalizer"]),
-                "frobenius_penalty_normalizer": float(
-                    result["frobenius_penalty_normalizer"]
-                ),
-                "effective_rank": float(result["effective_rank"]),
-            }
-        )
-        if float(result["lambda_frobenius"]) > 0.0:
-            logger.info("Low-rank Frobenius optimizer diagnostics:")
-            logger.info("  penalized_objective: %.6f", metrics["penalized_objective"])
-            logger.info(
-                "  mple_loss_without_penalty: %.6f",
-                metrics["mple_loss_without_penalty"],
-            )
-            logger.info("  lambda_frobenius: %.6f", metrics["lambda_frobenius"])
-            logger.info("  frobenius_norm: %.6f", metrics["frobenius_norm"])
-            logger.info(
-                "  normalized_frobenius_norm: %.6f",
-                metrics["normalized_frobenius_norm"],
-            )
-            logger.info(
-                "  squared_normalized_frobenius_norm: %.6f",
-                metrics["squared_normalized_frobenius_norm"],
-            )
-            logger.info(
-                "  frobenius_norm_normalizer: %.6f",
-                metrics["frobenius_norm_normalizer"],
-            )
-            logger.info(
-                "  frobenius_penalty_normalizer: %.6f",
-                metrics["frobenius_penalty_normalizer"],
-            )
-    elif result.get("optimizer_mode") in {
-        OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
-        OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
-    }:
-        metrics.update(
-            {
-                "penalized_objective": float(result["final_penalized_objective"]),
-                "mple_loss_without_penalty": float(result["final_mple_loss"]),
-                "lambda_uv_ridge": float(result["lambda_uv_ridge"]),
-                "u_frobenius_norm": float(result["u_frobenius_norm"]),
-                "v_frobenius_norm": float(result["v_frobenius_norm"]),
-                "effective_rank": float(result["effective_rank"]),
-            }
-        )
-        optimizer_title = (
-            "Concurrent low-rank optimizer diagnostics:"
-            if result.get("optimizer_mode") == OPTIMIZER_MODE_CONCURRENT_LATENT_RANK
-            else "Alternating low-rank optimizer diagnostics:"
-        )
-        logger.info(optimizer_title)
-        logger.info("  penalized_objective: %.6f", metrics["penalized_objective"])
-        logger.info(
-            "  mple_loss_without_penalty: %.6f",
-            metrics["mple_loss_without_penalty"],
-        )
-        logger.info("  lambda_uv_ridge: %.6f", metrics["lambda_uv_ridge"])
-        logger.info("  u_frobenius_norm: %.6f", metrics["u_frobenius_norm"])
-        logger.info("  v_frobenius_norm: %.6f", metrics["v_frobenius_norm"])
-        logger.info("  effective_rank: %.6f", metrics["effective_rank"])
-    log_field_diagnostics(
-        logger,
-        metrics,
-        params_hat,
-        artifacts,
-        truth_context=truth_context,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    write_summary_table(
-        Path(args.data_folder) / "mple_summary",
-        params_hat,
-        metrics,
-        loss_history[-1],
-        artifacts,
-        truth_context=truth_context,
-        fixed_scalar_params=fixed_scalar_params,
-    )
-    write_optimizer_start_summary(
-        Path(args.data_folder) / "optimizer_start_summary.csv",
-        result,
-    )
-    save_estimated_artifacts(
+    finalize_fit_outputs(
         args.data_folder,
+        logger,
         params_hat,
+        loss_history,
+        result,
         artifacts,
         truth_context=truth_context,
         fixed_scalar_params=fixed_scalar_params,

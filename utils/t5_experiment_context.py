@@ -41,3 +41,13 @@ def load_experiment_panel_context(experiment_root: str | Path) -> dict[str, obje
         experiment_path / "x_0.npy",
         experiment_path / "z_0.npy",
     )
+
+
+def infer_panel_dimensions(experiment_root: str | Path) -> dict[str, int]:
+    panel_context = load_experiment_panel_context(experiment_root)
+    return {
+        "N": int(panel_context["N"]),
+        "T": int(panel_context["T"]),
+        "s": int(panel_context["s"]),
+        "e": int(panel_context["e"]),
+    }
