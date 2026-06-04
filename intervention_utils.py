@@ -8,10 +8,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from data.synthetic_data_generation import derive_pre_intervention_steps
 from io_utils import io_path
-from loading_utils import load_experiment_panel_context
-from pipeline_specs import slugify
 
 
 INTERVENTION_LIBRARY_ROOT_NAME = "intervention_library"
@@ -31,26 +28,32 @@ class InterventionContext:
     metadata: dict[str, object]
 
 
+def derive_pre_intervention_steps(z: np.ndarray) -> int:
+    treated_rows = np.any(np.asarray(z) == 1, axis=1)
+    return int(np.argmax(treated_rows)) if treated_rows.any() else int(z.shape[0])
+
+
 def derive_post_intervention_steps(z: np.ndarray) -> int:
     # e = first time step AFTER the last unit transitions from untreated (-1) to treated (+1)
     # Find when each unit first gets treated (first occurrence of z=1 for that unit)
-    z_array = np.asarray(z)
+    z_array = np.asarray(z, dtype=float)
     T, N = z_array.shape
 
-    # Find first treatment time for each unit
-    first_treatment_per_unit = np.full(N, T, dtype=int)
-    for n in range(N):
-        treated_times = np.where(z_array[:, n] == 1)[0]
-        if len(treated_times) > 0:
-            first_treatment_per_unit[n] = treated_times[0]
+    # Vectorized: find first treatment time for each unit
+    treatment_mask = z_array == 1.0
+    # argmax gives index of first True; if no True, gives 0 (which we handle below)
+    first_treatment_per_unit = np.argmax(treatment_mask, axis=0)
+    # Mark units never treated with T
+    never_treated = ~np.any(treatment_mask, axis=0)
+    first_treatment_per_unit[never_treated] = T
 
     # If no units are ever treated, e=0
     if np.all(first_treatment_per_unit >= T):
         return 0
 
     # e = time of last unit's first treatment + 1
-    last_unit_first_treatment = np.max(first_treatment_per_unit[first_treatment_per_unit < T])
-    return int(last_unit_first_treatment + 1)
+    last_unit_first_treatment = int(np.max(first_treatment_per_unit[first_treatment_per_unit < T]))
+    return last_unit_first_treatment + 1
 
 
 def _validate_intervention_panel(z: np.ndarray, z_0: np.ndarray) -> None:
@@ -78,6 +81,8 @@ def save_intervention_artifact(
     source_kind: str,
     extra_metadata: dict[str, object] | None = None,
 ) -> Path:
+    from pipeline_specs import slugify
+
     artifact_root = Path(output_root)
     z = np.asarray(z, dtype=float)
     z_0 = np.asarray(z_0, dtype=float)
@@ -169,7 +174,7 @@ def load_saved_intervention_context(
     experiment_root: str | Path,
     intervention_name: str,
 ) -> InterventionContext:
-    from data.synthetic_data_generation import derive_pre_intervention_steps
+    from pipeline_specs import slugify
 
     experiment_path = Path(experiment_root)
     intervention_slug = slugify(intervention_name)
@@ -214,6 +219,8 @@ def resolve_intervention_context(
 ) -> InterventionContext:
     source = str(intervention_source).strip().lower()
     if source == "observed_experiment":
+        from loading_utils import load_experiment_panel_context
+
         resolved_panel_context = (
             panel_context
             if panel_context is not None

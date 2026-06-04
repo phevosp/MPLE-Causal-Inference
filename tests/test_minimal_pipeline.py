@@ -81,6 +81,7 @@ from model_utils import (
     interaction_term,
     interaction_matrix_infinity_norm,
     latent_field_bound_norm,
+    leading_svd_low_rank_structure,
     load_model_artifacts,
     sample_spectral_low_rank_structure,
     SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK,
@@ -103,6 +104,7 @@ from posterior_predictive_utils import (
     summarize_observed_mean_statistics,
     summarize_predictive_statistics,
 )
+from intervention_utils import derive_pre_intervention_steps
 from report_posterior_predictive import (
     collect_predictive_rows,
     group_and_rank_predictive_rows,
@@ -157,8 +159,6 @@ def base_config() -> object:
                 "xi": 0.25,
                 "beta": 0.1,
                 "eta": 0.2,
-                "zeta": -0.1,
-                "psi": 0.3,
             },
             "generation_params": {
                 "seed": 0,
@@ -272,8 +272,8 @@ class MinimalPipelineTests(unittest.TestCase):
             artifacts,
             x_0,
             np.random.default_rng(seed),
-            fixed_z=fixed_z,
-            z_0=z_0,
+            fixed_z,
+            z_0,
         )
         expected_x = simulate_outcomes_given_fixed_interventions(
             x_0=x_0,
@@ -334,7 +334,8 @@ class MinimalPipelineTests(unittest.TestCase):
             artifacts,
             x_0,
             np.random.default_rng(seed),
-            fixed_z=fixed_z,
+            fixed_z,
+            None,
         )
         predictive_x = simulate_outcomes_for_bundle(
             bundle,
@@ -534,8 +535,8 @@ class MinimalPipelineTests(unittest.TestCase):
             artifacts,
             x_0,
             np.random.default_rng(seed),
-            fixed_z=intervention_artifacts.z,
-            z_0=intervention_artifacts.z_0,
+            intervention_artifacts.z,
+            intervention_artifacts.z_0,
         )
         expected_x = simulate_outcomes_given_fixed_interventions(
             x_0=x_0,
@@ -562,6 +563,20 @@ class MinimalPipelineTests(unittest.TestCase):
 
         self.assertTrue(np.allclose(artifacts.low_rank_structure.matrix, 0.0))
         self.assertTrue(np.allclose(artifacts.probability_matrix, 0.5))
+
+    def test_derive_pre_intervention_steps_uses_first_treated_row(self) -> None:
+        z = np.array(
+            [
+                [-1.0, -1.0, -1.0],
+                [-1.0, 1.0, -1.0],
+                [1.0, 1.0, -1.0],
+            ],
+            dtype=float,
+        )
+        untreated = -np.ones((4, 3), dtype=float)
+
+        self.assertEqual(derive_pre_intervention_steps(z), 1)
+        self.assertEqual(derive_pre_intervention_steps(untreated), 4)
 
     def test_confounded_low_rank_field_reuses_intervention_factors(self) -> None:
         config = base_config()
@@ -758,6 +773,44 @@ class MinimalPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "shared_rank is only valid"):
             build_synthetic_field(config, gamma)
 
+    def test_confounded_low_rank_rejects_rank_deficient_fixed_intervention_basis(self) -> None:
+        config = base_config()
+        config.global_params.N = 4
+        config.global_params.T = 4
+        config.global_params.field_mode = SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
+        config.global_params.field_params = {
+            "singular_values": [2.0, 0.4],
+            "shared_rank": 2,
+        }
+        fixed_z = np.array(
+            [
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [-1.0, -1.0, -1.0, -1.0],
+                [-1.0, -1.0, -1.0, -1.0],
+            ],
+            dtype=float,
+        )
+        gamma = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        intervention_structure = leading_svd_low_rank_structure(fixed_z, 2)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "must not exceed the available intervention basis rank",
+        ):
+            build_synthetic_field(
+                config,
+                gamma,
+                intervention_structure=intervention_structure,
+            )
+
     def test_generation_pipeline_confounded_low_rank_reuses_fixed_intervention_svd(self) -> None:
         root = REPO_ROOT / "experiments" / f".tmp_fixed_z_confounding_{uuid.uuid4().hex}"
         root.mkdir(parents=True, exist_ok=False)
@@ -835,8 +888,6 @@ class MinimalPipelineTests(unittest.TestCase):
                         "      beta: 0.2",
                         "      xi: 0.1",
                         "      eta: 0.05",
-                        "      zeta: -0.1",
-                        "      psi: 0.2",
                         "experiments:",
                         "  - name: fixed_z_confounding_smoke",
                     ]
@@ -934,8 +985,6 @@ class MinimalPipelineTests(unittest.TestCase):
                         "      beta: 0.0",
                         "      xi: 0.0",
                         "      eta: 0.0",
-                        "      zeta: 0.0",
-                        "      psi: 0.0",
                         "experiments:",
                         "  - name: bad_truth_rank",
                     ]
@@ -1014,8 +1063,6 @@ class MinimalPipelineTests(unittest.TestCase):
                         "      beta: 0.2",
                         "      xi: 0.1",
                         "      eta: 0.05",
-                        "      zeta: -0.1",
-                        "      psi: 0.2",
                         "experiments:",
                         "  - name: confounding_smoke",
                     ]
@@ -1127,8 +1174,6 @@ class MinimalPipelineTests(unittest.TestCase):
                         "      beta: 0.2",
                         "      xi: 0.1",
                         "      eta: 0.05",
-                        "      zeta: -0.1",
-                        "      psi: 0.2",
                         "experiments:",
                         "  - name: partial_confounding_smoke",
                     ]
@@ -2839,8 +2884,6 @@ class FitReportingTests(unittest.TestCase):
                     "      beta: 0.2",
                     "      xi: 0.1",
                     "      eta: 0.05",
-                    "      zeta: -0.1",
-                    "      psi: 0.2",
                     "experiments:",
                     "  - name: smoke_rank_0",
                 ]
@@ -2941,6 +2984,36 @@ class PipelineStageRequestTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 
+    def _write_fixed_generation_artifacts(
+        self,
+        name: str,
+        *,
+        gamma_matrix: np.ndarray | None = None,
+        z: np.ndarray | None = None,
+        z_0: np.ndarray | None = None,
+    ) -> dict[str, str]:
+        artifact_root = self.root / "artifacts" / name
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        result: dict[str, str] = {"artifact_dir": artifact_root.as_posix()}
+        if gamma_matrix is not None:
+            gamma_path = artifact_root / "gamma_matrix.npy"
+            np.save(gamma_path, np.asarray(gamma_matrix, dtype=float))
+            result["gamma_path"] = gamma_path.as_posix()
+        if z is not None:
+            z_array = np.asarray(z, dtype=float)
+            z0_array = (
+                -np.ones(z_array.shape[1], dtype=float)
+                if z_0 is None
+                else np.asarray(z_0, dtype=float)
+            )
+            panel_path = artifact_root / "panel_data.npz"
+            z0_path = artifact_root / "z_0.npy"
+            np.savez(panel_path, x=np.zeros_like(z_array), z=z_array)
+            np.save(z0_path, z0_array)
+            result["panel_path"] = panel_path.as_posix()
+            result["z0_path"] = z0_path.as_posix()
+        return result
+
     def _write_generation_spec(self, experiments: list[dict[str, object] | str]) -> Path:
         normalized_experiments: list[dict[str, object]] = []
         for experiment in experiments:
@@ -2992,8 +3065,6 @@ class PipelineStageRequestTests(unittest.TestCase):
                         "beta": 0.2,
                         "xi": 0.1,
                         "eta": 0.05,
-                        "zeta": -0.1,
-                        "psi": 0.2,
                     },
                 },
             },
@@ -3096,10 +3167,208 @@ class PipelineStageRequestTests(unittest.TestCase):
         generation_spec_path = self._write_generation_spec(["exp_a", "exp_b"])
 
         write_generation_requests(generation_spec_path)
-        run_generation_request(generation_spec_path, "exp_a", overwrite=True)
+        row = run_generation_request(generation_spec_path, "exp_a", overwrite=True)
 
         self.assertTrue((self.root / "generated" / "exp_a" / "panel_data.npz").exists())
         self.assertFalse((self.root / "generated" / "exp_b").exists())
+        with np.load(
+            self.root / "generated" / "exp_a" / "field_artifacts.npz",
+            allow_pickle=False,
+        ) as data:
+            expected_latent_rank = int(np.asarray(data["latent_rank"]).item())
+        self.assertEqual(int(row["latent_rank"]), expected_latent_rank)
+        self.assertEqual(row["experiment_name"], "exp_a")
+
+    def test_run_generation_request_fixed_intervention_resolves_null_dimensions(self) -> None:
+        fixed_artifacts = self._write_fixed_generation_artifacts(
+            "fixed_z_only",
+            z=np.array(
+                [
+                    [1.0, -1.0, 1.0, -1.0, 1.0],
+                    [-1.0, 1.0, -1.0, 1.0, -1.0],
+                    [1.0, 1.0, -1.0, -1.0, 1.0],
+                ],
+                dtype=float,
+            ),
+        )
+        generation_spec_path = self._write_generation_spec(
+            [
+                {
+                    "name": "exp_fixed_z_null_dims",
+                    "dimensions": {"N": None, "T": None},
+                    "intervention": {
+                        "source": "fixed_artifact",
+                        "artifact": {
+                            "panel_path": fixed_artifacts["panel_path"],
+                            "z0_path": fixed_artifacts["z0_path"],
+                            "artifact_dir": fixed_artifacts["artifact_dir"],
+                            "shared_panel_dir": None,
+                            "outcome_code": None,
+                            "intervention_code": None,
+                            "lag_code": None,
+                            "trim_scope": None,
+                        },
+                    },
+                }
+            ]
+        )
+
+        row = run_generation_request(
+            generation_spec_path, "exp_fixed_z_null_dims", overwrite=True
+        )
+
+        realized_config = OmegaConf.load(
+            self.root
+            / "generated"
+            / "exp_fixed_z_null_dims"
+            / "generation_realized_config.yaml"
+        )
+        self.assertEqual(int(realized_config.global_params.N), 5)
+        self.assertEqual(int(realized_config.global_params.T), 3)
+        self.assertEqual(
+            set(OmegaConf.to_container(realized_config.estimation_params, resolve=True)),
+            {"beta", "xi", "eta"},
+        )
+        self.assertEqual(int(row["N"]), 5)
+        self.assertEqual(int(row["T"]), 3)
+
+    def test_run_generation_request_fixed_graph_resolves_null_n(self) -> None:
+        fixed_artifacts = self._write_fixed_generation_artifacts(
+            "fixed_gamma_only",
+            gamma_matrix=np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0, 1.0],
+                    [1.0, 0.0, 1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0, 1.0, 0.0],
+                ],
+                dtype=float,
+            ),
+        )
+        generation_spec_path = self._write_generation_spec(
+            [
+                {
+                    "name": "exp_fixed_gamma_null_n",
+                    "dimensions": {"N": None, "T": 3},
+                    "graph": {
+                        "source": "fixed_artifact",
+                        "artifact": {
+                            "gamma_path": fixed_artifacts["gamma_path"],
+                            "node_index_path": None,
+                            "artifact_dir": fixed_artifacts["artifact_dir"],
+                            "network_name": None,
+                            "trim_scope": None,
+                        },
+                    },
+                }
+            ]
+        )
+
+        row = run_generation_request(
+            generation_spec_path, "exp_fixed_gamma_null_n", overwrite=True
+        )
+
+        realized_config = OmegaConf.load(
+            self.root
+            / "generated"
+            / "exp_fixed_gamma_null_n"
+            / "generation_realized_config.yaml"
+        )
+        self.assertEqual(int(realized_config.global_params.N), 5)
+        self.assertEqual(int(realized_config.global_params.T), 3)
+        self.assertEqual(int(row["N"]), 5)
+        self.assertEqual(int(row["T"]), 3)
+
+    def test_run_generation_request_generated_graph_requires_resolved_n(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_missing_n", "dimensions": {"N": None, "T": 4}}]
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "global_params.N must be resolved before generating a non-fixed graph",
+        ):
+            run_generation_request(generation_spec_path, "exp_missing_n", overwrite=True)
+
+    def test_run_generation_request_generated_intervention_requires_resolved_t(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_missing_t", "dimensions": {"N": 6, "T": None}}]
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "global_params.T must be resolved before generation",
+        ):
+            run_generation_request(generation_spec_path, "exp_missing_t", overwrite=True)
+
+    def test_run_generation_request_conflicting_fixed_sources_raise(self) -> None:
+        fixed_graph = self._write_fixed_generation_artifacts(
+            "conflicting_fixed_graph",
+            gamma_matrix=np.array(
+                [
+                    [0.0, 1.0, 0.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 0.0, 1.0, 0.0],
+                ],
+                dtype=float,
+            ),
+        )
+        fixed_intervention = self._write_fixed_generation_artifacts(
+            "conflicting_fixed_z",
+            z=np.array(
+                [
+                    [1.0, -1.0, 1.0, -1.0, 1.0, -1.0],
+                    [-1.0, 1.0, -1.0, 1.0, -1.0, 1.0],
+                    [1.0, 1.0, -1.0, -1.0, 1.0, 1.0],
+                    [-1.0, -1.0, 1.0, 1.0, -1.0, -1.0],
+                ],
+                dtype=float,
+            ),
+        )
+        generation_spec_path = self._write_generation_spec(
+            [
+                {
+                    "name": "exp_conflicting_fixed_sources",
+                    "dimensions": {"N": None, "T": None},
+                    "graph": {
+                        "source": "fixed_artifact",
+                        "artifact": {
+                            "gamma_path": fixed_graph["gamma_path"],
+                            "node_index_path": None,
+                            "artifact_dir": fixed_graph["artifact_dir"],
+                            "network_name": None,
+                            "trim_scope": None,
+                        },
+                    },
+                    "intervention": {
+                        "source": "fixed_artifact",
+                        "artifact": {
+                            "panel_path": fixed_intervention["panel_path"],
+                            "z0_path": fixed_intervention["z0_path"],
+                            "artifact_dir": fixed_intervention["artifact_dir"],
+                            "shared_panel_dir": None,
+                            "outcome_code": None,
+                            "intervention_code": None,
+                            "lag_code": None,
+                            "trim_scope": None,
+                        },
+                    },
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "does not match configured N=6",
+        ):
+            run_generation_request(
+                generation_spec_path,
+                "exp_conflicting_fixed_sources",
+                overwrite=True,
+            )
 
     def test_refresh_generation_manifest_rebuilds_manifest_from_outputs(self) -> None:
         generation_spec_path = self._write_generation_spec(
@@ -6797,8 +7066,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "      beta: 0.2",
                     "      xi: 0.1",
                     "      eta: 0.05",
-                    "      zeta: -0.1",
-                    "      psi: 0.2",
                     "experiments:",
                     "  - name: smoke_rank_0",
                     "  - name: smoke_rank_1",
@@ -6918,8 +7185,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "      beta: 0.2",
                     "      xi: 0.1",
                     "      eta: 0.05",
-                    "      zeta: -0.1",
-                    "      psi: 0.2",
                     "experiments:",
                     "  - name: smoke_rank_0",
                 ]
@@ -7232,8 +7497,6 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "      beta: 0.2",
                     "      xi: 0.1",
                     "      eta: 0.05",
-                    "      zeta: -0.1",
-                    "      psi: 0.2",
                     "experiments:",
                     "  - name: smoke_rank_0",
                 ]

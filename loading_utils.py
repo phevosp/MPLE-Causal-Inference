@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from intervention_utils import derive_post_intervention_steps, derive_pre_intervention_steps
 from io_utils import (
     first_existing_path,
     io_path,
@@ -55,9 +56,6 @@ def load_panel_context_from_artifacts(
         z = np.asarray(data["z"], dtype=float)
     x_0 = np.asarray(np.load(io_path(x0_path)), dtype=float)
     z_0 = np.asarray(np.load(io_path(z0_path)), dtype=float)
-
-    from data.synthetic_data_generation import derive_pre_intervention_steps
-    from intervention_utils import derive_post_intervention_steps
 
     return {
         "x": x,

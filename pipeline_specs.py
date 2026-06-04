@@ -17,9 +17,9 @@ from omegaconf import OmegaConf
 from split_artifact_utils import VALID_SPLIT_SOURCES
 
 
-def slugify(text: str) -> str:
+def slugify(text: str, fallback: str = "item") -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "_", text.strip().lower()).strip("_")
-    return slug or "item"
+    return slug or fallback
 
 
 def _as_plain_dict(value: Any) -> dict[str, Any]:

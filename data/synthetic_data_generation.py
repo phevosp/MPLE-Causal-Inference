@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,25 +14,22 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from model_utils import (
+    ConfoundedFieldLayout,
     ModelArtifacts,
     SpectralLowRankStructure,
     build_synthetic_field,
+    build_synthetic_field_with_layout,
     compose_interaction_matrix,
     get_xi,
-    get_synthetic_field_params,
-    get_synthetic_field_mode,
     interaction_matrix_infinity_norm,
     leading_svd_low_rank_structure,
+    normalize_matrix_by_max_abs_entry,
+    parse_synthetic_field_spec,
     parse_singular_values,
-    resolve_generation_confounded_field_ranks,
     sample_spectral_low_rank_structure,
     save_model_artifacts,
 )
-
-
-def slugify(text: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", text.strip().lower()).strip("_")
-    return slug or "experiment"
+from pipeline_specs import slugify
 
 
 @dataclass(frozen=True)
@@ -77,6 +73,10 @@ def realize_generation_inputs(config):
         else:
             gamma_matrix = np.asarray(np.load(gamma_path), dtype=float)
         print(f"Loaded fixed graph artifact from {gamma_path}.")
+        if gamma_matrix.shape[0] != gamma_matrix.shape[1]:
+            raise ValueError(f"Fixed gamma artifact must be square: {gamma_path}")
+        if config.global_params.N is None:
+            config.global_params.N = int(gamma_matrix.shape[0])
         expected_n = int(config.global_params.N)
         if gamma_matrix.shape != (expected_n, expected_n):
             raise ValueError(
@@ -87,22 +87,29 @@ def realize_generation_inputs(config):
             if value:
                 fixed_gamma_metadata[f"fixed_gamma_{key}"] = str(value)
         fixed_gamma_metadata["fixed_gamma_path"] = str(gamma_path.resolve())
-    elif generator == "erdos_renyi":
-        gamma_graph = nx.erdos_renyi_graph(
-            int(config.global_params.N),
-            float(config.global_params.gamma_matrix_params.p),
-            seed=int(config.generation_params.seed),
-        )
-    elif generator == "complete":
-        gamma_graph = nx.complete_graph(int(config.global_params.N))
-    elif generator == "cycle":
-        gamma_graph = nx.cycle_graph(int(config.global_params.N))
-    elif generator == "empty":
-        gamma_graph = nx.empty_graph(int(config.global_params.N))
     else:
-        raise ValueError(f"Invalid gamma matrix generator: {generator}")
+        # For non-fixed generators, we require N to be specified to know how large of a graph to generate.
+        if config.global_params.N is None:
+            raise ValueError(
+                "global_params.N must be resolved before generating a non-fixed graph."
+            )
+        # Generate graph
+        if generator == "erdos_renyi":
+            gamma_graph = nx.erdos_renyi_graph(
+                int(config.global_params.N),
+                float(config.global_params.gamma_matrix_params.p),
+                seed=int(config.generation_params.seed),
+            )
+        elif generator == "complete":
+            gamma_graph = nx.complete_graph(int(config.global_params.N))
+        elif generator == "cycle":
+            gamma_graph = nx.cycle_graph(int(config.global_params.N))
+        elif generator == "empty":
+            gamma_graph = nx.empty_graph(int(config.global_params.N))
+        else:
+            raise ValueError(f"Invalid gamma_matrix_generator: {generator}")
 
-    if generator != "fixed_artifact":
+        # Ensure numpy array; symmetric; zero-diagonal
         gamma_matrix = nx.to_numpy_array(
             gamma_graph, nodelist=list(gamma_graph.nodes())
         )
@@ -139,13 +146,6 @@ def intervention_mode(config) -> str:
     )
 
 
-def intervention_params(config) -> dict[str, object]:
-    params = getattr(config.generation_params, "intervention_params", {})
-    if params is None:
-        return {}
-    if isinstance(params, dict):
-        return dict(params)
-    return dict(params)
 
 
 def load_fixed_intervention_artifacts(
@@ -176,14 +176,21 @@ def load_fixed_intervention_artifacts(
         f" panel={panel_path} and z0={z0_path}."
     )
 
-    expected_shape = (int(config.global_params.T), int(config.global_params.N))
+    if z.ndim != 2:
+        raise ValueError(f"Fixed-z artifact must be 2D: {panel_path}")
+    if config.global_params.N is None:
+        config.global_params.N = int(z.shape[1])
+    expected_n = int(config.global_params.N)
+    if z_0.shape != (expected_n,):
+        raise ValueError(
+            f"Fixed-z initial state shape {z_0.shape} does not match configured N={expected_n}."
+        )
+    if config.global_params.T is None:
+        config.global_params.T = int(z.shape[0])
+    expected_shape = (int(config.global_params.T), expected_n)
     if z.shape != expected_shape:
         raise ValueError(
             f"Fixed-z artifact shape {z.shape} does not match configured (T, N)={expected_shape}."
-        )
-    if z_0.shape != (int(config.global_params.N),):
-        raise ValueError(
-            f"Fixed-z initial state shape {z_0.shape} does not match configured N={int(config.global_params.N)}."
         )
 
     metadata = {
@@ -204,15 +211,15 @@ def load_fixed_intervention_artifacts(
     return z, z_0, metadata
 
 
-def derive_pre_intervention_steps(z: np.ndarray) -> int:
-    treated_rows = np.any(np.asarray(z) == 1, axis=1)
-    return int(np.argmax(treated_rows)) if treated_rows.any() else int(z.shape[0])
-
-
 def sample_low_rank_probability_interventions(
     config,
 ) -> InterventionGenerationArtifacts:
-    params = intervention_params(config)
+    params = getattr(config.generation_params, "intervention_params", {}) or {}
+    if isinstance(params, dict):
+        params = dict(params)
+    else:
+        params = dict(OmegaConf.to_container(params, resolve=True))
+
     singular_values = parse_singular_values(
         params.get("singular_values"),
         context="generation_params.intervention_params.singular_values",
@@ -229,12 +236,7 @@ def sample_low_rank_probability_interventions(
         singular_values,
         np.random.default_rng(int(config.generation_params.seed) + 307),
     )
-    score_matrix = np.asarray(structure.matrix, dtype=float)
-    max_abs = float(np.max(np.abs(score_matrix))) if score_matrix.size else 0.0
-    if max_abs > 0.0:
-        score_matrix = score_matrix / max_abs
-    else:
-        score_matrix = np.zeros_like(score_matrix)
+    score_matrix = normalize_matrix_by_max_abs_entry(structure.matrix)
     probability_matrix = 0.5 + amplitude * score_matrix
     probability_matrix = np.clip(probability_matrix, 0.0, 1.0)
     z_rng = np.random.default_rng(int(config.generation_params.seed) + 401)
@@ -254,20 +256,58 @@ def sample_low_rank_probability_interventions(
 
 
 def derive_fixed_intervention_structure_for_field(
-    config,
     fixed_z: np.ndarray,
+    target_rank: int,
 ) -> SpectralLowRankStructure:
-    field_params = getattr(config.global_params, "field_params", {}) or {}
-    if not isinstance(field_params, dict):
-        field_params = dict(field_params)
-    field_singular_values = parse_singular_values(
-        field_params.get("singular_values"),
-        context="global_params.field_params.singular_values",
-    )
     return leading_svd_low_rank_structure(
         np.asarray(fixed_z, dtype=float),
-        int(field_singular_values.size),
+        int(target_rank),
     )
+
+
+def _apply_interaction_term_to_state(interaction_matrix, x_t: np.ndarray) -> np.ndarray:
+    """Compute interaction_matrix @ x_t, handling both sparse and dense matrices."""
+    if sparse.issparse(interaction_matrix):
+        return np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
+    return np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
+
+
+def _update_interaction_term_on_flip(
+    interaction_matrix, interaction_x_t: np.ndarray, node_idx: int, delta: float
+) -> np.ndarray:
+    """Update interaction_x_t after flipping x_t[node_idx] by delta."""
+    if sparse.issparse(interaction_matrix):
+        interaction_x_t += delta * interaction_matrix[:, node_idx].toarray().ravel()
+    else:
+        interaction_x_t += delta * interaction_matrix[:, node_idx]
+    return interaction_x_t
+
+
+def _prepare_intervention_structure(
+    config, early_field_spec
+) -> tuple[np.ndarray, np.ndarray, InterventionGenerationArtifacts | None, SpectralLowRankStructure | None, dict[str, str]]:
+    """Prepare intervention data and structure for generation.
+
+    Returns (fixed_z, z_0, intervention_generation_artifacts, intervention_structure, metadata_dict).
+    """
+    fixed_z_metadata: dict[str, str] = {}
+    intervention_generation_artifacts: InterventionGenerationArtifacts | None = None
+    intervention_structure: SpectralLowRankStructure | None = None
+
+    if intervention_mode(config) == "fixed_z":
+        fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
+        if early_field_spec.mode == "confounded_low_rank":
+            intervention_structure = derive_fixed_intervention_structure_for_field(
+                fixed_z, int(early_field_spec.singular_values.size)
+            )
+    else:
+        intervention_generation_artifacts = sample_low_rank_probability_interventions(config)
+        intervention_structure = intervention_generation_artifacts.low_rank_structure
+        fixed_z = np.asarray(intervention_generation_artifacts.z, dtype=float)
+        z_0 = np.asarray(intervention_generation_artifacts.z_0, dtype=float)
+        print("Generated interventions from a low-rank probability matrix.")
+
+    return fixed_z, z_0, intervention_generation_artifacts, intervention_structure, fixed_z_metadata
 
 
 def sample_x_t_with_parameters(
@@ -282,11 +322,12 @@ def sample_x_t_with_parameters(
     beta_active: np.ndarray | None = None,
 ):
     x_t = x_prev.copy()
-    interaction_x_t = np.asarray(interaction_matrix @ x_t, dtype=float).reshape(-1)
+    interaction_x_t = _apply_interaction_term_to_state(interaction_matrix, x_t)
+    z_curr_array = np.asarray(z_curr, dtype=float)
     beta_feature = (
-        np.asarray(z_curr, dtype=float)
+        z_curr_array
         if beta_active is None
-        else np.asarray(z_curr, dtype=float) * np.asarray(beta_active, dtype=float)
+        else z_curr_array * np.asarray(beta_active, dtype=float)
     )
     for _ in range(int(gibbs_sweeps)):
         for i in rng.permutation(int(x_t.shape[0])):
@@ -299,10 +340,9 @@ def sample_x_t_with_parameters(
             )
             x_t[i] = spin_sample_from_field(h_x, rng)
             delta = x_t[i] - old_x_i
-            if sparse.issparse(interaction_matrix):
-                interaction_x_t += delta * interaction_matrix[:, i].toarray().ravel()
-            else:
-                interaction_x_t += delta * interaction_matrix[:, i]
+            interaction_x_t = _update_interaction_term_on_flip(
+                interaction_matrix, interaction_x_t, i, delta
+            )
     return x_t
 
 
@@ -389,8 +429,8 @@ def generate_data(
     artifacts: ModelArtifacts,
     x_0: np.ndarray,
     rng,
-    fixed_z: np.ndarray | None = None,
-    z_0: np.ndarray | None = None,
+    z: np.ndarray,
+    z_0: np.ndarray,
 ):
     t_steps = int(config.global_params.T)
     n_nodes = int(config.global_params.N)
@@ -413,42 +453,12 @@ def generate_data(
     eta = float(config.estimation_params.eta)
     gibbs_sweeps = int(config.generation_params.gibbs_sweeps)
 
-    mode = intervention_mode(config)
-    if mode == "fixed_z":
-        if fixed_z is None:
-            raise ValueError(
-                "fixed_z must be provided when intervention_mode='fixed_z'."
-            )
-        z = np.asarray(fixed_z, dtype=float)
-        if z.shape != (t_steps, n_nodes):
-            raise ValueError(
-                f"fixed_z shape {z.shape} does not match configured (T, N)=({t_steps}, {n_nodes})."
-            )
-        print("Using saved intervention panel z.")
-        x = simulate_outcomes_given_fixed_interventions(
-            x_0=np.asarray(x_0, dtype=float),
-            z=z,
-            field_matrix=field_matrix,
-            interaction_matrix=interaction_matrix,
-            beta=beta,
-            eta=eta,
-            rng=rng,
-            gibbs_sweeps=gibbs_sweeps,
+    if z is None:
+        raise ValueError("z must be provided to generate data.")
+    if z.shape != (t_steps, n_nodes):
+        raise ValueError(
+            f"fixed_z shape {z.shape} does not match configured (T, N)=({t_steps}, {n_nodes})."
         )
-        return x, z, resolved_z_0
-
-    if mode != "low_rank_probability":
-        raise ValueError(f"Invalid intervention_mode: {mode}")
-    if fixed_z is None:
-        intervention_artifacts = sample_low_rank_probability_interventions(config)
-        z = np.asarray(intervention_artifacts.z, dtype=float)
-        resolved_z_0 = np.asarray(intervention_artifacts.z_0, dtype=float)
-    else:
-        z = np.asarray(fixed_z, dtype=float)
-        if z.shape != (t_steps, n_nodes):
-            raise ValueError(
-                f"fixed_z shape {z.shape} does not match configured (T, N)=({t_steps}, {n_nodes})."
-            )
     x = simulate_outcomes_given_fixed_interventions(
         x_0=np.asarray(x_0, dtype=float),
         z=z,
@@ -460,6 +470,26 @@ def generate_data(
         gibbs_sweeps=gibbs_sweeps,
     )
     return x, z, resolved_z_0
+
+
+def _build_field_layout_metadata(
+    field_spec, field_layout: ConfoundedFieldLayout | None, config
+) -> dict[str, object]:
+    """Build metadata dict for field layout and confounded field configuration."""
+    if field_spec.mode == "confounded_low_rank" and field_layout is not None:
+        return {
+            "field_shared_rank": int(field_layout.shared_rank),
+            "field_nonshared_rank": int(field_layout.nonshared_rank),
+            "field_shared_basis_source": (
+                "fixed_z_svd" if intervention_mode(config) == "fixed_z"
+                else "generated_intervention_basis"
+            ),
+        }
+    return {
+        "field_shared_rank": 0,
+        "field_nonshared_rank": int(field_spec.singular_values.size),
+        "field_shared_basis_source": "none",
+    }
 
 
 def save_artifacts(
@@ -519,57 +549,52 @@ def materialize_generation_experiment(
 ) -> dict[str, object]:
     extra_metadata = dict(extra_metadata or {})
     print(f"Materializing generation experiment '{descriptor}'...")
+    early_field_spec = parse_synthetic_field_spec(config)
+
+    # Realize generation inputs, including (fixed) interaction matrix
     config, gamma_matrix, x_0, rng, fixed_gamma_metadata = realize_generation_inputs(
         config
     )
 
-    fixed_z_metadata: dict[str, str] = {}
-    intervention_generation_artifacts: InterventionGenerationArtifacts | None = None
-    intervention_structure: SpectralLowRankStructure | None = None
-    if intervention_mode(config) == "fixed_z":
-        fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
-        if get_synthetic_field_mode(config) == "confounded_low_rank":
-            intervention_structure = derive_fixed_intervention_structure_for_field(
-                config,
-                fixed_z,
-            )
-        print("Loaded fixed intervention path.")
-    elif intervention_mode(config) == "low_rank_probability":
-        intervention_generation_artifacts = sample_low_rank_probability_interventions(
-            config
-        )
-        intervention_structure = intervention_generation_artifacts.low_rank_structure
-        fixed_z = np.asarray(intervention_generation_artifacts.z, dtype=float)
-        z_0 = np.asarray(intervention_generation_artifacts.z_0, dtype=float)
-        print("Generated interventions from a low-rank probability matrix.")
-    else:
-        fixed_z = None
-        z_0 = np.zeros(int(config.global_params.N), dtype=float)
-        print("Using default generated intervention setup with z_0 initialized to zeros.")
+    if config.global_params.N is None:
+        raise ValueError("global_params.N must be resolved before generation.")
+    if config.global_params.T is None:
+        raise ValueError("global_params.T must be resolved before generation.")
+    field_spec = parse_synthetic_field_spec(config)
+
+    # Prepare intervention data and structure
+    fixed_z, z_0, intervention_generation_artifacts, intervention_structure, fixed_z_metadata = (
+        _prepare_intervention_structure(config, early_field_spec)
+    )
+    if intervention_mode(config) not in ("fixed_z", "low_rank_probability"):
+        raise ValueError(f"Invalid intervention_mode: {intervention_mode(config)}")
 
     print(
         "Building latent field artifacts with"
-        f" field_mode={get_synthetic_field_mode(config)} and"
+        f" field_mode={field_spec.mode} and"
         f" B={float(config.global_params.B):.4f}."
     )
-    artifacts = build_synthetic_field(
+    build_result = build_synthetic_field_with_layout(
         config,
         gamma_matrix,
         intervention_structure=intervention_structure,
+        field_spec=field_spec,
     )
+    artifacts = build_result.artifacts
+    field_layout = build_result.confounded_layout
 
     x, z, z_0 = generate_data(
         config,
         artifacts,
         x_0,
         rng,
-        fixed_z=fixed_z,
-        z_0=z_0,
+        fixed_z,
+        z_0,
     )
 
     metadata = {
         "descriptor": descriptor,
-        "slug": slugify(descriptor),
+        "slug": slugify(descriptor, fallback="experiment"),
         "config_name": config_label,
         "gamma_inf_norm": interaction_matrix_infinity_norm(artifacts.gamma_matrix),
         "gamma_fro_norm": (
@@ -580,33 +605,14 @@ def materialize_generation_experiment(
             else float(np.linalg.norm(artifacts.gamma_matrix, ord="fro"))
         ),
         "intervention_mode": intervention_mode(config),
-        "field_mode": get_synthetic_field_mode(config),
+        "field_mode": field_spec.mode,
         "has_truth": True,
+        "latent_rank": int(artifacts.latent_rank),
+        **_build_field_layout_metadata(field_spec, field_layout, config),
         **extra_metadata,
         **fixed_z_metadata,
         **fixed_gamma_metadata,
     }
-    metadata["latent_rank"] = int(artifacts.latent_rank)
-    if get_synthetic_field_mode(config) == "confounded_low_rank":
-        shared_rank, nonshared_rank = resolve_generation_confounded_field_ranks(
-            config,
-            intervention_structure,
-        )
-        metadata["field_shared_rank"] = int(shared_rank)
-        metadata["field_nonshared_rank"] = int(nonshared_rank)
-        metadata["field_shared_basis_source"] = (
-            "fixed_z_svd"
-            if intervention_mode(config) == "fixed_z"
-            else "generated_intervention_basis"
-        )
-    else:
-        field_singular_values = parse_singular_values(
-            get_synthetic_field_params(config).get("singular_values"),
-            context="global_params.field_params.singular_values",
-        )
-        metadata["field_shared_rank"] = 0
-        metadata["field_nonshared_rank"] = int(field_singular_values.size)
-        metadata["field_shared_basis_source"] = "none"
 
     save_artifacts(
         data_folder,

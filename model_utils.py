@@ -56,6 +56,38 @@ class SpectralLowRankStructure:
     matrix: np.ndarray
 
 
+@dataclass(frozen=True)
+class SyntheticFieldSpec:
+    """Parsed synthetic-field configuration for generation."""
+
+    mode: str
+    singular_values: np.ndarray
+    target_rms_fraction: float
+    shared_rank: int | None
+    B: float
+    seed: int
+    n_nodes: int | None
+    t_steps: int | None
+
+
+@dataclass(frozen=True)
+class ConfoundedFieldLayout:
+    """Resolved shared/nonshared rank split for confounded field generation."""
+
+    total_rank: int
+    available_shared_rank: int
+    shared_rank: int
+    nonshared_rank: int
+
+
+@dataclass(frozen=True)
+class SyntheticFieldBuildResult:
+    """Generation-only synthetic-field build output with optional confounding layout."""
+
+    artifacts: ModelArtifacts
+    confounded_layout: ConfoundedFieldLayout | None = None
+
+
 def scalar_parameter_names() -> list[str]:
     return list(SCALAR_PARAMETER_ORDER)
 
@@ -128,29 +160,19 @@ def get_xi(config) -> float:
     return float(config.estimation_params.xi)
 
 
-def get_synthetic_field_mode(config) -> str:
-    global_params = getattr(config, "global_params", None)
-    if global_params is None or "field_mode" not in global_params:
-        return SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK
-    field_mode = str(global_params.field_mode).strip()
-    if field_mode not in VALID_SYNTHETIC_FIELD_MODES:
-        raise ValueError(
-            "global_params.field_mode must be one of: "
-            + ", ".join(sorted(VALID_SYNTHETIC_FIELD_MODES))
-        )
-    return field_mode
+def _config_section_to_dict(section) -> dict[str, object]:
+    if section is None:
+        return {}
+    if isinstance(section, dict):
+        return dict(section)
+    return dict(OmegaConf.to_container(section, resolve=True))
 
 
-def get_synthetic_field_params(config) -> dict[str, object]:
+def _get_synthetic_field_params(config) -> dict[str, object]:
     global_params = getattr(config, "global_params", None)
     if global_params is None or "field_params" not in global_params:
         return {}
-    field_params = global_params.field_params
-    if field_params is None:
-        return {}
-    if isinstance(field_params, dict):
-        return dict(field_params)
-    return dict(field_params)
+    return _config_section_to_dict(global_params.field_params)
 
 
 def parse_singular_values(
@@ -255,6 +277,17 @@ def normalize_matrix_max_abs(
     if current < _DEGENERACY_THRESHOLD or max_abs == 0.0:
         return np.zeros_like(matrix)
     return matrix * (float(max_abs) / current)
+
+
+def normalize_matrix_by_max_abs_entry(matrix: np.ndarray) -> np.ndarray:
+    """Normalize matrix by dividing by its maximum absolute entry, returning zeros if degenerate."""
+    matrix = np.asarray(matrix, dtype=float)
+    if matrix.size == 0:
+        return np.zeros_like(matrix)
+    max_abs = float(np.max(np.abs(matrix)))
+    if max_abs < _DEGENERACY_THRESHOLD:
+        return np.zeros_like(matrix)
+    return matrix / max_abs
 
 
 def sample_spectral_low_rank_structure(
@@ -363,35 +396,6 @@ def project_latent_field(
     return node_factors * scale, time_factors * scale
 
 
-def _resolve_generation_field_singular_values(
-    config,
-    *,
-    allow_empty: bool = True,
-) -> np.ndarray:
-    field_params = get_synthetic_field_params(config)
-    singular_values = parse_singular_values(
-        field_params.get("singular_values"),
-        context="global_params.field_params.singular_values",
-    )
-    if singular_values.size == 0 and not allow_empty:
-        raise ValueError(
-            "global_params.field_params.singular_values must be provided for this field mode."
-        )
-    return singular_values
-
-
-def _resolve_generation_field_rms_fraction(config) -> float:
-    field_params = get_synthetic_field_params(config)
-    fraction = float(
-        field_params.get("target_rms_fraction", _DEFAULT_FIELD_RMS_FRACTION)
-    )
-    if fraction < 0.0:
-        raise ValueError(
-            "global_params.field_params.target_rms_fraction must be nonnegative."
-        )
-    return fraction
-
-
 def _parse_optional_nonnegative_int(
     raw_value: object | None,
     *,
@@ -410,75 +414,135 @@ def _parse_optional_nonnegative_int(
     return int(value)
 
 
-def _resolve_generation_field_shared_rank(config) -> int | None:
-    field_params = get_synthetic_field_params(config)
-    return _parse_optional_nonnegative_int(
+def parse_synthetic_field_spec(config) -> SyntheticFieldSpec:
+    global_params = getattr(config, "global_params", None)
+    if global_params is None:
+        raise KeyError("global_params is required.")
+    raw_mode = getattr(global_params, "field_mode", SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK)
+    field_mode = str(raw_mode).strip()
+    if field_mode not in VALID_SYNTHETIC_FIELD_MODES:
+        raise ValueError(
+            "global_params.field_mode must be one of: "
+            + ", ".join(sorted(VALID_SYNTHETIC_FIELD_MODES))
+        )
+
+    field_params = _get_synthetic_field_params(config)
+    singular_values = parse_singular_values(
+        field_params.get("singular_values"),
+        context="global_params.field_params.singular_values",
+    )
+    target_rms_fraction = float(
+        field_params.get("target_rms_fraction", _DEFAULT_FIELD_RMS_FRACTION)
+    )
+    if target_rms_fraction < 0.0:
+        raise ValueError(
+            "global_params.field_params.target_rms_fraction must be nonnegative."
+        )
+    shared_rank = _parse_optional_nonnegative_int(
         field_params.get("shared_rank"),
         context="global_params.field_params.shared_rank",
     )
+    if (
+        shared_rank is not None
+        and field_mode != SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
+    ):
+        raise ValueError(
+            "global_params.field_params.shared_rank is only valid when "
+            "global_params.field_mode='confounded_low_rank'."
+        )
+    return SyntheticFieldSpec(
+        mode=field_mode,
+        singular_values=singular_values,
+        target_rms_fraction=target_rms_fraction,
+        shared_rank=shared_rank,
+        B=get_B(config),
+        seed=int(config.generation_params.seed),
+        n_nodes=(
+            None
+            if getattr(config.global_params, "N", None) is None
+            else int(config.global_params.N)
+        ),
+        t_steps=(
+            None
+            if getattr(config.global_params, "T", None) is None
+            else int(config.global_params.T)
+        ),
+    )
 
 
-def resolve_generation_confounded_field_ranks(
-    config,
+def _effective_structure_rank(structure: SpectralLowRankStructure) -> int:
+    return int(np.count_nonzero(np.abs(structure.singular_values) > _DEGENERACY_THRESHOLD))
+
+
+def resolve_confounded_field_layout(
+    field_spec: SyntheticFieldSpec,
     intervention_structure: SpectralLowRankStructure | None,
-) -> tuple[int, int]:
+) -> ConfoundedFieldLayout:
     if intervention_structure is None:
         raise ValueError(
             "field_mode='confounded_low_rank' requires low-rank intervention factors, "
             "either generated directly or derived from a fixed intervention panel."
         )
-    singular_values = _resolve_generation_field_singular_values(
-        config,
-        allow_empty=False,
-    )
-    total_rank = int(singular_values.size)
-    available_rank = int(intervention_structure.singular_values.size)
-    requested_shared_rank = _resolve_generation_field_shared_rank(config)
-    if requested_shared_rank is None:
-        shared_rank = available_rank
-        if total_rank != available_rank:
+    total_rank = int(field_spec.singular_values.size)
+    if total_rank == 0:
+        raise ValueError(
+            "global_params.field_params.singular_values must be provided for this field mode."
+        )
+    available_shared_rank = _effective_structure_rank(intervention_structure)
+    if field_spec.shared_rank is None:
+        shared_rank = available_shared_rank
+        if total_rank != available_shared_rank:
             raise ValueError(
                 "global_params.field_params.singular_values must have the same length as the "
                 "shared intervention low-rank basis for field_mode='confounded_low_rank' "
                 "when shared_rank is omitted."
             )
     else:
-        shared_rank = int(requested_shared_rank)
+        shared_rank = int(field_spec.shared_rank)
         if shared_rank > total_rank:
             raise ValueError(
                 "global_params.field_params.shared_rank must not exceed the total field rank "
                 "defined by global_params.field_params.singular_values."
             )
-        if shared_rank > available_rank:
+        if shared_rank > available_shared_rank:
             raise ValueError(
                 "global_params.field_params.shared_rank must not exceed the available "
                 "intervention basis rank for field_mode='confounded_low_rank'."
             )
-    return shared_rank, int(total_rank - shared_rank)
+    return ConfoundedFieldLayout(
+        total_rank=total_rank,
+        available_shared_rank=available_shared_rank,
+        shared_rank=shared_rank,
+        nonshared_rank=int(total_rank - shared_rank),
+    )
 
 
-def _scale_spectral_field(field_matrix: np.ndarray, config) -> np.ndarray:
+def _field_rng(field_spec: SyntheticFieldSpec, offset: int):
+    return np.random.default_rng(int(field_spec.seed) + int(offset))
+
+
+def _scale_spectral_field(
+    field_matrix: np.ndarray,
+    field_spec: SyntheticFieldSpec,
+) -> np.ndarray:
     field_matrix = normalize_matrix_max_abs(field_matrix, max_abs=1.0)
-    target_rms = _resolve_generation_field_rms_fraction(config) * get_B(config)
+    target_rms = float(field_spec.target_rms_fraction) * float(field_spec.B)
     return scale_latent_field_matrix(field_matrix, target_rms)
 
 
-def _sample_random_low_rank_field(
-    config,
-    n_nodes: int,
-    t_steps: int,
+def _build_random_low_rank_field(
+    field_spec: SyntheticFieldSpec,
 ) -> tuple[np.ndarray, int]:
-    singular_values = _resolve_generation_field_singular_values(config)
-    if singular_values.size == 0:
-        return zero_latent_field(n_nodes, t_steps), 0
+    if field_spec.singular_values.size == 0:
+        return zero_latent_field(field_spec.n_nodes, field_spec.t_steps), 0
     structure = sample_spectral_low_rank_structure(
-        n_nodes,
-        t_steps,
-        singular_values,
-        np.random.default_rng(int(config.generation_params.seed) + 101),
+        field_spec.n_nodes,
+        field_spec.t_steps,
+        field_spec.singular_values,
+        _field_rng(field_spec, 101),
     )
-    field_matrix = _scale_spectral_field(structure.matrix, config)
-    return field_matrix, int(singular_values.size)
+    field_matrix = _scale_spectral_field(structure.matrix, field_spec)
+    return field_matrix, int(field_spec.singular_values.size)
 
 
 def _orthonormal_complement_gaussian_factors(
@@ -515,36 +579,32 @@ def _orthonormal_complement_gaussian_factors(
     )
 
 
-def _sample_confounded_low_rank_field(
-    config,
+def _build_confounded_low_rank_field(
+    field_spec: SyntheticFieldSpec,
     intervention_structure: SpectralLowRankStructure | None,
-) -> tuple[np.ndarray, int]:
-    singular_values = _resolve_generation_field_singular_values(
-        config,
-        allow_empty=False,
-    )
-    shared_rank, nonshared_rank = resolve_generation_confounded_field_ranks(
-        config,
+) -> tuple[np.ndarray, int, ConfoundedFieldLayout]:
+    layout = resolve_confounded_field_layout(
+        field_spec,
         intervention_structure,
     )
     shared_time_factors = np.asarray(
-        intervention_structure.time_factors[:, :shared_rank],
+        intervention_structure.time_factors[:, : layout.shared_rank],
         dtype=float,
     )
     shared_node_factors = np.asarray(
-        intervention_structure.node_factors[:, :shared_rank],
+        intervention_structure.node_factors[:, : layout.shared_rank],
         dtype=float,
     )
-    rng = np.random.default_rng(int(config.generation_params.seed) + 211)
+    rng = _field_rng(field_spec, 211)
     nonshared_time_factors = _orthonormal_complement_gaussian_factors(
         intervention_structure.time_factors.shape[0],
-        nonshared_rank,
+        layout.nonshared_rank,
         shared_time_factors,
         rng,
     )
     nonshared_node_factors = _orthonormal_complement_gaussian_factors(
         intervention_structure.node_factors.shape[0],
-        nonshared_rank,
+        layout.nonshared_rank,
         shared_node_factors,
         rng,
     )
@@ -556,49 +616,58 @@ def _sample_confounded_low_rank_field(
         [shared_node_factors, nonshared_node_factors],
         axis=1,
     )
-    field_matrix = (time_factors * singular_values[None, :]) @ node_factors.T
-    field_matrix = _scale_spectral_field(field_matrix, config)
-    return field_matrix, int(singular_values.size)
+    field_matrix = (time_factors * field_spec.singular_values[None, :]) @ node_factors.T
+    field_matrix = _scale_spectral_field(field_matrix, field_spec)
+    return field_matrix, int(field_spec.singular_values.size), layout
 
 
 def build_synthetic_field(
     config,
     gamma_matrix,
     intervention_structure: SpectralLowRankStructure | None = None,
+    field_spec: SyntheticFieldSpec | None = None,
 ) -> ModelArtifacts:
-    n_nodes = int(config.global_params.N)
-    t_steps = int(config.global_params.T)
+    return build_synthetic_field_with_layout(
+        config,
+        gamma_matrix,
+        intervention_structure=intervention_structure,
+        field_spec=field_spec,
+    ).artifacts
+
+
+def build_synthetic_field_with_layout(
+    config,
+    gamma_matrix,
+    intervention_structure: SpectralLowRankStructure | None = None,
+    field_spec: SyntheticFieldSpec | None = None,
+) -> SyntheticFieldBuildResult:
+    field_spec = parse_synthetic_field_spec(config) if field_spec is None else field_spec
+    if field_spec.n_nodes is None or field_spec.t_steps is None:
+        raise ValueError("global_params.N and global_params.T must be resolved before building the synthetic field.")
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
-    field_mode = get_synthetic_field_mode(config)
-    if (
-        _resolve_generation_field_shared_rank(config) is not None
-        and field_mode != SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK
-    ):
-        raise ValueError(
-            "global_params.field_params.shared_rank is only valid when "
-            "global_params.field_mode='confounded_low_rank'."
-        )
-    if field_mode == SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK:
-        field_matrix, latent_rank = _sample_random_low_rank_field(
-            config, n_nodes, t_steps
-        )
-    elif field_mode == SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK:
-        field_matrix, latent_rank = _sample_confounded_low_rank_field(
-            config,
+    confounded_layout: ConfoundedFieldLayout | None = None
+    if field_spec.mode == SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK:
+        field_matrix, latent_rank = _build_random_low_rank_field(field_spec)
+    elif field_spec.mode == SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK:
+        field_matrix, latent_rank, confounded_layout = _build_confounded_low_rank_field(
+            field_spec,
             intervention_structure,
         )
     else:
         raise ValueError(
             "Unsupported synthetic field_mode: "
-            f"{field_mode}"
+            f"{field_spec.mode}"
         )
-    return ModelArtifacts(
-        gamma_matrix=gamma_matrix,
-        t_steps=t_steps,
-        latent_rank=int(latent_rank),
-        optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
-        field_matrix=field_matrix,
+    return SyntheticFieldBuildResult(
+        artifacts=ModelArtifacts(
+            gamma_matrix=gamma_matrix,
+            t_steps=field_spec.t_steps,
+            latent_rank=int(latent_rank),
+            optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+            field_matrix=field_matrix,
+        ),
+        confounded_layout=confounded_layout,
     )
 
 

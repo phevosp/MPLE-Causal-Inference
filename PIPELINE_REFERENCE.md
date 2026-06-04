@@ -8,7 +8,7 @@ This file documents the stable manifest, spec, and artifact layout used by the s
 
 File:
 
-- `data/configs/generation_spec.yaml`
+- `data/configs/**/generation_spec.yaml`
 
 Shape:
 
