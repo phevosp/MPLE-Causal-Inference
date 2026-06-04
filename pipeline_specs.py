@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from omegaconf import OmegaConf
-from split_artifact_utils import VALID_SPLIT_SOURCES
+from utils.split_artifact_utils import VALID_SPLIT_SOURCES
 
 
 def slugify(text: str, fallback: str = "item") -> str:

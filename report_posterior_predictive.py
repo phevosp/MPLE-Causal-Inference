@@ -10,10 +10,10 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from io_utils import _as_float, _metric_or_inf, write_csv
-from io_utils import io_path
+from utils.io_utils import _as_float, _metric_or_inf, write_csv
+from utils.io_utils import io_path
 from pipeline_specs import read_csv_manifest, write_csv_manifest
-from posterior_predictive_job_utils import (
+from utils.posterior_predictive_job_utils import (
     POSTERIOR_PREDICTIVE_MANIFEST_NAME,
     manifest_row_from_metadata,
 )
@@ -779,3 +779,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

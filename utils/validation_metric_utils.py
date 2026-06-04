@@ -9,12 +9,12 @@ import numpy as np
 from scipy import sparse
 
 from data.synthetic_data_generation import spin_sample_from_field
-from loading_utils import (
+from utils.loading_utils import (
     OutcomeParameterBundle,
     load_experiment_panel_context,
     load_fit_parameter_bundle,
 )
-from model_utils import compose_interaction_matrix, interaction_effect, interaction_term
+from utils.model_utils import compose_interaction_matrix, interaction_effect, interaction_term
 from mple import evaluate_mple_loss_from_parts
 
 DEFAULT_VALIDATION_SAMPLING = {

@@ -10,8 +10,8 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from io_utils import _as_float, _metric_or_inf, write_csv
-from model_utils import latent_field_bound_norm
+from utils.io_utils import _as_float, _metric_or_inf, write_csv
+from utils.model_utils import latent_field_bound_norm
 from pipeline_specs import read_csv_manifest
 
 
@@ -395,3 +395,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

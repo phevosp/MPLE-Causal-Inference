@@ -12,7 +12,7 @@ import numpy as np
 from omegaconf import OmegaConf
 from scipy import sparse
 
-from io_utils import io_path, load_gamma_matrix, write_csv
+from utils.io_utils import io_path, load_gamma_matrix, write_csv
 from pipeline_specs import read_csv_manifest
 
 
@@ -1082,3 +1082,4 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+

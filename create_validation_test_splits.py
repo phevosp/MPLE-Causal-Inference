@@ -12,9 +12,9 @@ from typing import Any
 import numpy as np
 
 import build_cv_folds as cv_folds
-from io_utils import io_path, write_csv
+from utils.io_utils import io_path, write_csv
 from pipeline_specs import read_csv_manifest
-from split_artifact_utils import (
+from utils.split_artifact_utils import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
     validation_test_split_output_root,
@@ -408,3 +408,4 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+

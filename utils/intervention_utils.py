@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from io_utils import io_path
+from utils.io_utils import io_path
 
 
 INTERVENTION_LIBRARY_ROOT_NAME = "intervention_library"
@@ -219,7 +219,7 @@ def resolve_intervention_context(
 ) -> InterventionContext:
     source = str(intervention_source).strip().lower()
     if source == "observed_experiment":
-        from loading_utils import load_experiment_panel_context
+        from utils.loading_utils import load_experiment_panel_context
 
         resolved_panel_context = (
             panel_context
@@ -252,3 +252,4 @@ def resolve_intervention_context(
             )
         return context
     raise ValueError(f"Unsupported intervention_source '{intervention_source}'.")
+

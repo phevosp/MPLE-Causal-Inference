@@ -24,8 +24,8 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-from io_utils import io_path
-from intervention_utils import derive_post_intervention_steps, derive_pre_intervention_steps
+from utils.io_utils import io_path
+from utils.intervention_utils import derive_post_intervention_steps, derive_pre_intervention_steps
 from pipeline_specs import (
     expand_named_entries,
     load_spec,

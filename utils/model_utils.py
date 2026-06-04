@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from scipy import sparse
 
-from io_utils import io_path
+from utils.io_utils import io_path
 
 
 DEFAULT_LATENT_RANK = 0
@@ -969,3 +969,4 @@ def load_true_parameters(
         truth_artifacts,
         fixed_scalar_params=fixed_scalar_params,
     )
+

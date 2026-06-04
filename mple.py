@@ -18,15 +18,15 @@ from pymanopt import Problem, function
 from pymanopt.manifolds import Euclidean, FixedRankEmbedded, Product
 from pymanopt.optimizers import ConjugateGradient
 
-from io_utils import (
+from utils.io_utils import (
     _fmt,
     first_existing_path,
     io_path,
     load_gamma_matrix,
     load_yaml_config,
 )
-from loading_utils import save_estimated_parameter_bundle
-from model_utils import (
+from utils.loading_utils import save_estimated_parameter_bundle
+from utils.model_utils import (
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     ModelArtifacts,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,

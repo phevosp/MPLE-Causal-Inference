@@ -8,15 +8,15 @@ from pathlib import Path
 
 import numpy as np
 
-from intervention_utils import derive_post_intervention_steps, derive_pre_intervention_steps
-from io_utils import (
+from utils.intervention_utils import derive_post_intervention_steps, derive_pre_intervention_steps
+from utils.io_utils import (
     first_existing_path,
     io_path,
     load_gamma_matrix,
     load_yaml_config,
     path_exists,
 )
-from model_utils import load_model_artifacts
+from utils.model_utils import load_model_artifacts
 
 
 GENERATION_CONFIG_FILENAMES = (
@@ -207,3 +207,4 @@ def load_fit_parameter_bundle(
         field_matrix=field_matrix,
         gamma_matrix=gamma_matrix if gamma_matrix is not None else field_artifacts.gamma_matrix,
     )
+

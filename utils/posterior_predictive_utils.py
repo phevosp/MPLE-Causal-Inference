@@ -7,8 +7,8 @@ import math
 import numpy as np
 
 from data.synthetic_data_generation import simulate_outcomes_given_fixed_interventions
-from loading_utils import OutcomeParameterBundle
-from model_utils import compose_interaction_matrix, interaction_effect
+from utils.loading_utils import OutcomeParameterBundle
+from utils.model_utils import compose_interaction_matrix, interaction_effect
 
 
 def simulate_outcomes_for_bundle(
@@ -301,3 +301,4 @@ def summarize_predictive_statistics(
         "num_statistics": len(rows),
     }
     return rows, summary
+

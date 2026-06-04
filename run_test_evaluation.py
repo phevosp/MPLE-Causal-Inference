@@ -10,13 +10,13 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-from io_utils import io_path, path_exists
-from split_artifact_utils import (
+from utils.io_utils import io_path, path_exists
+from utils.split_artifact_utils import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
     load_outer_test_split_masks,
 )
-from validation_metric_utils import (
+from utils.validation_metric_utils import (
     DEFAULT_VALIDATION_SAMPLING,
     evaluate_saved_fit_test_metrics,
     resolve_validation_sampling,
@@ -163,3 +163,4 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+

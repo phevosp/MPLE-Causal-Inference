@@ -31,7 +31,7 @@ from common import (  # noqa: E402
     ensure_directories,
     standardize_fips,
 )
-from data_utils import (  # noqa: E402
+from utils.data_utils import (  # noqa: E402
     build_knn_and_kernel_edges,
     build_touching_edge_list,
     count_connected_components,
@@ -625,3 +625,4 @@ def build_binary_panel() -> None:
         writer = csv.DictWriter(handle, fieldnames=list(diagnostic_rows[0].keys()))
         writer.writeheader()
         writer.writerows(diagnostic_rows)
+

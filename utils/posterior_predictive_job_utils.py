@@ -7,7 +7,7 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-from io_utils import io_path
+from utils.io_utils import io_path
 from pipeline_specs import expand_named_entries, read_csv_manifest, slugify
 
 
@@ -355,3 +355,4 @@ def manifest_row_from_metadata(
             }
         )
     return row
+

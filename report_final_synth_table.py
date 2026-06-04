@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
-from io_utils import write_csv
+from utils.io_utils import write_csv
 from pipeline_specs import read_csv_manifest
 
 EXPECTED_EXPERIMENT_COUNT = 10

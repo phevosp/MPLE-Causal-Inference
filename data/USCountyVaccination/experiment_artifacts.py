@@ -32,8 +32,8 @@ from common import (  # noqa: E402
     experiment_name,
     lag_code_to_steps,
 )
-from data_utils import normalize_sparse_matrix_infinity  # noqa: E402
-from model_utils import ModelArtifacts, save_model_artifacts  # noqa: E402
+from utils.data_utils import normalize_sparse_matrix_infinity  # noqa: E402
+from utils.model_utils import ModelArtifacts, save_model_artifacts  # noqa: E402
 
 
 NON_MAINLAND_STATEFPS = frozenset({"02", "15", "60", "66", "69", "72", "78"})
@@ -887,3 +887,4 @@ def existing_experiment_trim_setting(experiment_dir: Path) -> bool | None:
     if "trim_applied" not in metadata:
         return False
     return bool(metadata["trim_applied"])
+
