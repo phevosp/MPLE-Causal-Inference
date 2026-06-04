@@ -17,15 +17,26 @@ if str(REPO_ROOT) not in sys.path:
 if str(WORKFLOW_DIR) not in sys.path:
     sys.path.insert(0, str(WORKFLOW_DIR))
 
-from experiment_artifacts import (
-    apply_optional_trim,
-    build_node_table,
-    build_realized_intervention_artifact,
-    build_realized_outcome_artifact,
-    canonical_time_index,
-    load_inputs,
-    select_dense_suffix_support,
-)
+try:
+    from ..experiment_artifacts import (
+        apply_optional_trim,
+        build_node_table,
+        build_realized_intervention_artifact,
+        build_realized_outcome_artifact,
+        canonical_time_index,
+        load_inputs,
+        select_dense_suffix_support,
+    )
+except ImportError:  # pragma: no cover - direct script fallback
+    from experiment_artifacts import (
+        apply_optional_trim,
+        build_node_table,
+        build_realized_intervention_artifact,
+        build_realized_outcome_artifact,
+        canonical_time_index,
+        load_inputs,
+        select_dense_suffix_support,
+    )
 
 
 DEFAULT_START_DATES = ["2020-03-01", "2020-06-07", "2020-09-06"]

@@ -14,6 +14,7 @@ from utils.t2_summary_statistics import mean_on_mask, time_window_mask
 from utils.t3_interaction_matrices import compose_interaction_matrix, interaction_effect, interaction_term
 from utils.t5_parameter_bundles import OutcomeParameterBundle, load_fit_parameter_bundle
 from utils.t5_experiment_context import load_experiment_panel_context
+from utils.t7_cv_aggregation import candidate_score_sort_key
 from mple import evaluate_mple_loss_from_parts
 
 DEFAULT_VALIDATION_SAMPLING = {
@@ -35,7 +36,6 @@ POST_S_VALIDATION_METRIC_SPECS = (
     ("post_s_validation_ece", "num_post_s_validation_slots"),
     ("post_s_validation_mean_magnetization_abs_diff", "num_post_s_validation_slots"),
 )
-
 
 def resolve_validation_sampling(config: dict[str, Any] | None) -> dict[str, int]:
     resolved = dict(DEFAULT_VALIDATION_SAMPLING)

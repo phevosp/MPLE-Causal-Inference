@@ -32,7 +32,6 @@ Important keys:
 - `truth.field_mode`
 - `truth.field_params`
 - `truth.scalars.beta`, `xi`, `eta`
-- generation-only intervention scalars `truth.scalars.zeta`, `psi`
 
 Supported source modes:
 
@@ -43,8 +42,9 @@ Supported source modes:
 
 Dimension resolution:
 
-- fixed graph artifacts can determine `N`
-- fixed intervention artifacts can determine `N` and `T`
+- `dimensions.N` and `dimensions.T` may be omitted at the spec boundary
+- fixed graph artifacts can determine `N` during generation materialization
+- fixed intervention artifacts can determine `N` and `T` during generation materialization
 
 ### Generation Requests
 

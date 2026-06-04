@@ -556,6 +556,19 @@ def materialize_generation_experiment(
     print(f"Materializing generation experiment '{descriptor}'...")
     early_field_spec = parse_synthetic_field_spec(config)
 
+    fixed_z_metadata: dict[str, str] = {}
+    intervention_generation_artifacts: InterventionGenerationArtifacts | None = None
+    intervention_structure: SpectralLowRankStructure | None = None
+    if intervention_mode(config) == "fixed_z":
+        fixed_z, z_0, fixed_z_metadata = load_fixed_intervention_artifacts(config)
+        if early_field_spec.mode == "confounded_low_rank":
+            intervention_structure = derive_fixed_intervention_structure_for_field(
+                fixed_z, int(early_field_spec.singular_values.size)
+            )
+    else:
+        fixed_z = None
+        z_0 = None
+
     # Realize generation inputs, including (fixed) interaction matrix
     config, gamma_matrix, x_0, rng, fixed_gamma_metadata = realize_generation_inputs(
         config
@@ -567,10 +580,14 @@ def materialize_generation_experiment(
         raise ValueError("global_params.T must be resolved before generation.")
     field_spec = parse_synthetic_field_spec(config)
 
-    # Prepare intervention data and structure
-    fixed_z, z_0, intervention_generation_artifacts, intervention_structure, fixed_z_metadata = (
-        _prepare_intervention_structure(config, early_field_spec)
-    )
+    if intervention_mode(config) == "low_rank_probability":
+        (
+            fixed_z,
+            z_0,
+            intervention_generation_artifacts,
+            intervention_structure,
+            fixed_z_metadata,
+        ) = _prepare_intervention_structure(config, early_field_spec)
     if intervention_mode(config) not in ("fixed_z", "low_rank_probability"):
         raise ValueError(f"Invalid intervention_mode: {intervention_mode(config)}")
 

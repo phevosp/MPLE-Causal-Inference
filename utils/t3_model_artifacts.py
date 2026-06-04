@@ -9,11 +9,13 @@ import numpy as np
 from scipy import sparse
 
 from utils.t0_path_utils import io_path
+from utils.t1_matrix_io import load_gamma_matrix
 
 
 DEFAULT_LATENT_RANK = 0
 _DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerate
 _DEFAULT_FIELD_RMS_FRACTION = 0.4
+SCALAR_PARAMETER_ORDER = ("beta", "xi", "eta")
 SYNTHETIC_FIELD_MODE_RANDOM_LOW_RANK = "random_low_rank"
 SYNTHETIC_FIELD_MODE_CONFOUNDED_LOW_RANK = "confounded_low_rank"
 VALID_SYNTHETIC_FIELD_MODES = {
@@ -92,6 +94,7 @@ def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
         normalize_known_graph,
         validate_graph_infinity_norm,
     )
+    from utils.t4_scalar_parameters import get_latent_rank, get_optimizer_mode
     gamma_matrix = normalize_known_graph(gamma_matrix)
     validate_graph_infinity_norm(gamma_matrix)
     optimizer_mode = get_optimizer_mode(config)
@@ -169,14 +172,7 @@ def load_model_artifacts(data_folder: str | Path) -> ModelArtifacts:
     field_path = data_path / "field_artifacts.npz"
     if not field_path.exists():
         raise FileNotFoundError(f"Missing field_artifacts.npz in {data_path}.")
-    gamma_sparse = data_path / "gamma_matrix_sparse.npz"
-    gamma_dense = data_path / "gamma_matrix.npy"
-    if gamma_sparse.exists():
-        gamma_matrix = sparse.load_npz(gamma_sparse).tocsr()
-    elif gamma_dense.exists():
-        gamma_matrix = np.load(gamma_dense)
-    else:
-        raise FileNotFoundError(f"Missing gamma matrix artifact in {data_path}.")
+    gamma_matrix = load_gamma_matrix(data_path)
     payload = load_field_artifacts(field_path)
     return ModelArtifacts(
         gamma_matrix=gamma_matrix,
@@ -185,27 +181,3 @@ def load_model_artifacts(data_folder: str | Path) -> ModelArtifacts:
         optimizer_mode=OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
         field_matrix=payload.get("field_matrix"),
     )
-
-
-def get_latent_rank(config) -> int:
-    if "latent_rank" not in config.global_params:
-        return DEFAULT_LATENT_RANK
-    rank = int(config.global_params.latent_rank)
-    if rank < 0:
-        raise ValueError("global_params.latent_rank must be nonnegative.")
-    return rank
-
-
-def get_optimizer_mode(config) -> str:
-    global_params = getattr(config, "global_params", None)
-    if global_params is None or "optimizer_mode" not in global_params:
-        if global_params is not None and int(global_params.get("latent_rank", 0)) > 0:
-            return OPTIMIZER_MODE_EXACT_RANK_MANIFOLD
-        return OPTIMIZER_MODE_NO_EXTERNAL_FIELD
-    optimizer_mode = str(global_params.optimizer_mode)
-    if optimizer_mode not in VALID_OPTIMIZER_MODES:
-        raise ValueError(
-            "global_params.optimizer_mode must be one of: "
-            + ", ".join(sorted(VALID_OPTIMIZER_MODES))
-        )
-    return optimizer_mode

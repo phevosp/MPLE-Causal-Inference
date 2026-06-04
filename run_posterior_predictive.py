@@ -24,13 +24,13 @@ from utils.t5_parameter_bundles import (
 )
 from utils.t6_posterior_predictive_manifest import (
     POSTERIOR_PREDICTIVE_ROOT_NAME,
-    build_manifest_row,
     index_generation_rows,
     resolve_fit_lookup,
     resolve_run_spec,
     resolve_target_pairs,
     select_target,
 )
+from utils.t6_posterior_predictive_summary import build_manifest_row
 from utils.t8_posterior_predictive_sim import (
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
@@ -394,4 +394,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

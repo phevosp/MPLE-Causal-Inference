@@ -116,7 +116,6 @@ What generation resolves:
 
 - `dimensions.N` and `dimensions.T`
 - outcome truth scalars `beta`, `xi`, `eta`
-- generation-only intervention scalars `zeta`, `psi`
 - `truth.field_mode`
 - graph source
 - intervention source
@@ -130,7 +129,7 @@ Supported experiment styles:
 - hybrid with fixed graph artifacts
 - hybrid with both fixed intervention and fixed graph artifacts
 
-If graph or intervention artifacts are fixed, the pipeline can infer `N`, `T`, and `s` directly from those artifacts.
+If graph or intervention artifacts are fixed, generation materialization can resolve missing `N` and `T` directly from those artifacts.
 
 Outputs:
 
@@ -752,10 +751,11 @@ They call the same Python entry points and accept environment-variable overrides
 - `report_posterior_predictive.py`: manifest refresh plus grouped posterior-predictive reporting
 - `run_tests.sh`: staged generation → fit → intervention → posterior-predictive shell orchestrator
 - `mple.py`: conditional MPLE optimizer and artifact writer
-- `model_utils.py`: model artifact loading, parameter packing, and field utilities
-- `loading_utils.py`: experiment/panel artifact loading plus fit/truth parameter-bundle loading
-- `intervention_utils.py`: intervention construction and saved-intervention artifact helpers
-- `posterior_predictive_utils.py`: predictive simulation and posterior-predictive summary utilities
+- `utils/`: tiered utility modules (`t0_*` through `t8_*`) for config/path I/O, model artifacts, parameter packing, experiment loading, intervention handling, validation metrics, and posterior-predictive reporting
+- `utils/t3_field_generation.py`: synthetic-field specification parsing and field construction
+- `utils/t5_experiment_context.py`: experiment/panel artifact loading and experiment-context assembly
+- `utils/t6_intervention_utils.py`: intervention construction, saved-intervention artifacts, and intervention timing helpers
+- `utils/t8_posterior_predictive_sim.py`: predictive simulation and posterior-predictive panel statistics
 - `pipeline_specs.py`: YAML deep-merge, slugging, and manifest helpers
 - `tests/test_minimal_pipeline.py`: regression coverage for generation, fitting, summaries, and predictive ranking
 

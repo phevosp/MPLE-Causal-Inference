@@ -15,7 +15,7 @@ TIER 2: NUMERICAL OPERATIONS (depends on Tier 0)
   t2_summary_statistics: Statistical summaries (quantiles, means on masks, finite values)
 
 TIER 3: MODEL DEFINITIONS (depends on Tier 0-2)
-  t3_model_artifacts: ModelArtifacts dataclass, artifact persistence
+  t3_model_artifacts: ModelArtifacts dataclass, build/save/load artifacts
   t3_interaction_matrices: Interaction matrix composition and application
   t3_field_operations: Field composition, scaling, projection, truncation
   t3_field_generation: Synthetic field generation and spec parsing
@@ -63,7 +63,7 @@ For posterior predictive (run_posterior_predictive.py):
   from utils.t8_output_writers import write_predictive_stats_tables
 
 For data generation (data/synthetic_data_generation.py):
-  from utils.t3_field_generation import build_synthetic_field
+  from utils.t3_field_generation import build_synthetic_field_with_layout, parse_synthetic_field_spec
   from utils.t3_model_artifacts import save_model_artifacts
-  from utils.t4_parameter_packing import load_true_parameters
+  from utils.t4_scalar_parameters import get_xi
 """

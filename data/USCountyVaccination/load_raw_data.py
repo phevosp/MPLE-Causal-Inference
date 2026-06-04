@@ -12,14 +12,24 @@ if str(REPO_ROOT) not in sys.path:
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import (  # noqa: E402
-    BANSAL_VACCINATION_URL,
-    CDC_VACCINATION_URL,
-    TIGER_2021_COUNTY_URL,
-    TIGER_2022_COUNTY_URL,
-    ensure_directories,
-)
-from .data_utils import download_if_missing  # noqa: E402
+try:  # noqa: E402
+    from .common import (
+        BANSAL_VACCINATION_URL,
+        CDC_VACCINATION_URL,
+        TIGER_2021_COUNTY_URL,
+        TIGER_2022_COUNTY_URL,
+        ensure_directories,
+    )
+    from .data_utils import download_if_missing
+except ImportError:  # pragma: no cover - direct script fallback
+    from common import (
+        BANSAL_VACCINATION_URL,
+        CDC_VACCINATION_URL,
+        TIGER_2021_COUNTY_URL,
+        TIGER_2022_COUNTY_URL,
+        ensure_directories,
+    )
+    from data_utils import download_if_missing
 
 
 NYT_COUNTY_URL = "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv"
@@ -61,4 +71,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

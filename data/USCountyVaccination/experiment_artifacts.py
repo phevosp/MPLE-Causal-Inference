@@ -17,22 +17,40 @@ if str(REPO_ROOT) not in sys.path:
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import (  # noqa: E402
-    CORE_END_DATE,
-    CORE_START_DATE,
-    DEFAULT_BOOSTER_INTERVENTIONS,
-    DEFAULT_BOOSTER_LAGS,
-    DEFAULT_CORE_INTERVENTIONS,
-    DEFAULT_CORE_LAGS,
-    INTERVENTION_SPECS,
-    OUTCOME_SPECS,
-    PROCESSED_DIR,
-    SOURCE_LABEL,
-    STATE_SCOPE_LABEL,
-    experiment_name,
-    lag_code_to_steps,
-)
-from .data_utils import normalize_sparse_matrix_infinity  # noqa: E402
+try:  # noqa: E402
+    from .common import (
+        CORE_END_DATE,
+        CORE_START_DATE,
+        DEFAULT_BOOSTER_INTERVENTIONS,
+        DEFAULT_BOOSTER_LAGS,
+        DEFAULT_CORE_INTERVENTIONS,
+        DEFAULT_CORE_LAGS,
+        INTERVENTION_SPECS,
+        OUTCOME_SPECS,
+        PROCESSED_DIR,
+        SOURCE_LABEL,
+        STATE_SCOPE_LABEL,
+        experiment_name,
+        lag_code_to_steps,
+    )
+    from .data_utils import normalize_sparse_matrix_infinity
+except ImportError:  # pragma: no cover - direct script fallback
+    from common import (
+        CORE_END_DATE,
+        CORE_START_DATE,
+        DEFAULT_BOOSTER_INTERVENTIONS,
+        DEFAULT_BOOSTER_LAGS,
+        DEFAULT_CORE_INTERVENTIONS,
+        DEFAULT_CORE_LAGS,
+        INTERVENTION_SPECS,
+        OUTCOME_SPECS,
+        PROCESSED_DIR,
+        SOURCE_LABEL,
+        STATE_SCOPE_LABEL,
+        experiment_name,
+        lag_code_to_steps,
+    )
+    from data_utils import normalize_sparse_matrix_infinity
 from utils.t3_model_artifacts import ModelArtifacts, save_model_artifacts  # noqa: E402
 
 
@@ -887,4 +905,3 @@ def existing_experiment_trim_setting(experiment_dir: Path) -> bool | None:
     if "trim_applied" not in metadata:
         return False
     return bool(metadata["trim_applied"])
-

@@ -11,10 +11,7 @@ import numpy as np
 from utils.t0_path_utils import first_existing_path, io_path, path_exists
 from utils.t0_config_utils import load_yaml_config
 from utils.t1_matrix_io import load_gamma_matrix
-from utils.t3_model_artifacts import ModelArtifacts, load_model_artifacts
-from utils.t4_parameter_packing import load_true_parameters
-from utils.t5_experiment_context import load_experiment_panel_context
-from utils.t6_intervention_utils import derive_pre_intervention_steps, derive_post_intervention_steps
+from utils.t3_model_artifacts import load_model_artifacts
 
 
 GENERATION_CONFIG_FILENAMES = (
@@ -75,7 +72,7 @@ def _load_scalar_estimates_from_summary(summary_path: Path) -> dict[str, float]:
     return estimates
 
 
-def _fit_beta_mask_pre_s(fit_root: Path) -> bool:
+def _fit_beta_mask_flag(fit_root: Path, key: str) -> bool:
     config_path = fit_root / "fit_realized_config.yaml"
     if not path_exists(config_path):
         return False
@@ -83,18 +80,7 @@ def _fit_beta_mask_pre_s(fit_root: Path) -> bool:
     estimation_params = getattr(config, "estimation_params", None)
     if estimation_params is None:
         return False
-    return bool(estimation_params.get("beta_mask_pre_s", False))
-
-
-def _fit_beta_mask_post_e(fit_root: Path) -> bool:
-    config_path = fit_root / "fit_realized_config.yaml"
-    if not path_exists(config_path):
-        return False
-    config = load_yaml_config(config_path)
-    estimation_params = getattr(config, "estimation_params", None)
-    if estimation_params is None:
-        return False
-    return bool(estimation_params.get("beta_mask_post_e", False))
+    return bool(estimation_params.get(str(key), False))
 
 
 def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameterBundle:
@@ -129,8 +115,8 @@ def load_fit_parameter_bundle(
     experiment_path = Path(experiment_root)
     bundle_path = fit_path / "estimated_parameter_bundle.npz"
     gamma_matrix = load_gamma_matrix(experiment_path)
-    beta_mask_pre_s = _fit_beta_mask_pre_s(fit_path)
-    beta_mask_post_e = _fit_beta_mask_post_e(fit_path)
+    beta_mask_pre_s = _fit_beta_mask_flag(fit_path, "beta_mask_pre_s")
+    beta_mask_post_e = _fit_beta_mask_flag(fit_path, "beta_mask_post_e")
 
     if path_exists(bundle_path):
         with np.load(io_path(bundle_path), allow_pickle=False) as data:

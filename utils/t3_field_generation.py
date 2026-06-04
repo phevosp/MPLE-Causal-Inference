@@ -24,6 +24,7 @@ from utils.t3_field_operations import (
     scale_latent_field_matrix,
     zero_latent_field,
 )
+from utils.t4_scalar_parameters import get_B
 
 
 def _config_section_to_dict(section) -> dict[str, object]:
@@ -192,7 +193,6 @@ def parse_synthetic_field_spec(config) -> SyntheticFieldSpec:
             "global_params.field_params.shared_rank is only valid when "
             "global_params.field_mode='confounded_low_rank'."
         )
-    from utils.t0_config_utils import get_B
     return SyntheticFieldSpec(
         mode=field_mode,
         singular_values=singular_values,

@@ -16,27 +16,50 @@ if str(REPO_ROOT) not in sys.path:
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import (  # noqa: E402
-    BANSAL_VACCINATION_URL,
-    CDC_VACCINATION_URL,
-    CORE_END_DATE,
-    CORE_START_DATE,
-    INTERVENTION_SPECS,
-    OUTCOME_SPECS,
-    PROCESSED_DIR,
-    TIGER_2021_COUNTY_URL,
-    TIGER_2022_COUNTY_URL,
-    UNIT_LABEL,
-    dump_json,
-    ensure_directories,
-    standardize_fips,
-)
-from .data_utils import (  # noqa: E402
-    build_knn_and_kernel_edges,
-    build_touching_edge_list,
-    count_connected_components,
-    download_if_missing,
-)
+try:  # noqa: E402
+    from .common import (
+        BANSAL_VACCINATION_URL,
+        CDC_VACCINATION_URL,
+        CORE_END_DATE,
+        CORE_START_DATE,
+        INTERVENTION_SPECS,
+        OUTCOME_SPECS,
+        PROCESSED_DIR,
+        TIGER_2021_COUNTY_URL,
+        TIGER_2022_COUNTY_URL,
+        UNIT_LABEL,
+        dump_json,
+        ensure_directories,
+        standardize_fips,
+    )
+    from .data_utils import (
+        build_knn_and_kernel_edges,
+        build_touching_edge_list,
+        count_connected_components,
+        download_if_missing,
+    )
+except ImportError:  # pragma: no cover - direct script fallback
+    from common import (
+        BANSAL_VACCINATION_URL,
+        CDC_VACCINATION_URL,
+        CORE_END_DATE,
+        CORE_START_DATE,
+        INTERVENTION_SPECS,
+        OUTCOME_SPECS,
+        PROCESSED_DIR,
+        TIGER_2021_COUNTY_URL,
+        TIGER_2022_COUNTY_URL,
+        UNIT_LABEL,
+        dump_json,
+        ensure_directories,
+        standardize_fips,
+    )
+    from data_utils import (
+        build_knn_and_kernel_edges,
+        build_touching_edge_list,
+        count_connected_components,
+        download_if_missing,
+    )
 
 
 WEEKLY_PANEL_PATH = PROCESSED_DIR / "us_county_weekly_panel.csv.gz"
@@ -625,4 +648,3 @@ def build_binary_panel() -> None:
         writer = csv.DictWriter(handle, fieldnames=list(diagnostic_rows[0].keys()))
         writer.writeheader()
         writer.writerows(diagnostic_rows)
-

@@ -37,24 +37,24 @@ from utils.t3_model_artifacts import (
 from utils.t4_scalar_parameters import (
     free_scalar_parameter_names,
     scalar_parameter_names,
+    uses_full_matrix_parameterization,
     validate_fixed_scalar_params,
 )
 from utils.t4_parameter_packing import (
-    compose_field_matrix_from_theta,
     pack_theta,
     parameter_names,
     summarize_theta_for_logging,
     unpack_theta,
-    uses_full_matrix_parameterization,
-    with_theta_field,
 )
 from utils.t3_interaction_matrices import (
     compose_interaction_matrix,
     interaction_effect,
 )
 from utils.t3_field_operations import (
+    compose_field_matrix_from_theta,
     compose_latent_field_matrix,
     latent_field_bound_norm,
+    with_theta_field,
 )
 
 

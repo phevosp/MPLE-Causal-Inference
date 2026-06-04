@@ -6,13 +6,6 @@ from typing import Any
 
 import numpy as np
 
-from utils.t7_validation_metrics import (
-    DEFAULT_VALIDATION_SAMPLING,
-    ECE_NUM_BINS,
-    FULL_VALIDATION_METRIC_SPECS,
-    POST_S_VALIDATION_METRIC_SPECS,
-)
-
 
 def _blank_aggregate_metrics() -> dict[str, object]:
     return {
@@ -226,7 +219,7 @@ def build_candidate_score_row(
     return aggregated
 
 
-def candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, int]:
+def candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, float, int]:
     mag_diff = row.get(
         "weighted_mean_post_s_validation_mean_magnetization_abs_diff", ""
     )

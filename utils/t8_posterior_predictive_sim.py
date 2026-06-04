@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 
+from data.synthetic_data_generation import simulate_outcomes_given_fixed_interventions
 from utils.t2_summary_statistics import mean_on_mask
 from utils.t3_interaction_matrices import compose_interaction_matrix, interaction_effect
 from utils.t5_parameter_bundles import OutcomeParameterBundle
@@ -61,6 +62,10 @@ def compute_panel_statistics(
     post_mask_bool[int(s) :, :] = True
     pre_mask_bool = np.zeros(x.shape, dtype=bool)
     pre_mask_bool[0 : int(s), :] = True
+    post_time_mask = np.zeros(x.shape[0], dtype=bool)
+    post_time_mask[int(s) :] = True
+    pre_time_mask = np.zeros(x.shape[0], dtype=bool)
+    pre_time_mask[0 : int(s)] = True
 
     return {
         "overall_mean_magnetization": float(np.mean(x)),
@@ -71,8 +76,8 @@ def compute_panel_statistics(
         "field_alignment": float(np.mean(x * field_matrix)),
         "pre_intervention_alignment": mean_on_mask((x * z).reshape(-1), pre_mask_bool.reshape(-1)),
         "post_intervention_alignment": mean_on_mask((x * z).reshape(-1), post_mask_bool.reshape(-1)),
-        "pre_graph_interaction_energy": mean_on_mask(graph_energy, pre_mask_bool),
-        "post_graph_interaction_energy": mean_on_mask(graph_energy, post_mask_bool),
+        "pre_graph_interaction_energy": mean_on_mask(graph_energy, pre_time_mask),
+        "post_graph_interaction_energy": mean_on_mask(graph_energy, post_time_mask),
     }
 
 

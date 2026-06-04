@@ -14,33 +14,62 @@ if str(REPO_ROOT) not in sys.path:
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from processed_data import build_binary_panel, build_processed_outputs  # noqa: E402
-from experiment_artifacts import (  # noqa: E402
-    INTERVENTION_SPECS,
-    OUTCOME_SPECS,
-    REPO_ROOT as WORKFLOW_REPO_ROOT,
-    SOURCE_LABEL,
-    apply_optional_trim,
-    assembled_panel_from_arrays,
-    build_experiment_grid,
-    build_node_table,
-    build_realized_intervention_artifact,
-    build_realized_network_artifact,
-    build_realized_outcome_artifact,
-    canonical_time_index,
-    lag_code_to_steps,
-    load_inputs,
-    load_network_edge_tables,
-    load_network_matrix,
-    realized_intervention_name,
-    realized_network_name,
-    realized_outcome_name,
-    select_dense_suffix_support,
-    shared_panel_name,
-    write_realized_binary_artifact,
-    write_realized_network_artifact,
-    write_shared_panel_artifacts,
-)
+try:  # noqa: E402
+    from .processed_data import build_binary_panel, build_processed_outputs
+    from .experiment_artifacts import (
+        INTERVENTION_SPECS,
+        OUTCOME_SPECS,
+        REPO_ROOT as WORKFLOW_REPO_ROOT,
+        SOURCE_LABEL,
+        apply_optional_trim,
+        assembled_panel_from_arrays,
+        build_experiment_grid,
+        build_node_table,
+        build_realized_intervention_artifact,
+        build_realized_network_artifact,
+        build_realized_outcome_artifact,
+        canonical_time_index,
+        lag_code_to_steps,
+        load_inputs,
+        load_network_edge_tables,
+        load_network_matrix,
+        realized_intervention_name,
+        realized_network_name,
+        realized_outcome_name,
+        select_dense_suffix_support,
+        shared_panel_name,
+        write_realized_binary_artifact,
+        write_realized_network_artifact,
+        write_shared_panel_artifacts,
+    )
+except ImportError:  # pragma: no cover - direct script fallback
+    from processed_data import build_binary_panel, build_processed_outputs
+    from experiment_artifacts import (
+        INTERVENTION_SPECS,
+        OUTCOME_SPECS,
+        REPO_ROOT as WORKFLOW_REPO_ROOT,
+        SOURCE_LABEL,
+        apply_optional_trim,
+        assembled_panel_from_arrays,
+        build_experiment_grid,
+        build_node_table,
+        build_realized_intervention_artifact,
+        build_realized_network_artifact,
+        build_realized_outcome_artifact,
+        canonical_time_index,
+        lag_code_to_steps,
+        load_inputs,
+        load_network_edge_tables,
+        load_network_matrix,
+        realized_intervention_name,
+        realized_network_name,
+        realized_outcome_name,
+        select_dense_suffix_support,
+        shared_panel_name,
+        write_realized_binary_artifact,
+        write_realized_network_artifact,
+        write_shared_panel_artifacts,
+    )
 
 
 def parse_args() -> argparse.Namespace:
