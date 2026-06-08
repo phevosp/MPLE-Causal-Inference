@@ -30,9 +30,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--fit_path", required=True, type=str)
     parser.add_argument("--experiment_path", type=str, default=None)
-    parser.add_argument("--outer_num_folds", type=int, default=DEFAULT_OUTER_NUM_FOLDS)
-    parser.add_argument("--test_fold_id", type=int, default=DEFAULT_TEST_FOLD_ID)
-    parser.add_argument("--inner_num_folds", type=int, default=DEFAULT_OUTER_NUM_FOLDS)
+    parser.add_argument("--outer_num_folds", type=int, default=None)
+    parser.add_argument("--test_fold_id", type=int, default=None)
+    parser.add_argument("--inner_num_folds", type=int, default=None)
     parser.add_argument(
         "--num_samples",
         type=int,
@@ -64,16 +64,65 @@ def _load_fit_metadata(fit_root: str | Path) -> dict[str, Any]:
 def _resolve_experiment_path(
     fit_root: str | Path,
     experiment_path: str | Path | None,
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> Path:
     if experiment_path not in (None, ""):
         return Path(str(experiment_path)).resolve()
-    metadata = _load_fit_metadata(fit_root)
-    resolved = str(metadata.get("experiment_path", "")).strip()
+    resolved_metadata = metadata if metadata is not None else _load_fit_metadata(fit_root)
+    resolved = str(resolved_metadata.get("experiment_path", "")).strip()
     if not resolved:
         raise ValueError(
             f"fit_metadata.yaml under {fit_root} does not contain experiment_path."
         )
     return Path(resolved).resolve()
+
+
+def _optional_int(mapping: dict[str, Any], key: str) -> int | None:
+    value = mapping.get(key)
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def _resolve_split_settings(
+    fit_root: str | Path,
+    *,
+    metadata: dict[str, Any],
+    outer_num_folds: int | None,
+    test_fold_id: int | None,
+    inner_num_folds: int | None,
+) -> dict[str, int]:
+    execution_mode = str(metadata.get("execution_mode", "")).strip().lower()
+    split_kind = str(metadata.get("split_kind", "")).strip().lower()
+    resolved_outer_num_folds = (
+        int(outer_num_folds) if outer_num_folds is not None else None
+    )
+    resolved_test_fold_id = int(test_fold_id) if test_fold_id is not None else None
+    resolved_inner_num_folds = (
+        int(inner_num_folds) if inner_num_folds is not None else None
+    )
+
+    if execution_mode == "train_fit" and split_kind == "test_train_cv":
+        if resolved_outer_num_folds is None:
+            resolved_outer_num_folds = _optional_int(metadata, "outer_num_folds")
+        if resolved_test_fold_id is None:
+            resolved_test_fold_id = _optional_int(metadata, "test_fold_id")
+        if resolved_inner_num_folds is None:
+            resolved_inner_num_folds = _optional_int(metadata, "num_folds")
+
+    if resolved_outer_num_folds is None:
+        resolved_outer_num_folds = int(DEFAULT_OUTER_NUM_FOLDS)
+    if resolved_test_fold_id is None:
+        resolved_test_fold_id = int(DEFAULT_TEST_FOLD_ID)
+    if resolved_inner_num_folds is None:
+        resolved_inner_num_folds = int(DEFAULT_OUTER_NUM_FOLDS)
+
+    return {
+        "outer_num_folds": int(resolved_outer_num_folds),
+        "test_fold_id": int(resolved_test_fold_id),
+        "inner_num_folds": int(resolved_inner_num_folds),
+    }
 
 
 def _default_output_path(
@@ -94,20 +143,32 @@ def run_test_evaluation(
     fit_path: str | Path,
     *,
     experiment_path: str | Path | None = None,
-    outer_num_folds: int = DEFAULT_OUTER_NUM_FOLDS,
-    test_fold_id: int = DEFAULT_TEST_FOLD_ID,
-    inner_num_folds: int = DEFAULT_OUTER_NUM_FOLDS,
+    outer_num_folds: int | None = None,
+    test_fold_id: int | None = None,
+    inner_num_folds: int | None = None,
     sampling: dict[str, Any] | None = None,
     output_path: str | Path | None = None,
 ) -> Path:
     fit_root = Path(fit_path).resolve()
-    resolved_experiment_root = _resolve_experiment_path(fit_root, experiment_path)
+    fit_metadata = _load_fit_metadata(fit_root)
+    resolved_experiment_root = _resolve_experiment_path(
+        fit_root,
+        experiment_path,
+        metadata=fit_metadata,
+    )
+    split_settings = _resolve_split_settings(
+        fit_root,
+        metadata=fit_metadata,
+        outer_num_folds=outer_num_folds,
+        test_fold_id=test_fold_id,
+        inner_num_folds=inner_num_folds,
+    )
     resolved_sampling = resolve_validation_sampling(sampling)
     split_artifacts = load_outer_test_split_masks(
         resolved_experiment_root,
-        outer_num_folds=int(outer_num_folds),
-        test_fold_id=int(test_fold_id),
-        inner_num_folds=int(inner_num_folds),
+        outer_num_folds=int(split_settings["outer_num_folds"]),
+        test_fold_id=int(split_settings["test_fold_id"]),
+        inner_num_folds=int(split_settings["inner_num_folds"]),
     )
     metrics = evaluate_saved_fit_test_metrics(
         fit_root,
@@ -121,8 +182,8 @@ def run_test_evaluation(
         if output_path not in (None, "")
         else _default_output_path(
             fit_root,
-            test_fold_id=int(test_fold_id),
-            inner_num_folds=int(inner_num_folds),
+            test_fold_id=int(split_settings["test_fold_id"]),
+            inner_num_folds=int(split_settings["inner_num_folds"]),
         )
     )
     payload = {
@@ -130,9 +191,9 @@ def run_test_evaluation(
         "fit_name": fit_root.name,
         "experiment_path": str(resolved_experiment_root),
         "split_kind": str(split_artifacts["split_kind"]),
-        "outer_num_folds": int(outer_num_folds),
-        "test_fold_id": int(test_fold_id),
-        "inner_num_folds": int(inner_num_folds),
+        "outer_num_folds": int(split_settings["outer_num_folds"]),
+        "test_fold_id": int(split_settings["test_fold_id"]),
+        "inner_num_folds": int(split_settings["inner_num_folds"]),
         "sampling": dict(resolved_sampling),
         "split_output_root": str(split_artifacts["output_root"]),
         "split_metadata": dict(split_artifacts["metadata"]),

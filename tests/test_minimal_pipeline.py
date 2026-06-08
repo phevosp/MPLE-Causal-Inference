@@ -9725,7 +9725,7 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             eta=-0.2,
             latent_rank=0,
             t_steps=10,
-            field_matrix=np.zeros((10, 5), dtype=float),
+            field_matrix=np.zeros((10, 100), dtype=float),
         )
         OmegaConf.save(
             OmegaConf.create(
@@ -9785,6 +9785,74 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             self.assertIn(key, payload)
         self.assertEqual(payload["experiment_path"], str(experiment_root.resolve()))
 
+    def test_run_test_evaluation_infers_test_train_cv_settings_from_train_fit_metadata(self) -> None:
+        experiment_root, _ = self._build_nontrivial_test_train_cv_fixture(
+            outer_num_folds=3,
+            inner_num_folds=3,
+            test_fold_id=1,
+            t_steps=12,
+            num_nodes=72,
+        )
+        fit_root = (
+            experiment_root
+            / "train_fits"
+            / "mask_grid"
+            / "test_train_cv__outer_3__test_1__inner_3"
+            / "candidate_a"
+        )
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_estimated_parameter_bundle(
+            fit_root / "estimated_parameter_bundle.npz",
+            beta=0.2,
+            xi=0.1,
+            eta=0.05,
+            latent_rank=0,
+            t_steps=12,
+            field_matrix=np.zeros((12, 72), dtype=float),
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "estimation_params": {
+                        "fixed_scalar_params": {},
+                        "beta_mask_pre_s": False,
+                        "beta_mask_post_e": False,
+                    }
+                }
+            ),
+            fit_root / "fit_realized_config.yaml",
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "experiment_path": str(experiment_root.resolve()),
+                    "execution_mode": "train_fit",
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 3,
+                    "test_fold_id": 1,
+                    "num_folds": 3,
+                }
+            ),
+            fit_root / "fit_metadata.yaml",
+        )
+        report_path = run_test_evaluation(fit_root)
+
+        self.assertEqual(
+            report_path,
+            fit_root
+            / "test_set_evaluation"
+            / "test_fold_1__inner_folds_3"
+            / "test_metrics.yaml",
+        )
+        payload = load_yaml_mapping(report_path)
+        self.assertEqual(payload["experiment_path"], str(experiment_root.resolve()))
+        self.assertEqual(payload["split_kind"], "test_train_cv")
+        self.assertEqual(int(payload["outer_num_folds"]), 3)
+        self.assertEqual(int(payload["test_fold_id"]), 1)
+        self.assertEqual(int(payload["inner_num_folds"]), 3)
+        self.assertIn("test_loss", payload)
+        self.assertIn("test_brier_score", payload)
+
     def test_run_test_evaluation_experiment_path_override_beats_stale_fit_metadata(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
         fit_root = experiment_root / "fits" / "bundle_b"
@@ -9796,7 +9864,7 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             eta=0.0,
             latent_rank=0,
             t_steps=10,
-            field_matrix=np.zeros((10, 5), dtype=float),
+            field_matrix=np.zeros((10, 100), dtype=float),
         )
         OmegaConf.save(
             OmegaConf.create(
