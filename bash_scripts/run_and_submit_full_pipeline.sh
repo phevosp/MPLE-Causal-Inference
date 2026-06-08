@@ -147,17 +147,14 @@ wait_for_job() {
 #   bash "${GENERATION_SUBMITTER}"
 # }
 
-build_cv_folds_stage() {
-  if [[ -n "${BUILD_CV_FOLDS_SCRIPT:-}" ]]; then
-    bash "${BUILD_CV_FOLDS_SCRIPT}" "${GEN_MANIFEST}" "${CV_SPEC_PATH}"
+build_splits_stage() {
+  if [[ -n "${BUILD_SPLITS_SCRIPT:-}" ]]; then
+    bash "${BUILD_SPLITS_SCRIPT}" "${GEN_MANIFEST}" "${CV_SPEC_PATH}"
     return 0
   fi
-  while IFS= read -r num_folds; do
-    [[ -n "${num_folds}" ]] || continue
-    pixi run python -u build_cv_folds.py \
-      --generation_manifest_path "${GEN_MANIFEST}" \
-      --num_folds "${num_folds}"
-  done < <(resolve_cv_num_folds_list)
+  pixi run python -u build_splits.py \
+    --generation_manifest_path "${GEN_MANIFEST}" \
+    --cv_spec_path "${CV_SPEC_PATH}"
 }
 
 submit_model_selection_stage() {
@@ -244,8 +241,8 @@ echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
 wait_for_job "${fit_barrier_job_id}" "Fit"
 
-# echo "Building CV folds..."
-# build_cv_folds_stage
+# echo "Building split bundles..."
+# build_splits_stage
 
 # run_requested_model_selection_modes
 

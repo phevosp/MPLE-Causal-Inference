@@ -34,7 +34,7 @@ from utils.t4_scalar_parameters import (
     get_xi,
 )
 from utils.t2_normalization import interaction_matrix_infinity_norm, normalize_matrix_by_max_abs_entry
-from pipeline_specs import slugify
+from utils.t0_string_utils import slugify
 
 
 @dataclass(frozen=True)

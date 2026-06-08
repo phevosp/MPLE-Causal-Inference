@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 
 from utils.t0_path_utils import io_path
 from utils.t5_experiment_context import infer_panel_dimensions
-from pipeline_specs import validate_fit_variant_dict
+from utils.t6_pipeline_spec_utils import validate_fit_variant_dict
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

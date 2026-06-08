@@ -8,7 +8,9 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 
+from utils.t0_config_utils import load_yaml_mapping
 from utils.t0_path_utils import io_path
+from utils.t0_string_utils import slugify
 
 
 INTERVENTION_LIBRARY_ROOT_NAME = "intervention_library"
@@ -81,8 +83,6 @@ def save_intervention_artifact(
     source_kind: str,
     extra_metadata: dict[str, object] | None = None,
 ) -> Path:
-    from pipeline_specs import slugify
-
     artifact_root = Path(output_root)
     z = np.asarray(z, dtype=float)
     z_0 = np.asarray(z_0, dtype=float)
@@ -174,8 +174,6 @@ def load_saved_intervention_context(
     experiment_root: str | Path,
     intervention_name: str,
 ) -> InterventionContext:
-    from pipeline_specs import slugify
-
     experiment_path = Path(experiment_root)
     intervention_slug = slugify(intervention_name)
     artifact_root = experiment_path / INTERVENTION_LIBRARY_ROOT_NAME / intervention_slug
@@ -194,10 +192,7 @@ def load_saved_intervention_context(
     _validate_intervention_panel(z, z_0)
     metadata: dict[str, object] = {}
     if metadata_path.exists():
-        with open(io_path(metadata_path), "r", encoding="utf-8") as handle:
-            loaded = OmegaConf.to_container(OmegaConf.load(handle), resolve=True)
-        if isinstance(loaded, dict):
-            metadata = loaded
+        metadata = load_yaml_mapping(metadata_path)
     return InterventionContext(
         source_kind="saved_intervention",
         intervention_name=str(metadata.get("intervention_name", intervention_name)),
@@ -252,4 +247,3 @@ def resolve_intervention_context(
             )
         return context
     raise ValueError(f"Unsupported intervention_source '{intervention_source}'.")
-

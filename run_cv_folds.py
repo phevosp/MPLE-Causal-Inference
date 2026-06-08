@@ -12,28 +12,25 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-import build_cv_folds as cv_folds
+from utils.t0_config_utils import deep_merge_mappings
+from utils.t0_csv_utils import read_csv_rows, write_csv_rows
+from utils.t0_string_utils import slugify
 from utils.t1_matrix_io import save_loss_mask
 from utils.t0_path_utils import io_path
 from utils.t5_experiment_context import load_experiment_panel_context
-from pipeline_specs import (
-    deep_merge,
+from utils.t6_pipeline_spec_utils import (
     expand_named_entries,
-    load_spec,
-    read_csv_manifest,
-    slugify,
     validate_cv_spec,
     validate_fit_variant_dict,
-    write_csv_manifest,
 )
 from utils.t6_fit_materialization import execute_fit_root, materialize_fit_root
 from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
-    SPLIT_SOURCE_CV_FOLDS,
     load_model_selection_split_masks,
-    normalize_split_source,
+    normalize_split_kind,
 )
+from utils.t6_split_engine import SPLIT_KIND_TRAIN_CV
 from utils.t2_summary_statistics import time_window_mask
 from utils.t7_cv_aggregation import (
     build_candidate_score_row,
@@ -241,7 +238,7 @@ def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
         for (path, _), value in zip(leaves, values):
             _assign_nested_value(overrides, path, value)
             flat_params[".".join(path)] = value
-        candidate = deep_merge(search_base, overrides)
+        candidate = deep_merge_mappings(search_base, overrides)
         candidate_name = f"{search['name']}__candidate_{candidate_index:04d}"
         candidate["name"] = candidate_name
         candidate["slug"] = slugify(candidate_name)
@@ -252,8 +249,8 @@ def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
-def _search_split_source(search: dict[str, Any]) -> str:
-    return normalize_split_source(search.get("split_source", SPLIT_SOURCE_CV_FOLDS))
+def _search_split_kind(search: dict[str, Any]) -> str:
+    return normalize_split_kind(search.get("split_kind", SPLIT_KIND_TRAIN_CV))
 
 
 def _search_outer_num_folds(search: dict[str, Any]) -> int:
@@ -346,7 +343,7 @@ def _resolved_fold_ids_for_experiment(
     experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
     split_artifacts = load_model_selection_split_masks(
         experiment_root,
-        split_source=_search_split_source(search),
+        split_kind=_search_split_kind(search),
         num_folds=configured_num_folds,
         outer_num_folds=_search_outer_num_folds(search),
         test_fold_id=_search_test_fold_id(search),
@@ -357,8 +354,8 @@ def _resolved_fold_ids_for_experiment(
     )
     if not supported_fold_ids:
         raise ValueError(
-            f"No usable fold ids remain for {experiment_root} with split_source="
-            f"{_search_split_source(search)}."
+            f"No usable fold ids remain for {experiment_root} with split_kind="
+            f"{_search_split_kind(search)}."
         )
     if _normalize_execution_mode(execution_mode) == EXECUTION_MODE_VALIDATION:
         return (supported_fold_ids[0],)
@@ -386,7 +383,7 @@ def _cv_request_row(
     return {
         "execution_mode": _normalize_execution_mode(execution_mode),
         "configured_num_folds": int(configured_num_folds),
-        "split_source": _search_split_source(search),
+        "split_kind": _search_split_kind(search),
         "outer_num_folds": int(_search_outer_num_folds(search)),
         "test_fold_id": int(_search_test_fold_id(search)),
         "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
@@ -410,7 +407,7 @@ def write_cv_requests(
     execution_mode: str = EXECUTION_MODE_CV,
 ) -> Path:
     normalized_mode = _normalize_execution_mode(execution_mode)
-    generation_rows = read_csv_manifest(generation_manifest_path)
+    generation_rows = read_csv_rows(generation_manifest_path)
     if not generation_rows:
         raise ValueError(
             f"No experiments found in generation manifest {generation_manifest_path}."
@@ -439,7 +436,7 @@ def write_cv_requests(
         cv_spec_path,
         execution_mode=normalized_mode,
     )
-    write_csv_manifest(request_path, request_rows)
+    write_csv_rows(request_path, request_rows)
     return request_path
 
 
@@ -466,7 +463,7 @@ def _candidate_grid_row(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
-        "split_source": _search_split_source(search),
+        "split_kind": _search_split_kind(search),
         "outer_num_folds": int(_search_outer_num_folds(search)),
         "test_fold_id": int(_search_test_fold_id(search)),
         "candidate_name": candidate["name"],
@@ -498,14 +495,14 @@ def _load_scored_candidates(
             "execution_mode",
             "search_name",
             "search_slug",
-            "split_source",
+            "split_kind",
             "outer_num_folds",
             "test_fold_id",
             "candidate_name",
             "candidate_slug",
             "candidate_index",
         }
-        for row in read_csv_manifest(candidate_grid_path):
+        for row in read_csv_rows(candidate_grid_path):
             candidate_slug = str(row["candidate_slug"])
             candidate = candidate_map.setdefault(
                 candidate_slug,
@@ -552,7 +549,7 @@ def _manifest_row_from_best_row(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
-        "split_source": _search_split_source(search),
+        "split_kind": _search_split_kind(search),
         "outer_num_folds": int(_search_outer_num_folds(search)),
         "test_fold_id": int(_search_test_fold_id(search)),
         "output_path": str(output_root.resolve()),
@@ -577,7 +574,7 @@ def _best_candidate_payload(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
-        "split_source": _search_split_source(search),
+        "split_kind": _search_split_kind(search),
         "outer_num_folds": int(_search_outer_num_folds(search)),
         "test_fold_id": int(_search_test_fold_id(search)),
         "candidate_name": best_candidate["name"],
@@ -711,14 +708,14 @@ def _write_search_score_artifacts(
         )
         candidate_score_rows.append(candidate_score)
 
-    write_csv_manifest(output_root_path / "fold_scores.csv", fold_rows)
+    write_csv_rows(output_root_path / "fold_scores.csv", fold_rows)
     completed_rows = sorted(
         [row for row in candidate_score_rows if row.get("status") == "completed"],
         key=candidate_score_sort_key,
     )
     for rank, row in enumerate(completed_rows, start=1):
         row["rank"] = int(rank)
-    write_csv_manifest(output_root_path / "candidate_scores.csv", candidate_score_rows)
+    write_csv_rows(output_root_path / "candidate_scores.csv", candidate_score_rows)
 
     try:
         best_candidate, best_row = _select_best_candidate_within_standard_error(
@@ -771,7 +768,7 @@ def _fit_metric_row(
         "execution_mode": _normalize_execution_mode(execution_mode),
         "search_name": search["name"],
         "search_slug": search["slug"],
-        "split_source": _search_split_source(search),
+        "split_kind": _search_split_kind(search),
         "outer_num_folds": int(_search_outer_num_folds(search)),
         "test_fold_id": int(_search_test_fold_id(search)),
         "candidate_name": candidate["name"],
@@ -876,7 +873,7 @@ def _run_search_for_experiment(
 
     split_artifacts = load_model_selection_split_masks(
         experiment_root,
-        split_source=_search_split_source(search),
+        split_kind=_search_split_kind(search),
         num_folds=configured_num_folds,
         outer_num_folds=_search_outer_num_folds(search),
         test_fold_id=_search_test_fold_id(search),
@@ -903,7 +900,7 @@ def _run_search_for_experiment(
         )
         for candidate in candidates
     ]
-    write_csv_manifest(output_root / "candidate_grid.csv", candidate_grid_rows)
+    write_csv_rows(output_root / "candidate_grid.csv", candidate_grid_rows)
 
     fold_rows: list[dict[str, object]] = []
     for candidate in candidates:
@@ -947,7 +944,7 @@ def _run_search_for_experiment(
                 "search_slug": search["slug"],
                 "cv_spec_path": str(Path(search["_spec_path"]).resolve()),
                 "configured_num_folds": int(configured_num_folds),
-                "split_source": _search_split_source(search),
+                "split_kind": _search_split_kind(search),
                 "outer_num_folds": int(_search_outer_num_folds(search)),
                 "test_fold_id": int(_search_test_fold_id(search)),
                 "cv_fold_id": int(fold_id),
@@ -1020,7 +1017,7 @@ def run_cv_folds(
         cv_spec_path,
         execution_mode=normalized_mode,
     )
-    generation_rows = read_csv_manifest(generation_manifest_path)
+    generation_rows = read_csv_rows(generation_manifest_path)
     searches = _expand_searches(cv_spec_path)
     manifest_rows: list[dict[str, object]] = []
     print(f"Loaded {len(generation_rows)} experiment(s) from {generation_manifest_path}.")
@@ -1047,7 +1044,7 @@ def run_cv_folds(
         cv_spec_path,
         execution_mode=normalized_mode,
     )
-    write_csv_manifest(manifest_path, manifest_rows)
+    write_csv_rows(manifest_path, manifest_rows)
     print(f"{normalized_mode} requests: {request_path}")
     print(f"{normalized_mode} manifest: {manifest_path}")
     return manifest_path
@@ -1063,7 +1060,7 @@ def run_cv_search_for_experiment_slug(
     num_folds: int | None = None,
     overwrite: bool = False,
 ) -> dict[str, object]:
-    generation_rows = read_csv_manifest(generation_manifest_path)
+    generation_rows = read_csv_rows(generation_manifest_path)
     experiment_row = next(
         (row for row in generation_rows if row.get("experiment_slug") == experiment_slug),
         None,
@@ -1091,7 +1088,7 @@ def refresh_cv_scores_from_requests(
     execution_mode: str | None = None,
     cv_manifest_path: str | Path | None = None,
 ) -> Path:
-    request_rows = read_csv_manifest(cv_requests_path)
+    request_rows = read_csv_rows(cv_requests_path)
     if not request_rows:
         raise ValueError(f"No CV requests found in {cv_requests_path}.")
 
@@ -1122,8 +1119,8 @@ def refresh_cv_scores_from_requests(
         configured_num_folds = int(
             first_row.get("configured_num_folds", _get_num_folds_from_search(search))
         )
-        search["split_source"] = str(
-            first_row.get("split_source", _search_split_source(search))
+        search["split_kind"] = str(
+            first_row.get("split_kind", _search_split_kind(search))
         )
         search["outer_num_folds"] = int(
             first_row.get("outer_num_folds", _search_outer_num_folds(search))
@@ -1148,7 +1145,7 @@ def refresh_cv_scores_from_requests(
 
         split_artifacts = load_model_selection_split_masks(
             experiment_root,
-            split_source=_search_split_source(search),
+            split_kind=_search_split_kind(search),
             num_folds=configured_num_folds,
             outer_num_folds=_search_outer_num_folds(search),
             test_fold_id=_search_test_fold_id(search),
@@ -1235,7 +1232,7 @@ def refresh_cv_scores_from_requests(
             execution_mode=normalized_mode,
         )
     )
-    write_csv_manifest(manifest_path, manifest_rows)
+    write_csv_rows(manifest_path, manifest_rows)
     return manifest_path
 
 
@@ -1245,7 +1242,7 @@ def collect_cv_manifest_from_requests(
     execution_mode: str | None = None,
     cv_manifest_path: str | Path | None = None,
 ) -> Path:
-    request_rows = read_csv_manifest(cv_requests_path)
+    request_rows = read_csv_rows(cv_requests_path)
     if not request_rows:
         raise ValueError(f"No CV requests found in {cv_requests_path}.")
 
@@ -1277,8 +1274,8 @@ def collect_cv_manifest_from_requests(
         configured_num_folds = int(
             first_row.get("configured_num_folds", _get_num_folds_from_search(search))
         )
-        search["split_source"] = str(
-            first_row.get("split_source", _search_split_source(search))
+        search["split_kind"] = str(
+            first_row.get("split_kind", _search_split_kind(search))
         )
         search["outer_num_folds"] = int(
             first_row.get("outer_num_folds", _search_outer_num_folds(search))
@@ -1303,7 +1300,7 @@ def collect_cv_manifest_from_requests(
                 f"search '{search['slug']}': {fold_scores_path}"
             )
         candidates = expand_search_candidates(search)
-        fold_rows = read_csv_manifest(fold_scores_path)
+        fold_rows = read_csv_rows(fold_scores_path)
         expected_num_folds = len({int(row["cv_fold_id"]) for row in group_rows})
         manifest_rows.append(
             _write_search_score_artifacts(
@@ -1325,7 +1322,7 @@ def collect_cv_manifest_from_requests(
             execution_mode=normalized_mode,
         )
     )
-    write_csv_manifest(manifest_path, manifest_rows)
+    write_csv_rows(manifest_path, manifest_rows)
     return manifest_path
 
 def main() -> None:
@@ -1401,7 +1398,7 @@ def main() -> None:
     if args.dry_run:
         if not args.generation_manifest_path or not args.cv_spec_path:
             raise ValueError("--dry_run requires both --generation_manifest_path and --cv_spec_path.")
-        generation_rows = read_csv_manifest(args.generation_manifest_path)
+        generation_rows = read_csv_rows(args.generation_manifest_path)
         searches = _expand_searches(args.cv_spec_path)
         total_folds = 0
         total_candidates = 0

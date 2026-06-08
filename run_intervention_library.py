@@ -11,13 +11,14 @@ from utils.t6_intervention_utils import (
     save_intervention_artifact,
 )
 from utils.t5_experiment_context import load_experiment_panel_context
-from pipeline_specs import expand_named_entries, read_csv_manifest, write_csv_manifest
+from utils.t0_csv_utils import read_csv_rows, write_csv_rows
+from utils.t6_pipeline_spec_utils import expand_named_entries
 
 
 def _generation_manifest_rows(
     generation_manifest_path: str | Path,
 ) -> list[dict[str, str]]:
-    rows = read_csv_manifest(generation_manifest_path)
+    rows = read_csv_rows(generation_manifest_path)
     if not rows:
         raise ValueError(
             f"No rows found in generation manifest {generation_manifest_path}."
@@ -172,7 +173,7 @@ def run_intervention_library(
             )
         )
     )
-    write_csv_manifest(manifest_path, manifest_rows)
+    write_csv_rows(manifest_path, manifest_rows)
     return manifest_path
 
 
@@ -199,4 +200,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

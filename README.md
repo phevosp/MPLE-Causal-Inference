@@ -31,7 +31,7 @@ Outputs land in `experiments/Quickstart/`. Once this works, proceed to the full 
 
 ## Configuration Guide
 
-All pipeline YAML specs use a `base + named entries` pattern: every named entry is deep-merged with `base`, inheriting all fields it doesn't override. The spec is then expanded into one config per entry by `pipeline_specs.expand_named_entries()`.
+All pipeline YAML specs use a `base + named entries` pattern: every named entry is deep-merged with `base`, inheriting all fields it doesn't override. The spec is then expanded into one config per entry by `utils.t6_pipeline_spec_utils.expand_named_entries()`.
 
 **There are two separate config directories — do not mix them:**
 
@@ -756,7 +756,7 @@ They call the same Python entry points and accept environment-variable overrides
 - `utils/t5_experiment_context.py`: experiment/panel artifact loading and experiment-context assembly
 - `utils/t6_intervention_utils.py`: intervention construction, saved-intervention artifacts, and intervention timing helpers
 - `utils/t8_posterior_predictive_sim.py`: predictive simulation and posterior-predictive panel statistics
-- `pipeline_specs.py`: YAML deep-merge, slugging, and manifest helpers
+- `utils/t6_pipeline_spec_utils.py`: pipeline-spec expansion and validation helpers
 - `tests/test_minimal_pipeline.py`: regression coverage for generation, fitting, summaries, and predictive ranking
 
 ## Real-Data Workflow

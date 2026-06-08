@@ -23,13 +23,9 @@ from utils.t6_fit_materialization import (
     materialize_fit_root,
     path_text,
 )
-from pipeline_specs import (
-    expand_named_entries,
-    load_spec,
-    read_csv_manifest,
-    validate_fits_spec,
-    write_csv_manifest,
-)
+from utils.t0_config_utils import load_yaml_mapping
+from utils.t0_csv_utils import read_csv_rows, write_csv_rows
+from utils.t6_pipeline_spec_utils import expand_named_entries, validate_fits_spec
 from report_parameter_recovery_detailed import write_fit_reports
 
 FIT_REQUESTS_NAME = "fit_requests.csv"
@@ -81,7 +77,7 @@ def _select_generation_row(
 ) -> dict[str, str]:
     matches = [
         row
-        for row in read_csv_manifest(manifest_path)
+        for row in read_csv_rows(manifest_path)
         if row.get("experiment_slug", "") == experiment_slug
     ]
     if not matches:
@@ -120,7 +116,7 @@ def _manifest_row_from_completed_fit(request_row: dict[str, str]) -> dict[str, o
     metadata_path = fit_root / "fit_metadata.yaml"
     if not metadata_path.exists():
         raise FileNotFoundError(f"Missing fit metadata: {metadata_path}")
-    metadata = load_spec(metadata_path)
+    metadata = load_yaml_mapping(metadata_path)
     fixed_scalar_params = metadata.get("fixed_scalar_params", {})
     return {
         "experiment_name": str(metadata.get("experiment_name", "")),
@@ -156,7 +152,7 @@ def write_fit_requests(
     manifest_path: str | Path,
     fits_spec_path: str | Path,
 ) -> Path:
-    generation_rows = read_csv_manifest(manifest_path)
+    generation_rows = read_csv_rows(manifest_path)
     if not generation_rows:
         raise ValueError(
             f"No experiments found in generation manifest {manifest_path}."
@@ -174,7 +170,7 @@ def write_fit_requests(
                 )
             )
     request_path = fit_requests_path_for_spec(fits_spec_path)
-    write_csv_manifest(request_path, request_rows)
+    write_csv_rows(request_path, request_rows)
     return request_path
 
 
@@ -230,12 +226,12 @@ def refresh_fit_manifest(
     request_path = fit_requests_path_for_spec(fits_spec_path)
     if not request_path.exists():
         write_fit_requests(manifest_path, fits_spec_path)
-    request_rows = read_csv_manifest(request_path)
+    request_rows = read_csv_rows(request_path)
     fit_rows = [
         _manifest_row_from_completed_fit(request_row) for request_row in request_rows
     ]
     fit_manifest_path = fit_manifest_path_for_spec(fits_spec_path)
-    write_csv_manifest(fit_manifest_path, fit_rows)
+    write_csv_rows(fit_manifest_path, fit_rows)
     write_fit_reports(fit_manifest_path)
     return fit_manifest_path
 
@@ -246,7 +242,7 @@ def run_fits(
     overwrite: bool = False,
 ) -> Path:
     request_path = write_fit_requests(manifest_path, fits_spec_path)
-    request_rows = read_csv_manifest(request_path)
+    request_rows = read_csv_rows(request_path)
     print(f"Loaded {len(request_rows)} fit request(s) from {request_path}.")
     for request_row in request_rows:
         experiment_name = request_row.get(
@@ -312,7 +308,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.dry_run:
-        generation_rows = read_csv_manifest(args.manifest_path)
+        generation_rows = read_csv_rows(args.manifest_path)
         variants = _expand_fit_variants(args.fits_spec_path)
         print(
             f"Dry run: {len(generation_rows)} experiment(s) × {len(variants)} variant(s) "

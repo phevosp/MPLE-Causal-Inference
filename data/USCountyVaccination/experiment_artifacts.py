@@ -11,6 +11,8 @@ import pandas as pd
 from omegaconf import OmegaConf
 from scipy import sparse
 
+from utils.t0_config_utils import load_yaml_mapping
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -724,9 +726,7 @@ def load_realized_binary_artifact(
     metadata_path = artifact_dir / "panel_metadata.yaml"
     if not metadata_path.exists():
         raise FileNotFoundError(f"Missing realized artifact metadata: {metadata_path}")
-    metadata = OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
-    if not isinstance(metadata, dict):
-        metadata = {}
+    metadata = load_yaml_mapping(metadata_path)
     panel_path = artifact_dir / "panel_data.npz"
     initial_path = artifact_dir / f"{panel_key}_0.npy"
     initial_mask_path = artifact_dir / f"{panel_key}0_observed_mask.npy"
@@ -769,9 +769,7 @@ def load_realized_network_artifact(artifact_dir: Path) -> RealizedNetworkArtifac
     metadata_path = artifact_dir / "network_metadata.yaml"
     if not metadata_path.exists():
         raise FileNotFoundError(f"Missing realized network metadata: {metadata_path}")
-    metadata = OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
-    if not isinstance(metadata, dict):
-        metadata = {}
+    metadata = load_yaml_mapping(metadata_path)
     gamma_path = artifact_dir / "gamma_matrix_sparse.npz"
     edge_path = artifact_dir / "adjacency_edge_list.csv.gz"
     node_path = artifact_dir / "node_index.csv"
@@ -812,9 +810,7 @@ def load_shared_panel_artifacts(shared_panel_dir: Path) -> dict[str, object]:
     with np.load(panel_path, allow_pickle=False) as payload:
         x = np.asarray(payload["x"], dtype=np.int8)
         z = np.asarray(payload["z"], dtype=np.int8)
-    metadata = OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
-    if not isinstance(metadata, dict):
-        metadata = {}
+    metadata = load_yaml_mapping(metadata_path)
     node_index = pd.read_csv(shared_panel_dir / "node_index.csv", dtype={"fips": str})
     return {
         "x": x,
@@ -876,8 +872,8 @@ def experiment_has_panel_artifacts(experiment_dir: Path) -> bool:
     metadata_path = experiment_dir / "experiment_metadata.yaml"
     if not metadata_path.exists():
         return False
-    metadata = OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
-    if not isinstance(metadata, dict):
+    metadata = load_yaml_mapping(metadata_path)
+    if not metadata:
         return False
     panel_path = Path(str(metadata.get("shared_panel_path", "")))
     x0_path = Path(str(metadata.get("shared_x0_path", "")))
@@ -899,8 +895,8 @@ def existing_experiment_trim_setting(experiment_dir: Path) -> bool | None:
     metadata_path = experiment_dir / "experiment_metadata.yaml"
     if not metadata_path.exists():
         return None
-    metadata = OmegaConf.to_container(OmegaConf.load(metadata_path), resolve=True)
-    if not isinstance(metadata, dict):
+    metadata = load_yaml_mapping(metadata_path)
+    if not metadata:
         return None
     if "trim_applied" not in metadata:
         return False

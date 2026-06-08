@@ -4,8 +4,9 @@ Organization: 9-tier hierarchical structure for clean dependency management.
 
 TIER 0: INFRASTRUCTURE (no domain dependencies)
   t0_path_utils: Path resolution, file existence checks (Windows-safe I/O)
-  t0_config_utils: YAML configuration file loading
-  t0_csv_utils: Generic CSV writing, value formatting for reports
+  t0_config_utils: YAML configuration loading, mapping normalization, deep merge
+  t0_csv_utils: Generic CSV reading/writing, value formatting for reports
+  t0_string_utils: Shared string normalization helpers such as slugify
 
 TIER 1: MATRIX I/O
   t1_matrix_io: Gamma matrix loading, loss mask saving
@@ -29,6 +30,7 @@ TIER 5: DOMAIN DATA LOADING (depends on Tier 0-4)
   t5_parameter_bundles: Parameter bundle dataclass and I/O
 
 TIER 6: WORKFLOW UTILITIES (depends on Tier 0-5)
+  t6_pipeline_spec_utils: Pipeline spec expansion and fit/CV validation
   t6_fit_materialization: Shared fit config/materialization/execution helpers
   t6_split_management: CV fold and validation/test split mask management
   t6_intervention_utils: Intervention construction and artifact management

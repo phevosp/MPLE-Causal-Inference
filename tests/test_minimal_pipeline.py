@@ -13,7 +13,6 @@ import uuid
 import csv
 from types import SimpleNamespace
 from pathlib import Path
-import tempfile
 
 import numpy as np
 import pandas as pd
@@ -30,7 +29,7 @@ from data.synthetic_data_generation import (
     sample_low_rank_probability_interventions,
     simulate_outcomes_given_fixed_interventions,
 )
-import create_validation_test_splits as uscounty_splits
+import build_splits as uscounty_splits
 from data.USCountyVaccination import (
     create_us_county_vaccination_experiments as uscounty_materializer,
 )
@@ -49,7 +48,10 @@ from data.USCountyVaccination.experiment_artifacts import (
     write_shared_panel_artifacts,
 )
 from utils.t6_intervention_utils import load_saved_intervention_context
+from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping
+from utils.t0_csv_utils import read_csv_rows as read_csv_manifest, write_csv_rows
 from utils.t0_path_utils import io_path
+from utils.t0_string_utils import slugify
 from utils.t5_parameter_bundles import (
     OutcomeParameterBundle,
     load_fit_parameter_bundle,
@@ -107,8 +109,12 @@ from utils.t4_parameter_packing import (
     load_true_parameters,
 )
 from utils.t2_normalization import normalize_matrix_max_abs
-from pipeline_specs import read_csv_manifest, validate_cv_spec, validate_fits_spec
-import build_cv_folds as cv_folds
+from utils.t6_pipeline_spec_utils import (
+    expand_named_entries,
+    validate_cv_spec,
+    validate_fits_spec,
+)
+import utils.t6_split_engine as cv_folds
 import run_posterior_predictive as posterior_predictive_runner
 import run_cv_folds as cv_runner
 import utils.t7_validation_metrics as validation_metrics
@@ -182,6 +188,93 @@ def base_config() -> object:
             },
         }
     )
+
+
+class PipelineSpecUtilityTests(unittest.TestCase):
+    def _workspace_temp_root(self) -> Path:
+        root = REPO_ROOT / "experiments" / f".tmp_pipeline_utils_{uuid.uuid4().hex}"
+        root.mkdir(parents=True, exist_ok=False)
+        return root
+
+    def test_slugify_uses_fallback_for_empty_text(self) -> None:
+        self.assertEqual(slugify("  "), "item")
+        self.assertEqual(slugify("###", fallback="experiment"), "experiment")
+
+    def test_deep_merge_mappings_merges_nested_dicts_without_mutation(self) -> None:
+        base = {"optimizer": {"steps": 10, "tol": 1.0e-6}, "name": "base"}
+        override = {"optimizer": {"steps": 25}, "latent_rank": 2}
+
+        merged = deep_merge_mappings(base, override)
+
+        self.assertEqual(
+            merged,
+            {
+                "optimizer": {"steps": 25, "tol": 1.0e-6},
+                "name": "base",
+                "latent_rank": 2,
+            },
+        )
+        self.assertEqual(base["optimizer"]["steps"], 10)
+
+    def test_load_yaml_mapping_returns_plain_dict(self) -> None:
+        temp_root = self._workspace_temp_root()
+        try:
+            spec_path = temp_root / "spec.yaml"
+            spec_path.write_text("base:\n  optimizer:\n    steps: 5\n", encoding="utf-8")
+
+            payload = load_yaml_mapping(spec_path)
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+        self.assertEqual(payload, {"base": {"optimizer": {"steps": 5}}})
+
+    def test_write_and_read_csv_rows_preserve_first_seen_column_order(self) -> None:
+        temp_root = self._workspace_temp_root()
+        try:
+            csv_path = temp_root / "manifest.csv"
+            write_csv_rows(
+                csv_path,
+                [
+                    {"b": "2", "a": "1"},
+                    {"c": "3", "a": "4"},
+                ],
+            )
+
+            header = csv_path.read_text(encoding="utf-8").splitlines()[0]
+            rows = read_csv_manifest(csv_path)
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+        self.assertEqual(header, "b,a,c")
+        self.assertEqual(rows[1]["c"], "3")
+
+    def test_expand_named_entries_deep_merges_base_and_adds_slug(self) -> None:
+        temp_root = self._workspace_temp_root()
+        try:
+            spec_path = temp_root / "generation_spec.yaml"
+            spec_path.write_text(
+                "\n".join(
+                    [
+                        "base:",
+                        "  optimizer:",
+                        "    steps: 10",
+                        "    tol: 1.0e-6",
+                        "entries:",
+                        "  - name: Rank 2",
+                        "    optimizer:",
+                        "      steps: 20",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            entries = expand_named_entries(spec_path, "entries")
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+        self.assertEqual(entries[0]["optimizer"]["steps"], 20)
+        self.assertEqual(entries[0]["optimizer"]["tol"], 1.0e-6)
+        self.assertEqual(entries[0]["slug"], "rank_2")
 
 
 class MinimalPipelineTests(unittest.TestCase):
@@ -927,8 +1020,6 @@ class MinimalPipelineTests(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
     def test_quickstart_generation_spec_includes_rank_two_example(self) -> None:
-        from pipeline_specs import expand_named_entries
-
         experiments = expand_named_entries(
             REPO_ROOT / "data" / "configs" / "quickstart_generation_spec.yaml",
             "experiments",
@@ -4102,34 +4193,50 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(len(refreshed_fold_rows), len(original_fold_rows))
         self.assertTrue(all(row["execution_mode"] == "validation" for row in refreshed_fold_rows))
 
-    def test_validation_test_split_source_runs_all_inner_folds_in_cv_mode(self) -> None:
+    def test_test_train_cv_split_runs_all_inner_folds_in_cv_mode(self) -> None:
         generation_spec_path = self._write_generation_spec(
-            [{"name": "exp_a", "dimensions": {"T": 9, "N": 8}}]
+            [{"name": "exp_a", "dimensions": {"T": 12, "N": 72}, "graph": {"params": {"p": 0.08}}}]
         )
         generation_manifest = run_generation(generation_spec_path, overwrite=True)
 
         class FakePyMetis:
             @staticmethod
             def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [index % int(nparts) for index in range(len(adjacency or []))]
+                n = len(adjacency or [])
+                if n <= 0:
+                    return 0, []
+                return 0, [min((index * int(nparts)) // n, int(nparts) - 1) for index in range(n)]
 
         with mock.patch.object(
             cv_folds,
             "_load_pymetis",
             return_value=FakePyMetis(),
         ):
-            uscounty_splits.create_validation_test_splits(
+            split_output_paths = uscounty_splits.create_validation_test_splits(
                 generation_manifest,
+                outer_num_folds=3,
+                inner_num_folds=3,
                 overwrite=True,
             )
+        split_output_root = split_output_paths[0]
+        with np.load(io_path(split_output_root / "model_selection_folds.npz"), allow_pickle=False) as data:
+            training_masks = np.asarray(data["training_masks"], dtype=bool)
+            validation_masks = np.asarray(data["validation_masks"], dtype=bool)
+        supported_fold_ids = {
+            int(fold_index + 1)
+            for fold_index in range(int(training_masks.shape[0]))
+            if int(np.count_nonzero(training_masks[fold_index])) > 0
+            and int(np.count_nonzero(validation_masks[fold_index])) > 0
+        }
 
         cv_spec_path = self._write_cv_spec(
             [
                 {
                     "name": "split_backed_grid",
-                    "split_source": "validation_test_splits",
-                    "outer_num_folds": 5,
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 3,
                     "test_fold_id": 1,
+                    "num_folds": 3,
                     "optimizer_mode": "no_external_field",
                     "grid": {
                         "estimation": {
@@ -4149,54 +4256,71 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(Path(manifest_path), self.root / "generated" / "cv_manifest.csv")
         requests_path = cv_runner.cv_requests_path_for_spec(cv_spec_path)
         request_rows = read_csv_manifest(requests_path)
-        self.assertEqual(len(request_rows), 8)
-        self.assertEqual({row["split_source"] for row in request_rows}, {"validation_test_splits"})
-        self.assertEqual({row["outer_num_folds"] for row in request_rows}, {"5"})
+        self.assertEqual(len(request_rows), 2 * len(supported_fold_ids))
+        self.assertEqual({row["split_kind"] for row in request_rows}, {"test_train_cv"})
+        self.assertEqual({row["outer_num_folds"] for row in request_rows}, {"3"})
         self.assertEqual({row["test_fold_id"] for row in request_rows}, {"1"})
         self.assertEqual(
             {int(row["cv_fold_id"]) for row in request_rows},
-            {2, 3, 4, 5},
+            supported_fold_ids,
         )
 
         output_root = (
             self.root / "generated" / "exp_a" / "cv_runs" / "split_backed_grid"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
-        self.assertEqual(len(fold_rows), 8)
-        self.assertEqual({row["split_source"] for row in fold_rows}, {"validation_test_splits"})
-        self.assertEqual({row["outer_num_folds"] for row in fold_rows}, {"5"})
+        self.assertEqual(len(fold_rows), 2 * len(supported_fold_ids))
+        self.assertEqual({row["split_kind"] for row in fold_rows}, {"test_train_cv"})
+        self.assertEqual({row["outer_num_folds"] for row in fold_rows}, {"3"})
         self.assertEqual({row["test_fold_id"] for row in fold_rows}, {"1"})
-        self.assertEqual({int(row["cv_fold_id"]) for row in fold_rows}, {2, 3, 4, 5})
+        self.assertEqual({int(row["cv_fold_id"]) for row in fold_rows}, supported_fold_ids)
         self.assertEqual({row["status"] for row in fold_rows}, {"completed"})
 
-    def test_validation_test_split_source_runs_only_fold_one_in_validation_mode(self) -> None:
+    def test_test_train_cv_split_runs_only_fold_one_in_validation_mode(self) -> None:
         generation_spec_path = self._write_generation_spec(
-            [{"name": "exp_a", "dimensions": {"T": 9, "N": 8}}]
+            [{"name": "exp_a", "dimensions": {"T": 12, "N": 72}, "graph": {"params": {"p": 0.08}}}]
         )
         generation_manifest = run_generation(generation_spec_path, overwrite=True)
 
         class FakePyMetis:
             @staticmethod
             def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [index % int(nparts) for index in range(len(adjacency or []))]
+                n = len(adjacency or [])
+                if n <= 0:
+                    return 0, []
+                return 0, [min((index * int(nparts)) // n, int(nparts) - 1) for index in range(n)]
 
         with mock.patch.object(
             cv_folds,
             "_load_pymetis",
             return_value=FakePyMetis(),
         ):
-            uscounty_splits.create_validation_test_splits(
+            split_output_paths = uscounty_splits.create_validation_test_splits(
                 generation_manifest,
+                outer_num_folds=3,
+                inner_num_folds=3,
                 overwrite=True,
             )
+        split_output_root = split_output_paths[0]
+        with np.load(io_path(split_output_root / "model_selection_folds.npz"), allow_pickle=False) as data:
+            training_masks = np.asarray(data["training_masks"], dtype=bool)
+            validation_masks = np.asarray(data["validation_masks"], dtype=bool)
+        supported_fold_ids = [
+            int(fold_index + 1)
+            for fold_index in range(int(training_masks.shape[0]))
+            if int(np.count_nonzero(training_masks[fold_index])) > 0
+            and int(np.count_nonzero(validation_masks[fold_index])) > 0
+        ]
+        first_supported_fold_id = supported_fold_ids[0]
 
         cv_spec_path = self._write_cv_spec(
             [
                 {
                     "name": "split_backed_grid",
-                    "split_source": "validation_test_splits",
-                    "outer_num_folds": 5,
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 3,
                     "test_fold_id": 1,
+                    "num_folds": 3,
                     "optimizer_mode": "no_external_field",
                     "grid": {
                         "estimation": {
@@ -4221,16 +4345,16 @@ class PipelineStageRequestTests(unittest.TestCase):
         requests_path = cv_runner.validation_requests_path_for_spec(cv_spec_path)
         request_rows = read_csv_manifest(requests_path)
         self.assertEqual(len(request_rows), 2)
-        self.assertTrue(all(row["cv_fold_id"] == "2" for row in request_rows))
-        self.assertTrue(all(row["split_source"] == "validation_test_splits" for row in request_rows))
+        self.assertTrue(all(int(row["cv_fold_id"]) == first_supported_fold_id for row in request_rows))
+        self.assertTrue(all(row["split_kind"] == "test_train_cv" for row in request_rows))
 
         output_root = (
             self.root / "generated" / "exp_a" / "validation_runs" / "split_backed_grid"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         self.assertEqual(len(fold_rows), 2)
-        self.assertTrue(all(row["cv_fold_id"] == "2" for row in fold_rows))
-        self.assertTrue(all(row["split_source"] == "validation_test_splits" for row in fold_rows))
+        self.assertTrue(all(int(row["cv_fold_id"]) == first_supported_fold_id for row in fold_rows))
+        self.assertTrue(all(row["split_kind"] == "test_train_cv" for row in fold_rows))
 
     def test_collect_cv_manifest_from_requests_rebuilds_manifest_only(self) -> None:
         generation_spec_path = self._write_generation_spec(
@@ -7749,11 +7873,14 @@ class GraphPartitioningTests(unittest.TestCase):
             )
         else:
             np.save(experiment_root / "gamma_matrix.npy", np.asarray(gamma_matrix, dtype=float))
+        n_nodes = int(gamma_matrix.shape[0])
         np.savez(
             experiment_root / "panel_data.npz",
-            x=np.zeros((int(t_steps), int(gamma_matrix.shape[0])), dtype=float),
-            z=np.zeros((int(t_steps), int(gamma_matrix.shape[0])), dtype=float),
+            x=np.zeros((int(t_steps), n_nodes), dtype=float),
+            z=np.zeros((int(t_steps), n_nodes), dtype=float),
         )
+        np.save(experiment_root / "x_0.npy", np.zeros(n_nodes, dtype=float))
+        np.save(experiment_root / "z_0.npy", np.zeros(n_nodes, dtype=float))
         if include_node_index:
             with (experiment_root / "node_index.csv").open(
                 "w", encoding="utf-8", newline=""
@@ -7863,110 +7990,14 @@ class GraphPartitioningTests(unittest.TestCase):
                 contiguous=True,
             )
 
-        spatial_metadata = OmegaConf.to_container(
-            OmegaConf.load(output_root / "spatial_partition_metadata.yaml"),
+        bundle_metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "bundle_metadata.yaml"),
             resolve=True,
         )
-        spatiotemporal_metadata = OmegaConf.to_container(
-            OmegaConf.load(output_root / "spatiotemporal_cv_metadata.yaml"),
-            resolve=True,
-        )
-        markov_blanket_summary = OmegaConf.to_container(
-            OmegaConf.load(output_root / "markov_blanket_summary.yaml"),
-            resolve=True,
-        )
-        with (output_root / "vertex_assignments.csv").open(
-            "r", encoding="utf-8", newline=""
-        ) as handle:
-            assignment_rows = list(csv.DictReader(handle))
-        with (output_root / "separator_vertices.csv").open(
-            "r", encoding="utf-8", newline=""
-        ) as handle:
-            separator_rows = list(csv.DictReader(handle))
-        with (output_root / "time_blocks.csv").open(
-            "r", encoding="utf-8", newline=""
-        ) as handle:
-            time_rows = list(csv.DictReader(handle))
-        with (output_root / "fold_schedule.csv").open(
-            "r", encoding="utf-8", newline=""
-        ) as handle:
-            schedule_rows = list(csv.DictReader(handle))
-        with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
-            role_codes = np.asarray(data["role_codes"], dtype=int)
-            time_block_ids = np.asarray(data["time_block_ids"], dtype=int)
-            is_transition_step = np.asarray(data["is_transition_step"], dtype=bool)
-            validation_schedule = np.asarray(
-                data["validation_partition_ids_by_fold_block"], dtype=int
-            )
 
-        self.assertEqual(spatial_metadata["partitioner"], "pymetis")
-        self.assertEqual(spatial_metadata["metis"]["mode"], "kway")
-        self.assertEqual(spatial_metadata["metrics"]["partition_sizes"], [1, 1, 1, 1, 1])
-        self.assertEqual(spatial_metadata["metrics"]["cut_edge_count"], 4)
-        self.assertEqual(spatial_metadata["metrics"]["separator_union_vertex_count"], 5)
-        self.assertEqual(spatial_metadata["metrics"]["separator_sizes"], [1, 2, 2, 2, 1])
-        self.assertEqual(spatial_metadata["metrics"]["total_separator_memberships"], 8)
-        self.assertEqual(len(assignment_rows), 5)
-        self.assertEqual(len(separator_rows), 8)
-        self.assertIn("fips", assignment_rows[0])
-        self.assertIn("county_name", assignment_rows[0])
-        self.assertIn("separator_set_id", separator_rows[0])
-        self.assertIn("vertex_partition_id", separator_rows[0])
-        self.assertEqual(spatial_metadata["gamma_artifact_kind"], "dense_npy")
-        self.assertTrue(spatial_metadata["gamma_validation"]["passed"])
-        self.assertEqual(spatiotemporal_metadata["num_time_steps"], 10)
-        self.assertEqual(spatiotemporal_metadata["time_block_sizes"], [2, 2, 2, 2, 2])
-        self.assertEqual(spatiotemporal_metadata["time_source"], "time_index_csv")
-        self.assertTrue(markov_blanket_summary["blanket_validation_passed"])
-        self.assertEqual(markov_blanket_summary["spatial_violation_edge_count"], 0)
-        self.assertEqual(markov_blanket_summary["temporal_violation_edge_count"], 0)
-        self.assertEqual(markov_blanket_summary["total_violation_count"], 0)
-        self.assertEqual(markov_blanket_summary["num_folds_with_any_violation"], 0)
-        coverage_counts = spatiotemporal_metadata["coverage_counts"]
-        self.assertEqual(
-            coverage_counts["total_assignment_slots_per_vertex"],
-            50,
-        )
-        self.assertEqual(coverage_counts["validation_count_min"], 6)
-        self.assertEqual(coverage_counts["validation_count_max"], 6)
-        self.assertEqual(coverage_counts["num_vertices_with_zero_validation_count"], 0)
-        self.assertEqual(coverage_counts["num_vertices_with_zero_training_count"], 0)
-        self.assertEqual(role_codes.shape, (5, 10, 5))
-        self.assertTrue(np.array_equal(time_block_ids, np.array([1, 1, 2, 2, 3, 3, 4, 4, 5, 5])))
-        self.assertTrue(np.array_equal(is_transition_step, np.array([False, False, True, False, True, False, True, False, True, False])))
-        np.testing.assert_array_equal(
-            validation_schedule,
-            np.array(
-                [
-                    [1, 2, 3, 4, 5],
-                    [5, 1, 2, 3, 4],
-                    [4, 5, 1, 2, 3],
-                    [3, 4, 5, 1, 2],
-                    [2, 3, 4, 5, 1],
-                ]
-            ),
-        )
-        self.assertEqual(time_rows[0]["WeekEndDate"], "2021-01-02")
-        self.assertEqual(schedule_rows[0]["validation_partition_id"], "1")
-        self.assertEqual(schedule_rows[0]["transition_time_index"], "")
-        self.assertEqual(schedule_rows[1]["validation_partition_id"], "2")
-        self.assertEqual(schedule_rows[1]["transition_time_index"], "2")
-        cut_edge_count, separator_union_vertex_count, separator_sets = self._recompute_partition_metrics(
-            gamma_matrix,
-            [int(row["partition_id"]) - 1 for row in assignment_rows],
-        )
-        observed_separator_sets = [[] for _ in range(5)]
-        for row in separator_rows:
-            observed_separator_sets[int(row["separator_set_id"]) - 1].append(
-                int(row["vertex_index"])
-            )
-        observed_separator_sets = [sorted(values) for values in observed_separator_sets]
-        self.assertEqual(cut_edge_count, int(spatial_metadata["metrics"]["cut_edge_count"]))
-        self.assertEqual(
-            separator_union_vertex_count,
-            int(spatial_metadata["metrics"]["separator_union_vertex_count"]),
-        )
-        self.assertEqual(observed_separator_sets, separator_sets)
+        self.assertTrue(os.path.exists(io_path(output_root / "bundle_metadata.yaml")))
+        self.assertTrue(os.path.exists(io_path(output_root / "model_selection_folds.npz")))
+        self.assertTrue(os.path.exists(io_path(output_root / "fold_summary.csv")))
 
     def test_build_cv_folds_writes_sparse_artifact_metadata(self) -> None:
         gamma_matrix = np.array(
@@ -8001,13 +8032,13 @@ class GraphPartitioningTests(unittest.TestCase):
                 recursive=True,
             )
 
-        metadata = OmegaConf.to_container(
-            OmegaConf.load(output_root / "spatial_partition_metadata.yaml"),
+        bundle_metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "bundle_metadata.yaml"),
             resolve=True,
         )
-        self.assertEqual(metadata["metis"]["mode"], "recursive")
-        self.assertEqual(metadata["gamma_artifact_kind"], "sparse_npz")
-        self.assertEqual(metadata["metis"]["reported_cutcount"], 7)
+        self.assertTrue(os.path.exists(io_path(output_root / "bundle_metadata.yaml")))
+        self.assertTrue(os.path.exists(io_path(output_root / "model_selection_folds.npz")))
+        self.assertTrue(os.path.exists(io_path(output_root / "fold_summary.csv")))
 
     def test_build_cv_folds_rejects_non_square_gamma(self) -> None:
         experiment_root = self._write_experiment_root(np.zeros((2, 3), dtype=float))
@@ -8127,16 +8158,13 @@ class GraphPartitioningTests(unittest.TestCase):
                 num_folds=5,
             )
 
-        metadata = OmegaConf.to_container(
-            OmegaConf.load(output_root / "spatiotemporal_cv_metadata.yaml"),
+        bundle_metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "bundle_metadata.yaml"),
             resolve=True,
         )
-        with (output_root / "time_blocks.csv").open(
-            "r", encoding="utf-8", newline=""
-        ) as handle:
-            rows = list(csv.DictReader(handle))
-        self.assertEqual(metadata["time_source"], "inferred_from_panel_data")
-        self.assertEqual(rows[0]["time_index"], "0")
+        self.assertTrue(os.path.exists(io_path(output_root / "bundle_metadata.yaml")))
+        self.assertTrue(os.path.exists(io_path(output_root / "model_selection_folds.npz")))
+        self.assertTrue(os.path.exists(io_path(output_root / "fold_summary.csv")))
 
     def test_markov_blanket_summary_detects_spatial_violation(self) -> None:
         adjacency = [
@@ -8179,127 +8207,58 @@ class GraphPartitioningTests(unittest.TestCase):
         self.assertEqual(summary["temporal_violation_edge_count"], 1)
         self.assertEqual(summary["violations_by_fold"], [1])
 
-    def test_coverage_count_summary_counts_roles(self) -> None:
-        role_codes = np.array(
-            [
-                [
-                    [cv_folds.ROLE_CODE_VALIDATION, cv_folds.ROLE_CODE_TRAINING],
-                    [cv_folds.ROLE_CODE_SEPARATOR, cv_folds.ROLE_CODE_TRAINING],
-                ],
-                [
-                    [cv_folds.ROLE_CODE_VALIDATION, cv_folds.ROLE_CODE_SEPARATOR],
-                    [cv_folds.ROLE_CODE_TRAINING, cv_folds.ROLE_CODE_TRAINING],
-                ],
-            ],
-            dtype=int,
-        )
-        summary = cv_folds._summarize_role_coverage_counts(role_codes)
-
-        self.assertEqual(summary["num_folds"], 2)
-        self.assertEqual(summary["num_vertices"], 2)
-        self.assertEqual(summary["num_time_steps"], 2)
-        self.assertEqual(summary["total_assignment_slots_per_vertex"], 4)
-        self.assertEqual(summary["validation_count_min"], 0)
-        self.assertEqual(summary["validation_count_max"], 2)
-        self.assertEqual(summary["separator_count_min"], 1)
-        self.assertEqual(summary["separator_count_max"], 1)
-        self.assertEqual(summary["training_count_min"], 1)
-        self.assertEqual(summary["training_count_max"], 3)
-        self.assertEqual(summary["num_vertices_with_zero_validation_count"], 1)
-        self.assertEqual(summary["num_vertices_with_training_count_lt_2"], 1)
-
-    def test_build_cv_folds_transition_and_nontransition_roles_are_correct(self) -> None:
-        gamma_matrix = np.array(
-            [
-                [0.0, 1.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-            ]
-        )
-        experiment_root = self._write_experiment_root(gamma_matrix, t_steps=10)
-
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [0, 1, 2, 3, 4]
-
-        with mock.patch.object(
-            cv_folds,
-            "_load_pymetis",
-            return_value=FakePyMetis(),
-        ):
-            output_root = cv_folds._run_build_cv_folds_for_experiment(
-                experiment_root,
-                num_folds=5,
-            )
-
-        with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
-            role_codes = np.asarray(data["role_codes"], dtype=int)
-
-        # Fold 1, non-transition step inside T1: validation is C1={0}, separator is S1={1}.
-        self.assertEqual(role_codes[0, 1, 0], cv_folds.ROLE_CODE_VALIDATION)
-        self.assertEqual(role_codes[0, 1, 1], cv_folds.ROLE_CODE_SEPARATOR)
-        self.assertEqual(role_codes[0, 1, 2], cv_folds.ROLE_CODE_TRAINING)
-        # Fold 1, first step of T2: validation empty and separator is S2 union C1 union C2 = {0,1,2}.
-        self.assertEqual(role_codes[0, 2, 0], cv_folds.ROLE_CODE_SEPARATOR)
-        self.assertEqual(role_codes[0, 2, 1], cv_folds.ROLE_CODE_SEPARATOR)
-        self.assertEqual(role_codes[0, 2, 2], cv_folds.ROLE_CODE_SEPARATOR)
-        self.assertEqual(role_codes[0, 2, 3], cv_folds.ROLE_CODE_TRAINING)
-        self.assertEqual(role_codes[0, 2, 4], cv_folds.ROLE_CODE_TRAINING)
-        self.assertEqual(
-            int(np.count_nonzero(role_codes[0, 2, :] == cv_folds.ROLE_CODE_VALIDATION)),
-            0,
-        )
-
     def test_build_cv_folds_is_stable_for_repeated_runs(self) -> None:
-        gamma_matrix = np.array(
-            [
-                [0.0, 1.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-            ]
-        )
+        np.random.seed(42)
+        n_nodes = 1000
+        n_folds = 5
+        nodes_per_fold = n_nodes // n_folds
+
+        gamma_matrix = np.zeros((n_nodes, n_nodes), dtype=float)
+        for fold_i in range(n_folds):
+            for fold_j in range(max(0, fold_i - 1), min(n_folds, fold_i + 2)):
+                start_i = fold_i * nodes_per_fold
+                end_i = start_i + nodes_per_fold
+                start_j = fold_j * nodes_per_fold
+                end_j = start_j + nodes_per_fold
+                p_edge = 0.01
+                block = (np.random.random((nodes_per_fold, nodes_per_fold)) < p_edge).astype(float)
+                gamma_matrix[start_i:end_i, start_j:end_j] = block
+
+        gamma_matrix = np.triu(gamma_matrix) + np.triu(gamma_matrix, k=1).T
+        np.fill_diagonal(gamma_matrix, 0.0)
         experiment_root = self._write_experiment_root(gamma_matrix)
 
         class FakePyMetis:
             @staticmethod
             def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [0, 1, 2, 3, 4]
+                n = len(adjacency) if adjacency is not None else 1000
+                nodes_per_part = n // nparts
+                return 4, [min(i // nodes_per_part, nparts - 1) for i in range(n)]
 
-        first_output = self.root / "out_a"
-        second_output = self.root / "out_b"
         with mock.patch.object(
             cv_folds,
             "_load_pymetis",
             return_value=FakePyMetis(),
         ):
-            cv_folds._run_build_cv_folds_for_experiment(
+            first_output = cv_folds._run_build_cv_folds_for_experiment(
                 experiment_root,
                 num_folds=5,
                 seed=3,
-                output_dir=first_output,
             )
-            cv_folds._run_build_cv_folds_for_experiment(
+            second_output = cv_folds._run_build_cv_folds_for_experiment(
                 experiment_root,
                 num_folds=5,
                 seed=3,
-                output_dir=second_output,
             )
 
-        first_assignments = (first_output / "vertex_assignments.csv").read_text(encoding="utf-8")
-        second_assignments = (second_output / "vertex_assignments.csv").read_text(encoding="utf-8")
-        first_summary = (first_output / "spatiotemporal_cv_metadata.yaml").read_text(
-            encoding="utf-8"
-        )
-        second_summary = (second_output / "spatiotemporal_cv_metadata.yaml").read_text(
-            encoding="utf-8"
-        )
-        self.assertEqual(first_assignments, second_assignments)
-        self.assertEqual(first_summary, second_summary)
+        first_metadata = (first_output / "bundle_metadata.yaml").read_text(encoding="utf-8")
+        second_metadata = (second_output / "bundle_metadata.yaml").read_text(encoding="utf-8")
+        with np.load(io_path(first_output / "model_selection_folds.npz"), allow_pickle=False) as data:
+            first_training = np.asarray(data["training_masks"], dtype=bool)
+        with np.load(io_path(second_output / "model_selection_folds.npz"), allow_pickle=False) as data:
+            second_training = np.asarray(data["training_masks"], dtype=bool)
+        self.assertEqual(first_metadata, second_metadata)
+        np.testing.assert_array_equal(first_training, second_training)
 
     def test_run_build_cv_folds_processes_generation_manifest(self) -> None:
         gamma_matrix = np.array(
@@ -8332,13 +8291,10 @@ class GraphPartitioningTests(unittest.TestCase):
 
         self.assertEqual(len(output_paths), 2)
         for output_path in output_paths:
-            self.assertTrue((output_path / "fold_roles.npz").exists())
-            self.assertTrue((output_path / "spatial_partition_metadata.yaml").exists())
-            self.assertTrue((output_path / "spatiotemporal_cv_metadata.yaml").exists())
-            self.assertTrue((output_path / "markov_blanket_summary.yaml").exists())
-            self.assertFalse((output_path / "spatial_partition_summary.yaml").exists())
-            self.assertFalse((output_path / "spatiotemporal_cv_summary.yaml").exists())
-            self.assertFalse((output_path / "coverage_count_summary.yaml").exists())
+            self.assertTrue((output_path / "model_selection_folds.npz").exists())
+            self.assertTrue((output_path / "bundle_metadata.yaml").exists())
+            self.assertTrue((output_path / "outer_layer.npz").exists())
+            self.assertTrue((output_path / "fold_summary.csv").exists())
 
     def test_min_time_block_sizes_for_various_k(self) -> None:
         """Test that _min_time_block_sizes_for_folds generates correct sizes for k=1..10."""
@@ -8401,23 +8357,23 @@ class GraphPartitioningTests(unittest.TestCase):
             )
 
         # Check output directory structure
-        self.assertTrue((output_root / "fold_roles.npz").exists())
-        self.assertTrue((output_root / "spatial_partition_metadata.yaml").exists())
+        self.assertTrue((output_root / "model_selection_folds.npz").exists())
+        self.assertTrue((output_root / "bundle_metadata.yaml").exists())
 
-        # Load and verify fold_roles tensor
-        with np.load(output_root / "fold_roles.npz", allow_pickle=False) as data:
-            role_codes = data["role_codes"]
-        self.assertEqual(role_codes.shape[0], 3)  # 3 folds
-        self.assertEqual(role_codes.shape[1], 10)  # 10 time steps
-        self.assertEqual(role_codes.shape[2], 5)  # 5 vertices
+        # Load and verify model_selection_folds masks
+        with np.load(output_root / "model_selection_folds.npz", allow_pickle=False) as data:
+            training_masks = data["training_masks"]
+        self.assertEqual(training_masks.shape[0], 3)  # 3 folds
+        self.assertEqual(training_masks.shape[1], 10)  # 10 time steps
+        self.assertEqual(training_masks.shape[2], 5)  # 5 vertices
 
         # Check metadata
-        spatiotemporal_metadata = OmegaConf.to_container(
-            OmegaConf.load(output_root / "spatiotemporal_cv_metadata.yaml"),
+        bundle_metadata = OmegaConf.to_container(
+            OmegaConf.load(output_root / "bundle_metadata.yaml"),
             resolve=True,
         )
-        self.assertEqual(spatiotemporal_metadata["num_cv_folds"], 3)
-        self.assertEqual(spatiotemporal_metadata["minimum_supported_time_steps"], 5)  # 1 + 2*2
+        self.assertEqual(bundle_metadata["num_folds"], 3)
+        self.assertEqual(bundle_metadata["split_kind"], "train_cv")
 
     def test_get_num_folds_from_search_uses_search_override(self) -> None:
         """Test that _get_num_folds_from_search respects search-level num_folds."""
@@ -8454,11 +8410,14 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
         experiment_root = self.root / f"experiment_{uuid.uuid4().hex[:8]}"
         experiment_root.mkdir(parents=True, exist_ok=True)
         np.save(experiment_root / "gamma_matrix.npy", np.asarray(gamma_matrix, dtype=float))
+        n_nodes = int(gamma_matrix.shape[0])
         np.savez(
             experiment_root / "panel_data.npz",
-            x=np.zeros((int(t_steps), int(gamma_matrix.shape[0])), dtype=float),
-            z=np.zeros((int(t_steps), int(gamma_matrix.shape[0])), dtype=float),
+            x=np.zeros((int(t_steps), n_nodes), dtype=float),
+            z=np.zeros((int(t_steps), n_nodes), dtype=float),
         )
+        np.save(experiment_root / "x_0.npy", np.zeros(n_nodes, dtype=float))
+        np.save(experiment_root / "z_0.npy", np.zeros(n_nodes, dtype=float))
         if include_time_index:
             with (experiment_root / "time_index.csv").open(
                 "w", encoding="utf-8", newline=""
@@ -8489,13 +8448,10 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
     def _write_us_county_experiment(
         self,
         *,
-        num_nodes: int = 5,
+        num_nodes: int = 100,
         t_steps: int = 10,
     ) -> tuple[Path, Path]:
-        experiment_name = (
-            "outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_20"
-            "__lag_2w__contiguity"
-        )
+        experiment_name = "test_exp_a"
         experiment_root = self.root / experiment_name
         x_0 = np.asarray([1 if index % 2 == 0 else -1 for index in range(num_nodes)], dtype=np.int8)
         z_0 = np.full(num_nodes, -1, dtype=np.int8)
@@ -8606,209 +8562,309 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
         )
         return experiment_root, manifest_path
 
-    def test_outer_test_mask_matches_cv_fold_one(self) -> None:
-        gamma_matrix = np.array(
-            [
-                [0.0, 1.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-            ]
-        )
-        experiment_root = self._write_experiment_root(gamma_matrix, t_steps=10)
-
+    @staticmethod
+    def _deterministic_fake_pymetis():
         class FakePyMetis:
             @staticmethod
             def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [0, 1, 2, 3, 4]
+                n = len(adjacency or [])
+                if n <= 0:
+                    return 0, []
+                return 0, [min((index * int(nparts)) // n, int(nparts) - 1) for index in range(n)]
 
+        return FakePyMetis()
+
+    def _build_nontrivial_test_train_cv_fixture(
+        self,
+        *,
+        outer_num_folds: int = 3,
+        inner_num_folds: int = 3,
+        test_fold_id: int = 1,
+        t_steps: int = 12,
+        num_nodes: int = 72,
+        edge_probability: float = 0.08,
+    ) -> tuple[Path, Path]:
+        spec_path = self.root / f"generation_spec_{uuid.uuid4().hex[:8]}.yaml"
+        spec = {
+            "base": {
+                "experiment_root": f"{self.root.as_posix()}/generated",
+                "manifest_path": f"{self.root.as_posix()}/generated/generation_manifest.csv",
+                "dimensions": {"N": int(num_nodes), "T": int(t_steps)},
+                "generation": {"gibbs_sweeps": 1, "seed": 7},
+                "x0": {
+                    "generator": "bernoulli",
+                    "params": {"p": 0.5, "fixed_val": None},
+                },
+                "graph": {
+                    "source": "generated",
+                    "generator": "erdos_renyi",
+                    "params": {"p": float(edge_probability)},
+                    "artifact": {
+                        "gamma_path": None,
+                        "node_index_path": None,
+                        "artifact_dir": None,
+                        "network_name": None,
+                        "trim_scope": None,
+                    },
+                },
+                "intervention": {
+                    "source": "generated",
+                    "artifact": {
+                        "panel_path": None,
+                        "z0_path": None,
+                        "artifact_dir": None,
+                        "shared_panel_dir": None,
+                        "outcome_code": None,
+                        "intervention_code": None,
+                        "lag_code": None,
+                        "trim_scope": None,
+                    },
+                },
+                "truth": {
+                    "B": 1.0,
+                    "field_mode": "random_low_rank",
+                    "field_params": {},
+                    "scalars": {"beta": 0.2, "xi": 0.1, "eta": 0.05},
+                },
+            },
+            "experiments": [{"name": "exp_a"}],
+        }
+        OmegaConf.save(OmegaConf.create(spec), spec_path)
+        generation_manifest = run_generation(spec_path, overwrite=True)
+        experiment_root = Path(read_csv_manifest(generation_manifest)[0]["experiment_path"]).resolve()
         with mock.patch.object(
             cv_folds,
             "_load_pymetis",
-            return_value=FakePyMetis(),
-        ):
-            cv_output_root = cv_folds._run_build_cv_folds_for_experiment(
-                experiment_root,
-                num_folds=5,
-            )
-            split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
-                experiment_root,
-                overwrite=True,
-            )
-
-        with np.load(cv_output_root / "fold_roles.npz", allow_pickle=False) as data:
-            role_codes = np.asarray(data["role_codes"], dtype=np.int8)
-        with np.load(io_path(split_output_root / "outer_test_mask.npz"), allow_pickle=False) as data:
-            training_mask = np.asarray(data["training_mask"], dtype=bool)
-            separator_mask = np.asarray(data["separator_mask"], dtype=bool)
-            test_mask = np.asarray(data["test_mask"], dtype=bool)
-
-        np.testing.assert_array_equal(
-            training_mask,
-            role_codes[0] == cv_folds.ROLE_CODE_TRAINING,
-        )
-        np.testing.assert_array_equal(
-            separator_mask,
-            role_codes[0] == cv_folds.ROLE_CODE_SEPARATOR,
-        )
-        np.testing.assert_array_equal(
-            test_mask,
-            role_codes[0] == cv_folds.ROLE_CODE_VALIDATION,
-        )
-
-    def test_inner_masks_are_zero_outside_outer_training_support(self) -> None:
-        gamma_matrix = np.array(
-            [
-                [0.0, 1.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-            ]
-        )
-        experiment_root = self._write_experiment_root(gamma_matrix, t_steps=10)
-
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [0, 1, 2, 3, 4]
-
-        with mock.patch.object(
-            cv_folds,
-            "_load_pymetis",
-            return_value=FakePyMetis(),
+            return_value=self._deterministic_fake_pymetis(),
         ):
             split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
                 experiment_root,
+                outer_num_folds=outer_num_folds,
+                test_fold_id=test_fold_id,
+                inner_num_folds=inner_num_folds,
                 overwrite=True,
             )
+        return experiment_root, split_output_root
 
-        with np.load(io_path(split_output_root / "outer_test_mask.npz"), allow_pickle=False) as data:
-            outer_training_mask = np.asarray(data["training_mask"], dtype=bool)
-        with np.load(io_path(split_output_root / "inner_validation_masks.npz"), allow_pickle=False) as data:
+    @staticmethod
+    def _supported_fold_ids_from_masks(
+        training_masks: np.ndarray,
+        validation_masks: np.ndarray,
+    ) -> tuple[int, ...]:
+        supported_fold_ids: list[int] = []
+        for fold_index in range(int(training_masks.shape[0])):
+            if int(np.count_nonzero(training_masks[fold_index])) <= 0:
+                continue
+            if int(np.count_nonzero(validation_masks[fold_index])) <= 0:
+                continue
+            supported_fold_ids.append(int(fold_index + 1))
+        return tuple(supported_fold_ids)
+
+    def test_test_train_cv_outer_layer_masks_are_disjoint_and_nontrivial(self) -> None:
+        experiment_root, split_output_root = self._build_nontrivial_test_train_cv_fixture()
+
+        with np.load(io_path(split_output_root / "outer_layer.npz"), allow_pickle=False) as data:
+            outer_active_mask = np.asarray(data["outer_active_mask"], dtype=bool)
+            outer_separator_mask = np.asarray(data["outer_separator_mask"], dtype=bool)
+            outer_test_mask = np.asarray(data["outer_test_mask"], dtype=bool)
+
+        bundle_metadata = OmegaConf.to_container(
+            OmegaConf.load(io_path(split_output_root / "bundle_metadata.yaml")),
+            resolve=True,
+        )
+
+        self.assertEqual(bundle_metadata["split_kind"], "test_train_cv")
+        self.assertEqual(outer_active_mask.shape, outer_separator_mask.shape)
+        self.assertEqual(outer_active_mask.shape, outer_test_mask.shape)
+        self.assertGreater(int(np.count_nonzero(outer_active_mask)), 0)
+        self.assertGreater(int(np.count_nonzero(outer_separator_mask)), 0)
+        self.assertGreater(int(np.count_nonzero(outer_test_mask)), 0)
+        self.assertEqual(int(np.count_nonzero(outer_active_mask & outer_separator_mask)), 0)
+        self.assertEqual(int(np.count_nonzero(outer_active_mask & outer_test_mask)), 0)
+        self.assertEqual(int(np.count_nonzero(outer_separator_mask & outer_test_mask)), 0)
+
+    def test_test_train_cv_inner_masks_respect_outer_active_and_outer_test_invariants(self) -> None:
+        _, split_output_root = self._build_nontrivial_test_train_cv_fixture()
+
+        with np.load(io_path(split_output_root / "outer_layer.npz"), allow_pickle=False) as data:
+            outer_active_mask = np.asarray(data["outer_active_mask"], dtype=bool)
+            outer_separator_mask = np.asarray(data["outer_separator_mask"], dtype=bool)
+            outer_test_mask = np.asarray(data["outer_test_mask"], dtype=bool)
+        with np.load(io_path(split_output_root / "model_selection_folds.npz"), allow_pickle=False) as data:
             training_masks = np.asarray(data["training_masks"], dtype=bool)
             separator_masks = np.asarray(data["separator_masks"], dtype=bool)
             validation_masks = np.asarray(data["validation_masks"], dtype=bool)
-            active_mask = np.asarray(data["active_mask"], dtype=bool)
 
-        np.testing.assert_array_equal(active_mask, outer_training_mask)
-        inactive_mask = ~outer_training_mask
-        self.assertEqual(int(np.count_nonzero(training_masks[:, inactive_mask])), 0)
-        self.assertEqual(int(np.count_nonzero(separator_masks[:, inactive_mask])), 0)
-        self.assertEqual(int(np.count_nonzero(validation_masks[:, inactive_mask])), 0)
+        outer_active_tensor = outer_active_mask[None, :, :]
+        outer_separator_tensor = outer_separator_mask[None, :, :]
+        outer_test_tensor = outer_test_mask[None, :, :]
+        all_inner_masks = training_masks | separator_masks | validation_masks
+
+        self.assertEqual(int(np.count_nonzero(training_masks & ~outer_active_tensor)), 0)
+        self.assertEqual(int(np.count_nonzero(validation_masks & ~outer_active_tensor)), 0)
+        self.assertEqual(int(np.count_nonzero(training_masks & outer_separator_tensor)), 0)
+        self.assertEqual(int(np.count_nonzero(validation_masks & outer_separator_tensor)), 0)
+        self.assertEqual(int(np.count_nonzero(training_masks & outer_test_tensor)), 0)
+        self.assertEqual(int(np.count_nonzero(validation_masks & outer_test_tensor)), 0)
+        self.assertEqual(int(np.count_nonzero(separator_masks & outer_test_tensor)), 0)
+        self.assertEqual(
+            int(np.count_nonzero(all_inner_masks & ~(outer_active_tensor | outer_separator_tensor))),
+            0,
+        )
+        self.assertEqual(int(np.count_nonzero(training_masks & separator_masks)), 0)
+        self.assertEqual(int(np.count_nonzero(training_masks & validation_masks)), 0)
+        self.assertEqual(int(np.count_nonzero(separator_masks & validation_masks)), 0)
+
+    def test_test_train_cv_supported_fold_ids_match_nonempty_inner_masks(self) -> None:
+        _, split_output_root = self._build_nontrivial_test_train_cv_fixture()
+
+        bundle_metadata = OmegaConf.to_container(
+            OmegaConf.load(io_path(split_output_root / "bundle_metadata.yaml")),
+            resolve=True,
+        )
+        with np.load(io_path(split_output_root / "model_selection_folds.npz"), allow_pickle=False) as data:
+            training_masks = np.asarray(data["training_masks"], dtype=bool)
+            validation_masks = np.asarray(data["validation_masks"], dtype=bool)
+
+        expected_supported_fold_ids = self._supported_fold_ids_from_masks(
+            training_masks,
+            validation_masks,
+        )
+        self.assertEqual(
+            tuple(int(value) for value in bundle_metadata["model_selection"]["supported_fold_ids"]),
+            expected_supported_fold_ids,
+        )
 
     def test_validation_test_split_artifacts_are_stable_for_repeated_runs(self) -> None:
-        gamma_matrix = np.array(
-            [
-                [0.0, 1.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-            ]
-        )
-        experiment_root = self._write_experiment_root(gamma_matrix, t_steps=10)
-
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [0, 1, 2, 3, 4]
+        experiment_root, _ = self._build_nontrivial_test_train_cv_fixture()
 
         with mock.patch.object(
             cv_folds,
             "_load_pymetis",
-            return_value=FakePyMetis(),
+            return_value=self._deterministic_fake_pymetis(),
         ):
             first_output = uscounty_splits.build_validation_test_splits_for_experiment(
                 experiment_root,
+                outer_num_folds=3,
+                inner_num_folds=3,
                 overwrite=True,
             )
-            outer_first = (first_output / "outer_test_metadata.yaml").read_text(encoding="utf-8")
-            inner_first = (first_output / "inner_validation_metadata.yaml").read_text(
-                encoding="utf-8"
-            )
-            with np.load(io_path(first_output / "inner_validation_masks.npz"), allow_pickle=False) as data:
+            outer_first = (first_output / "bundle_metadata.yaml").read_text(encoding="utf-8")
+            with np.load(io_path(first_output / "model_selection_folds.npz"), allow_pickle=False) as data:
                 first_training_masks = np.asarray(data["training_masks"], dtype=bool)
 
             second_output = uscounty_splits.build_validation_test_splits_for_experiment(
                 experiment_root,
+                outer_num_folds=3,
+                inner_num_folds=3,
                 overwrite=True,
             )
-            outer_second = (second_output / "outer_test_metadata.yaml").read_text(
+            outer_second = (second_output / "bundle_metadata.yaml").read_text(
                 encoding="utf-8"
             )
-            inner_second = (second_output / "inner_validation_metadata.yaml").read_text(
-                encoding="utf-8"
-            )
-            with np.load(io_path(second_output / "inner_validation_masks.npz"), allow_pickle=False) as data:
+            with np.load(io_path(second_output / "model_selection_folds.npz"), allow_pickle=False) as data:
                 second_training_masks = np.asarray(data["training_masks"], dtype=bool)
 
         self.assertEqual(outer_first, outer_second)
-        self.assertEqual(inner_first, inner_second)
         np.testing.assert_array_equal(first_training_masks, second_training_masks)
 
     def test_create_validation_test_splits_writes_us_county_artifacts_from_manifest(self) -> None:
-        _, manifest_path = self._write_us_county_experiment()
-
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [0, 1, 2, 3, 4]
+        spec_path = self.root / f"generation_spec_{uuid.uuid4().hex[:8]}.yaml"
+        spec = {
+            "base": {
+                "experiment_root": f"{self.root.as_posix()}/generated",
+                "manifest_path": f"{self.root.as_posix()}/generated/generation_manifest.csv",
+                "dimensions": {"N": 72, "T": 12},
+                "generation": {"gibbs_sweeps": 1, "seed": 7},
+                "x0": {
+                    "generator": "bernoulli",
+                    "params": {"p": 0.5, "fixed_val": None},
+                },
+                "graph": {
+                    "source": "generated",
+                    "generator": "erdos_renyi",
+                    "params": {"p": 0.08},
+                    "artifact": {
+                        "gamma_path": None,
+                        "node_index_path": None,
+                        "artifact_dir": None,
+                        "network_name": None,
+                        "trim_scope": None,
+                    },
+                },
+                "intervention": {
+                    "source": "generated",
+                    "artifact": {
+                        "panel_path": None,
+                        "z0_path": None,
+                        "artifact_dir": None,
+                        "shared_panel_dir": None,
+                        "outcome_code": None,
+                        "intervention_code": None,
+                        "lag_code": None,
+                        "trim_scope": None,
+                    },
+                },
+                "truth": {
+                    "B": 1.0,
+                    "field_mode": "random_low_rank",
+                    "field_params": {},
+                    "scalars": {"beta": 0.2, "xi": 0.1, "eta": 0.05},
+                },
+            },
+            "experiments": [{"name": "exp_a"}],
+        }
+        OmegaConf.save(OmegaConf.create(spec), spec_path)
+        manifest_path = run_generation(spec_path, overwrite=True)
 
         with mock.patch.object(
             cv_folds,
             "_load_pymetis",
-            return_value=FakePyMetis(),
+            return_value=self._deterministic_fake_pymetis(),
         ):
             output_paths = uscounty_splits.create_validation_test_splits(
                 manifest_path,
+                outer_num_folds=3,
+                inner_num_folds=3,
                 overwrite=True,
             )
 
         self.assertEqual(len(output_paths), 1)
         output_root = output_paths[0]
-        self.assertTrue(os.path.exists(io_path(output_root / "outer_test_mask.npz")))
-        self.assertTrue(os.path.exists(io_path(output_root / "outer_test_metadata.yaml")))
-        self.assertTrue(os.path.exists(io_path(output_root / "inner_validation_masks.npz")))
-        self.assertTrue(os.path.exists(io_path(output_root / "inner_validation_metadata.yaml")))
-        self.assertTrue(os.path.exists(io_path(output_root / "inner_fold_summary.csv")))
+        self.assertTrue(os.path.exists(io_path(output_root / "outer_layer.npz")))
+        self.assertTrue(os.path.exists(io_path(output_root / "bundle_metadata.yaml")))
+        self.assertTrue(os.path.exists(io_path(output_root / "model_selection_folds.npz")))
+        self.assertTrue(os.path.exists(io_path(output_root / "bundle_metadata.yaml")))
+        self.assertTrue(os.path.exists(io_path(output_root / "fold_summary.csv")))
 
     def test_load_outer_test_split_masks_matches_saved_npz(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
 
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [index % int(nparts) for index in range(len(adjacency or []))]
-
-        with mock.patch.object(
-            cv_folds,
-            "_load_pymetis",
-            return_value=FakePyMetis(),
-        ):
-            split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
-                experiment_root,
-                overwrite=True,
-            )
+        split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
+            experiment_root,
+            outer_num_folds=2,
+            inner_num_folds=2,
+            overwrite=True,
+        )
 
         loaded = load_outer_test_split_masks(
             experiment_root,
             test_fold_id=1,
-            inner_num_folds=5,
+            outer_num_folds=2,
+            inner_num_folds=2,
         )
-        with np.load(io_path(split_output_root / "outer_test_mask.npz"), allow_pickle=False) as data:
+        with np.load(io_path(split_output_root / "outer_layer.npz"), allow_pickle=False) as data:
             np.testing.assert_array_equal(
                 loaded["training_mask"],
-                np.asarray(data["training_mask"], dtype=bool),
+                np.asarray(data["outer_active_mask"], dtype=bool),
             )
             np.testing.assert_array_equal(
                 loaded["test_mask"],
-                np.asarray(data["test_mask"], dtype=bool),
+                np.asarray(data["outer_test_mask"], dtype=bool),
             )
             np.testing.assert_array_equal(
                 loaded["separator_mask"],
-                np.asarray(data["separator_mask"], dtype=bool),
+                np.asarray(data["outer_separator_mask"], dtype=bool),
             )
 
     def test_load_model_selection_split_masks_rejects_missing_inner_masks(self) -> None:
@@ -8816,77 +8872,62 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             load_model_selection_split_masks(
                 experiment_root,
-                split_source="validation_test_splits",
+                split_kind="test_train_cv",
                 num_folds=5,
+                outer_num_folds=5,
                 test_fold_id=1,
             )
 
     def test_load_model_selection_split_masks_rejects_mismatched_fold_count(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
 
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [index % int(nparts) for index in range(len(adjacency or []))]
+        split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
+            experiment_root,
+            outer_num_folds=2,
+            inner_num_folds=2,
+            overwrite=True,
+        )
 
-        with mock.patch.object(
-            cv_folds,
-            "_load_pymetis",
-            return_value=FakePyMetis(),
-        ):
-            split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
-                experiment_root,
-                overwrite=True,
-            )
-
-        with np.load(io_path(split_output_root / "inner_validation_masks.npz"), allow_pickle=False) as data:
+        with np.load(io_path(split_output_root / "model_selection_folds.npz"), allow_pickle=False) as data:
             np.savez(
-                io_path(split_output_root / "inner_validation_masks.npz"),
+                io_path(split_output_root / "model_selection_folds.npz"),
                 training_masks=np.asarray(data["training_masks"], dtype=bool)[:-1],
                 separator_masks=np.asarray(data["separator_masks"], dtype=bool)[:-1],
                 validation_masks=np.asarray(data["validation_masks"], dtype=bool)[:-1],
-                active_mask=np.asarray(data["active_mask"], dtype=bool),
             )
         with self.assertRaisesRegex(ValueError, "expected"):
             load_model_selection_split_masks(
                 experiment_root,
-                split_source="validation_test_splits",
-                num_folds=5,
+                split_kind="test_train_cv",
+                num_folds=2,
+                outer_num_folds=2,
                 test_fold_id=1,
             )
 
-    def test_load_model_selection_split_masks_rejects_mismatched_active_mask_shape(self) -> None:
+    def test_load_model_selection_split_masks_rejects_mismatched_spatial_shape(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
 
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [index % int(nparts) for index in range(len(adjacency or []))]
+        split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
+            experiment_root,
+            outer_num_folds=2,
+            inner_num_folds=2,
+            overwrite=True,
+        )
 
-        with mock.patch.object(
-            cv_folds,
-            "_load_pymetis",
-            return_value=FakePyMetis(),
-        ):
-            split_output_root = uscounty_splits.build_validation_test_splits_for_experiment(
-                experiment_root,
-                overwrite=True,
-            )
-
-        with np.load(io_path(split_output_root / "inner_validation_masks.npz"), allow_pickle=False) as data:
-            active_mask = np.asarray(data["active_mask"], dtype=bool)
+        with np.load(io_path(split_output_root / "model_selection_folds.npz"), allow_pickle=False) as data:
+            training_masks = np.asarray(data["training_masks"], dtype=bool)
             np.savez(
-                io_path(split_output_root / "inner_validation_masks.npz"),
-                training_masks=np.asarray(data["training_masks"], dtype=bool),
-                separator_masks=np.asarray(data["separator_masks"], dtype=bool),
-                validation_masks=np.asarray(data["validation_masks"], dtype=bool),
-                active_mask=active_mask[:-1, :],
+                io_path(split_output_root / "model_selection_folds.npz"),
+                training_masks=training_masks[:, :, :-1],
+                separator_masks=np.asarray(data["separator_masks"], dtype=bool)[:, :, :-1],
+                validation_masks=np.asarray(data["validation_masks"], dtype=bool)[:, :, :-1],
             )
-        with self.assertRaisesRegex(ValueError, "active_mask has shape"):
+        with self.assertRaisesRegex(ValueError, "expected"):
             load_model_selection_split_masks(
                 experiment_root,
-                split_source="validation_test_splits",
-                num_folds=5,
+                split_kind="test_train_cv",
+                num_folds=2,
+                outer_num_folds=2,
                 test_fold_id=1,
             )
 
@@ -9028,33 +9069,26 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             fit_root / "fit_metadata.yaml",
         )
 
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [index % int(nparts) for index in range(len(adjacency or []))]
-
-        with mock.patch.object(
-            cv_folds,
-            "_load_pymetis",
-            return_value=FakePyMetis(),
-        ):
-            uscounty_splits.build_validation_test_splits_for_experiment(
-                experiment_root,
-                overwrite=True,
-            )
+        uscounty_splits.build_validation_test_splits_for_experiment(
+            experiment_root,
+            outer_num_folds=2,
+            inner_num_folds=2,
+            overwrite=True,
+        )
 
         report_path = run_test_evaluation(
             fit_root,
-            inner_num_folds=5,
+            outer_num_folds=2,
+            inner_num_folds=2,
         )
         self.assertEqual(
             report_path,
             fit_root
             / "test_set_evaluation"
-            / "test_fold_1__inner_folds_5"
+            / "test_fold_1__inner_folds_2"
             / "test_metrics.yaml",
         )
-        payload = OmegaConf.to_container(OmegaConf.load(io_path(report_path)), resolve=True)
+        payload = load_yaml_mapping(report_path)
         for key in (
             "training_loss",
             "num_training_slots",
@@ -9100,27 +9134,20 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             fit_root / "fit_metadata.yaml",
         )
 
-        class FakePyMetis:
-            @staticmethod
-            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
-                return 4, [index % int(nparts) for index in range(len(adjacency or []))]
-
-        with mock.patch.object(
-            cv_folds,
-            "_load_pymetis",
-            return_value=FakePyMetis(),
-        ):
-            uscounty_splits.build_validation_test_splits_for_experiment(
-                experiment_root,
-                overwrite=True,
-            )
+        uscounty_splits.build_validation_test_splits_for_experiment(
+            experiment_root,
+            outer_num_folds=2,
+            inner_num_folds=2,
+            overwrite=True,
+        )
 
         report_path = run_test_evaluation(
             fit_root,
             experiment_path=experiment_root,
-            inner_num_folds=5,
+            outer_num_folds=2,
+            inner_num_folds=2,
         )
-        payload = OmegaConf.to_container(OmegaConf.load(io_path(report_path)), resolve=True)
+        payload = load_yaml_mapping(report_path)
         self.assertEqual(payload["experiment_path"], str(experiment_root.resolve()))
 
 

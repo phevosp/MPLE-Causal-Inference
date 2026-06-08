@@ -8,12 +8,11 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-from omegaconf import OmegaConf
 
 from utils.t0_csv_utils import write_csv
 from utils.t8_output_writers import _as_float, _metric_or_inf
 from utils.t3_field_operations import latent_field_bound_norm
-from pipeline_specs import read_csv_manifest
+from utils.t0_csv_utils import read_csv_rows
 
 
 SCALAR_NAMES = ("beta", "xi", "eta")
@@ -266,7 +265,7 @@ def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | 
 
 def collect_fit_rows(manifest_path: str | Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    for manifest_row in read_csv_manifest(manifest_path):
+    for manifest_row in read_csv_rows(manifest_path):
         fit_row = _fit_row_from_manifest(manifest_row)
         if fit_row is not None:
             rows.append(fit_row)
@@ -396,4 +395,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

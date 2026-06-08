@@ -10,6 +10,7 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
+from utils.t0_config_utils import load_yaml_mapping
 from utils.t0_path_utils import io_path, path_exists
 from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
@@ -57,8 +58,7 @@ def _load_fit_metadata(fit_root: str | Path) -> dict[str, Any]:
         raise FileNotFoundError(
             f"Could not infer experiment_path because {metadata_path} does not exist."
         )
-    metadata = OmegaConf.to_container(OmegaConf.load(io_path(metadata_path)), resolve=True)
-    return dict(metadata) if isinstance(metadata, dict) else {}
+    return load_yaml_mapping(metadata_path)
 
 
 def _resolve_experiment_path(
@@ -129,7 +129,7 @@ def run_test_evaluation(
         "fit_path": str(fit_root),
         "fit_name": fit_root.name,
         "experiment_path": str(resolved_experiment_root),
-        "split_source": str(split_artifacts["split_source"]),
+        "split_kind": str(split_artifacts["split_kind"]),
         "outer_num_folds": int(outer_num_folds),
         "test_fold_id": int(test_fold_id),
         "inner_num_folds": int(inner_num_folds),
@@ -163,4 +163,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-

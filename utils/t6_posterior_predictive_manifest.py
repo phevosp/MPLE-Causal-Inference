@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from omegaconf import OmegaConf
-
-from utils.t0_path_utils import io_path
-from pipeline_specs import expand_named_entries, read_csv_manifest, slugify
+from utils.t0_config_utils import load_yaml_mapping
+from utils.t0_csv_utils import read_csv_rows
+from utils.t0_string_utils import slugify
+from utils.t6_pipeline_spec_utils import expand_named_entries
 
 
 POSTERIOR_PREDICTIVE_ROOT_NAME = "posterior_predictive"
@@ -37,10 +37,7 @@ def experiment_has_truth(experiment_row: dict[str, str]) -> bool:
     )
     if not metadata_path.exists():
         return True
-    with open(io_path(metadata_path), "r", encoding="utf-8") as handle:
-        metadata = OmegaConf.to_container(OmegaConf.load(handle), resolve=True)
-    if not isinstance(metadata, dict):
-        return True
+    metadata = load_yaml_mapping(metadata_path)
     return as_bool(metadata.get("has_truth"), default=True)
 
 
@@ -48,7 +45,7 @@ def index_generation_rows(
     generation_manifest_path: str | Path,
 ) -> dict[str, dict[str, str]]:
     index: dict[str, dict[str, str]] = {}
-    for row in read_csv_manifest(generation_manifest_path):
+    for row in read_csv_rows(generation_manifest_path):
         experiment_name = str(row.get("experiment_name", "")).strip()
         if not experiment_name:
             raise ValueError(
@@ -66,7 +63,7 @@ def resolve_fit_lookup(
     fit_manifest_path: str | Path,
 ) -> dict[tuple[str, str], dict[str, str]]:
     lookup: dict[tuple[str, str], dict[str, str]] = {}
-    for row in read_csv_manifest(fit_manifest_path):
+    for row in read_csv_rows(fit_manifest_path):
         experiment_name = str(row.get("experiment_name", "")).strip()
         variant_name = str(row.get("variant_name", "")).strip()
         if not experiment_name or not variant_name:
@@ -89,7 +86,7 @@ def resolve_target_pairs(
 ) -> list[dict[str, object]]:
     resolved_targets: list[dict[str, object]] = []
     seen_keys: set[tuple[str, str, str, str]] = set()
-    for row in read_csv_manifest(target_pairs_path):
+    for row in read_csv_rows(target_pairs_path):
         experiment_name = str(row.get("experiment_name", "")).strip()
         source_type = str(row.get("source_type", "")).strip().lower()
         variant_name = str(row.get("variant_name", "")).strip()

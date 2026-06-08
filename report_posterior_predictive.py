@@ -8,12 +8,11 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-from omegaconf import OmegaConf
 
-from utils.t0_csv_utils import write_csv
+from utils.t0_config_utils import load_yaml_mapping
+from utils.t0_csv_utils import read_csv_rows, write_csv, write_csv_rows
 from utils.t8_output_writers import _as_float, _metric_or_inf
 from utils.t0_path_utils import io_path
-from pipeline_specs import read_csv_manifest, write_csv_manifest
 from utils.t6_posterior_predictive_summary import (
     POSTERIOR_PREDICTIVE_MANIFEST_NAME,
     manifest_row_from_metadata,
@@ -166,7 +165,7 @@ _TRUTH_RANKING_COLUMNS = [
 
 def collect_predictive_rows(manifest_path: str | Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    for manifest_row in read_csv_manifest(manifest_path):
+    for manifest_row in read_csv_rows(manifest_path):
         target_intervention_source = (
             str(
                 manifest_row.get("target_intervention_source", "observed_experiment")
@@ -209,7 +208,7 @@ def collect_manifest_rows_from_outputs(
 ) -> tuple[Path, list[dict[str, object]]]:
     manifest_root = Path(generation_manifest_path).resolve().parent
     rows: list[dict[str, object]] = []
-    for experiment_row in read_csv_manifest(generation_manifest_path):
+    for experiment_row in read_csv_rows(generation_manifest_path):
         experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
         observed_metadata_paths = experiment_root.glob(
             "posterior_predictive/*/*/posterior_predictive_metadata.yaml"
@@ -218,10 +217,7 @@ def collect_manifest_rows_from_outputs(
             "counterfactual/*/*/*/counterfactual_metadata.yaml"
         )
         for metadata_path in list(observed_metadata_paths) + list(counterfactual_metadata_paths):
-            with open(io_path(metadata_path), "r", encoding="utf-8") as handle:
-                metadata = OmegaConf.to_container(OmegaConf.load(handle), resolve=True)
-            if not isinstance(metadata, dict):
-                raise ValueError(f"Metadata file {metadata_path} did not contain a mapping.")
+            metadata = load_yaml_mapping(metadata_path)
             rows.append(
                 manifest_row_from_metadata(
                     experiment_row,
@@ -239,7 +235,7 @@ def collect_manifest_rows_from_outputs(
         )
     )
     manifest_path = manifest_root / POSTERIOR_PREDICTIVE_MANIFEST_NAME
-    write_csv_manifest(
+    write_csv_rows(
         manifest_path,
         [{column: row.get(column, "") for column in MANIFEST_COLUMNS} for row in rows],
     )
@@ -780,4 +776,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

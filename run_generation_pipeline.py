@@ -24,13 +24,10 @@ from omegaconf import OmegaConf
 from data.synthetic_data_generation import (
     materialize_generation_experiment,
 )
-from pipeline_specs import (
-    expand_named_entries,
-    load_spec,
-    read_csv_manifest,
-    slugify,
-    write_csv_manifest,
-)
+from utils.t0_config_utils import load_yaml_mapping
+from utils.t0_csv_utils import read_csv_rows, write_csv_rows
+from utils.t0_string_utils import slugify
+from utils.t6_pipeline_spec_utils import expand_named_entries
 
 
 def _expand_generation_experiments(spec_path: str | Path) -> list[dict[str, Any]]:
@@ -203,7 +200,7 @@ def _manifest_row_from_completed_generation(
     if not field_artifacts_path.exists():
         raise FileNotFoundError(f"Missing field artifacts: {field_artifacts_path}")
 
-    metadata = load_spec(metadata_path)
+    metadata = load_yaml_mapping(metadata_path)
     with np.load(panel_path, allow_pickle=False) as panel_data:
         x = np.asarray(panel_data["x"], dtype=float)
         z = np.asarray(panel_data["z"], dtype=float)
@@ -244,7 +241,7 @@ def write_generation_requests(spec_path: str | Path) -> Path:
         _generation_request_row(experiment_spec, spec_path)
         for experiment_spec in experiments
     ]
-    write_csv_manifest(request_path, request_rows)
+    write_csv_rows(request_path, request_rows)
     return request_path
 
 
@@ -291,20 +288,20 @@ def refresh_generation_manifest(spec_path: str | Path) -> Path:
     request_path = generation_requests_path_for_spec(spec_path)
     if not request_path.exists():
         write_generation_requests(spec_path)
-    request_rows = read_csv_manifest(request_path)
+    request_rows = read_csv_rows(request_path)
     manifest_rows = [
         _manifest_row_from_completed_generation(request_row)
         for request_row in request_rows
     ]
     manifest_path = generation_manifest_path_for_spec(spec_path)
-    write_csv_manifest(manifest_path, manifest_rows)
+    write_csv_rows(manifest_path, manifest_rows)
     return manifest_path
 
 
 def run_generation(spec_path: str | Path, overwrite: bool = False) -> Path:
     """Run generation fallback that plans requests, executes them sequentially, and refreshes the manifest."""
     request_path = write_generation_requests(spec_path)
-    request_rows = read_csv_manifest(request_path)
+    request_rows = read_csv_rows(request_path)
     print(
         f"Loaded {len(request_rows)} generation experiment(s) from {Path(spec_path)}."
     )

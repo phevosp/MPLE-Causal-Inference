@@ -73,7 +73,7 @@ except ImportError:  # pragma: no cover - direct script fallback
         sparse_matrix_stats,
         subset_network_artifact,
     )
-from pipeline_specs import slugify  # noqa: E402
+from utils.t0_string_utils import slugify  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
