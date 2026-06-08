@@ -2,13 +2,17 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
 GEN_MANIFEST="${GEN_MANIFEST:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 FIT_MANIFEST="${FIT_MANIFEST:-experiments/SyntheticHybridExperiments/fit_manifest.csv}"
 TARGET_PAIRS_PATH="${TARGET_PAIRS_PATH:-data/configs/posterior_predictive_target_pairs.csv}"
 POSTERIOR_PREDICTIVE_SPEC_PATH="${POSTERIOR_PREDICTIVE_SPEC_PATH:-data/configs/posterior_predictive_spec.yaml}"
 POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE:-false}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
-WORKER_SCRIPT="${WORKER_SCRIPT:-run_posterior_predictive_job.sh}"
+WORKER_SCRIPT="${WORKER_SCRIPT:-${SCRIPT_DIR}/run_posterior_predictive_job.sh}"
 REPORT_JOB_NAME="${REPORT_JOB_NAME:-posterior-predictive-report}"
 
 job_ids=()
@@ -21,7 +25,7 @@ while IFS="${FIELD_SEP}" read -r experiment_name source_type variant_name interv
     TARGET_PAIRS_PATH="${TARGET_PAIRS_PATH}" \
     POSTERIOR_PREDICTIVE_SPEC_PATH="${POSTERIOR_PREDICTIVE_SPEC_PATH}" \
     POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE}" \
-    "${SBATCH_BIN}" --parsable "${WORKER_SCRIPT}" \
+    "${SBATCH_BIN}" --chdir "${REPO_ROOT}" --parsable "${WORKER_SCRIPT}" \
       "${experiment_name}" \
       "${source_type}" \
       "${variant_name}" \
@@ -68,6 +72,7 @@ dependency=$(IFS=:; echo "${job_ids[*]}")
 report_job_id="$(
   GEN_MANIFEST="${GEN_MANIFEST}" \
     "${SBATCH_BIN}" \
+    --chdir "${REPO_ROOT}" \
     --parsable \
     --job-name "${REPORT_JOB_NAME}" \
     --dependency "afterok:${dependency}" \
