@@ -61,14 +61,14 @@ CV_REPORT_JOB_NAME="${CV_REPORT_JOB_NAME:-cv-refresh}"
 FIT_REPORT_JOB_NAME="${FIT_REPORT_JOB_NAME:-fit-refresh}"
 POSTERIOR_PREDICTIVE_REPORT_JOB_NAME="${POSTERIOR_PREDICTIVE_REPORT_JOB_NAME:-posterior-predictive-report}"
 
-# resolve_generation_manifest_path() {
-#   pixi run python - <<'PY' "${GENERATION_SPEC_PATH}"
-# import sys
-# from run_generation_pipeline import generation_manifest_path_for_spec
+resolve_generation_manifest_path() {
+  pixi run python - <<'PY' "${GENERATION_SPEC_PATH}"
+import sys
+from run_generation_pipeline import generation_manifest_path_for_spec
 
-# print(generation_manifest_path_for_spec(sys.argv[1]))
-# PY
-# }
+print(generation_manifest_path_for_spec(sys.argv[1]))
+PY
+}
 
 resolve_fit_manifest_path() {
   pixi run python - <<'PY' "${FITS_SPEC_PATH}"
@@ -138,14 +138,14 @@ wait_for_job() {
   done
 }
 
-# submit_generation_stage() {
-#   GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH}" \
-#   GENERATION_OVERWRITE="${GENERATION_OVERWRITE}" \
-#   SBATCH_BIN="${SBATCH_BIN}" \
-#   WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT}" \
-#   REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME}" \
-#   bash "${GENERATION_SUBMITTER}"
-# }
+submit_generation_stage() {
+  GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH}" \
+  GENERATION_OVERWRITE="${GENERATION_OVERWRITE}" \
+  SBATCH_BIN="${SBATCH_BIN}" \
+  WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT}" \
+  REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME}" \
+  bash "${GENERATION_SUBMITTER}"
+}
 
 build_splits_stage() {
   if [[ -n "${BUILD_SPLITS_SCRIPT:-}" ]]; then
@@ -233,18 +233,18 @@ run_requested_model_selection_modes() {
 }
 
 # echo "Submitting generation jobs..."
-# generation_barrier_job_id="$(submit_generation_stage)"
-# wait_for_job "${generation_barrier_job_id}" "Generation"
+generation_barrier_job_id="$(submit_generation_stage)"
+wait_for_job "${generation_barrier_job_id}" "Generation"
 GEN_MANIFEST="experiments/FINAL/USCountyVaccination/generation_manifest.csv"
 
 echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
 wait_for_job "${fit_barrier_job_id}" "Fit"
 
-# echo "Building split bundles..."
-# build_splits_stage
+echo "Building split bundles..."
+build_splits_stage
 
-# run_requested_model_selection_modes
+run_requested_model_selection_modes
 
 echo "Running intervention library..."
 run_intervention_stage
