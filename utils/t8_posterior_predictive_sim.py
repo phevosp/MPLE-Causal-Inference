@@ -86,6 +86,7 @@ def compute_counterfactual_sample_summary(
     *,
     s: int,
 ) -> dict[str, np.ndarray | float]:
+    """Compute draw-level mean magnetization summaries for one simulated panel."""
     x = np.asarray(x, dtype=float)
     post_value = float(np.mean(x[int(s) :, :])) if int(s) < x.shape[0] else math.nan
     return {
@@ -94,12 +95,3 @@ def compute_counterfactual_sample_summary(
         "unit_mean_magnetization": np.mean(x, axis=0),
         "time_mean_magnetization": np.mean(x, axis=1),
     }
-
-
-def compute_observed_sample_summary(
-    x: np.ndarray,
-    *,
-    s: int,
-) -> dict[str, np.ndarray | float]:
-    """Compute draw-level mean magnetization summaries for observed-run evaluation."""
-    return compute_counterfactual_sample_summary(x, s=s)

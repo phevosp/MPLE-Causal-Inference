@@ -121,12 +121,15 @@ import utils.t7_validation_metrics as validation_metrics
 from utils.t8_posterior_predictive_sim import (
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
-    compute_observed_sample_summary,
     simulate_outcomes_for_bundle,
 )
 from utils.t8_posterior_predictive_reporting import (
     summarize_observed_mean_statistics,
     summarize_predictive_statistics,
+)
+from utils.t8_output_writers import (
+    write_counterfactual_summary_tables,
+    write_observed_predictive_summary_tables,
 )
 from utils.t6_intervention_utils import derive_pre_intervention_steps
 from report_posterior_predictive import (
@@ -157,6 +160,10 @@ from utils.t6_posterior_predictive_manifest import (
     index_generation_rows,
     resolve_fit_lookup,
     resolve_target_pairs,
+)
+from utils.t6_posterior_predictive_summary import (
+    build_manifest_row,
+    manifest_row_from_metadata,
 )
 from run_posterior_predictive import run_posterior_predictive
 from run_test_evaluation import run_test_evaluation
@@ -6356,7 +6363,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertTrue(np.allclose(summary["time_mean_magnetization"], np.mean(x, axis=1)))
 
     def test_summarize_observed_mean_statistics_reports_aggregate_errors(self) -> None:
-        observed_summary = compute_observed_sample_summary(
+        observed_summary = compute_counterfactual_sample_summary(
             np.asarray(
                 [
                     [1.0, -1.0],
@@ -6466,6 +6473,420 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         bundle = load_fit_parameter_bundle(fit_root, experiment_root)
         self.assertTrue(bundle.beta_mask_pre_s)
+
+    def test_load_truth_parameter_bundle_returns_expected_truth_values(self) -> None:
+        experiment_root = self.root / "exp_truth_bundle"
+        experiment_root.mkdir(parents=True, exist_ok=True)
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "estimation_params": {
+                        "beta": 0.25,
+                        "xi": -0.5,
+                        "eta": 1.25,
+                    }
+                }
+            ),
+            experiment_root / "generation_realized_config.yaml",
+        )
+        save_model_artifacts(
+            experiment_root,
+            ModelArtifacts(
+                gamma_matrix=np.eye(3, dtype=float),
+                t_steps=4,
+                latent_rank=2,
+                field_matrix=np.full((4, 3), 0.75, dtype=float),
+            ),
+        )
+
+        bundle = load_truth_parameter_bundle(experiment_root)
+
+        self.assertEqual(bundle.source_type, "truth")
+        self.assertEqual(bundle.source_name, "truth")
+        self.assertAlmostEqual(bundle.beta, 0.25)
+        self.assertAlmostEqual(bundle.xi, -0.5)
+        self.assertAlmostEqual(bundle.eta, 1.25)
+        self.assertEqual(bundle.latent_rank, 2)
+        self.assertEqual(bundle.t_steps, 4)
+        self.assertTrue(np.allclose(bundle.field_matrix, 0.75))
+        self.assertTrue(np.array_equal(bundle.gamma_matrix, np.eye(3, dtype=float)))
+
+    def test_load_fit_parameter_bundle_prefers_saved_bundle_npz(self) -> None:
+        experiment_root = self.root / "exp_fit_bundle_saved"
+        fit_root = experiment_root / "fits" / "rank_0"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_model_artifacts(
+            experiment_root,
+            ModelArtifacts(
+                gamma_matrix=np.zeros((2, 2), dtype=float),
+                t_steps=3,
+                latent_rank=1,
+                field_matrix=np.full((3, 2), 9.0, dtype=float),
+            ),
+        )
+        save_estimated_parameter_bundle(
+            fit_root / "estimated_parameter_bundle.npz",
+            beta=0.5,
+            xi=0.1,
+            eta=-0.2,
+            latent_rank=1,
+            t_steps=3,
+            field_matrix=np.full((3, 2), 2.0, dtype=float),
+        )
+        with (fit_root / "mple_summary.csv").open(
+            "w", encoding="utf-8", newline=""
+        ) as handle:
+            writer = csv.DictWriter(handle, fieldnames=["name", "estimate"])
+            writer.writeheader()
+            writer.writerows(
+                [
+                    {"name": "beta", "estimate": "7.5"},
+                    {"name": "xi", "estimate": "8.5"},
+                    {"name": "eta", "estimate": "9.5"},
+                ]
+            )
+        np.savez(
+            fit_root / "estimated_field_artifacts.npz",
+            field_matrix=np.full((3, 2), -4.0, dtype=float),
+            latent_rank=np.asarray(7, dtype=int),
+            t_steps=np.asarray(11, dtype=int),
+        )
+
+        bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+
+        self.assertAlmostEqual(bundle.beta, 0.5)
+        self.assertAlmostEqual(bundle.xi, 0.1)
+        self.assertAlmostEqual(bundle.eta, -0.2)
+        self.assertEqual(bundle.latent_rank, 1)
+        self.assertEqual(bundle.t_steps, 3)
+        self.assertTrue(np.allclose(bundle.field_matrix, 2.0))
+
+    def test_load_fit_parameter_bundle_fallback_reconstructs_values(self) -> None:
+        experiment_root = self.root / "exp_fit_bundle_fallback"
+        fit_root = experiment_root / "fits" / "rank_0"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_model_artifacts(
+            experiment_root,
+            ModelArtifacts(
+                gamma_matrix=np.eye(2, dtype=float),
+                t_steps=5,
+                latent_rank=0,
+                field_matrix=np.zeros((5, 2), dtype=float),
+            ),
+        )
+        with (fit_root / "mple_summary.csv").open(
+            "w", encoding="utf-8", newline=""
+        ) as handle:
+            writer = csv.DictWriter(handle, fieldnames=["name", "estimate"])
+            writer.writeheader()
+            writer.writerows(
+                [
+                    {"name": "beta", "estimate": "1.25"},
+                    {"name": "xi", "estimate": "-0.75"},
+                    {"name": "eta", "estimate": "0.5"},
+                ]
+            )
+        np.savez(
+            fit_root / "estimated_field_artifacts.npz",
+            field_matrix=np.full((5, 2), 3.0, dtype=float),
+            latent_rank=np.asarray(4, dtype=int),
+            t_steps=np.asarray(5, dtype=int),
+        )
+
+        bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+
+        self.assertEqual(bundle.source_type, "fit")
+        self.assertEqual(bundle.source_name, "rank_0")
+        self.assertAlmostEqual(bundle.beta, 1.25)
+        self.assertAlmostEqual(bundle.xi, -0.75)
+        self.assertAlmostEqual(bundle.eta, 0.5)
+        self.assertEqual(bundle.latent_rank, 4)
+        self.assertEqual(bundle.t_steps, 5)
+        self.assertTrue(np.allclose(bundle.field_matrix, 3.0))
+        self.assertTrue(np.array_equal(bundle.gamma_matrix, np.eye(2, dtype=float)))
+
+    def test_build_manifest_row_matches_metadata_reconstruction_for_observed(
+        self,
+    ) -> None:
+        experiment_root = self.root / "manifest_observed"
+        output_root = experiment_root / "posterior_predictive" / "truth" / "default"
+        experiment_row = {
+            "experiment_name": "exp_a",
+            "experiment_slug": "exp-a",
+            "descriptor": "demo",
+            "experiment_path": str(experiment_root),
+            "intervention_source": "generated",
+            "graph_source": "erdos_renyi",
+        }
+        panel_context = {"N": 6, "T": 4, "s": 1}
+        target = {
+            "source_type": "truth",
+            "source_name": "truth",
+            "source_slug": "truth",
+            "intervention_source": "observed_experiment",
+            "intervention_name": "observed_experiment",
+            "intervention_slug": "observed_experiment",
+        }
+        run_spec = {"name": "default", "slug": "default"}
+        summary = {
+            "s": 1,
+            "mean_abs_zscore": 0.25,
+            "max_abs_zscore": 0.5,
+            "coverage_rate": 0.8,
+            "num_statistics": 10,
+        }
+
+        expected_row = build_manifest_row(
+            experiment_row=experiment_row,
+            panel_context=panel_context,
+            target=target,
+            run_spec=run_spec,
+            latent_rank=2,
+            num_samples=8,
+            gibbs_sweeps=100,
+            seed=17,
+            output_root=output_root,
+            summary=summary,
+        )
+        metadata = {
+            "run_name": "default",
+            "run_slug": "default",
+            "source_type": "truth",
+            "source_name": "truth",
+            "source_slug": "truth",
+            "intervention_source": "observed_experiment",
+            "intervention_name": "observed_experiment",
+            "intervention_slug": "observed_experiment",
+            "latent_rank": 2,
+            "num_samples": 8,
+            "gibbs_sweeps": 100,
+            "seed": 17,
+            "s": 1,
+            "num_units": 6,
+            "num_time_steps": 4,
+            "summary": summary,
+        }
+
+        reconstructed_row = manifest_row_from_metadata(
+            experiment_row,
+            metadata,
+            output_root,
+        )
+
+        self.assertEqual(expected_row, reconstructed_row)
+
+    def test_build_manifest_row_matches_metadata_reconstruction_for_counterfactual(
+        self,
+    ) -> None:
+        experiment_root = self.root / "manifest_counterfactual"
+        output_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_rank_0"
+            / "full_on_from_s"
+            / "default"
+        )
+        experiment_row = {
+            "experiment_name": "exp_a",
+            "experiment_slug": "exp-a",
+            "descriptor": "demo",
+            "experiment_path": str(experiment_root),
+            "intervention_source": "generated",
+            "graph_source": "erdos_renyi",
+        }
+        panel_context = {"N": 6, "T": 4, "s": 2}
+        target = {
+            "source_type": "fit",
+            "source_name": "rank_0",
+            "source_slug": "fit_rank_0",
+            "intervention_source": "saved_intervention",
+            "intervention_name": "full_on_from_s",
+            "intervention_slug": "full_on_from_s",
+        }
+        run_spec = {"name": "default", "slug": "default"}
+        summary = {"s": 2, "num_samples": 8, "num_units": 6}
+
+        expected_row = build_manifest_row(
+            experiment_row=experiment_row,
+            panel_context=panel_context,
+            target=target,
+            run_spec=run_spec,
+            latent_rank=3,
+            num_samples=8,
+            gibbs_sweeps=100,
+            seed=21,
+            output_root=output_root,
+            summary=summary,
+        )
+        metadata = {
+            "run_name": "default",
+            "run_slug": "default",
+            "source_type": "fit",
+            "source_name": "rank_0",
+            "source_slug": "fit_rank_0",
+            "intervention_source": "saved_intervention",
+            "intervention_name": "full_on_from_s",
+            "intervention_slug": "full_on_from_s",
+            "latent_rank": 3,
+            "num_samples": 8,
+            "gibbs_sweeps": 100,
+            "seed": 21,
+            "s": 2,
+            "num_units": 6,
+            "num_time_steps": 4,
+            "summary": summary,
+        }
+
+        reconstructed_row = manifest_row_from_metadata(
+            experiment_row,
+            metadata,
+            output_root,
+        )
+
+        self.assertEqual(expected_row, reconstructed_row)
+        self.assertEqual(reconstructed_row["mean_abs_zscore"], "")
+
+    def test_write_observed_predictive_summary_tables_preserves_contract(self) -> None:
+        output_root = self.root / "observed_writer"
+        sample_summaries = {
+            "overall_mean_magnetization": np.asarray([0.0, 0.25], dtype=float),
+            "post_intervention_mean_magnetization": np.asarray([0.5, 0.75], dtype=float),
+            "unit_mean_magnetization": np.asarray(
+                [[0.0, 0.5], [0.25, 0.75]],
+                dtype=float,
+            ),
+            "time_mean_magnetization": np.asarray(
+                [[0.0, 0.5, 1.0], [0.25, 0.75, 0.5]],
+                dtype=float,
+            ),
+        }
+        mean_rows = [
+            {
+                "statistic": "overall_mean_magnetization",
+                "observed_value": 0.1,
+                "sample_mean": 0.125,
+                "sample_std": 0.125,
+                "abs_error": 0.025,
+                "q025": 0.0,
+                "q500": 0.125,
+                "q975": 0.25,
+                "in_95_interval": True,
+                "num_finite_samples": 2,
+            }
+        ]
+        unit_rows = [
+            {
+                "unit_index": 0,
+                "observed_value": 0.2,
+                "sample_mean": 0.125,
+                "sample_std": 0.125,
+                "abs_error": 0.075,
+                "squared_error": 0.005625,
+                "q025": 0.0,
+                "q500": 0.125,
+                "q975": 0.25,
+                "in_95_interval": True,
+                "num_finite_samples": 2,
+            }
+        ]
+        time_rows = [
+            {
+                "time_index": 0,
+                "observed_value": 0.1,
+                "sample_mean": 0.125,
+                "sample_std": 0.125,
+                "abs_error": 0.025,
+                "squared_error": 0.000625,
+                "q025": 0.0,
+                "q500": 0.125,
+                "q975": 0.25,
+                "in_95_interval": True,
+                "num_finite_samples": 2,
+            }
+        ]
+
+        sample_npz_path, mean_csv_path, unit_csv_path, time_csv_path = (
+            write_observed_predictive_summary_tables(
+                output_root,
+                sample_summaries=sample_summaries,
+                mean_rows=mean_rows,
+                unit_rows=unit_rows,
+                time_rows=time_rows,
+            )
+        )
+
+        self.assertTrue(sample_npz_path.exists())
+        self.assertTrue(mean_csv_path.exists())
+        self.assertTrue(unit_csv_path.exists())
+        self.assertTrue(time_csv_path.exists())
+        with np.load(io_path(sample_npz_path), allow_pickle=False) as data:
+            self.assertEqual(
+                np.asarray(data["unit_mean_magnetization"], dtype=float).shape,
+                (2, 2),
+            )
+        with mean_csv_path.open("r", encoding="utf-8", newline="") as handle:
+            mean_reader = csv.DictReader(handle)
+            self.assertEqual(
+                mean_reader.fieldnames,
+                [
+                    "statistic",
+                    "observed_value",
+                    "sample_mean",
+                    "sample_std",
+                    "abs_error",
+                    "q025",
+                    "q500",
+                    "q975",
+                    "in_95_interval",
+                    "num_finite_samples",
+                ],
+            )
+
+    def test_write_counterfactual_summary_tables_preserves_contract(self) -> None:
+        output_root = self.root / "counterfactual_writer"
+        sample_summaries = {
+            "overall_mean_magnetization": np.asarray([0.0, 0.25], dtype=float),
+            "post_intervention_mean_magnetization": np.asarray([0.5, 0.75], dtype=float),
+            "unit_mean_magnetization": np.asarray(
+                [[0.0, 0.5], [0.25, 0.75]],
+                dtype=float,
+            ),
+            "time_mean_magnetization": np.asarray(
+                [[0.0, 0.5, 1.0], [0.25, 0.75, 0.5]],
+                dtype=float,
+            ),
+        }
+
+        sample_npz_path, summary_csv_path, unit_csv_path, time_csv_path = (
+            write_counterfactual_summary_tables(
+                output_root,
+                sample_summaries=sample_summaries,
+            )
+        )
+
+        self.assertTrue(sample_npz_path.exists())
+        self.assertTrue(summary_csv_path.exists())
+        self.assertTrue(unit_csv_path.exists())
+        self.assertTrue(time_csv_path.exists())
+        with np.load(io_path(sample_npz_path), allow_pickle=False) as data:
+            self.assertEqual(
+                np.asarray(data["time_mean_magnetization"], dtype=float).shape,
+                (2, 3),
+            )
+        with summary_csv_path.open("r", encoding="utf-8", newline="") as handle:
+            summary_reader = csv.DictReader(handle)
+            self.assertEqual(
+                summary_reader.fieldnames,
+                [
+                    "statistic",
+                    "sample_mean",
+                    "sample_std",
+                    "q025",
+                    "q500",
+                    "q975",
+                    "num_finite_samples",
+                ],
+            )
 
     def test_simulate_outcomes_for_bundle_ignores_beta_mask_flags(self) -> None:
         """Beta masking is only for MPLE fitting loss, not for sampling."""

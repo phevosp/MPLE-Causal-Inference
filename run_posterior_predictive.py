@@ -1,4 +1,14 @@
-"""Run a single posterior-predictive or counterfactual target/run combination."""
+"""Run one posterior-predictive or counterfactual simulation target.
+
+This file is the single-target worker used by the broader posterior-predictive
+pipeline. Its job is to:
+
+1. Resolve one explicit target from the manifests/configs.
+2. Load the experiment panel plus either truth or fitted parameters.
+3. Simulate repeated outcome draws under a fixed intervention panel.
+4. Write the branch-specific summary artifacts for reporting.
+5. Return the manifest row that `report_posterior_predictive.py` later refreshes.
+"""
 
 from __future__ import annotations
 
@@ -34,7 +44,6 @@ from utils.t6_posterior_predictive_summary import build_manifest_row
 from utils.t8_posterior_predictive_sim import (
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
-    compute_observed_sample_summary,
     simulate_outcomes_for_bundle,
 )
 from utils.t8_posterior_predictive_reporting import (
@@ -68,11 +77,44 @@ def _posterior_sample_seed(
     return int.from_bytes(digest, byteorder="little", signed=False)
 
 
+def _empty_sample_summary_accumulator() -> dict[str, list[object]]:
+    return {
+        "overall_mean_magnetization": [],
+        "post_intervention_mean_magnetization": [],
+        "unit_mean_magnetization": [],
+        "time_mean_magnetization": [],
+    }
+
+
+def _append_sample_summary(
+    accumulator: dict[str, list[object]],
+    sample_summary: dict[str, object],
+) -> None:
+    for key in accumulator:
+        accumulator[key].append(sample_summary[key])
+
+
+def _finalize_sample_summaries(
+    accumulator: dict[str, list[object]],
+) -> dict[str, np.ndarray]:
+    return {
+        key: np.asarray(values, dtype=float)
+        for key, values in accumulator.items()
+    }
+
+
 def _simulate_target(
     target: dict[str, object],
     run_spec: dict[str, object],
     overwrite: bool,
 ) -> dict[str, object]:
+    """Execute the full simulation/writeout flow for one resolved target.
+
+    `target` already identifies the experiment, the parameter source
+    (truth/truth_xi_zero/fit), and which intervention panel to condition on.
+    `run_spec` contributes simulation controls such as `num_samples`,
+    `gibbs_sweeps`, and the base seed.
+    """
     experiment_row = target["experiment_row"]
     experiment_root = Path(str(experiment_row["experiment_path"])).resolve()
     run_slug = str(run_spec["slug"])
@@ -80,6 +122,9 @@ def _simulate_target(
     intervention_source = str(target["intervention_source"])
     intervention_name = str(target["intervention_name"])
     intervention_slug = str(target["intervention_slug"])
+    # Observed-experiment runs are evaluated as posterior predictive checks.
+    # Saved-intervention runs are treated as counterfactuals and live under a
+    # different output tree because they do not compare against realized x.
     if intervention_source == "observed_experiment":
         output_root = (
             experiment_root / POSTERIOR_PREDICTIVE_ROOT_NAME / source_slug / run_slug
@@ -101,6 +146,8 @@ def _simulate_target(
             )
     output_root.mkdir(parents=True, exist_ok=False)
 
+    # Load the realized experiment panel once, then resolve the intervention
+    # source against that panel so saved interventions can be shape-checked.
     panel_context = load_experiment_panel_context(experiment_root)
     intervention_context = resolve_intervention_context(
         experiment_root,
@@ -108,6 +155,10 @@ def _simulate_target(
         intervention_name=intervention_name,
         panel_context=panel_context,
     )
+    # Choose the parameter source:
+    # - truth: exact generating parameters for synthetic/hybrid experiments
+    # - truth_xi_zero: truth with graph interactions disabled
+    # - fit: estimated parameters loaded from a fit output directory
     if target["source_type"] == "truth":
         bundle = load_truth_parameter_bundle(experiment_root)
     elif target["source_type"] == "truth_xi_zero":
@@ -119,6 +170,8 @@ def _simulate_target(
         fit_row = target["fit_row"]
         fit_root = Path(str(fit_row["fit_path"]))
         bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+    # Posterior predictive draws must align with the experiment horizon because
+    # all summaries and intervention panels are defined on that same T x N grid.
     if int(bundle.t_steps) != int(panel_context["T"]):
         raise ValueError(
             f"Posterior-predictive source '{target['source_name']}' has t_steps={bundle.t_steps},"
@@ -128,20 +181,12 @@ def _simulate_target(
     gibbs_sweeps = int(run_spec["gibbs_sweeps"])
     seed = int(run_spec["seed"])
     simulated_stats: list[dict[str, float | None]] = []
-    counterfactual_sample_summaries: dict[str, list[object]] = {
-        "overall_mean_magnetization": [],
-        "post_intervention_mean_magnetization": [],
-        "unit_mean_magnetization": [],
-        "time_mean_magnetization": [],
-    }
+    counterfactual_sample_summaries = _empty_sample_summary_accumulator()
     observed_stats = None
     observed_sample_summary = None
-    observed_draw_summaries: dict[str, list[object]] = {
-        "overall_mean_magnetization": [],
-        "post_intervention_mean_magnetization": [],
-        "unit_mean_magnetization": [],
-        "time_mean_magnetization": [],
-    }
+    observed_draw_summaries = _empty_sample_summary_accumulator()
+    # Only observed-experiment targets have realized outcomes to compare
+    # against, so we precompute their reference statistics once up front.
     if intervention_source == "observed_experiment":
         observed_stats = compute_panel_statistics(
             panel_context["x"],
@@ -151,7 +196,7 @@ def _simulate_target(
             field_matrix=bundle.field_matrix,
             gamma_matrix=bundle.gamma_matrix,
         )
-        observed_sample_summary = compute_observed_sample_summary(
+        observed_sample_summary = compute_counterfactual_sample_summary(
             panel_context["x"],
             s=int(intervention_context.s),
         )
@@ -172,6 +217,8 @@ def _simulate_target(
             seed=sample_seed,
         )
         if intervention_source == "observed_experiment":
+            # Posterior predictive check: compare simulated panel-level
+            # statistics and mean trajectories against the realized panel.
             simulated_stats.append(
                 compute_panel_statistics(
                     sample_x,
@@ -182,64 +229,32 @@ def _simulate_target(
                     gamma_matrix=bundle.gamma_matrix,
                 )
             )
-            sample_summary = compute_observed_sample_summary(
-                sample_x,
-                s=int(intervention_context.s),
-            )
-            observed_draw_summaries["overall_mean_magnetization"].append(
-                sample_summary["overall_mean_magnetization"]
-            )
-            observed_draw_summaries["post_intervention_mean_magnetization"].append(
-                sample_summary["post_intervention_mean_magnetization"]
-            )
-            observed_draw_summaries["unit_mean_magnetization"].append(
-                sample_summary["unit_mean_magnetization"]
-            )
-            observed_draw_summaries["time_mean_magnetization"].append(
-                sample_summary["time_mean_magnetization"]
-            )
-        else:
             sample_summary = compute_counterfactual_sample_summary(
                 sample_x,
                 s=int(intervention_context.s),
             )
-            counterfactual_sample_summaries["overall_mean_magnetization"].append(
-                sample_summary["overall_mean_magnetization"]
+            _append_sample_summary(observed_draw_summaries, sample_summary)
+        else:
+            # Counterfactual branch: there is no observed x under this
+            # intervention, so we only keep across-draw summaries.
+            sample_summary = compute_counterfactual_sample_summary(
+                sample_x,
+                s=int(intervention_context.s),
             )
-            counterfactual_sample_summaries[
-                "post_intervention_mean_magnetization"
-            ].append(sample_summary["post_intervention_mean_magnetization"])
-            counterfactual_sample_summaries["unit_mean_magnetization"].append(
-                sample_summary["unit_mean_magnetization"]
-            )
-            counterfactual_sample_summaries["time_mean_magnetization"].append(
-                sample_summary["time_mean_magnetization"]
-            )
+            _append_sample_summary(counterfactual_sample_summaries, sample_summary)
 
     summary: dict[str, float | int | str] = {"s": int(intervention_context.s)}
     if intervention_source == "observed_experiment":
+        # Write both:
+        # 1. calibration-style panel statistics (`posterior_predictive_stats.csv`)
+        # 2. draw-level mean summaries for overall/post/unit/time magnetization
         stat_rows, predictive_summary = summarize_predictive_statistics(
             observed_stats, simulated_stats
         )
         write_predictive_stats_tables(output_root, stat_rows)
-        observed_sample_summaries = {
-            "overall_mean_magnetization": np.asarray(
-                observed_draw_summaries["overall_mean_magnetization"],
-                dtype=float,
-            ),
-            "post_intervention_mean_magnetization": np.asarray(
-                observed_draw_summaries["post_intervention_mean_magnetization"],
-                dtype=float,
-            ),
-            "unit_mean_magnetization": np.asarray(
-                observed_draw_summaries["unit_mean_magnetization"],
-                dtype=float,
-            ),
-            "time_mean_magnetization": np.asarray(
-                observed_draw_summaries["time_mean_magnetization"],
-                dtype=float,
-            ),
-        }
+        observed_sample_summaries = _finalize_sample_summaries(
+            observed_draw_summaries
+        )
         mean_rows, unit_rows, time_rows, mean_summary = (
             summarize_observed_mean_statistics(
                 observed_sample_summary,
@@ -256,24 +271,11 @@ def _simulate_target(
         summary.update(predictive_summary)
         summary.update(mean_summary)
     else:
-        sample_summaries = {
-            "overall_mean_magnetization": np.asarray(
-                counterfactual_sample_summaries["overall_mean_magnetization"],
-                dtype=float,
-            ),
-            "post_intervention_mean_magnetization": np.asarray(
-                counterfactual_sample_summaries["post_intervention_mean_magnetization"],
-                dtype=float,
-            ),
-            "unit_mean_magnetization": np.asarray(
-                counterfactual_sample_summaries["unit_mean_magnetization"],
-                dtype=float,
-            ),
-            "time_mean_magnetization": np.asarray(
-                counterfactual_sample_summaries["time_mean_magnetization"],
-                dtype=float,
-            ),
-        }
+        # Counterfactual outputs only expose the simulated distribution because
+        # there is no realized panel to score against.
+        sample_summaries = _finalize_sample_summaries(
+            counterfactual_sample_summaries
+        )
         write_counterfactual_summary_tables(
             output_root,
             sample_summaries=sample_summaries,
@@ -284,6 +286,8 @@ def _simulate_target(
                 "num_units": int(panel_context["N"]),
             }
         )
+    # Persist enough metadata for downstream reporting to rebuild the unified
+    # manifest without having to rerun the simulation.
     metadata = {
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_path": str(experiment_root),
@@ -340,8 +344,18 @@ def run_posterior_predictive(
     run_name: str,
     overwrite: bool = False,
 ) -> dict[str, object]:
+    """Resolve one CLI/API request into a single simulation target and run it.
+
+    The pathway is:
+    generation manifest -> fit manifest lookup -> target-pairs expansion ->
+    unique target selection -> run-spec lookup -> simulation/writeout.
+    """
+    # The generation manifest anchors experiment paths; the fit manifest is
+    # only needed for `source_type="fit"` targets.
     generation_lookup = index_generation_rows(generation_manifest_path)
     fit_lookup = resolve_fit_lookup(fit_manifest_path)
+    # `target_pairs` is the explicit contract that says which source/intervention
+    # combinations are valid to run for each experiment.
     targets = resolve_target_pairs(target_pairs_path, generation_lookup, fit_lookup)
     target = select_target(
         targets,
@@ -351,6 +365,8 @@ def run_posterior_predictive(
         intervention_source=intervention_source,
         intervention_name=intervention_name,
     )
+    # `spec_path` can define multiple named posterior-predictive runs; this
+    # worker executes exactly one of them.
     run_spec = resolve_run_spec(spec_path, run_name)
     return _simulate_target(target, run_spec, overwrite=overwrite)
 

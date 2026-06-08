@@ -23,12 +23,66 @@ def _metric_or_inf(value: object) -> float:
     return math.inf if parsed is None else parsed
 
 
+def _ensure_output_path(output_root: str | Path) -> Path:
+    output_path = Path(output_root)
+    output_path.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
+def _write_summary_csv(
+    csv_path: Path,
+    rows: list[dict[str, object]],
+    columns: list[str],
+) -> Path:
+    write_csv(csv_path, rows, columns)
+    return csv_path
+
+
+def _write_sample_summaries_npz(
+    output_path: Path,
+    filename: str,
+    sample_summaries: dict[str, np.ndarray],
+) -> Path:
+    sample_npz_path = output_path / filename
+    np.savez(io_path(sample_npz_path), **sample_summaries)
+    return sample_npz_path
+
+
+def _finite_scalar_summary_rows(
+    sample_summaries: dict[str, np.ndarray],
+    statistic_names: list[str],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for statistic_name in statistic_names:
+        row = {"statistic": statistic_name}
+        row.update(
+            finite_scalar_summary(
+                np.asarray(sample_summaries[statistic_name], dtype=float)
+            )
+        )
+        rows.append(row)
+    return rows
+
+
+def _finite_index_summary_rows(
+    sample_values: np.ndarray,
+    *,
+    index_name: str,
+) -> list[dict[str, object]]:
+    values = np.asarray(sample_values, dtype=float)
+    rows: list[dict[str, object]] = []
+    for item_index in range(values.shape[1]):
+        row = {index_name: int(item_index)}
+        row.update(finite_scalar_summary(values[:, item_index]))
+        rows.append(row)
+    return rows
+
+
 def write_predictive_stats_tables(
     output_root: str | Path,
     stat_rows: list[dict[str, object]],
 ) -> Path:
-    output_path = Path(output_root)
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_path = _ensure_output_path(output_root)
     csv_path = output_path / "posterior_predictive_stats.csv"
     columns = [
         "statistic",
@@ -42,8 +96,7 @@ def write_predictive_stats_tables(
         "q975",
         "in_95_interval",
     ]
-    write_csv(csv_path, stat_rows, columns)
-    return csv_path
+    return _write_summary_csv(csv_path, stat_rows, columns)
 
 
 def write_observed_predictive_summary_tables(
@@ -54,14 +107,16 @@ def write_observed_predictive_summary_tables(
     unit_rows: list[dict[str, object]],
     time_rows: list[dict[str, object]],
 ) -> tuple[Path, Path, Path, Path]:
-    output_path = Path(output_root)
-    output_path.mkdir(parents=True, exist_ok=True)
-    sample_npz_path = output_path / "posterior_predictive_sample_summaries.npz"
+    output_path = _ensure_output_path(output_root)
+    sample_npz_path = _write_sample_summaries_npz(
+        output_path,
+        "posterior_predictive_sample_summaries.npz",
+        sample_summaries,
+    )
     mean_csv_path = output_path / "posterior_predictive_mean_summary.csv"
     unit_csv_path = output_path / "posterior_predictive_unit_summary.csv"
     time_csv_path = output_path / "posterior_predictive_time_summary.csv"
-    np.savez(io_path(sample_npz_path), **sample_summaries)
-    write_csv(
+    _write_summary_csv(
         mean_csv_path,
         mean_rows,
         [
@@ -77,7 +132,7 @@ def write_observed_predictive_summary_tables(
             "num_finite_samples",
         ],
     )
-    write_csv(
+    _write_summary_csv(
         unit_csv_path,
         unit_rows,
         [
@@ -94,7 +149,7 @@ def write_observed_predictive_summary_tables(
             "num_finite_samples",
         ],
     )
-    write_csv(
+    _write_summary_csv(
         time_csv_path,
         time_rows,
         [
@@ -119,23 +174,23 @@ def write_counterfactual_summary_tables(
     *,
     sample_summaries: dict[str, np.ndarray],
 ) -> tuple[Path, Path, Path, Path]:
-    output_path = Path(output_root)
-    output_path.mkdir(parents=True, exist_ok=True)
-    sample_npz_path = output_path / "counterfactual_sample_summaries.npz"
+    output_path = _ensure_output_path(output_root)
+    sample_npz_path = _write_sample_summaries_npz(
+        output_path,
+        "counterfactual_sample_summaries.npz",
+        sample_summaries,
+    )
     summary_csv_path = output_path / "counterfactual_summary.csv"
     unit_csv_path = output_path / "counterfactual_unit_summary.csv"
     time_csv_path = output_path / "counterfactual_time_summary.csv"
-    np.savez(io_path(sample_npz_path), **sample_summaries)
-
-    summary_rows = []
-    for key in [
-        "overall_mean_magnetization",
-        "post_intervention_mean_magnetization",
-    ]:
-        row = {"statistic": key}
-        row.update(finite_scalar_summary(np.asarray(sample_summaries[key], dtype=float)))
-        summary_rows.append(row)
-    write_csv(
+    summary_rows = _finite_scalar_summary_rows(
+        sample_summaries,
+        [
+            "overall_mean_magnetization",
+            "post_intervention_mean_magnetization",
+        ],
+    )
+    _write_summary_csv(
         summary_csv_path,
         summary_rows,
         [
@@ -149,13 +204,11 @@ def write_counterfactual_summary_tables(
         ],
     )
 
-    unit_values = np.asarray(sample_summaries["unit_mean_magnetization"], dtype=float)
-    unit_rows = []
-    for unit_index in range(unit_values.shape[1]):
-        row = {"unit_index": int(unit_index)}
-        row.update(finite_scalar_summary(unit_values[:, unit_index]))
-        unit_rows.append(row)
-    write_csv(
+    unit_rows = _finite_index_summary_rows(
+        sample_summaries["unit_mean_magnetization"],
+        index_name="unit_index",
+    )
+    _write_summary_csv(
         unit_csv_path,
         unit_rows,
         [
@@ -169,13 +222,11 @@ def write_counterfactual_summary_tables(
         ],
     )
 
-    time_values = np.asarray(sample_summaries["time_mean_magnetization"], dtype=float)
-    time_rows = []
-    for time_index in range(time_values.shape[1]):
-        row = {"time_index": int(time_index)}
-        row.update(finite_scalar_summary(time_values[:, time_index]))
-        time_rows.append(row)
-    write_csv(
+    time_rows = _finite_index_summary_rows(
+        sample_summaries["time_mean_magnetization"],
+        index_name="time_index",
+    )
+    _write_summary_csv(
         time_csv_path,
         time_rows,
         [

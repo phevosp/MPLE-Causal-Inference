@@ -83,6 +83,35 @@ def _fit_beta_mask_flag(fit_root: Path, key: str) -> bool:
     return bool(estimation_params.get(str(key), False))
 
 
+def _build_outcome_parameter_bundle(
+    *,
+    source_type: str,
+    source_name: str,
+    beta: float,
+    xi: float,
+    eta: float,
+    beta_mask_pre_s: bool,
+    beta_mask_post_e: bool,
+    latent_rank: int,
+    t_steps: int,
+    field_matrix: np.ndarray,
+    gamma_matrix: object,
+) -> OutcomeParameterBundle:
+    return OutcomeParameterBundle(
+        source_type=str(source_type),
+        source_name=str(source_name),
+        beta=float(beta),
+        xi=float(xi),
+        eta=float(eta),
+        beta_mask_pre_s=bool(beta_mask_pre_s),
+        beta_mask_post_e=bool(beta_mask_post_e),
+        latent_rank=int(latent_rank),
+        t_steps=int(t_steps),
+        field_matrix=np.asarray(field_matrix, dtype=float),
+        gamma_matrix=gamma_matrix,
+    )
+
+
 def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameterBundle:
     experiment_path = Path(experiment_root)
     config_path = first_existing_path(
@@ -92,17 +121,17 @@ def load_truth_parameter_bundle(experiment_root: str | Path) -> OutcomeParameter
     artifacts = load_model_artifacts(experiment_path)
     if artifacts.field_matrix is None:
         raise ValueError(f"Missing truth field matrix in {experiment_path}.")
-    return OutcomeParameterBundle(
+    return _build_outcome_parameter_bundle(
         source_type="truth",
         source_name="truth",
-        beta=float(config.estimation_params.beta),
-        xi=float(config.estimation_params.xi),
-        eta=float(config.estimation_params.eta),
+        beta=config.estimation_params.beta,
+        xi=config.estimation_params.xi,
+        eta=config.estimation_params.eta,
         beta_mask_pre_s=False,
         beta_mask_post_e=False,
-        latent_rank=int(artifacts.latent_rank),
-        t_steps=int(artifacts.t_steps),
-        field_matrix=np.asarray(artifacts.field_matrix, dtype=float),
+        latent_rank=artifacts.latent_rank,
+        t_steps=artifacts.t_steps,
+        field_matrix=artifacts.field_matrix,
         gamma_matrix=artifacts.gamma_matrix,
     )
 
@@ -120,23 +149,22 @@ def load_fit_parameter_bundle(
 
     if path_exists(bundle_path):
         with np.load(io_path(bundle_path), allow_pickle=False) as data:
-            return OutcomeParameterBundle(
+            return _build_outcome_parameter_bundle(
                 source_type="fit",
                 source_name=fit_path.name,
-                beta=float(data["beta"]),
-                xi=float(data["xi"]),
-                eta=float(data["eta"]),
+                beta=data["beta"],
+                xi=data["xi"],
+                eta=data["eta"],
                 beta_mask_pre_s=beta_mask_pre_s,
                 beta_mask_post_e=beta_mask_post_e,
-                latent_rank=int(data["latent_rank"]),
-                t_steps=int(data["t_steps"]),
-                field_matrix=np.asarray(data["field_matrix"], dtype=float),
+                latent_rank=data["latent_rank"],
+                t_steps=data["t_steps"],
+                field_matrix=data["field_matrix"],
                 gamma_matrix=gamma_matrix,
             )
 
     summary_path = fit_path / "mple_summary.csv"
     estimates = _load_scalar_estimates_from_summary(summary_path)
-    field_artifacts = load_model_artifacts(experiment_path)
     estimated_field_path = fit_path / "estimated_field_artifacts.npz"
     if not path_exists(estimated_field_path):
         raise FileNotFoundError(
@@ -146,16 +174,16 @@ def load_fit_parameter_bundle(
         field_matrix = np.asarray(data["field_matrix"], dtype=float)
         latent_rank = int(data["latent_rank"])
         t_steps = int(data["t_steps"])
-    return OutcomeParameterBundle(
+    return _build_outcome_parameter_bundle(
         source_type="fit",
         source_name=fit_path.name,
-        beta=float(estimates["beta"]),
-        xi=float(estimates["xi"]),
-        eta=float(estimates["eta"]),
+        beta=estimates["beta"],
+        xi=estimates["xi"],
+        eta=estimates["eta"],
         beta_mask_pre_s=beta_mask_pre_s,
         beta_mask_post_e=beta_mask_post_e,
         latent_rank=latent_rank,
         t_steps=t_steps,
         field_matrix=field_matrix,
-        gamma_matrix=gamma_matrix if gamma_matrix is not None else field_artifacts.gamma_matrix,
+        gamma_matrix=gamma_matrix,
     )
