@@ -103,6 +103,6 @@ fi
 
 report_job_id="$(
   "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${report_args[@]}" \
-    --wrap "cd '${SLURM_SUBMIT_DIR:-${PWD}}' && pixi run python -u run_cv_folds.py --refresh_manifest --cv_requests_path '${REQUESTS_PATH}' --execution_mode '${EXECUTION_MODE}'"
+    --wrap "pixi run python -u run_cv_folds.py --refresh_manifest --cv_requests_path '${REQUESTS_PATH}' --execution_mode '${EXECUTION_MODE}'"
 )"
 printf "%s\n" "${report_job_id%%;*}"

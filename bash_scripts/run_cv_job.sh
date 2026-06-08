@@ -10,8 +10,6 @@
 
 set -euo pipefail
 
-cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
-
 # Ensure the log directory exists
 DATE=$(date +%F)
 LOG_DIR="slurm-logs/$DATE"

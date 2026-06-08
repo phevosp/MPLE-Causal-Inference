@@ -96,6 +96,6 @@ fi
 
 report_job_id="$(
   "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${report_args[@]}" \
-    --wrap "cd '${SLURM_SUBMIT_DIR:-${PWD}}' && pixi run python -u run_generation_pipeline.py --spec_path '${GENERATION_SPEC_PATH}' --refresh_manifest"
+    --wrap "pixi run python -u run_generation_pipeline.py --spec_path '${GENERATION_SPEC_PATH}' --refresh_manifest"
 )"
 printf "%s\n" "${report_job_id%%;*}"

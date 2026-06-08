@@ -10,8 +10,6 @@
 
 set -euo pipefail
 
-cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
-
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"

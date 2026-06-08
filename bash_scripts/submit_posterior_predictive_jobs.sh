@@ -76,6 +76,6 @@ report_job_id="$(
     --parsable \
     --job-name "${REPORT_JOB_NAME}" \
     --dependency "afterok:${dependency}" \
-    --wrap "cd '${SLURM_SUBMIT_DIR:-${PWD}}' && pixi run python -c \"from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'${GEN_MANIFEST}')\""
+    --wrap "pixi run python -c \"from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'${GEN_MANIFEST}')\""
 )"
 printf "%s\n" "${report_job_id%%;*}"
