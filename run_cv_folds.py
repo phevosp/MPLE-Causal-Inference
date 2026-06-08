@@ -20,6 +20,7 @@ from utils.t0_path_utils import io_path
 from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t6_pipeline_spec_utils import (
     expand_named_entries,
+    load_search_from_spec,
     validate_cv_spec,
     validate_fit_variant_dict,
 )
@@ -572,6 +573,7 @@ def _best_candidate_payload(
         "experiment_name": experiment_row.get("experiment_name", ""),
         "experiment_slug": experiment_row.get("experiment_slug", ""),
         "execution_mode": _normalize_execution_mode(execution_mode),
+        "cv_spec_path": str(search.get("_spec_path", "")),
         "search_name": search["name"],
         "search_slug": search["slug"],
         "split_kind": _search_split_kind(search),
@@ -580,6 +582,11 @@ def _best_candidate_payload(
         "candidate_name": best_candidate["name"],
         "candidate_slug": best_candidate["slug"],
         "candidate_index": int(best_candidate["_candidate_index"]),
+        "candidate_config": {
+            key: value
+            for key, value in best_candidate.items()
+            if not str(key).startswith("_")
+        },
         "hyperparameters": {
             key: value for key, value in sorted(best_candidate["_flat_params"].items())
         },
@@ -833,17 +840,6 @@ def _evaluate_and_store_fold_metrics(
     )
 
 
-def _load_search_from_spec(
-    cv_spec_path: str | Path,
-    search_slug: str,
-) -> dict[str, Any]:
-    searches = _expand_searches(cv_spec_path)
-    search = next((item for item in searches if item.get("slug") == search_slug), None)
-    if search is None:
-        raise ValueError(f"Search slug '{search_slug}' not found in {cv_spec_path}.")
-    return search
-
-
 def _run_search_for_experiment(
     experiment_row: dict[str, str],
     search: dict[str, Any],
@@ -1069,7 +1065,7 @@ def run_cv_search_for_experiment_slug(
         raise ValueError(
             f"Experiment slug '{experiment_slug}' not found in {generation_manifest_path}."
         )
-    search = _load_search_from_spec(cv_spec_path, search_slug)
+    search = load_search_from_spec(cv_spec_path, search_slug)
     resolved_num_folds = (
         int(num_folds) if num_folds is not None else _get_num_folds_from_search(search)
     )
@@ -1115,7 +1111,7 @@ def refresh_cv_scores_from_requests(
             raise ValueError(
                 f"Request row for experiment '{experiment_row['experiment_slug']}' is missing cv_spec_path."
             )
-        search = _load_search_from_spec(cv_spec_path, str(first_row["search_slug"]))
+        search = load_search_from_spec(cv_spec_path, str(first_row["search_slug"]))
         configured_num_folds = int(
             first_row.get("configured_num_folds", _get_num_folds_from_search(search))
         )
@@ -1270,7 +1266,7 @@ def collect_cv_manifest_from_requests(
             raise ValueError(
                 f"Request row for experiment '{experiment_row['experiment_slug']}' is missing cv_spec_path."
             )
-        search = _load_search_from_spec(cv_spec_path, str(first_row["search_slug"]))
+        search = load_search_from_spec(cv_spec_path, str(first_row["search_slug"]))
         configured_num_folds = int(
             first_row.get("configured_num_folds", _get_num_folds_from_search(search))
         )

@@ -259,7 +259,7 @@ The duplicated root-level artifacts are the inputs consumed by:
 - `run_fit_pipeline.py`
 - `run_intervention_library.py`
 - `run_posterior_predictive.py`
-- `report_posterior_predictive.py`
+- `utils.t8_posterior_predictive_reporting.refresh_and_write_posterior_predictive_reports(...)`
 
 USCountyVaccination materialization does not choose a field parameterization. It always writes the same real-data experiment contract with `has_truth: false` and a zero `field_artifacts.npz` compatibility placeholder. For the shared manifest workflow, edit `data/USCountyVaccination/experiment_configs/fits_spec.yaml` to choose MPLE variants such as latent rank, optimizer mode, and optional downstream fit settings like `estimation.beta_mask_pre_s`.
 

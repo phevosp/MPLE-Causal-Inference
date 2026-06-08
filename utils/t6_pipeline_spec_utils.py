@@ -1,4 +1,4 @@
-"""Pipeline-spec expansion and validation helpers shared by workflow entry points."""
+"""Pipeline-spec expansion, validation, and lookup helpers."""
 
 from __future__ import annotations
 
@@ -174,3 +174,35 @@ def validate_cv_spec(spec_path: str | Path) -> None:
             raise ValueError(
                 f"Search '{search.get('name', '<unnamed>')}' grid does not contain any list-valued leaves."
             )
+
+
+def load_search_from_spec(
+    cv_spec_path: str | Path,
+    search_slug: str,
+) -> dict[str, Any]:
+    validate_cv_spec(cv_spec_path)
+    searches = expand_named_entries(cv_spec_path, "searches")
+    for search in searches:
+        search["_spec_path"] = str(Path(cv_spec_path).resolve())
+    search = next((item for item in searches if item.get("slug") == search_slug), None)
+    if search is None:
+        raise ValueError(f"Search slug '{search_slug}' not found in {cv_spec_path}.")
+    return search
+
+
+def best_candidate_path_for_search(
+    experiment_root: str | Path,
+    cv_spec_path: str | Path,
+    search_slug: str,
+    *,
+    execution_mode: str = "cv",
+) -> Path:
+    search = load_search_from_spec(cv_spec_path, search_slug)
+    root_name_key = "cv_root_name" if str(execution_mode).strip().lower() == "cv" else "validation_root_name"
+    default_root_name = "cv_runs" if root_name_key == "cv_root_name" else "validation_runs"
+    return (
+        Path(experiment_root).resolve()
+        / str(search.get(root_name_key, default_root_name))
+        / str(search["slug"])
+        / "best_candidate.yaml"
+    ).resolve()

@@ -37,7 +37,7 @@ All pipeline YAML specs use a `base + named entries` pattern: every named entry 
 
 | Directory | Used by |
 | --- | --- |
-| `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive.py`, `report_posterior_predictive.py`) |
+| `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive.py`) |
 | `data/USCountyVaccination/experiment_configs/` | Real-data pipeline |
 
 Both directories contain their own workflow specs. In `data/configs/`, the canonical example specs are `quickstart_generation_spec.yaml` and `quickstart_fits_spec.yaml`; the real-data pipeline keeps its own separate fit specs under `data/USCountyVaccination/experiment_configs/`.
@@ -89,7 +89,7 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | Synthetic and hybrid generation | `run_generation_pipeline.py`, `bash_scripts/submit_generation_jobs.sh` | `data/configs/quickstart_generation_spec.yaml` | `generation_requests.csv`, `generation_manifest.csv`, experiment folders |
 | MPLE variant fitting | `run_fit_pipeline.py`, `bash_scripts/submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/quickstart_fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
 | Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
-| Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `report_posterior_predictive.py`, `bash_scripts/submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
+| Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `utils.t8_posterior_predictive_reporting`, `bash_scripts/submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
 | CV fold construction for `U,V` regularizer tuning | `build_cv_folds.py` | `generation_manifest.csv` for experiments with `Gamma`, `panel_data.npz`, and optional `node_index.csv` / `time_index.csv` | `cv_folds/folds_5/` spatial partitions plus spatiotemporal fold artifacts |
 | Cross-validated MPLE hyperparameter search | `run_cv_folds.py` | `generation_manifest.csv`, prebuilt `cv_folds/folds_5/`, `data/configs/cv_spec.yaml` | `cv_requests.csv`, `cv_manifest.csv`, per-search candidate scores and fold fits |
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census geography sources | cached raw inputs |
@@ -231,7 +231,7 @@ Outputs:
 
 ### 4. Posterior Predictive And Counterfactual Simulation
 
-`run_posterior_predictive.py` runs one explicit posterior-predictive or counterfactual target while keeping the intervention panel fixed. `report_posterior_predictive.py` then scans completed outputs, rebuilds the unified manifest, and writes grouped posterior-predictive reports. Simulations can draw from either:
+`run_posterior_predictive.py` runs one explicit posterior-predictive or counterfactual target while keeping the intervention panel fixed. The shared reporting utilities in `utils.t8_posterior_predictive_reporting` then scan completed outputs, rebuild the unified manifest, and write grouped posterior-predictive reports. Simulations can draw from either:
 
 - the experiment truth parameters
 - one or more saved MPLE fit bundles
@@ -279,11 +279,10 @@ POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
 bash bash_scripts/submit_posterior_predictive_jobs.sh
 ```
 
-Manifest/report refresh command:
+Manifest/report refresh utility:
 
 ```bash
-pixi run python -u report_posterior_predictive.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
+pixi run python -c "from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'experiments/SyntheticHybridExperiments/generation_manifest.csv')"
 ```
 
 Unified outputs:
@@ -661,15 +660,16 @@ pixi run python -u build_cv_folds.py \
 Regenerate grouped fit reports from an existing fit manifest:
 
 ```bash
-pixi run python -u report_parameter_recovery_detailed.py \
-  --manifest experiments/SyntheticHybridExperiments/fit_manifest.csv
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --fits_spec_path data/configs/quickstart_fits_spec.yaml \
+  --refresh_manifest
 ```
 
 Refresh the unified posterior-predictive manifest and grouped reports:
 
 ```bash
-pixi run python -u report_posterior_predictive.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
+pixi run python -c "from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'experiments/SyntheticHybridExperiments/generation_manifest.csv')"
 ```
 
 Run the minimal regression suite:
@@ -748,14 +748,16 @@ They call the same Python entry points and accept environment-variable overrides
 - `run_intervention_library.py`: reusable intervention-panel materialization
 - `build_cv_folds.py`: manifest-driven spatial partition plus spatiotemporal CV-fold construction
 - `run_posterior_predictive.py`: single-target posterior-predictive/counterfactual execution
-- `report_posterior_predictive.py`: manifest refresh plus grouped posterior-predictive reporting
+- `utils/t8_posterior_predictive_reporting.py`: posterior-predictive summaries, manifest refresh, intervention summaries, grouped ranking/reporting
 - `bash_scripts/run_and_submit_full_pipeline.sh`: staged generation → fit → intervention → posterior-predictive shell orchestrator
 - `mple.py`: conditional MPLE optimizer and artifact writer
-- `utils/`: tiered utility modules (`t0_*` through `t8_*`) for config/path I/O, model artifacts, parameter packing, experiment loading, intervention handling, validation metrics, and posterior-predictive reporting
+- `utils/`: tiered utility modules (`t0_*` through `t8_*`) for config/path I/O, model artifacts, parameter packing, experiment loading, intervention handling, validation metrics, fit reporting, and posterior-predictive reporting
 - `utils/t3_field_generation.py`: synthetic-field specification parsing and field construction
 - `utils/t5_experiment_context.py`: experiment/panel artifact loading and experiment-context assembly
 - `utils/t6_intervention_utils.py`: intervention construction, saved-intervention artifacts, and intervention timing helpers
 - `utils/t8_posterior_predictive_sim.py`: predictive simulation and posterior-predictive panel statistics
+- `utils/t8_posterior_predictive_reporting.py`: posterior-predictive metric summaries, manifest refresh, grouped ranking, and CSV production
+- `utils/t8_parameter_recovery_reporting.py`: fit-manifest aggregation, latent diagnostics, grouped ranking, and CSV production
 - `utils/t6_pipeline_spec_utils.py`: pipeline-spec expansion and validation helpers
 - `tests/test_minimal_pipeline.py`: regression coverage for generation, fitting, summaries, and predictive ranking
 

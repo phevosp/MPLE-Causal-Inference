@@ -41,9 +41,10 @@ TIER 7: VALIDATION & EVALUATION (depends on Tier 0-6)
   t7_validation_metrics: Fold/test metric evaluation, Brier score, ECE
   t7_cv_aggregation: CV fold aggregation, candidate scoring
 
-TIER 8: OUTPUT GENERATION (depends on Tier 0-7)
+TIER 8: OUTPUT GENERATION & REPORTING (depends on Tier 0-7)
   t8_posterior_predictive_sim: Outcome simulation, panel statistics
-  t8_posterior_predictive_reporting: Summary statistics reporting
+  t8_posterior_predictive_reporting: Summary statistics, manifest refresh, ranking, CSV reporting
+  t8_parameter_recovery_reporting: Fit-manifest aggregation, latent diagnostics, ranking, CSV reporting
   t8_fit_outputs: MPLE fit diagnostics, summary tables, saved output artifacts
   t8_output_writers: Output table writers, formatting helpers
 
@@ -66,6 +67,10 @@ For posterior predictive (run_posterior_predictive.py):
   from utils.t6_posterior_predictive_manifest import resolve_target_pairs
   from utils.t8_posterior_predictive_sim import simulate_outcomes_for_bundle
   from utils.t8_output_writers import write_predictive_stats_tables
+  from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports
+
+For fit reporting (run_fit_pipeline.py, tests):
+  from utils.t8_parameter_recovery_reporting import write_fit_reports, collect_fit_rows
 
 For data generation (data/synthetic_data_generation.py):
   from utils.t3_field_generation import build_synthetic_field_with_layout, parse_synthetic_field_spec

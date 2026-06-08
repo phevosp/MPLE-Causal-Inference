@@ -132,21 +132,24 @@ from utils.t8_output_writers import (
     write_observed_predictive_summary_tables,
 )
 from utils.t6_intervention_utils import derive_pre_intervention_steps
-from report_posterior_predictive import (
+from utils.t8_posterior_predictive_reporting import (
     collect_predictive_rows,
     group_and_rank_predictive_rows,
     refresh_and_write_posterior_predictive_reports,
     write_intervention_summaries,
 )
-from report_parameter_recovery_detailed import (
+from utils.t8_parameter_recovery_reporting import (
     collect_fit_rows,
     group_and_rank_fit_rows,
     write_fit_reports,
 )
 from run_fit_pipeline import (
     refresh_fit_manifest,
+    refresh_train_fit_manifest,
     run_fit_request,
     run_fits,
+    run_train_fit_request,
+    write_train_fit_requests,
     write_fit_requests,
 )
 from run_generation_pipeline import (
@@ -169,6 +172,7 @@ from run_posterior_predictive import run_posterior_predictive
 from run_test_evaluation import run_test_evaluation
 from utils.t6_split_management import (
     load_model_selection_split_masks,
+    load_outer_training_split_masks,
     load_outer_test_split_masks,
 )
 
@@ -1315,7 +1319,7 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertGreater(float(np.linalg.norm(field_matrix, ord=np.inf)), 1.0)
 
     def test_fit_report_latent_diagnostics_uses_max_abs_entry_names(self) -> None:
-        from report_parameter_recovery_detailed import latent_diagnostics
+        from utils.t8_parameter_recovery_reporting import latent_diagnostics
 
         fit_root = REPO_ROOT / "experiments" / f".tmp_latent_diag_{uuid.uuid4().hex}"
         fit_root.mkdir(parents=True, exist_ok=True)
@@ -1379,7 +1383,7 @@ class MinimalPipelineTests(unittest.TestCase):
             shutil.rmtree(fit_root, ignore_errors=True)
 
     def test_fit_report_latent_diagnostics_reads_legacy_inf_norm_names(self) -> None:
-        from report_parameter_recovery_detailed import latent_diagnostics
+        from utils.t8_parameter_recovery_reporting import latent_diagnostics
 
         fit_root = REPO_ROOT / "experiments" / f".tmp_legacy_latent_diag_{uuid.uuid4().hex}"
         fit_root.mkdir(parents=True, exist_ok=True)
@@ -3256,6 +3260,18 @@ class PipelineStageRequestTests(unittest.TestCase):
         fake_sbatch_path.chmod(0o755)
         return fake_sbatch_path, fake_counter_path, fake_log_path
 
+    @staticmethod
+    def _deterministic_fake_pymetis():
+        class FakePyMetis:
+            @staticmethod
+            def part_graph(nparts, adjacency=None, recursive=None, contiguous=None):
+                n = len(adjacency or [])
+                if n <= 0:
+                    return 0, []
+                return 0, [min((index * int(nparts)) // n, int(nparts) - 1) for index in range(n)]
+
+        return FakePyMetis()
+
     def test_write_generation_requests_writes_one_row_per_experiment(self) -> None:
         generation_spec_path = self._write_generation_spec(["exp_a", "exp_b"])
 
@@ -3573,6 +3589,192 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertTrue(
             (self.root / "generated" / "best_fit_by_experiment.csv").exists()
         )
+
+    def test_write_train_fit_requests_writes_one_row_per_experiment_for_train_cv(self) -> None:
+        generation_spec_path = self._write_generation_spec([{"name": "exp_a", "dimensions": {"T": 9}}])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest, overwrite=True)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "mask_grid",
+                    "grid": {"estimation": {"beta_mask_pre_s": [False]}},
+                }
+            ]
+        )
+        cv_runner.run_cv_folds(generation_manifest, cv_spec_path, overwrite=True)
+
+        request_path = write_train_fit_requests(
+            generation_manifest,
+            cv_spec_path,
+            "mask_grid",
+        )
+
+        rows = read_csv_manifest(request_path)
+        self.assertEqual(request_path.name, "train_fit_requests__mask_grid.csv")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["search_slug"], "mask_grid")
+        self.assertEqual(rows[0]["split_kind"], "train_cv")
+        self.assertEqual(int(rows[0]["num_folds"]), 5)
+        self.assertTrue(rows[0]["best_candidate_path"].endswith("best_candidate.yaml"))
+        self.assertIn(
+            str(
+                self.root
+                / "generated"
+                / "exp_a"
+                / "train_fits"
+                / "mask_grid"
+                / "train_cv__folds_5"
+            ),
+            rows[0]["fit_path"],
+        )
+
+    def test_write_train_fit_requests_fails_cleanly_without_best_candidate(self) -> None:
+        generation_spec_path = self._write_generation_spec([{"name": "exp_a", "dimensions": {"T": 9}}])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest, overwrite=True)
+        cv_spec_path = self._write_cv_spec(
+            [{"name": "mask_grid", "grid": {"estimation": {"beta_mask_pre_s": [False]}}}]
+        )
+
+        with self.assertRaisesRegex(FileNotFoundError, "Best candidate YAML not found"):
+            write_train_fit_requests(generation_manifest, cv_spec_path, "mask_grid")
+
+    def test_run_train_fit_request_uses_outer_training_mask_for_train_cv(self) -> None:
+        generation_spec_path = self._write_generation_spec([{"name": "exp_a", "dimensions": {"T": 9}}])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest, overwrite=True)
+        cv_spec_path = self._write_cv_spec(
+            [{"name": "mask_grid", "grid": {"estimation": {"beta_mask_pre_s": [False]}}}]
+        )
+        cv_runner.run_cv_folds(generation_manifest, cv_spec_path, overwrite=True)
+
+        row = run_train_fit_request(
+            generation_manifest,
+            cv_spec_path,
+            "mask_grid",
+            "exp_a",
+            overwrite=True,
+        )
+
+        fit_root = Path(row["fit_path"])
+        self.assertTrue((fit_root / "loss_mask.npy").exists())
+        self.assertTrue((fit_root / "fit_realized_config.yaml").exists())
+        self.assertTrue((fit_root / "fit_metadata.yaml").exists())
+        self.assertTrue((fit_root / "mple_summary.csv").exists())
+
+        metadata = load_yaml_mapping(fit_root / "fit_metadata.yaml")
+        self.assertEqual(metadata["execution_mode"], "train_fit")
+        self.assertEqual(metadata["search_slug"], "mask_grid")
+        self.assertEqual(metadata["split_kind"], "train_cv")
+
+        split_artifacts = load_outer_training_split_masks(
+            self.root / "generated" / "exp_a",
+            split_kind="train_cv",
+            num_folds=5,
+        )
+        expected_mask = np.asarray(split_artifacts["training_mask"], dtype=bool)
+        observed_mask = np.load(io_path(fit_root / "loss_mask.npy"))
+        np.testing.assert_array_equal(observed_mask, expected_mask)
+        self.assertEqual(int(metadata["num_training_slots"]), int(np.count_nonzero(expected_mask)))
+
+    def test_refresh_train_fit_manifest_rebuilds_manifest_and_reports(self) -> None:
+        generation_spec_path = self._write_generation_spec([{"name": "exp_a", "dimensions": {"T": 9}}])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest, overwrite=True)
+        cv_spec_path = self._write_cv_spec(
+            [{"name": "mask_grid", "grid": {"estimation": {"beta_mask_pre_s": [False]}}}]
+        )
+        cv_runner.run_cv_folds(generation_manifest, cv_spec_path, overwrite=True)
+        run_train_fit_request(
+            generation_manifest,
+            cv_spec_path,
+            "mask_grid",
+            "exp_a",
+            overwrite=True,
+        )
+
+        manifest_path = refresh_train_fit_manifest(
+            generation_manifest,
+            cv_spec_path,
+            "mask_grid",
+        )
+
+        rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_path.name, "train_fit_manifest__mask_grid.csv")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["execution_mode"], "train_fit")
+        self.assertEqual(rows[0]["search_slug"], "mask_grid")
+        self.assertTrue(
+            (self.root / "generated" / "exp_a" / "train_fit_summary__mask_grid.csv").exists()
+        )
+        self.assertTrue(
+            (self.root / "generated" / "best_train_fit_by_experiment__mask_grid.csv").exists()
+        )
+
+    def test_run_train_fit_request_uses_outer_training_mask_for_test_train_cv(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [
+                {
+                    "name": "exp_a",
+                    "dimensions": {"N": 72, "T": 12},
+                    "graph": {"params": {"p": 0.08}},
+                }
+            ]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        experiment_root = Path(read_csv_manifest(generation_manifest)[0]["experiment_path"]).resolve()
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=self._deterministic_fake_pymetis(),
+        ):
+            uscounty_splits.build_validation_test_splits_for_experiment(
+                experiment_root,
+                outer_num_folds=3,
+                test_fold_id=1,
+                inner_num_folds=3,
+                overwrite=True,
+            )
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "outer_mask_grid",
+                    "split_kind": "test_train_cv",
+                    "num_folds": 3,
+                    "outer_num_folds": 3,
+                    "test_fold_id": 1,
+                    "grid": {"estimation": {"beta_mask_pre_s": [False]}},
+                }
+            ]
+        )
+        cv_runner.run_cv_folds(generation_manifest, cv_spec_path, overwrite=True)
+
+        row = run_train_fit_request(
+            generation_manifest,
+            cv_spec_path,
+            "outer_mask_grid",
+            "exp_a",
+            overwrite=True,
+        )
+
+        fit_root = Path(row["fit_path"])
+        metadata = load_yaml_mapping(fit_root / "fit_metadata.yaml")
+        self.assertEqual(metadata["split_kind"], "test_train_cv")
+        self.assertEqual(int(metadata["outer_num_folds"]), 3)
+        self.assertEqual(int(metadata["test_fold_id"]), 1)
+
+        split_artifacts = load_outer_training_split_masks(
+            experiment_root,
+            split_kind="test_train_cv",
+            num_folds=3,
+            outer_num_folds=3,
+            test_fold_id=1,
+        )
+        expected_mask = np.asarray(split_artifacts["training_mask"], dtype=bool)
+        observed_mask = np.load(io_path(fit_root / "loss_mask.npy"))
+        np.testing.assert_array_equal(observed_mask, expected_mask)
+        self.assertEqual(int(metadata["num_training_slots"]), int(np.count_nonzero(expected_mask)))
 
     def test_validate_cv_spec_accepts_grid_search(self) -> None:
         cv_spec_path = self._write_cv_spec(
@@ -9273,6 +9475,58 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             test_fold_id=1,
             outer_num_folds=2,
             inner_num_folds=2,
+        )
+        with np.load(io_path(split_output_root / "outer_layer.npz"), allow_pickle=False) as data:
+            np.testing.assert_array_equal(
+                loaded["training_mask"],
+                np.asarray(data["outer_active_mask"], dtype=bool),
+            )
+            np.testing.assert_array_equal(
+                loaded["test_mask"],
+                np.asarray(data["outer_test_mask"], dtype=bool),
+            )
+            np.testing.assert_array_equal(
+                loaded["separator_mask"],
+                np.asarray(data["outer_separator_mask"], dtype=bool),
+            )
+
+    def test_load_outer_training_split_masks_matches_saved_train_cv_npz(self) -> None:
+        gamma_matrix = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0],
+            ]
+        )
+        experiment_root = self._write_experiment_root(gamma_matrix, t_steps=10)
+        manifest_path = self._write_generation_manifest(
+            [
+                {
+                    "experiment_name": "exp_a",
+                    "experiment_slug": "exp_a",
+                    "experiment_path": str(experiment_root.resolve()),
+                }
+            ]
+        )
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=self._deterministic_fake_pymetis(),
+        ):
+            output_roots = cv_folds.run_build_cv_folds(
+                manifest_path,
+                num_folds=2,
+                overwrite=True,
+            )
+        split_output_root = output_roots[0]
+
+        loaded = load_outer_training_split_masks(
+            experiment_root,
+            split_kind="train_cv",
+            num_folds=2,
         )
         with np.load(io_path(split_output_root / "outer_layer.npz"), allow_pickle=False) as data:
             np.testing.assert_array_equal(

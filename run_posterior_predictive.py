@@ -7,7 +7,7 @@ pipeline. Its job is to:
 2. Load the experiment panel plus either truth or fitted parameters.
 3. Simulate repeated outcome draws under a fixed intervention panel.
 4. Write the branch-specific summary artifacts for reporting.
-5. Return the manifest row that `report_posterior_predictive.py` later refreshes.
+5. Return the manifest row that the posterior-predictive reporting utilities later refresh.
 """
 
 from __future__ import annotations

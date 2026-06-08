@@ -71,6 +71,6 @@ report_job_id="$(
     --parsable \
     --job-name "${REPORT_JOB_NAME}" \
     --dependency "afterok:${dependency}" \
-    --wrap "pixi run python -u report_posterior_predictive.py --generation_manifest_path '${GEN_MANIFEST}'"
+    --wrap "pixi run python -c \"from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'${GEN_MANIFEST}')\""
 )"
 printf "%s\n" "${report_job_id%%;*}"

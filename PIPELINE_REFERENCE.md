@@ -287,7 +287,7 @@ The fit manifest is refreshed from completed fit outputs, and grouped fit report
 
 Written by:
 
-- `report_posterior_predictive.py`
+- `utils.t8_posterior_predictive_reporting.refresh_and_write_posterior_predictive_reports(...)`
 
 Default path:
 
@@ -583,15 +583,15 @@ bash submit_fit_jobs.sh
 Regenerate fit summaries from an existing fit manifest:
 
 ```bash
-pixi run python -u report_parameter_recovery_detailed.py \
-  --manifest experiments/SyntheticHybridExperiments/fit_manifest.csv
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --refresh_manifest
 ```
 
 Refresh the unified posterior-predictive manifest and grouped summaries:
 
 ```bash
-pixi run python -u report_posterior_predictive.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
+pixi run python -c "from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'experiments/SyntheticHybridExperiments/generation_manifest.csv')"
 ```
 
 Build saved interventions:

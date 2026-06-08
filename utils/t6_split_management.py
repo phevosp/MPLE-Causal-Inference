@@ -175,11 +175,37 @@ def load_outer_test_split_masks(
     test_fold_id: int = DEFAULT_TEST_FOLD_ID,
     inner_num_folds: int,
 ) -> dict[str, Any]:
-    expected_shape = _expected_panel_shape(experiment_root)
-    output_root = _bundle_root(
+    loaded = load_outer_training_split_masks(
         experiment_root,
         split_kind=SPLIT_KIND_TEST_TRAIN_CV,
         num_folds=int(inner_num_folds),
+        outer_num_folds=int(outer_num_folds),
+        test_fold_id=int(test_fold_id),
+    )
+    return {
+        "split_kind": loaded["split_kind"],
+        "output_root": loaded["output_root"],
+        "training_mask": loaded["training_mask"],
+        "separator_mask": loaded["separator_mask"],
+        "test_mask": loaded["test_mask"],
+        "metadata": loaded["metadata"],
+    }
+
+
+def load_outer_training_split_masks(
+    experiment_root: str | Path,
+    *,
+    split_kind: str | None,
+    num_folds: int,
+    outer_num_folds: int = DEFAULT_OUTER_NUM_FOLDS,
+    test_fold_id: int = DEFAULT_TEST_FOLD_ID,
+) -> dict[str, Any]:
+    normalized_kind = normalize_split_kind(split_kind)
+    expected_shape = _expected_panel_shape(experiment_root)
+    output_root = _bundle_root(
+        experiment_root,
+        split_kind=normalized_kind,
+        num_folds=int(num_folds),
         outer_num_folds=int(outer_num_folds),
         test_fold_id=int(test_fold_id),
     )
@@ -203,26 +229,42 @@ def load_outer_test_split_masks(
             expected_shape=expected_shape,
         )
     metadata = _load_optional_metadata(output_root / "bundle_metadata.yaml")
-    metadata_outer_num_folds = int(metadata.get("outer_num_folds", int(outer_num_folds)))
-    if metadata_outer_num_folds != int(outer_num_folds):
+    metadata_split_kind = str(metadata.get("split_kind", normalized_kind)).strip().lower()
+    if metadata_split_kind != normalized_kind:
         raise ValueError(
-            f"Split metadata at {output_root} reports outer_num_folds={metadata_outer_num_folds}, "
-            f"expected {outer_num_folds}."
+            f"Split metadata at {output_root} reports split_kind={metadata_split_kind}, "
+            f"expected {normalized_kind}."
         )
-    metadata_test_fold_id = int(metadata.get("test_fold_id", int(test_fold_id)))
-    if metadata_test_fold_id != int(test_fold_id):
-        raise ValueError(
-            f"Split metadata at {output_root} reports test_fold_id={metadata_test_fold_id}, "
-            f"expected {test_fold_id}."
+    if normalized_kind == SPLIT_KIND_TRAIN_CV:
+        metadata_num_folds = int(metadata.get("num_folds", int(num_folds)))
+        if metadata_num_folds != int(num_folds):
+            raise ValueError(
+                f"Split metadata at {output_root} reports num_folds={metadata_num_folds}, "
+                f"expected {num_folds}."
+            )
+    else:
+        metadata_outer_num_folds = int(
+            metadata.get("outer_num_folds", int(outer_num_folds))
         )
-    metadata_inner_num_folds = int(metadata.get("inner_num_folds", int(inner_num_folds)))
-    if metadata_inner_num_folds != int(inner_num_folds):
-        raise ValueError(
-            f"Split metadata at {output_root} reports inner_num_folds={metadata_inner_num_folds}, "
-            f"expected {inner_num_folds}."
-        )
+        if metadata_outer_num_folds != int(outer_num_folds):
+            raise ValueError(
+                f"Split metadata at {output_root} reports outer_num_folds={metadata_outer_num_folds}, "
+                f"expected {outer_num_folds}."
+            )
+        metadata_test_fold_id = int(metadata.get("test_fold_id", int(test_fold_id)))
+        if metadata_test_fold_id != int(test_fold_id):
+            raise ValueError(
+                f"Split metadata at {output_root} reports test_fold_id={metadata_test_fold_id}, "
+                f"expected {test_fold_id}."
+            )
+        metadata_inner_num_folds = int(metadata.get("inner_num_folds", int(num_folds)))
+        if metadata_inner_num_folds != int(num_folds):
+            raise ValueError(
+                f"Split metadata at {output_root} reports inner_num_folds={metadata_inner_num_folds}, "
+                f"expected {num_folds}."
+            )
     return {
-        "split_kind": SPLIT_KIND_TEST_TRAIN_CV,
+        "split_kind": normalized_kind,
         "output_root": output_root.resolve(),
         "training_mask": training_mask,
         "separator_mask": separator_mask,
