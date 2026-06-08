@@ -11,7 +11,29 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+resolve_repo_root() {
+  local candidate=""
+  for candidate in "${REPO_ROOT:-}" "${SLURM_SUBMIT_DIR:-}" "${SCRIPT_DIR}" "${SCRIPT_DIR}/.."; do
+    [[ -n "${candidate}" ]] || continue
+    if ! candidate="$(cd "${candidate}" 2>/dev/null && pwd)"; then
+      continue
+    fi
+    while [[ "${candidate}" != "/" ]]; do
+      if [[ -f "${candidate}/pixi.toml" || -f "${candidate}/pyproject.toml" ]]; then
+        printf "%s\n" "${candidate}"
+        return 0
+      fi
+      candidate="$(dirname "${candidate}")"
+    done
+  done
+  return 1
+}
+
+REPO_ROOT="$(resolve_repo_root)" || {
+  echo "Could not locate repo root containing pixi.toml or pyproject.toml." >&2
+  exit 1
+}
 cd "${REPO_ROOT}"
 
 # Ensure the log directory exists

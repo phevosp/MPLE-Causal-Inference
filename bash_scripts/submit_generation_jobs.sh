@@ -3,7 +3,29 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+resolve_repo_root() {
+  local candidate=""
+  for candidate in "${REPO_ROOT:-}" "${SLURM_SUBMIT_DIR:-}" "${SCRIPT_DIR}" "${SCRIPT_DIR}/.."; do
+    [[ -n "${candidate}" ]] || continue
+    if ! candidate="$(cd "${candidate}" 2>/dev/null && pwd)"; then
+      continue
+    fi
+    while [[ "${candidate}" != "/" ]]; do
+      if [[ -f "${candidate}/pixi.toml" || -f "${candidate}/pyproject.toml" ]]; then
+        printf "%s\n" "${candidate}"
+        return 0
+      fi
+      candidate="$(dirname "${candidate}")"
+    done
+  done
+  return 1
+}
+
+REPO_ROOT="$(resolve_repo_root)" || {
+  echo "Could not locate repo root containing pixi.toml or pyproject.toml." >&2
+  exit 1
+}
 cd "${REPO_ROOT}"
 
 GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH:-data/configs/generation_spec.yaml}"
@@ -53,7 +75,10 @@ while IFS=$'\t' read -r generation_spec_path experiment_name experiment_slug exp
   submit_output="$(
     GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH}" \
     GENERATION_OVERWRITE="${GENERATION_OVERWRITE}" \
-    "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}"
+    "${SBATCH_BIN}" \
+      --chdir "${REPO_ROOT}" \
+      --export "ALL,REPO_ROOT=${REPO_ROOT}" \
+      "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}"
   )"
   job_ids+=("${submit_output%%;*}")
 done < <(
@@ -95,7 +120,10 @@ if [[ -n "${GEN_REPORT_PARTITION}" ]]; then
 fi
 
 report_job_id="$(
-  "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${report_args[@]}" \
-    --wrap "pixi run python -u run_generation_pipeline.py --spec_path '${GENERATION_SPEC_PATH}' --refresh_manifest"
+  "${SBATCH_BIN}" \
+    --chdir "${REPO_ROOT}" \
+    --export "ALL,REPO_ROOT=${REPO_ROOT}" \
+    "${report_args[@]}" \
+    --wrap "cd '${REPO_ROOT}' && pixi run python -u run_generation_pipeline.py --spec_path '${GENERATION_SPEC_PATH}' --refresh_manifest"
 )"
 printf "%s\n" "${report_job_id%%;*}"
