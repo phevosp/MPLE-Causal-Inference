@@ -1,0 +1,17 @@
+descriptor: confounding_strong_2
+slug: confounding_strong_2
+config_name: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/REVISIONS/synth/generation_spec.yaml
+gamma_inf_norm: 1.0
+gamma_fro_norm: 4.156654637779975
+intervention_mode: low_rank_probability
+field_mode: confounded_low_rank
+has_truth: true
+latent_rank: 3
+field_shared_rank: 3
+field_nonshared_rank: 0
+field_shared_basis_source: generated_intervention_basis
+experiment_name: confounding_strong_2
+generation_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/REVISIONS/synth/generation_spec.yaml
+intervention_source: generated
+graph_source: generated
+experiment_root: experiments/Synthetic
