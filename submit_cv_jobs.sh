@@ -2,17 +2,13 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
-
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
 CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"  # Optional override; uses CV spec default if not set
 CV_OVERWRITE="${CV_OVERWRITE:-false}"
 EXECUTION_MODE="${EXECUTION_MODE:-cv}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
-WORKER_SCRIPT="${WORKER_SCRIPT:-bash_scripts/run_cv_job.sh}"
+WORKER_SCRIPT="${WORKER_SCRIPT:-run_cv_job.sh}"
 WORKER_JOB_NAME="${WORKER_JOB_NAME:-cv}"
 REPORT_JOB_NAME="${REPORT_JOB_NAME:-cv-refresh}"
 
@@ -62,7 +58,7 @@ while IFS=$'\t' read -r experiment_slug search_slug; do
     CV_NUM_FOLDS="${CV_NUM_FOLDS}" \
     CV_OVERWRITE="${CV_OVERWRITE}" \
     EXECUTION_MODE="${EXECUTION_MODE}" \
-    "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}" "${search_slug}"
+    "${SBATCH_BIN}" "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}" "${search_slug}"
   )"
   job_ids+=("${submit_output%%;*}")
 done < <(
@@ -102,7 +98,7 @@ if [[ -n "${CV_REPORT_PARTITION}" ]]; then
 fi
 
 report_job_id="$(
-  "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${report_args[@]}" \
+  "${SBATCH_BIN}" "${report_args[@]}" \
     --wrap "pixi run python -u run_cv_folds.py --refresh_manifest --cv_requests_path '${REQUESTS_PATH}' --execution_mode '${EXECUTION_MODE}'"
 )"
 printf "%s\n" "${report_job_id%%;*}"

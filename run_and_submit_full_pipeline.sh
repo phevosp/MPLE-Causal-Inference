@@ -10,10 +10,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
-
 DATE=$(date +%F)
 LOG_DIR="slurm-logs/$DATE"
 mkdir -p "$LOG_DIR"
@@ -50,29 +46,29 @@ SQUEUE_BIN="${SQUEUE_BIN:-squeue}"
 SLEEP_BIN="${SLEEP_BIN:-sleep}"
 WAIT_POLL_SECONDS="${WAIT_POLL_SECONDS:-10}"
 
-GENERATION_SUBMITTER="${GENERATION_SUBMITTER:-bash_scripts/submit_generation_jobs.sh}"
-CV_SUBMITTER="${CV_SUBMITTER:-bash_scripts/submit_cv_jobs.sh}"
-FIT_SUBMITTER="${FIT_SUBMITTER:-bash_scripts/submit_fit_jobs.sh}"
-POSTERIOR_PREDICTIVE_SUBMITTER="${POSTERIOR_PREDICTIVE_SUBMITTER:-bash_scripts/submit_posterior_predictive_jobs.sh}"
+GENERATION_SUBMITTER="${GENERATION_SUBMITTER:-submit_generation_jobs.sh}"
+CV_SUBMITTER="${CV_SUBMITTER:-submit_cv_jobs.sh}"
+FIT_SUBMITTER="${FIT_SUBMITTER:-submit_fit_jobs.sh}"
+POSTERIOR_PREDICTIVE_SUBMITTER="${POSTERIOR_PREDICTIVE_SUBMITTER:-submit_posterior_predictive_jobs.sh}"
 
-GENERATION_WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT:-bash_scripts/run_generation_job.sh}"
-CV_WORKER_SCRIPT="${CV_WORKER_SCRIPT:-bash_scripts/run_cv_job.sh}"
-FIT_WORKER_SCRIPT="${FIT_WORKER_SCRIPT:-bash_scripts/run_fit_job.sh}"
-POSTERIOR_PREDICTIVE_WORKER_SCRIPT="${POSTERIOR_PREDICTIVE_WORKER_SCRIPT:-bash_scripts/run_posterior_predictive_job.sh}"
+GENERATION_WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT:-run_generation_job.sh}"
+CV_WORKER_SCRIPT="${CV_WORKER_SCRIPT:-run_cv_job.sh}"
+FIT_WORKER_SCRIPT="${FIT_WORKER_SCRIPT:-run_fit_job.sh}"
+POSTERIOR_PREDICTIVE_WORKER_SCRIPT="${POSTERIOR_PREDICTIVE_WORKER_SCRIPT:-run_posterior_predictive_job.sh}"
 
 GENERATION_REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME:-generation-refresh}"
 CV_REPORT_JOB_NAME="${CV_REPORT_JOB_NAME:-cv-refresh}"
 FIT_REPORT_JOB_NAME="${FIT_REPORT_JOB_NAME:-fit-refresh}"
 POSTERIOR_PREDICTIVE_REPORT_JOB_NAME="${POSTERIOR_PREDICTIVE_REPORT_JOB_NAME:-posterior-predictive-report}"
 
-resolve_generation_manifest_path() {
-  pixi run python - <<'PY' "${GENERATION_SPEC_PATH}"
-import sys
-from run_generation_pipeline import generation_manifest_path_for_spec
+# resolve_generation_manifest_path() {
+#   pixi run python - <<'PY' "${GENERATION_SPEC_PATH}"
+# import sys
+# from run_generation_pipeline import generation_manifest_path_for_spec
 
-print(generation_manifest_path_for_spec(sys.argv[1]))
-PY
-}
+# print(generation_manifest_path_for_spec(sys.argv[1]))
+# PY
+# }
 
 resolve_fit_manifest_path() {
   pixi run python - <<'PY' "${FITS_SPEC_PATH}"
@@ -98,7 +94,7 @@ for value in values:
 PY
 }
 
-GEN_MANIFEST="${GEN_MANIFEST:-$(resolve_generation_manifest_path)}"
+# GEN_MANIFEST="${GEN_MANIFEST:-$(resolve_generation_manifest_path)}"
 FIT_MANIFEST="${FIT_MANIFEST:-$(resolve_fit_manifest_path)}"
 
 get_job_state() {
@@ -142,14 +138,14 @@ wait_for_job() {
   done
 }
 
-submit_generation_stage() {
-  GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH}" \
-  GENERATION_OVERWRITE="${GENERATION_OVERWRITE}" \
-  SBATCH_BIN="${SBATCH_BIN}" \
-  WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT}" \
-  REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME}" \
-  bash "${GENERATION_SUBMITTER}"
-}
+# submit_generation_stage() {
+#   GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH}" \
+#   GENERATION_OVERWRITE="${GENERATION_OVERWRITE}" \
+#   SBATCH_BIN="${SBATCH_BIN}" \
+#   WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT}" \
+#   REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME}" \
+#   bash "${GENERATION_SUBMITTER}"
+# }
 
 build_splits_stage() {
   if [[ -n "${BUILD_SPLITS_SCRIPT:-}" ]]; then
@@ -237,17 +233,18 @@ run_requested_model_selection_modes() {
 }
 
 # echo "Submitting generation jobs..."
-generation_barrier_job_id="$(submit_generation_stage)"
-wait_for_job "${generation_barrier_job_id}" "Generation"
+# generation_barrier_job_id="$(submit_generation_stage)"
+# wait_for_job "${generation_barrier_job_id}" "Generation"
+GEN_MANIFEST="experiments/FINAL/USCountyVaccination/generation_manifest.csv"
 
 echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
 wait_for_job "${fit_barrier_job_id}" "Fit"
 
-echo "Building split bundles..."
-build_splits_stage
+# echo "Building split bundles..."
+# build_splits_stage
 
-run_requested_model_selection_modes
+# run_requested_model_selection_modes
 
 echo "Running intervention library..."
 run_intervention_stage
