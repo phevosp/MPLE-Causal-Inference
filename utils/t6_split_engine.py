@@ -658,6 +658,22 @@ def _active_pattern_signature(mask_row: np.ndarray) -> str:
     return ",".join(str(index) for index in indices)
 
 
+def _pattern_transition_time_indices(partitionable_mask: np.ndarray) -> list[int]:
+    partitionable = np.asarray(partitionable_mask, dtype=bool)
+    if partitionable.ndim != 2:
+        raise ValueError(
+            f"partitionable_mask must be 2D, received shape {partitionable.shape}."
+        )
+    transition_indices: list[int] = []
+    previous_key: bytes | None = None
+    for time_index in range(int(partitionable.shape[0])):
+        current_key = _active_pattern_key(partitionable[time_index])
+        if previous_key is not None and current_key != previous_key:
+            transition_indices.append(int(time_index))
+        previous_key = current_key
+    return transition_indices
+
+
 def _build_induced_adjacency(
     full_adjacency: list[list[int]],
     active_nodes: np.ndarray,
@@ -786,6 +802,8 @@ def build_model_selection_folds(
         raise ValueError(
             f"num_folds={int(num_folds)} exceeds the number of vertices {int(num_vertices)}."
         )
+    pattern_transition_time_indices = _pattern_transition_time_indices(partitionable_mask)
+    pattern_transition_time_index_set = set(pattern_transition_time_indices)
 
     pattern_cache: dict[bytes, dict[str, Any]] = {}
     pattern_occurrences: dict[bytes, int] = {}
@@ -802,6 +820,7 @@ def build_model_selection_folds(
         current_partitionable_nodes = np.flatnonzero(partitionable_mask[time_index]).astype(int)
         fixed_outer_separator_nodes = np.flatnonzero(outer_separator[time_index]).astype(int)
         pattern_key = _active_pattern_key(partitionable_mask[time_index])
+        previous_key: bytes | None = None
         pattern_occurrences[pattern_key] = int(pattern_occurrences.get(pattern_key, 0) + 1)
         pattern_signatures.setdefault(pattern_key, _active_pattern_signature(partitionable_mask[time_index]))
         if current_training_candidates.size == 0:
@@ -842,9 +861,15 @@ def build_model_selection_folds(
             current_separator = set(pattern["separator_sets"][current_partition_id - 1])
             current_validation = current_partition & set(current_training_candidates.tolist())
             visible_separator = current_separator | set(fixed_outer_separator_nodes.tolist())
+            block_transition = bool(time_plan["is_transition_step"][time_index])
+            pattern_transition = int(time_index) in pattern_transition_time_index_set
+            requires_temporal_separator = bool(block_transition or pattern_transition)
 
-            if bool(time_plan["is_transition_step"][time_index]):
-                previous_partition_id = int(validation_schedule[fold_index, block_zero_based - 1])
+            if requires_temporal_separator:
+                if block_transition:
+                    previous_partition_id = int(validation_schedule[fold_index, block_zero_based - 1])
+                else:
+                    previous_partition_id = int(current_partition_id)
                 previous_partition = set()
                 if previous_pattern is not None:
                     previous_partition = set(previous_pattern["partition_sets"][previous_partition_id - 1])
@@ -915,6 +940,8 @@ def build_model_selection_folds(
         "num_active_slots": int(np.count_nonzero(active_mask)),
         "num_partitionable_slots": int(np.count_nonzero(partitionable_mask)),
         "num_outer_separator_slots_visible_as_context": int(np.count_nonzero(outer_separator)),
+        "num_pattern_transitions": int(len(pattern_transition_time_indices)),
+        "pattern_transition_time_indices": [int(value) for value in pattern_transition_time_indices],
         "supported_fold_ids": supported_fold_ids,
         "num_supported_folds": int(len(supported_fold_ids)),
         "fold_summary_rows": fold_summary_rows,

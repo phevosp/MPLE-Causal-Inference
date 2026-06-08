@@ -9283,6 +9283,132 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             supported_fold_ids.append(int(fold_index + 1))
         return tuple(supported_fold_ids)
 
+    def test_model_selection_folds_treat_pattern_change_as_temporal_transition(self) -> None:
+        gamma_matrix = np.zeros((6, 6), dtype=float)
+        experiment_root = self._write_experiment_root(gamma_matrix, t_steps=5)
+        outer_active_mask = np.array(
+            [
+                [1, 1, 1, 1, 1, 1],
+                [1, 0, 1, 1, 1, 1],
+                [1, 0, 1, 1, 1, 1],
+                [1, 0, 1, 1, 1, 1],
+                [1, 0, 1, 1, 1, 1],
+            ],
+            dtype=bool,
+        )
+        outer_separator_mask = np.zeros_like(outer_active_mask, dtype=bool)
+
+        with mock.patch.object(
+            cv_folds,
+            "_load_pymetis",
+            return_value=self._deterministic_fake_pymetis(),
+        ):
+            model_selection = cv_folds.build_model_selection_folds(
+                experiment_root,
+                num_folds=2,
+                outer_active_mask=outer_active_mask,
+                outer_separator_mask=outer_separator_mask,
+            )
+
+        blanket_summary = model_selection["metadata"]["blanket_summary"]
+        self.assertTrue(blanket_summary["blanket_validation_passed"])
+        self.assertEqual(blanket_summary["temporal_violation_edge_count"], 0)
+        self.assertEqual(model_selection["metadata"]["num_pattern_transitions"], 1)
+        self.assertEqual(model_selection["metadata"]["pattern_transition_time_indices"], [1])
+
+    def test_build_test_train_cv_bundle_handles_outer_driven_pattern_changes(self) -> None:
+        spec_path = self.root / f"generation_spec_{uuid.uuid4().hex[:8]}.yaml"
+        spec = {
+            "base": {
+                "experiment_root": f"{self.root.as_posix()}/generated",
+                "manifest_path": f"{self.root.as_posix()}/generated/generation_manifest.csv",
+                "dimensions": {"N": 500, "T": 50},
+                "generation": {"gibbs_sweeps": 100, "seed": 42},
+                "x0": {
+                    "generator": "bernoulli",
+                    "params": {"p": 0.5, "fixed_val": None},
+                },
+                "graph": {
+                    "source": "generated",
+                    "generator": "erdos_renyi",
+                    "params": {"p": 0.01},
+                    "artifact": {
+                        "gamma_path": None,
+                        "node_index_path": None,
+                        "artifact_dir": None,
+                        "network_name": None,
+                        "trim_scope": None,
+                    },
+                },
+                "intervention": {
+                    "source": "generated",
+                    "generator": "low_rank_probability",
+                    "params": {
+                        "singular_values": [1.0, 0.7, 0.49],
+                        "probability_amplitude": 0.5,
+                    },
+                    "artifact": {
+                        "panel_path": None,
+                        "z0_path": None,
+                        "artifact_dir": None,
+                        "shared_panel_dir": None,
+                        "outcome_code": None,
+                        "intervention_code": None,
+                        "lag_code": None,
+                        "trim_scope": None,
+                    },
+                },
+                "truth": {
+                    "B": 1.0,
+                    "field_mode": "random_low_rank",
+                    "field_params": {
+                        "singular_values": [2.0, 0.7, 0.49],
+                        "target_rms_fraction": 0.4,
+                    },
+                    "scalars": {"beta": -0.3, "xi": 0.8, "eta": 0.3},
+                },
+            },
+            "experiments": [
+                {
+                    "name": "confounding_strong",
+                    "generation": {"seed": 42},
+                    "intervention": {
+                        "params": {"singular_values": [1.0, 0.7, 0.49]},
+                    },
+                    "truth": {
+                        "field_mode": "confounded_low_rank",
+                        "field_params": {
+                            "singular_values": [1.0, 0.8, 0.6],
+                            "target_rms_fraction": 0.75,
+                        },
+                    },
+                }
+            ],
+        }
+        OmegaConf.save(OmegaConf.create(spec), spec_path)
+        generation_manifest = run_generation(spec_path, overwrite=True)
+        experiment_root = Path(read_csv_manifest(generation_manifest)[0]["experiment_path"]).resolve()
+
+        bundle = cv_folds.build_test_train_cv_bundle(
+            experiment_root,
+            outer_num_folds=6,
+            test_fold_id=1,
+            inner_num_folds=7,
+        )
+
+        outer_summary = bundle["metadata"]["outer_blanket_summary"]
+        inner_summary = bundle["metadata"]["model_selection"]["blanket_summary"]
+        pattern_transition_time_indices = bundle["metadata"]["model_selection"][
+            "pattern_transition_time_indices"
+        ]
+
+        self.assertTrue(outer_summary["blanket_validation_passed"])
+        self.assertTrue(inner_summary["blanket_validation_passed"])
+        self.assertEqual(inner_summary["temporal_violation_edge_count"], 0)
+        self.assertGreater(len(pattern_transition_time_indices), 0)
+        self.assertIn(9, pattern_transition_time_indices)
+        self.assertIn(10, pattern_transition_time_indices)
+
     def test_test_train_cv_outer_layer_masks_are_disjoint_and_nontrivial(self) -> None:
         experiment_root, split_output_root = self._build_nontrivial_test_train_cv_fixture()
 
