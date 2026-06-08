@@ -94,7 +94,7 @@ for value in values:
 PY
 }
 
-# GEN_MANIFEST="${GEN_MANIFEST:-$(resolve_generation_manifest_path)}"
+GEN_MANIFEST="${GEN_MANIFEST:-$(resolve_generation_manifest_path)}"
 FIT_MANIFEST="${FIT_MANIFEST:-$(resolve_fit_manifest_path)}"
 
 get_job_state() {
@@ -235,7 +235,6 @@ run_requested_model_selection_modes() {
 # echo "Submitting generation jobs..."
 generation_barrier_job_id="$(submit_generation_stage)"
 wait_for_job "${generation_barrier_job_id}" "Generation"
-GEN_MANIFEST="experiments/FINAL/USCountyVaccination/generation_manifest.csv"
 
 echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
