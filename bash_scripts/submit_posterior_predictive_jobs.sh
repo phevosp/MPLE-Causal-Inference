@@ -3,29 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-resolve_repo_root() {
-  local candidate=""
-  for candidate in "${REPO_ROOT:-}" "${SLURM_SUBMIT_DIR:-}" "${SCRIPT_DIR}" "${SCRIPT_DIR}/.."; do
-    [[ -n "${candidate}" ]] || continue
-    if ! candidate="$(cd "${candidate}" 2>/dev/null && pwd)"; then
-      continue
-    fi
-    while [[ "${candidate}" != "/" ]]; do
-      if [[ -f "${candidate}/pixi.toml" || -f "${candidate}/pyproject.toml" ]]; then
-        printf "%s\n" "${candidate}"
-        return 0
-      fi
-      candidate="$(dirname "${candidate}")"
-    done
-  done
-  return 1
-}
-
-REPO_ROOT="$(resolve_repo_root)" || {
-  echo "Could not locate repo root containing pixi.toml or pyproject.toml." >&2
-  exit 1
-}
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GEN_MANIFEST="${GEN_MANIFEST:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
@@ -34,7 +12,7 @@ TARGET_PAIRS_PATH="${TARGET_PAIRS_PATH:-data/configs/posterior_predictive_target
 POSTERIOR_PREDICTIVE_SPEC_PATH="${POSTERIOR_PREDICTIVE_SPEC_PATH:-data/configs/posterior_predictive_spec.yaml}"
 POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE:-false}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
-WORKER_SCRIPT="${WORKER_SCRIPT:-${SCRIPT_DIR}/run_posterior_predictive_job.sh}"
+WORKER_SCRIPT="${WORKER_SCRIPT:-bash_scripts/run_posterior_predictive_job.sh}"
 REPORT_JOB_NAME="${REPORT_JOB_NAME:-posterior-predictive-report}"
 
 job_ids=()
@@ -47,10 +25,7 @@ while IFS="${FIELD_SEP}" read -r experiment_name source_type variant_name interv
     TARGET_PAIRS_PATH="${TARGET_PAIRS_PATH}" \
     POSTERIOR_PREDICTIVE_SPEC_PATH="${POSTERIOR_PREDICTIVE_SPEC_PATH}" \
     POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE}" \
-    "${SBATCH_BIN}" \
-      --chdir "${REPO_ROOT}" \
-      --export "ALL,REPO_ROOT=${REPO_ROOT}" \
-      --parsable "${WORKER_SCRIPT}" \
+    "${SBATCH_BIN}" --chdir "${REPO_ROOT}" --parsable "${WORKER_SCRIPT}" \
       "${experiment_name}" \
       "${source_type}" \
       "${variant_name}" \
@@ -98,10 +73,9 @@ report_job_id="$(
   GEN_MANIFEST="${GEN_MANIFEST}" \
     "${SBATCH_BIN}" \
     --chdir "${REPO_ROOT}" \
-    --export "ALL,REPO_ROOT=${REPO_ROOT}" \
     --parsable \
     --job-name "${REPORT_JOB_NAME}" \
     --dependency "afterok:${dependency}" \
-    --wrap "cd '${REPO_ROOT}' && pixi run python -c \"from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'${GEN_MANIFEST}')\""
+    --wrap "cd '${SLURM_SUBMIT_DIR:-${PWD}}' && pixi run python -c \"from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'${GEN_MANIFEST}')\""
 )"
 printf "%s\n" "${report_job_id%%;*}"

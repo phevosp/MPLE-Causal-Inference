@@ -11,29 +11,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-resolve_repo_root() {
-  local candidate=""
-  for candidate in "${REPO_ROOT:-}" "${SLURM_SUBMIT_DIR:-}" "${SCRIPT_DIR}" "${SCRIPT_DIR}/.."; do
-    [[ -n "${candidate}" ]] || continue
-    if ! candidate="$(cd "${candidate}" 2>/dev/null && pwd)"; then
-      continue
-    fi
-    while [[ "${candidate}" != "/" ]]; do
-      if [[ -f "${candidate}/pixi.toml" || -f "${candidate}/pyproject.toml" ]]; then
-        printf "%s\n" "${candidate}"
-        return 0
-      fi
-      candidate="$(dirname "${candidate}")"
-    done
-  done
-  return 1
-}
-
-REPO_ROOT="$(resolve_repo_root)" || {
-  echo "Could not locate repo root containing pixi.toml or pyproject.toml." >&2
-  exit 1
-}
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 DATE=$(date +%F)
@@ -72,15 +50,15 @@ SQUEUE_BIN="${SQUEUE_BIN:-squeue}"
 SLEEP_BIN="${SLEEP_BIN:-sleep}"
 WAIT_POLL_SECONDS="${WAIT_POLL_SECONDS:-10}"
 
-GENERATION_SUBMITTER="${GENERATION_SUBMITTER:-${SCRIPT_DIR}/submit_generation_jobs.sh}"
-CV_SUBMITTER="${CV_SUBMITTER:-${SCRIPT_DIR}/submit_cv_jobs.sh}"
-FIT_SUBMITTER="${FIT_SUBMITTER:-${SCRIPT_DIR}/submit_fit_jobs.sh}"
-POSTERIOR_PREDICTIVE_SUBMITTER="${POSTERIOR_PREDICTIVE_SUBMITTER:-${SCRIPT_DIR}/submit_posterior_predictive_jobs.sh}"
+GENERATION_SUBMITTER="${GENERATION_SUBMITTER:-bash_scripts/submit_generation_jobs.sh}"
+CV_SUBMITTER="${CV_SUBMITTER:-bash_scripts/submit_cv_jobs.sh}"
+FIT_SUBMITTER="${FIT_SUBMITTER:-bash_scripts/submit_fit_jobs.sh}"
+POSTERIOR_PREDICTIVE_SUBMITTER="${POSTERIOR_PREDICTIVE_SUBMITTER:-bash_scripts/submit_posterior_predictive_jobs.sh}"
 
-GENERATION_WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT:-${SCRIPT_DIR}/run_generation_job.sh}"
-CV_WORKER_SCRIPT="${CV_WORKER_SCRIPT:-${SCRIPT_DIR}/run_cv_job.sh}"
-FIT_WORKER_SCRIPT="${FIT_WORKER_SCRIPT:-${SCRIPT_DIR}/run_fit_job.sh}"
-POSTERIOR_PREDICTIVE_WORKER_SCRIPT="${POSTERIOR_PREDICTIVE_WORKER_SCRIPT:-${SCRIPT_DIR}/run_posterior_predictive_job.sh}"
+GENERATION_WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT:-bash_scripts/run_generation_job.sh}"
+CV_WORKER_SCRIPT="${CV_WORKER_SCRIPT:-bash_scripts/run_cv_job.sh}"
+FIT_WORKER_SCRIPT="${FIT_WORKER_SCRIPT:-bash_scripts/run_fit_job.sh}"
+POSTERIOR_PREDICTIVE_WORKER_SCRIPT="${POSTERIOR_PREDICTIVE_WORKER_SCRIPT:-bash_scripts/run_posterior_predictive_job.sh}"
 
 GENERATION_REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME:-generation-refresh}"
 CV_REPORT_JOB_NAME="${CV_REPORT_JOB_NAME:-cv-refresh}"

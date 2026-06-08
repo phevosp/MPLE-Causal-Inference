@@ -3,36 +3,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-resolve_repo_root() {
-  local candidate=""
-  for candidate in "${REPO_ROOT:-}" "${SLURM_SUBMIT_DIR:-}" "${SCRIPT_DIR}" "${SCRIPT_DIR}/.."; do
-    [[ -n "${candidate}" ]] || continue
-    if ! candidate="$(cd "${candidate}" 2>/dev/null && pwd)"; then
-      continue
-    fi
-    while [[ "${candidate}" != "/" ]]; do
-      if [[ -f "${candidate}/pixi.toml" || -f "${candidate}/pyproject.toml" ]]; then
-        printf "%s\n" "${candidate}"
-        return 0
-      fi
-      candidate="$(dirname "${candidate}")"
-    done
-  done
-  return 1
-}
-
-REPO_ROOT="$(resolve_repo_root)" || {
-  echo "Could not locate repo root containing pixi.toml or pyproject.toml." >&2
-  exit 1
-}
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybridExperiments/generation_manifest.csv}"
 FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
 FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
-WORKER_SCRIPT="${WORKER_SCRIPT:-${SCRIPT_DIR}/run_fit_job.sh}"
+WORKER_SCRIPT="${WORKER_SCRIPT:-bash_scripts/run_fit_job.sh}"
 WORKER_JOB_NAME="${WORKER_JOB_NAME:-fit}"
 REPORT_JOB_NAME="${REPORT_JOB_NAME:-fit-refresh}"
 
@@ -78,10 +56,7 @@ while IFS=$'\t' read -r generation_manifest_path fits_spec_path experiment_name 
     GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH}" \
     FITS_SPEC_PATH="${FITS_SPEC_PATH}" \
     FIT_OVERWRITE="${FIT_OVERWRITE}" \
-    "${SBATCH_BIN}" \
-      --chdir "${REPO_ROOT}" \
-      --export "ALL,REPO_ROOT=${REPO_ROOT}" \
-      "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}" "${variant_slug}"
+    "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${worker_args[@]}" "${WORKER_SCRIPT}" "${experiment_slug}" "${variant_slug}"
   )"
   job_ids+=("${submit_output%%;*}")
 done < <(
@@ -126,10 +101,7 @@ if [[ -n "${FIT_REPORT_PARTITION}" ]]; then
 fi
 
 report_job_id="$(
-  "${SBATCH_BIN}" \
-    --chdir "${REPO_ROOT}" \
-    --export "ALL,REPO_ROOT=${REPO_ROOT}" \
-    "${report_args[@]}" \
-    --wrap "cd '${REPO_ROOT}' && pixi run python -u run_fit_pipeline.py --manifest_path '${GENERATION_MANIFEST_PATH}' --fits_spec_path '${FITS_SPEC_PATH}' --refresh_manifest"
+  "${SBATCH_BIN}" --chdir "${REPO_ROOT}" "${report_args[@]}" \
+    --wrap "cd '${SLURM_SUBMIT_DIR:-${PWD}}' && pixi run python -u run_fit_pipeline.py --manifest_path '${GENERATION_MANIFEST_PATH}' --fits_spec_path '${FITS_SPEC_PATH}' --refresh_manifest"
 )"
 printf "%s\n" "${report_job_id%%;*}"
