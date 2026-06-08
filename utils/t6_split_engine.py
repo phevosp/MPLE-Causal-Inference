@@ -432,6 +432,13 @@ def _summarize_markov_blanket_validation(
     }
 
 
+def _format_blanket_validation_failure(
+    prefix: str,
+    blanket_summary: dict[str, Any],
+) -> str:
+    return f"{prefix} Summary: {blanket_summary!r}"
+
+
 def _panel_shape(experiment_root: str | Path) -> tuple[int, int]:
     panel_context = load_experiment_panel_context(experiment_root)
     return int(panel_context["T"]), int(panel_context["N"])
@@ -497,7 +504,10 @@ def _build_full_panel_cv_artifacts(
     blanket_summary = _summarize_markov_blanket_validation(adjacency, role_codes)
     if not bool(blanket_summary["blanket_validation_passed"]):
         raise ValueError(
-            "Constructed full-panel folds failed the spatiotemporal Markov-blanket validation."
+            _format_blanket_validation_failure(
+                "Constructed full-panel folds failed the spatiotemporal Markov-blanket validation.",
+                blanket_summary,
+            )
         )
     return {
         "role_codes": role_codes,
@@ -882,7 +892,12 @@ def build_model_selection_folds(
         if int(row["num_training_slots"]) > 0 and int(row["num_validation_slots"]) > 0
     ]
     if not bool(blanket_summary["blanket_validation_passed"]):
-        raise ValueError("Inner model-selection folds failed the spatiotemporal Markov-blanket validation.")
+        raise ValueError(
+            _format_blanket_validation_failure(
+                "Inner model-selection folds failed the spatiotemporal Markov-blanket validation.",
+                blanket_summary,
+            )
+        )
     if not supported_fold_ids:
         raise ValueError("Inner model-selection folds produce no folds with non-empty training and validation support.")
 
