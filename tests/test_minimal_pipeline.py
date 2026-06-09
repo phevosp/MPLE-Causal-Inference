@@ -50,6 +50,7 @@ from data.USCountyVaccination.experiment_artifacts import (
 from utils.t6_intervention_utils import load_saved_intervention_context
 from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping
 from utils.t0_csv_utils import read_csv_rows as read_csv_manifest, write_csv_rows
+from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t0_path_utils import io_path
 from utils.t0_string_utils import slugify
 from utils.t5_parameter_bundles import (
@@ -143,6 +144,10 @@ from utils.t8_parameter_recovery_reporting import (
     group_and_rank_fit_rows,
     write_fit_reports,
 )
+from utils.t9_trial_aggregation import (
+    collect_trial_statistics,
+    summarize_trial_statistics,
+)
 from run_fit_pipeline import (
     refresh_fit_manifest,
     refresh_train_fit_manifest,
@@ -159,6 +164,7 @@ from run_generation_pipeline import (
     write_generation_requests,
 )
 from run_intervention_library import run_intervention_library
+from run_trial_aggregation import run_trial_aggregation
 from utils.t6_posterior_predictive_manifest import (
     index_generation_rows,
     resolve_fit_lookup,
@@ -3393,6 +3399,471 @@ class FitReportingTests(unittest.TestCase):
         self.assertEqual(
             Path(fit_manifest), self.root / "generated" / "fit_manifest.csv"
         )
+
+
+class TrialAggregationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = REPO_ROOT / "experiments" / f".tmp_trial_aggregation_{uuid.uuid4().hex}"
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _to_orcd(self, path: Path) -> str:
+        suffix = path.resolve().relative_to(REPO_ROOT).as_posix()
+        return f"/orcd/home/002/phevosp/MPLE-Causal-Inference/{suffix}"
+
+    def _write_manifest(self, path: Path, rows: list[dict[str, object]]) -> Path:
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        return path
+
+    def _write_fit(
+        self,
+        experiment_slug: str,
+        variant_slug: str,
+        *,
+        beta: float,
+        xi: float,
+        eta: float,
+        field_rmse: float,
+    ) -> dict[str, object]:
+        experiment_root = self.root / experiment_slug
+        fit_root = experiment_root / "fits" / variant_slug
+        fit_root.mkdir(parents=True, exist_ok=True)
+        with (fit_root / "mple_summary.csv").open(
+            "w",
+            encoding="utf-8",
+            newline="",
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["category", "name", "estimate", "true", "squared_error"],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "category": "metric",
+                    "name": "field_rmse",
+                    "estimate": field_rmse,
+                    "true": "",
+                    "squared_error": "",
+                }
+            )
+            for name, estimate in (("beta", beta), ("xi", xi), ("eta", eta)):
+                writer.writerow(
+                    {
+                        "category": "scalar",
+                        "name": name,
+                        "estimate": estimate,
+                        "true": "",
+                        "squared_error": "",
+                    }
+                )
+        (fit_root / "mple.log").write_text(
+            "2026-01-01 00:00:00 | INFO | Optimizer status: CONVERGED\n",
+            encoding="utf-8",
+        )
+        return {
+            "experiment_name": experiment_slug,
+            "experiment_slug": experiment_slug,
+            "descriptor": experiment_slug,
+            "experiment_path": self._to_orcd(experiment_root),
+            "intervention_source": "generated",
+            "graph_source": "generated",
+            "field_mode": "confounded_low_rank",
+            "variant_name": variant_slug,
+            "variant_slug": variant_slug,
+            "fit_path": self._to_orcd(fit_root),
+            "N": 5,
+            "T": 4,
+            "s": 1,
+            "latent_rank": 0,
+            "optimizer_mode": "no_external_field",
+            "lambda_nuclear": 0.0,
+            "lambda_frobenius": 0.0,
+            "lambda_uv_ridge": 0.0,
+            "fixed_scalar_params": "{}",
+            "status": "completed",
+        }
+
+    def _write_intervention_summary(
+        self,
+        experiment_slug: str,
+        filename: str,
+        rows: list[dict[str, object]],
+    ) -> None:
+        summary_root = self.root / experiment_slug / "intervention_summaries"
+        summary_root.mkdir(parents=True, exist_ok=True)
+        with (summary_root / filename).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "source_type",
+                    "source_name",
+                    "source_slug",
+                    "run_name",
+                    "run_slug",
+                    "overall_mean_magnetization_mean",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def _build_trial_fixture(self) -> tuple[Path, Path]:
+        generation_manifest_path = self.root / "generation_manifest_x10.csv"
+        fit_manifest_path = self.root / "fit_manifest_x10.csv"
+
+        generation_rows = []
+        for experiment_slug in ("confounding_strong_1", "confounding_strong_2"):
+            experiment_root = self.root / experiment_slug
+            experiment_root.mkdir(parents=True, exist_ok=True)
+            generation_rows.append(
+                {
+                    "experiment_name": experiment_slug,
+                    "experiment_slug": experiment_slug,
+                    "descriptor": "confounding_strong",
+                    "experiment_path": self._to_orcd(experiment_root),
+                }
+            )
+
+        fit_rows = [
+            self._write_fit(
+                "confounding_strong_1",
+                "rank_a",
+                beta=1.0,
+                xi=0.10,
+                eta=0.20,
+                field_rmse=0.25,
+            ),
+            self._write_fit(
+                "confounding_strong_2",
+                "rank_a",
+                beta=3.0,
+                xi=0.30,
+                eta=0.40,
+                field_rmse=0.35,
+            ),
+            self._write_fit(
+                "confounding_strong_1",
+                "rank_b",
+                beta=2.0,
+                xi=0.20,
+                eta=0.30,
+                field_rmse=0.45,
+            ),
+            self._write_fit(
+                "confounding_strong_2",
+                "rank_b",
+                beta=4.0,
+                xi=0.40,
+                eta=0.50,
+                field_rmse=0.55,
+            ),
+        ]
+
+        self._write_intervention_summary(
+            "confounding_strong_1",
+            "all_intervention.csv",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.90,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.70,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 1.00,
+                },
+            ],
+        )
+        self._write_intervention_summary(
+            "confounding_strong_1",
+            "no_intervention.csv",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.40,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.50,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.60,
+                },
+            ],
+        )
+        self._write_intervention_summary(
+            "confounding_strong_2",
+            "all_intervention.csv",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 1.20,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.90,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 1.30,
+                },
+            ],
+        )
+        self._write_intervention_summary(
+            "confounding_strong_2",
+            "no_intervention.csv",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.60,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.50,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.80,
+                },
+            ],
+        )
+
+        self._write_manifest(generation_manifest_path, generation_rows)
+        self._write_manifest(fit_manifest_path, fit_rows)
+        return generation_manifest_path, fit_manifest_path
+
+    def test_resolve_orcd_local_path_returns_original_when_path_exists(self) -> None:
+        existing_path = self.root / "existing.txt"
+        existing_path.write_text("hello", encoding="utf-8")
+
+        resolved = resolve_orcd_local_path(existing_path)
+
+        self.assertEqual(resolved, existing_path.resolve())
+
+    def test_resolve_orcd_local_path_remaps_missing_orcd_path(self) -> None:
+        local_path = self.root / "remapped.txt"
+        local_path.write_text("hello", encoding="utf-8")
+
+        resolved = resolve_orcd_local_path(self._to_orcd(local_path))
+
+        self.assertEqual(resolved, local_path.resolve())
+
+    def test_resolve_orcd_local_path_raises_when_no_candidate_exists(self) -> None:
+        missing_local = self.root / "missing.txt"
+        with self.assertRaisesRegex(FileNotFoundError, "missing.txt"):
+            resolve_orcd_local_path(self._to_orcd(missing_local))
+
+    def test_collect_fit_rows_succeeds_against_orcd_manifest_rows(self) -> None:
+        manifest_path = self.root / "fit_manifest.csv"
+        fit_row = self._write_fit(
+            "confounding_strong_1",
+            "rank_a",
+            beta=1.5,
+            xi=0.2,
+            eta=0.3,
+            field_rmse=0.4,
+        )
+        self._write_manifest(manifest_path, [fit_row])
+
+        rows = collect_fit_rows(manifest_path)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0]["fit_path"],
+            str((self.root / "confounding_strong_1" / "fits" / "rank_a").resolve()),
+        )
+        self.assertEqual(
+            rows[0]["experiment_path"],
+            str((self.root / "confounding_strong_1").resolve()),
+        )
+        self.assertAlmostEqual(float(rows[0]["beta_estimate"]), 1.5)
+        self.assertAlmostEqual(float(rows[0]["field_rmse"]), 0.4)
+
+    def test_collect_trial_statistics_reads_remapped_gte_rows(self) -> None:
+        generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
+
+        rows = collect_trial_statistics(
+            generation_manifest_path,
+            fit_manifest_path,
+            cohort_label="confounding_strong_x2",
+        )
+
+        gte_rows = [
+            row
+            for row in rows
+            if row["statistic_name"] == "gte_overall_mean_magnetization"
+        ]
+        self.assertEqual(len(gte_rows), 6)
+        self.assertEqual(
+            {
+                (
+                    row["source_type"],
+                    row["experiment_slug"],
+                    row["source_name"],
+                    row["statistic_value"],
+                )
+                for row in gte_rows
+            },
+            {
+                ("fit", "confounding_strong_1", "rank_a", 0.5),
+                ("fit", "confounding_strong_1", "rank_b", 0.19999999999999996),
+                ("fit", "confounding_strong_2", "rank_a", 0.6),
+                ("fit", "confounding_strong_2", "rank_b", 0.4),
+                ("truth", "confounding_strong_1", "truth", 0.4),
+                ("truth", "confounding_strong_2", "truth", 0.5),
+            },
+        )
+
+    def test_summarize_trial_statistics_computes_standard_error_and_quantiles(self) -> None:
+        rows = [
+            {
+                "cohort_label": "cohort_a",
+                "source_type": "fit",
+                "source_name": "rank_a",
+                "source_slug": "fit_rank_a",
+                "statistic_name": "beta_estimate",
+                "statistic_value": 1.0,
+            },
+            {
+                "cohort_label": "cohort_a",
+                "source_type": "fit",
+                "source_name": "rank_a",
+                "source_slug": "fit_rank_a",
+                "statistic_name": "beta_estimate",
+                "statistic_value": 3.0,
+            },
+        ]
+
+        summary_rows = summarize_trial_statistics(rows)
+
+        self.assertEqual(len(summary_rows), 1)
+        summary_row = summary_rows[0]
+        self.assertEqual(summary_row["num_trials"], 2)
+        self.assertAlmostEqual(float(summary_row["mean"]), 2.0)
+        self.assertAlmostEqual(
+            float(summary_row["sample_std"]),
+            float(np.std([1.0, 3.0], ddof=1)),
+        )
+        self.assertAlmostEqual(
+            float(summary_row["standard_error"]),
+            float(np.std([1.0, 3.0], ddof=1) / np.sqrt(2.0)),
+        )
+        self.assertAlmostEqual(
+            float(summary_row["q025"]),
+            float(np.quantile([1.0, 3.0], 0.025)),
+        )
+        self.assertAlmostEqual(
+            float(summary_row["q500"]),
+            float(np.quantile([1.0, 3.0], 0.5)),
+        )
+        self.assertAlmostEqual(
+            float(summary_row["q975"]),
+            float(np.quantile([1.0, 3.0], 0.975)),
+        )
+
+    def test_run_trial_aggregation_writes_summary_outputs(self) -> None:
+        generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
+        output_dir = self.root / "trial_aggregation"
+
+        outputs = run_trial_aggregation(
+            generation_manifest_path,
+            fit_manifest_path,
+            cohort_label="confounding_strong_x2",
+            output_dir=output_dir,
+            write_wide=True,
+        )
+
+        self.assertTrue(Path(str(outputs["trial_statistics_path"])).exists())
+        self.assertTrue(Path(str(outputs["summary_path"])).exists())
+        self.assertTrue(Path(str(outputs["wide_path"])).exists())
+        with Path(str(outputs["summary_path"])).open(
+            "r",
+            encoding="utf-8",
+            newline="",
+        ) as handle:
+            rows = list(csv.DictReader(handle))
+        beta_rank_a = next(
+            row
+            for row in rows
+            if row["source_name"] == "rank_a"
+            and row["statistic_name"] == "beta_estimate"
+        )
+        self.assertEqual(beta_rank_a["num_trials"], "2")
+        self.assertAlmostEqual(float(beta_rank_a["mean"]), 2.0)
+        field_rmse_rank_a = next(
+            row
+            for row in rows
+            if row["source_name"] == "rank_a"
+            and row["statistic_name"] == "field_rmse"
+        )
+        self.assertEqual(field_rmse_rank_a["num_trials"], "2")
+        self.assertAlmostEqual(float(field_rmse_rank_a["mean"]), 0.3)
+        truth_gte = next(
+            row
+            for row in rows
+            if row["source_type"] == "truth"
+            and row["source_name"] == "truth"
+            and row["statistic_name"] == "gte_overall_mean_magnetization"
+        )
+        self.assertEqual(truth_gte["num_trials"], "2")
+        self.assertAlmostEqual(float(truth_gte["mean"]), 0.45)
 
 
 class PipelineStageRequestTests(unittest.TestCase):

@@ -1,11 +1,12 @@
 """Utility modules for the MPLE causal inference pipeline.
 
-Organization: 9-tier hierarchical structure for clean dependency management.
+Organization: 10-tier hierarchical structure for clean dependency management.
 
 TIER 0: INFRASTRUCTURE (no domain dependencies)
   t0_path_utils: Path resolution, file existence checks (Windows-safe I/O)
   t0_config_utils: YAML configuration loading, mapping normalization, deep merge
   t0_csv_utils: Generic CSV reading/writing, value formatting for reports
+  t0_orcd_path_remap: ORCD-to-local path remapping fallback
   t0_string_utils: Shared string normalization helpers such as slugify
 
 TIER 1: MATRIX I/O
@@ -47,6 +48,9 @@ TIER 8: OUTPUT GENERATION & REPORTING (depends on Tier 0-7)
   t8_parameter_recovery_reporting: Fit-manifest aggregation, latent diagnostics, ranking, CSV reporting
   t8_fit_outputs: MPLE fit diagnostics, summary tables, saved output artifacts
   t8_output_writers: Output table writers, formatting helpers
+
+TIER 9: CROSS-TRIAL REPORTING (depends on Tier 0-8)
+  t9_trial_aggregation: Cohort-level aggregation across replicated trials
 
 TYPICAL IMPORT PATTERNS
 ========================

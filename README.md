@@ -90,6 +90,7 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | MPLE variant fitting | `run_fit_pipeline.py`, `submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/quickstart_fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
 | Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
 | Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `utils.t8_posterior_predictive_reporting`, `submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
+| Cross-trial synthetic cohort aggregation | `run_trial_aggregation.py`, `utils.t9_trial_aggregation` | generation manifest, fit manifest, per-experiment `intervention_summaries/*.csv` | `trial_aggregation/trial_statistics.csv`, cohort summary tables |
 | CV fold construction for `U,V` regularizer tuning | `build_cv_folds.py` | `generation_manifest.csv` for experiments with `Gamma`, `panel_data.npz`, and optional `node_index.csv` / `time_index.csv` | `cv_folds/folds_5/` spatial partitions plus spatiotemporal fold artifacts |
 | Cross-validated MPLE hyperparameter search | `run_cv_folds.py` | `generation_manifest.csv`, prebuilt `cv_folds/folds_5/`, `data/configs/cv_spec.yaml` | `cv_requests.csv`, `cv_manifest.csv`, per-search candidate scores and fold fits |
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census geography sources | cached raw inputs |
@@ -318,6 +319,26 @@ The `seed` in `posterior_predictive_spec.yaml` is the base seed for a run. Indiv
 - `sample_index`
 
 So repeated runs are reproducible, samples within a run are distinct, and different targets do not accidentally reuse the same random stream.
+
+### 5. Trial Aggregation Across Replicated Synthetic Cohorts
+
+`run_trial_aggregation.py` aggregates per-trial scalar estimates and saved-intervention magnetization summaries into cohort-level CSV tables. It is intended for replicated synthetic families such as the `x10` manifests under `experiments/Synthetic/` and `experiments/Hybrid/`.
+
+Command:
+
+```bash
+pixi run python -u run_trial_aggregation.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --fit_manifest_path experiments/Synthetic/fit_manifest_x10.csv \
+  --cohort_label confounding_strong_x10 \
+  --write_wide
+```
+
+Outputs:
+
+- `trial_aggregation/trial_statistics.csv`
+- `trial_aggregation/<cohort_label>_summary.csv`
+- optional `trial_aggregation/<cohort_label>_wide.csv`
 
 ## CV Fold Construction
 
