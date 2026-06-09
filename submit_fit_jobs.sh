@@ -26,6 +26,7 @@ FIT_REPORT_TIME="${FIT_REPORT_TIME:-00:30:00}"
 FIT_REPORT_CPUS="${FIT_REPORT_CPUS:-1}"
 FIT_REPORT_MEM="${FIT_REPORT_MEM:-4G}"
 FIT_REPORT_PARTITION="${FIT_REPORT_PARTITION:-mit_normal}"
+FIELD_SEP=$'\x1f'
 
 if [[ "${FIT_MODE}" != "standard" && "${FIT_MODE}" != "outer_masked" ]]; then
   echo "FIT_MODE must be 'standard' or 'outer_masked', got '${FIT_MODE}'." >&2
@@ -137,7 +138,7 @@ with open(sys.argv[1], "r", encoding="utf-8", newline="") as handle:
 PY
   )
 else
-  while IFS=$'\t' read -r generation_manifest_path cv_spec_path search_name search_slug split_kind num_folds outer_num_folds test_fold_id experiment_name experiment_slug variant_name variant_slug fit_path; do
+  while IFS="${FIELD_SEP}" read -r generation_manifest_path cv_spec_path search_name search_slug split_kind num_folds outer_num_folds test_fold_id experiment_name experiment_slug variant_name variant_slug fit_path; do
     worker_args=(
       --parsable
       --job-name "${WORKER_JOB_NAME}"
@@ -192,7 +193,7 @@ with open(sys.argv[1], "r", encoding="utf-8", newline="") as handle:
             row.get("variant_slug", "").strip(),
             row.get("fit_path", "").strip(),
         ])
-        print("\t".join(fields))
+        print("\x1f".join(fields))
 PY
   )
 fi
