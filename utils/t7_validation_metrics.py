@@ -212,6 +212,40 @@ def sample_validation_panel_conditional(
     return sampled_x
 
 
+def sample_full_panel_regeneration(
+    *,
+    panel_context: dict[str, object],
+    bundle: OutcomeParameterBundle,
+    gibbs_sweeps: int,
+    seed: int,
+) -> np.ndarray:
+    x = np.asarray(panel_context["x"], dtype=float)
+    z = np.asarray(panel_context["z"], dtype=float)
+    x_0 = np.asarray(panel_context["x_0"], dtype=float)
+    interaction_matrix = compose_interaction_matrix(
+        float(bundle.xi), bundle.gamma_matrix
+    )
+    sampled_x = np.asarray(x, dtype=float).copy()
+    rng = np.random.default_rng(int(seed))
+    all_nodes = np.arange(x.shape[1], dtype=int)
+    x_prev = x_0
+    for time_index in range(x.shape[0]):
+        sampled_x[time_index, :] = _sample_validation_time_step(
+            x[time_index, :],
+            x_prev=np.asarray(x_prev, dtype=float),
+            z_t=z[time_index, :],
+            field_t=np.asarray(bundle.field_matrix[time_index, :], dtype=float),
+            interaction_matrix=interaction_matrix,
+            beta=float(bundle.beta),
+            eta=float(bundle.eta),
+            rng=rng,
+            validation_nodes=all_nodes,
+            gibbs_sweeps=int(gibbs_sweeps),
+        )
+        x_prev = sampled_x[time_index, :]
+    return sampled_x
+
+
 def _sample_validation_magnetization_metrics(
     *,
     panel_context: dict[str, object],
@@ -273,6 +307,109 @@ def _sample_validation_magnetization_metrics(
             else abs(float(observed_post_s_mean) - float(sampled_post_s_mean))
         ),
     }
+
+
+def _sample_full_panel_bank(
+    *,
+    panel_context: dict[str, object],
+    bundle: OutcomeParameterBundle,
+    sampling: dict[str, Any] | None = None,
+) -> list[np.ndarray]:
+    sampling_config = resolve_validation_sampling(sampling)
+    sampled_panels: list[np.ndarray] = []
+    for sample_index in range(int(sampling_config["num_samples"])):
+        sampled_panels.append(
+            sample_full_panel_regeneration(
+                panel_context=panel_context,
+                bundle=bundle,
+                gibbs_sweeps=int(sampling_config["gibbs_sweeps"]),
+                seed=int(sampling_config["seed"]) + int(sample_index),
+            )
+        )
+    return sampled_panels
+
+
+def _full_panel_bucket_masks(
+    *,
+    panel_context: dict[str, object],
+    training_loss_mask: np.ndarray,
+    test_loss_mask: np.ndarray,
+) -> dict[str, np.ndarray]:
+    x = np.asarray(panel_context["x"], dtype=float)
+    z = np.asarray(panel_context["z"], dtype=float)
+    training_mask = np.asarray(training_loss_mask, dtype=bool)
+    test_mask = np.asarray(test_loss_mask, dtype=bool)
+    if x.shape != training_mask.shape or x.shape != test_mask.shape:
+        raise ValueError("Training and test masks must match the panel shape.")
+    post_s_window = time_window_mask(
+        t_steps=x.shape[0],
+        n_nodes=x.shape[1],
+        start_t=int(panel_context["s"]),
+    )
+    separator_mask = ~(training_mask | test_mask)
+    treated_mask = z > 0.5
+    untreated_mask = z <= 0.5
+    all_mask = np.ones_like(training_mask, dtype=bool)
+    return {
+        "all": all_mask,
+        "all_post_s": all_mask & post_s_window,
+        "training": training_mask,
+        "training_post_s": training_mask & post_s_window,
+        "separator": separator_mask,
+        "separator_post_s": separator_mask & post_s_window,
+        "test": test_mask,
+        "test_post_s": test_mask & post_s_window,
+        "treated_test": test_mask & treated_mask,
+        "treated_test_post_s": test_mask & treated_mask & post_s_window,
+        "untreated_test": test_mask & untreated_mask,
+        "untreated_test_post_s": test_mask & untreated_mask & post_s_window,
+    }
+
+
+def _compute_full_panel_regeneration_magnetization_metrics(
+    *,
+    panel_context: dict[str, object],
+    bundle: OutcomeParameterBundle,
+    training_loss_mask: np.ndarray,
+    test_loss_mask: np.ndarray,
+    sampling: dict[str, Any] | None = None,
+) -> dict[str, float | int | None]:
+    x = np.asarray(panel_context["x"], dtype=float)
+    bucket_masks = _full_panel_bucket_masks(
+        panel_context=panel_context,
+        training_loss_mask=training_loss_mask,
+        test_loss_mask=test_loss_mask,
+    )
+    sampled_panels = _sample_full_panel_bank(
+        panel_context=panel_context,
+        bundle=bundle,
+        sampling=sampling,
+    )
+    metrics: dict[str, float | int | None] = {}
+    for bucket_name, bucket_mask in bucket_masks.items():
+        count = int(np.count_nonzero(bucket_mask))
+        observed_mean = mean_on_mask(x, bucket_mask)
+        sample_means = [
+            float(sample_mean)
+            for sample_mean in (
+                mean_on_mask(sampled_panel, bucket_mask) for sampled_panel in sampled_panels
+            )
+            if sample_mean is not None
+        ]
+        sampled_mean = (
+            float(np.mean(np.asarray(sample_means, dtype=float))) if sample_means else None
+        )
+        metrics[f"full_panel_num_{bucket_name}_slots"] = count
+        metrics[f"full_panel_{bucket_name}_observed_mean_magnetization"] = observed_mean
+        metrics[f"full_panel_{bucket_name}_sampled_mean_magnetization_mean"] = (
+            sampled_mean
+        )
+        metrics[f"full_panel_{bucket_name}_mean_magnetization_abs_diff"] = (
+            None
+            if observed_mean is None or sampled_mean is None
+            else abs(float(observed_mean) - float(sampled_mean))
+        )
+    return metrics
 
 
 def _build_loss_kwargs(
@@ -432,6 +569,13 @@ def evaluate_test_metrics(
     )
     training_mask = np.asarray(training_loss_mask, dtype=bool)
     scored_test_mask = np.asarray(test_loss_mask, dtype=bool)
+    full_panel_metrics = _compute_full_panel_regeneration_magnetization_metrics(
+        panel_context=panel_context,
+        bundle=bundle,
+        training_loss_mask=training_mask,
+        test_loss_mask=scored_test_mask,
+        sampling=sampling,
+    )
     return {
         "training_loss": float(metrics["fit_loss"]),
         "num_training_slots": int(np.count_nonzero(training_mask)),
@@ -461,6 +605,7 @@ def evaluate_test_metrics(
         "post_s_test_sampled_mean_magnetization_mean": metrics[
             "post_s_validation_sampled_mean_magnetization_mean"
         ],
+        **full_panel_metrics,
     }
 
 

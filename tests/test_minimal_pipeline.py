@@ -7488,6 +7488,119 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         self.assertFalse(np.array_equal(sampled_x, np.asarray(panel_context["x"], dtype=float)))
 
+    def test_validation_metric_utils_full_panel_sampler_can_change_non_test_entries(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.ones((2, 8), dtype=float),
+            "z": np.zeros((2, 8), dtype=float),
+            "x_0": -np.ones(8, dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+        bundle = OutcomeParameterBundle(
+            source_type="fit",
+            source_name="rank_0",
+            beta=0.0,
+            xi=0.0,
+            eta=0.0,
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+            latent_rank=0,
+            t_steps=2,
+            field_matrix=np.zeros((2, 8), dtype=float),
+            gamma_matrix=np.zeros((8, 8), dtype=float),
+        )
+        test_mask = np.asarray(
+            [[True, False, False, False, False, False, False, False], [False] * 8],
+            dtype=bool,
+        )
+
+        sampled_x = validation_metrics.sample_full_panel_regeneration(
+            panel_context=panel_context,
+            bundle=bundle,
+            gibbs_sweeps=0,
+            seed=0,
+        )
+
+        observed_x = np.asarray(panel_context["x"], dtype=float)
+        self.assertFalse(np.array_equal(sampled_x, observed_x))
+        self.assertTrue(np.any(sampled_x[~test_mask] != observed_x[~test_mask]))
+
+    def test_validation_metric_utils_reports_full_panel_regeneration_buckets(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0], [-1.0, -1.0]], dtype=float),
+            "z": np.asarray([[0.0, 1.0], [1.0, 0.0], [0.0, 0.0]], dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 3,
+        }
+        bundle = OutcomeParameterBundle(
+            source_type="fit",
+            source_name="rank_0",
+            beta=0.0,
+            xi=0.0,
+            eta=0.0,
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+            latent_rank=0,
+            t_steps=3,
+            field_matrix=np.zeros((3, 2), dtype=float),
+            gamma_matrix=np.zeros((2, 2), dtype=float),
+        )
+        training_mask = np.asarray(
+            [[True, False], [False, False], [False, False]],
+            dtype=bool,
+        )
+        test_mask = np.asarray(
+            [[False, True], [True, False], [False, False]],
+            dtype=bool,
+        )
+
+        with mock.patch.object(
+            validation_metrics,
+            "sample_full_panel_regeneration",
+            wraps=validation_metrics.sample_full_panel_regeneration,
+        ) as sampler:
+            metrics = validation_metrics.evaluate_test_metrics(
+                panel_context=panel_context,
+                bundle=bundle,
+                training_loss_mask=training_mask,
+                test_loss_mask=test_mask,
+                sampling={"num_samples": 3, "gibbs_sweeps": 0, "seed": 5},
+            )
+
+        self.assertEqual(sampler.call_count, 3)
+        self.assertIn("full_panel_all_mean_magnetization_abs_diff", metrics)
+        self.assertIn("full_panel_test_mean_magnetization_abs_diff", metrics)
+        self.assertIn("full_panel_separator_mean_magnetization_abs_diff", metrics)
+        self.assertIn("full_panel_treated_test_mean_magnetization_abs_diff", metrics)
+        self.assertIn("full_panel_untreated_test_mean_magnetization_abs_diff", metrics)
+        self.assertEqual(metrics["full_panel_num_all_slots"], 6)
+        self.assertEqual(metrics["full_panel_num_all_post_s_slots"], 4)
+        self.assertEqual(metrics["full_panel_num_training_slots"], 1)
+        self.assertEqual(metrics["full_panel_num_training_post_s_slots"], 0)
+        self.assertEqual(metrics["full_panel_num_separator_slots"], 3)
+        self.assertEqual(metrics["full_panel_num_separator_post_s_slots"], 3)
+        self.assertEqual(metrics["full_panel_num_test_slots"], 2)
+        self.assertEqual(metrics["full_panel_num_test_post_s_slots"], 1)
+        self.assertEqual(metrics["full_panel_num_treated_test_slots"], 2)
+        self.assertEqual(metrics["full_panel_num_treated_test_post_s_slots"], 1)
+        self.assertEqual(metrics["full_panel_num_untreated_test_slots"], 0)
+        self.assertEqual(metrics["full_panel_num_untreated_test_post_s_slots"], 0)
+        self.assertIsNone(metrics["full_panel_training_post_s_mean_magnetization_abs_diff"])
+        self.assertIsNone(metrics["full_panel_untreated_test_mean_magnetization_abs_diff"])
+        self.assertIsNone(
+            metrics["full_panel_untreated_test_post_s_mean_magnetization_abs_diff"]
+        )
+        self.assertAlmostEqual(
+            float(metrics["full_panel_all_observed_mean_magnetization"]),
+            float(np.mean(np.asarray(panel_context["x"], dtype=float))),
+            places=12,
+        )
+
     def test_validation_metric_utils_reports_magnetization_metrics(self) -> None:
         panel_context = {
             "x": np.asarray([[1.0, -1.0], [1.0, 1.0]], dtype=float),
@@ -10185,6 +10298,16 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             "post_s_test_mean_magnetization_abs_diff",
             "post_s_test_observed_mean_magnetization",
             "post_s_test_sampled_mean_magnetization_mean",
+            "full_panel_num_all_slots",
+            "full_panel_all_mean_magnetization_abs_diff",
+            "full_panel_num_test_slots",
+            "full_panel_test_mean_magnetization_abs_diff",
+            "full_panel_num_separator_slots",
+            "full_panel_separator_mean_magnetization_abs_diff",
+            "full_panel_num_treated_test_slots",
+            "full_panel_treated_test_mean_magnetization_abs_diff",
+            "full_panel_num_untreated_test_slots",
+            "full_panel_untreated_test_mean_magnetization_abs_diff",
         ):
             self.assertIn(key, payload)
         self.assertEqual(payload["experiment_path"], str(experiment_root.resolve()))
