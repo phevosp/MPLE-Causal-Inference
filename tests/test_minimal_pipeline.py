@@ -3253,7 +3253,7 @@ class FitReportingTests(unittest.TestCase):
 
 class PipelineStageRequestTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = REPO_ROOT / "experiments" / f".tmp_stage_requests_{uuid.uuid4().hex}"
+        self.root = REPO_ROOT / f".tsr_{uuid.uuid4().hex[:6]}"
         self.root.mkdir(parents=True, exist_ok=True)
 
     def tearDown(self) -> None:
@@ -4100,7 +4100,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "no_external_field_mask_grid",
+                    "name": "nefg",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
@@ -4116,7 +4116,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         manifest_rows = read_csv_manifest(manifest_path)
         self.assertEqual(len(manifest_rows), 1)
         self.assertEqual(manifest_rows[0]["status"], "completed")
-        self.assertEqual(manifest_rows[0]["search_slug"], "no_external_field_mask_grid")
+        self.assertEqual(manifest_rows[0]["search_slug"], "nefg")
 
         requests_path = cv_runner.cv_requests_path_for_spec(cv_spec_path)
         request_rows = read_csv_manifest(requests_path)
@@ -4127,7 +4127,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "cv_runs"
-            / "no_external_field_mask_grid"
+            / "nefg"
         )
         candidate_rows = read_csv_manifest(output_root / "candidate_grid.csv")
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
@@ -4137,7 +4137,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(len(candidate_rows), 2)
         self.assertEqual(len(fold_rows), 10)
         self.assertEqual(len(score_rows), 2)
-        self.assertEqual(str(best_candidate.search_slug), "no_external_field_mask_grid")
+        self.assertEqual(str(best_candidate.search_slug), "nefg")
         self.assertIn("weighted_mean_validation_brier_score", manifest_rows[0])
         self.assertIn("mean_fold_validation_brier_score", manifest_rows[0])
         self.assertIn("weighted_mean_validation_ece", manifest_rows[0])
@@ -4437,7 +4437,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "persist_progress_search",
+                    "name": "pps",
                     "optimizer_mode": "no_external_field",
                     "grid": {
                         "estimation": {
@@ -4474,7 +4474,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "cv_runs"
-            / "persist_progress_search"
+            / "pps"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         self.assertEqual(len(fold_rows), 1)
@@ -4491,7 +4491,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "resume_validation_search",
+                    "name": "rvs",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0]}},
                 }
@@ -4525,7 +4525,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "validation_runs"
-            / "resume_validation_search"
+            / "rvs"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         self.assertEqual(len(fold_rows), 1)
@@ -4540,7 +4540,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "resume_mismatch_search",
+                    "name": "rms",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0]}},
                 }
@@ -4559,7 +4559,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "validation_runs"
-            / "resume_mismatch_search"
+            / "rms"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         fit_root = Path(fold_rows[0]["fit_path"])
@@ -4584,7 +4584,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "resume_incomplete_search",
+                    "name": "ris",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0]}},
                 }
@@ -4603,7 +4603,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "validation_runs"
-            / "resume_incomplete_search"
+            / "ris"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         fit_root = Path(fold_rows[0]["fit_path"])
@@ -4636,7 +4636,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "no_external_field_mask_grid",
+                    "name": "nefg",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
@@ -4654,7 +4654,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "cv_runs"
-            / "no_external_field_mask_grid"
+            / "nefg"
         )
         original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         original_score_rows = read_csv_manifest(output_root / "candidate_scores.csv")
@@ -4757,7 +4757,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "refresh_corruption_search",
+                    "name": "rcs",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
@@ -4776,7 +4776,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "validation_runs"
-            / "refresh_corruption_search"
+            / "rcs"
         )
         original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         self.assertEqual(len(original_fold_rows), 2)
@@ -4810,7 +4810,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "no_external_field_mask_grid",
+                    "name": "nefg",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
@@ -4842,7 +4842,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "validation_runs"
-            / "no_external_field_mask_grid"
+            / "nefg"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         self.assertEqual(len(fold_rows), 2)
@@ -4858,7 +4858,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "no_external_field_mask_grid",
+                    "name": "nefg",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
@@ -4877,7 +4877,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "validation_runs"
-            / "no_external_field_mask_grid"
+            / "nefg"
         )
         original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         self.assertTrue(original_fold_rows)
@@ -5061,7 +5061,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "no_external_field_mask_grid",
+                    "name": "nefg",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
@@ -5079,7 +5079,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             / "generated"
             / "exp_a"
             / "cv_runs"
-            / "no_external_field_mask_grid"
+            / "nefg"
         )
         original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         original_score_rows = read_csv_manifest(output_root / "candidate_scores.csv")
@@ -5936,7 +5936,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "no_external_field_mask_grid",
+                    "name": "nefg",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
@@ -5966,7 +5966,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(len(log_lines), 2)
         self.assertIn("run_cv_job.sh", log_lines[0])
         self.assertIn("<exp_a>", log_lines[0])
-        self.assertIn("<no_external_field_mask_grid>", log_lines[0])
+        self.assertIn("<nefg>", log_lines[0])
         self.assertIn("--refresh_manifest", log_lines[1])
         self.assertIn("--execution_mode 'validation'", log_lines[1])
         self.assertEqual(result.stdout.strip(), "job2")
@@ -6011,7 +6011,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         cv_spec_path = self._write_cv_spec(
             [
                 {
-                    "name": "continue_mask_grid",
+                    "name": "cmg",
                     "optimizer_mode": "no_external_field",
                     "grid": {"optimizer": {"seed": [0]}},
                 }
