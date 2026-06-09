@@ -95,7 +95,7 @@ PY
 }
 
 # GEN_MANIFEST="${GEN_MANIFEST:-$(resolve_generation_manifest_path)}"
-# FIT_MANIFEST="${FIT_MANIFEST:-$(resolve_fit_manifest_path)}"
+FIT_MANIFEST="${FIT_MANIFEST:-$(resolve_fit_manifest_path)}"
 
 get_job_state() {
   local job_id="$1"
