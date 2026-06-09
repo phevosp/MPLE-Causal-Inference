@@ -34,7 +34,7 @@ done < <(
   pixi run python - <<'PY' "${TARGET_PAIRS_PATH}" "${POSTERIOR_PREDICTIVE_SPEC_PATH}"
 import csv
 import sys
-from pipeline_specs import expand_named_entries
+from utils.t6_pipeline_spec_utils import expand_named_entries
 
 target_pairs_path = sys.argv[1]
 spec_path = sys.argv[2]
