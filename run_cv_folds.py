@@ -12,11 +12,12 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.t0_config_utils import deep_merge_mappings
+from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping, to_plain_mapping
 from utils.t0_csv_utils import read_csv_rows, write_csv_rows
 from utils.t0_string_utils import slugify
 from utils.t1_matrix_io import save_loss_mask
 from utils.t0_path_utils import io_path
+from utils.t5_parameter_bundles import load_fit_parameter_bundle
 from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t6_pipeline_spec_utils import (
     expand_named_entries,
@@ -24,7 +25,11 @@ from utils.t6_pipeline_spec_utils import (
     validate_cv_spec,
     validate_fit_variant_dict,
 )
-from utils.t6_fit_materialization import execute_fit_root, materialize_fit_root
+from utils.t6_fit_materialization import (
+    build_fit_materialization_payloads,
+    execute_fit_root,
+    materialize_fit_root,
+)
 from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
@@ -95,6 +100,9 @@ WINNER_MAG_DIFF_MEAN_KEY = "mean_fold_post_s_validation_mean_magnetization_abs_d
 WINNER_MAG_DIFF_SE_KEY = "standard_error_fold_post_s_validation_mean_magnetization_abs_diff"
 WINNER_BRIER_MEAN_KEY = "mean_fold_post_s_validation_brier_score"
 WINNER_BRIER_SE_KEY = "standard_error_fold_post_s_validation_brier_score"
+FOLD_STATE_MISSING = "missing"
+FOLD_STATE_REUSE = "reuse"
+FOLD_STATE_RERUN = "rerun"
 
 
 def _normalize_execution_mode(execution_mode: str) -> str:
@@ -757,6 +765,159 @@ def _write_search_score_artifacts(
     )
 
 
+def _persist_fold_score_rows(
+    output_root: str | Path,
+    fold_rows: list[dict[str, object]],
+) -> None:
+    write_csv_rows(Path(output_root) / "fold_scores.csv", fold_rows)
+
+
+def _first_nested_mismatch(
+    expected: object,
+    observed: object,
+    *,
+    path: str = "",
+) -> tuple[str, object, object] | None:
+    if isinstance(expected, dict):
+        if not isinstance(observed, dict):
+            return path, expected, observed
+        for key, expected_value in expected.items():
+            key_path = f"{path}.{key}" if path else str(key)
+            if key not in observed:
+                return key_path, expected_value, "<missing>"
+            mismatch = _first_nested_mismatch(
+                expected_value,
+                observed[key],
+                path=key_path,
+            )
+            if mismatch is not None:
+                return mismatch
+        return None
+    if isinstance(expected, list):
+        if not isinstance(observed, list) or len(expected) != len(observed):
+            return path, expected, observed
+        for index, expected_value in enumerate(expected):
+            item_path = f"{path}[{index}]"
+            mismatch = _first_nested_mismatch(
+                expected_value,
+                observed[index],
+                path=item_path,
+            )
+            if mismatch is not None:
+                return mismatch
+        return None
+    if expected != observed:
+        return path, expected, observed
+    return None
+
+
+def _completed_fold_artifact_error(
+    fold_root: Path,
+    *,
+    experiment_root: Path,
+) -> str | None:
+    required_paths = [
+        fold_root / "fit_realized_config.yaml",
+        fold_root / "fit_metadata.yaml",
+        fold_root / "loss_mask.npy",
+        fold_root / "mple_summary.csv",
+    ]
+    for required_path in required_paths:
+        if not required_path.exists():
+            return f"missing required artifact {required_path.name}"
+    try:
+        load_yaml_mapping(fold_root / "fit_realized_config.yaml")
+        load_yaml_mapping(fold_root / "fit_metadata.yaml")
+        np.load(io_path(fold_root / "loss_mask.npy"), allow_pickle=False)
+        load_fit_parameter_bundle(fold_root, experiment_root)
+    except Exception as exc:  # noqa: BLE001
+        return f"unreadable completed-fold artifacts: {exc}"
+    return None
+
+
+def _expected_fold_materialization(
+    experiment_row: dict[str, str],
+    candidate: dict[str, Any],
+    *,
+    fold_root: Path,
+    mask_path: Path,
+    extra_metadata: dict[str, object],
+) -> tuple[dict[str, Any], dict[str, object]]:
+    fit_config, fit_metadata = build_fit_materialization_payloads(
+        experiment_row,
+        candidate,
+        extra_input_artifacts={"loss_mask_path": str(mask_path.resolve())},
+        extra_metadata=extra_metadata,
+    )
+    return to_plain_mapping(fit_config), fit_metadata
+
+
+def _resolved_existing_fold_action(
+    fold_root: Path,
+    *,
+    experiment_root: Path,
+    experiment_row: dict[str, str],
+    candidate: dict[str, Any],
+    training_loss_mask: np.ndarray,
+    extra_metadata: dict[str, object],
+    continue_mode: bool,
+) -> str:
+    if not fold_root.exists():
+        return FOLD_STATE_MISSING
+    if not continue_mode:
+        raise FileExistsError(
+            f"{fold_root} already exists. Re-run with --overwrite to rebuild it."
+        )
+
+    artifact_error = _completed_fold_artifact_error(
+        fold_root,
+        experiment_root=experiment_root,
+    )
+    if artifact_error is not None:
+        shutil.rmtree(fold_root)
+        return FOLD_STATE_RERUN
+
+    expected_config, expected_metadata = _expected_fold_materialization(
+        experiment_row,
+        candidate,
+        fold_root=fold_root,
+        mask_path=fold_root / "loss_mask.npy",
+        extra_metadata=extra_metadata,
+    )
+    observed_config = load_yaml_mapping(fold_root / "fit_realized_config.yaml")
+    observed_metadata = load_yaml_mapping(fold_root / "fit_metadata.yaml")
+    observed_mask = np.asarray(
+        np.load(io_path(fold_root / "loss_mask.npy"), allow_pickle=False),
+        dtype=bool,
+    )
+
+    config_mismatch = _first_nested_mismatch(expected_config, observed_config)
+    if config_mismatch is not None:
+        mismatch_path, expected_value, observed_value = config_mismatch
+        raise ValueError(
+            f"Completed fold {fold_root} does not match the requested run: "
+            f"config mismatch at '{mismatch_path}' "
+            f"(expected {expected_value!r}, found {observed_value!r})."
+        )
+    metadata_mismatch = _first_nested_mismatch(expected_metadata, observed_metadata)
+    if metadata_mismatch is not None:
+        mismatch_path, expected_value, observed_value = metadata_mismatch
+        raise ValueError(
+            f"Completed fold {fold_root} does not match the requested run: "
+            f"metadata mismatch at '{mismatch_path}' "
+            f"(expected {expected_value!r}, found {observed_value!r})."
+        )
+    if observed_mask.shape != training_loss_mask.shape or not np.array_equal(
+        observed_mask,
+        np.asarray(training_loss_mask, dtype=bool),
+    ):
+        raise ValueError(
+            f"Completed fold {fold_root} does not match the requested run: "
+            "loss_mask.npy differs from the expected training mask."
+        )
+    return FOLD_STATE_REUSE
+
+
 def _fit_metric_row(
     experiment_row: dict[str, str],
     search: dict[str, Any],
@@ -847,6 +1008,7 @@ def _run_search_for_experiment(
     execution_mode: str = EXECUTION_MODE_CV,
     num_folds: int | None = None,
     overwrite: bool = False,
+    continue_mode: bool = False,
 ) -> dict[str, object]:
     normalized_mode = _normalize_execution_mode(execution_mode)
     configured_num_folds = (
@@ -908,14 +1070,6 @@ def _run_search_for_experiment(
                 fold_id,
                 execution_mode=normalized_mode,
             )
-            if fold_root.exists():
-                if overwrite:
-                    shutil.rmtree(fold_root)
-                else:
-                    raise FileExistsError(
-                        f"{fold_root} already exists. Re-run with --overwrite to rebuild it."
-                    )
-            fold_root.mkdir(parents=True, exist_ok=False)
             training_loss_mask = np.asarray(training_masks[int(fold_id) - 1], dtype=bool)
             validation_loss_mask = np.asarray(validation_masks[int(fold_id) - 1], dtype=bool)
             separator_loss_mask = np.asarray(separator_masks[int(fold_id) - 1], dtype=bool)
@@ -933,7 +1087,7 @@ def _run_search_for_experiment(
                 raise ValueError(
                     f"Fold {fold_id} for {experiment_root} has empty training or validation support."
                 )
-            mask_path = save_loss_mask(fold_root / "loss_mask.npy", training_loss_mask)
+            mask_path = fold_root / "loss_mask.npy"
             extra_metadata = {
                 "execution_mode": normalized_mode,
                 "search_name": search["name"],
@@ -963,6 +1117,33 @@ def _run_search_for_experiment(
                 num_validation_slots=num_validation_slots,
                 num_post_s_validation_slots=num_post_s_validation_slots,
             )
+            if fold_root.exists():
+                if overwrite:
+                    shutil.rmtree(fold_root)
+                else:
+                    fold_state = _resolved_existing_fold_action(
+                        fold_root,
+                        experiment_root=experiment_root,
+                        experiment_row=experiment_row,
+                        candidate=candidate,
+                        training_loss_mask=training_loss_mask,
+                        extra_metadata=extra_metadata,
+                        continue_mode=continue_mode,
+                    )
+                    if fold_state == FOLD_STATE_REUSE:
+                        _evaluate_and_store_fold_metrics(
+                            row,
+                            fit_root=fold_root,
+                            experiment_root=experiment_root,
+                            training_loss_mask=training_loss_mask,
+                            validation_loss_mask=validation_loss_mask,
+                            validation_sampling=validation_sampling,
+                        )
+                        fold_rows.append(row)
+                        _persist_fold_score_rows(output_root, fold_rows)
+                        continue
+            fold_root.mkdir(parents=True, exist_ok=False)
+            save_loss_mask(mask_path, training_loss_mask)
             try:
                 materialize_fit_root(
                     experiment_row,
@@ -989,6 +1170,7 @@ def _run_search_for_experiment(
                     }
                 )
             fold_rows.append(row)
+            _persist_fold_score_rows(output_root, fold_rows)
     return _write_search_score_artifacts(
         experiment_row,
         search,
@@ -1006,6 +1188,7 @@ def run_cv_folds(
     *,
     execution_mode: str = EXECUTION_MODE_CV,
     overwrite: bool = False,
+    continue_mode: bool = False,
 ) -> Path:
     normalized_mode = _normalize_execution_mode(execution_mode)
     request_path = write_cv_requests(
@@ -1034,6 +1217,7 @@ def run_cv_folds(
                     search,
                     execution_mode=normalized_mode,
                     overwrite=overwrite,
+                    continue_mode=continue_mode,
                 )
             )
     manifest_path = model_selection_manifest_path_for_spec(
@@ -1055,6 +1239,7 @@ def run_cv_search_for_experiment_slug(
     execution_mode: str = EXECUTION_MODE_CV,
     num_folds: int | None = None,
     overwrite: bool = False,
+    continue_mode: bool = False,
 ) -> dict[str, object]:
     generation_rows = read_csv_rows(generation_manifest_path)
     experiment_row = next(
@@ -1075,6 +1260,7 @@ def run_cv_search_for_experiment_slug(
         execution_mode=execution_mode,
         num_folds=resolved_num_folds,
         overwrite=overwrite,
+        continue_mode=continue_mode,
     )
 
 
@@ -1339,6 +1525,7 @@ def main() -> None:
         choices=sorted(VALID_EXECUTION_MODES),
     )
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--continue", dest="continue_mode", action="store_true")
     parser.add_argument(
         "--dry_run",
         action="store_true",
@@ -1371,7 +1558,12 @@ def main() -> None:
 
     normalized_mode = _normalize_execution_mode(args.execution_mode)
 
+    if args.overwrite and args.continue_mode:
+        raise ValueError("--overwrite and --continue are mutually exclusive.")
+
     if args.refresh_scores:
+        if args.continue_mode:
+            raise ValueError("--continue cannot be used with --refresh_scores.")
         if not args.cv_requests_path:
             raise ValueError("--refresh_scores requires --cv_requests_path.")
         manifest_path = refresh_cv_scores_from_requests(
@@ -1382,6 +1574,8 @@ def main() -> None:
         return
 
     if args.refresh_manifest:
+        if args.continue_mode:
+            raise ValueError("--continue cannot be used with --refresh_manifest.")
         if not args.cv_requests_path:
             raise ValueError("--refresh_manifest requires --cv_requests_path.")
         manifest_path = collect_cv_manifest_from_requests(
@@ -1446,6 +1640,7 @@ def main() -> None:
             execution_mode=normalized_mode,
             num_folds=args.num_folds,
             overwrite=args.overwrite,
+            continue_mode=args.continue_mode,
         )
         return
 
@@ -1459,6 +1654,7 @@ def main() -> None:
         args.cv_spec_path,
         execution_mode=normalized_mode,
         overwrite=args.overwrite,
+        continue_mode=args.continue_mode,
     )
 
 

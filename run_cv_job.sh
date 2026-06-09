@@ -26,6 +26,7 @@ GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybri
 CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
 CV_NUM_FOLDS="${CV_NUM_FOLDS:-}"  # Optional override; uses CV spec default if not set
 CV_OVERWRITE="${CV_OVERWRITE:-false}"
+CV_CONTINUE="${CV_CONTINUE:-false}"
 EXECUTION_MODE="${EXECUTION_MODE:-cv}"
 
 EXPERIMENT_SLUG="${1:?missing experiment_slug}"
@@ -34,6 +35,11 @@ SEARCH_SLUG="${2:?missing search_slug}"
 OVERWRITE_FLAG=()
 if [[ "${CV_OVERWRITE}" == "true" ]]; then
   OVERWRITE_FLAG=(--overwrite)
+fi
+
+CONTINUE_FLAG=()
+if [[ "${CV_CONTINUE}" == "true" ]]; then
+  CONTINUE_FLAG=(--continue)
 fi
 
 NUM_FOLDS_FLAG=()
@@ -49,4 +55,5 @@ pixi run python -u run_cv_folds.py \
   --experiment_slug "${EXPERIMENT_SLUG}" \
   --search_slug "${SEARCH_SLUG}" \
   "${NUM_FOLDS_FLAG[@]}" \
+  "${CONTINUE_FLAG[@]}" \
   "${OVERWRITE_FLAG[@]}"

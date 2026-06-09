@@ -3433,6 +3433,48 @@ class PipelineStageRequestTests(unittest.TestCase):
         fake_sbatch_path.chmod(0o755)
         return fake_sbatch_path, fake_counter_path, fake_log_path
 
+    def _write_fake_pixi(self) -> tuple[Path, Path]:
+        fake_pixi_path = self.root / "pixi"
+        fake_log_path = self.root / "fake_pixi_log.txt"
+        fake_pixi_path.write_text(
+            "\n".join(
+                [
+                    "#!/bin/bash",
+                    "set -euo pipefail",
+                    'printf "%s\\n" "$*" >> "${FAKE_PIXI_LOG}"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fake_pixi_path.chmod(0o755)
+        return fake_pixi_path, fake_log_path
+
+    def _write_env_logging_sbatch(self) -> tuple[Path, Path, Path]:
+        fake_sbatch_path = self.root / "fake_sbatch_env.sh"
+        fake_counter_path = self.root / "fake_sbatch_env_counter.txt"
+        fake_log_path = self.root / "fake_sbatch_env_log.txt"
+        fake_sbatch_path.write_text(
+            "\n".join(
+                [
+                    "#!/bin/bash",
+                    "set -euo pipefail",
+                    'count="0"',
+                    'if [[ -f "${FAKE_SBATCH_COUNTER}" ]]; then',
+                    '  count="$(cat "${FAKE_SBATCH_COUNTER}")"',
+                    "fi",
+                    'count="$((count + 1))"',
+                    'printf "%s" "${count}" > "${FAKE_SBATCH_COUNTER}"',
+                    'printf "env:CV_CONTINUE=%s|" "${CV_CONTINUE:-}" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "<%s>" "$@" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "\\n" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "%s\\n" "job${count}"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fake_sbatch_path.chmod(0o755)
+        return fake_sbatch_path, fake_counter_path, fake_log_path
+
     @staticmethod
     def _deterministic_fake_pymetis():
         class FakePyMetis:
@@ -4060,11 +4102,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "no_external_field_mask_grid",
                     "optimizer_mode": "no_external_field",
-                    "grid": {
-                        "estimation": {
-                            "beta_mask_pre_s": [False, True],
-                        }
-                    },
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -4390,6 +4428,205 @@ class PipelineStageRequestTests(unittest.TestCase):
                     "",
                 )
 
+    def test_run_cv_folds_persists_fold_scores_before_interruption(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "persist_progress_search",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {
+                        "estimation": {
+                            "beta_mask_pre_s": [False],
+                        }
+                    },
+                }
+            ]
+        )
+
+        original_evaluator = cv_runner._evaluate_and_store_fold_metrics
+        call_count = {"value": 0}
+
+        def interrupting_evaluator(*args, **kwargs):
+            call_count["value"] += 1
+            if call_count["value"] == 2:
+                raise KeyboardInterrupt("simulated interruption")
+            return original_evaluator(*args, **kwargs)
+
+        with mock.patch.object(
+            cv_runner,
+            "_evaluate_and_store_fold_metrics",
+            side_effect=interrupting_evaluator,
+        ):
+            with self.assertRaisesRegex(KeyboardInterrupt, "simulated interruption"):
+                cv_runner.run_cv_folds(
+                    generation_manifest,
+                    cv_spec_path,
+                    overwrite=True,
+                )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "cv_runs"
+            / "persist_progress_search"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(len(fold_rows), 1)
+        self.assertEqual(fold_rows[0]["status"], "completed")
+        self.assertFalse((output_root / "candidate_scores.csv").exists())
+        self.assertFalse((output_root / "best_candidate.yaml").exists())
+
+    def test_run_cv_folds_continue_reuses_matching_completed_fold(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "resume_validation_search",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        with mock.patch.object(
+            cv_runner,
+            "execute_fit_root",
+            side_effect=AssertionError("should not refit matching completed fold"),
+        ):
+            manifest_path = cv_runner.run_cv_folds(
+                generation_manifest,
+                cv_spec_path,
+                execution_mode="validation",
+                continue_mode=True,
+            )
+
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(len(manifest_rows), 1)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "resume_validation_search"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(len(fold_rows), 1)
+        self.assertEqual(fold_rows[0]["status"], "completed")
+
+    def test_run_cv_folds_continue_errors_on_completed_fold_mismatch(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "resume_mismatch_search",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "resume_mismatch_search"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        fit_root = Path(fold_rows[0]["fit_path"])
+        metadata = load_yaml_mapping(fit_root / "fit_metadata.yaml")
+        metadata["search_slug"] = "mutated_search_slug"
+        OmegaConf.save(OmegaConf.create(metadata), fit_root / "fit_metadata.yaml")
+
+        with self.assertRaisesRegex(ValueError, "metadata mismatch"):
+            cv_runner.run_cv_folds(
+                generation_manifest,
+                cv_spec_path,
+                execution_mode="validation",
+                continue_mode=True,
+            )
+
+    def test_run_cv_folds_continue_reruns_incomplete_fold(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "resume_incomplete_search",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "resume_incomplete_search"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        fit_root = Path(fold_rows[0]["fit_path"])
+        (fit_root / "mple_summary.csv").unlink()
+
+        original_execute_fit_root = cv_runner.execute_fit_root
+        with mock.patch.object(
+            cv_runner,
+            "execute_fit_root",
+            wraps=original_execute_fit_root,
+        ) as execute_mock:
+            manifest_path = cv_runner.run_cv_folds(
+                generation_manifest,
+                cv_spec_path,
+                execution_mode="validation",
+                continue_mode=True,
+            )
+
+        self.assertEqual(execute_mock.call_count, 1)
+        self.assertTrue((fit_root / "mple_summary.csv").exists())
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+
     def test_refresh_cv_scores_from_requests_rebuilds_score_artifacts(self) -> None:
         generation_spec_path = self._write_generation_spec(
             [{"name": "exp_a", "dimensions": {"T": 9}}]
@@ -4401,11 +4638,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "no_external_field_mask_grid",
                     "optimizer_mode": "no_external_field",
-                    "grid": {
-                        "estimation": {
-                            "beta_mask_pre_s": [False, True],
-                        }
-                    },
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -4513,6 +4746,61 @@ class PipelineStageRequestTests(unittest.TestCase):
                 baseline["post_s_validation_sampled_mean_magnetization_mean"],
             )
 
+    def test_refresh_cv_scores_rebuilds_fold_scores_from_corrupted_intermediate_csv(
+        self,
+    ) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "refresh_corruption_search",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0, 1]}},
+                }
+            ]
+        )
+
+        manifest_path = cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+        requests_path = cv_runner.validation_requests_path_for_spec(cv_spec_path)
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "refresh_corruption_search"
+        )
+        original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(len(original_fold_rows), 2)
+
+        write_csv_rows(output_root / "fold_scores.csv", [original_fold_rows[0]])
+        refreshed_manifest_path = cv_runner.refresh_cv_scores_from_requests(
+            requests_path,
+            execution_mode="validation",
+        )
+
+        self.assertEqual(Path(refreshed_manifest_path), Path(manifest_path))
+        refreshed_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(len(refreshed_fold_rows), len(original_fold_rows))
+        self.assertEqual(
+            {
+                (row["candidate_slug"], row["cv_fold_id"])
+                for row in refreshed_fold_rows
+            },
+            {
+                (row["candidate_slug"], row["cv_fold_id"])
+                for row in original_fold_rows
+            },
+        )
+
     def test_validation_mode_runs_only_fold_one_and_writes_validation_manifest(self) -> None:
         generation_spec_path = self._write_generation_spec(
             [{"name": "exp_a", "dimensions": {"T": 9}}]
@@ -4524,11 +4812,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "no_external_field_mask_grid",
                     "optimizer_mode": "no_external_field",
-                    "grid": {
-                        "estimation": {
-                            "beta_mask_pre_s": [False, True],
-                        }
-                    },
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -4576,11 +4860,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "no_external_field_mask_grid",
                     "optimizer_mode": "no_external_field",
-                    "grid": {
-                        "estimation": {
-                            "beta_mask_pre_s": [False, True],
-                        }
-                    },
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -4662,11 +4942,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                     "test_fold_id": 1,
                     "num_folds": 3,
                     "optimizer_mode": "no_external_field",
-                    "grid": {
-                        "estimation": {
-                            "beta_mask_pre_s": [False, True],
-                        }
-                    },
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -4746,11 +5022,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                     "test_fold_id": 1,
                     "num_folds": 3,
                     "optimizer_mode": "no_external_field",
-                    "grid": {
-                        "estimation": {
-                            "beta_mask_pre_s": [False, True],
-                        }
-                    },
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -4791,11 +5063,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "no_external_field_mask_grid",
                     "optimizer_mode": "no_external_field",
-                    "grid": {
-                        "estimation": {
-                            "beta_mask_pre_s": [False, True],
-                        }
-                    },
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -5670,7 +5938,7 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "no_external_field_mask_grid",
                     "optimizer_mode": "no_external_field",
-                    "grid": {"lambda_uv_ridge": [0.0, 0.1]},
+                    "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
         )
@@ -5701,6 +5969,80 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("<no_external_field_mask_grid>", log_lines[0])
         self.assertIn("--refresh_manifest", log_lines[1])
         self.assertIn("--execution_mode 'validation'", log_lines[1])
+        self.assertEqual(result.stdout.strip(), "job2")
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell worker test")
+    def test_run_cv_job_forwards_continue_flag(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        _, fake_pixi_log_path = self._write_fake_pixi()
+
+        subprocess.run(
+            [bash_path, "run_cv_job.sh", "exp_a", "search_a"],
+            check=True,
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "PATH": f"{self.root}{os.pathsep}{os.environ.get('PATH', '')}",
+                "FAKE_PIXI_LOG": str(fake_pixi_log_path),
+                "CV_CONTINUE": "true",
+                "SLURM_JOB_ID": "123",
+                "SLURM_JOB_NAME": "cv",
+            },
+        )
+
+        log_lines = fake_pixi_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 1)
+        self.assertIn("run_cv_folds.py", log_lines[0])
+        self.assertIn("--continue", log_lines[0])
+        self.assertIn("--run_request", log_lines[0])
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
+    def test_submit_cv_jobs_propagates_continue_flag(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "continue_mask_grid",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+        fake_sbatch_path, fake_counter_path, fake_log_path = self._write_env_logging_sbatch()
+
+        result = subprocess.run(
+            [bash_path, "submit_cv_jobs.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "GENERATION_MANIFEST_PATH": str(generation_manifest),
+                "CV_SPEC_PATH": str(cv_spec_path),
+                "CV_CONTINUE": "true",
+                "EXECUTION_MODE": "validation",
+                "SBATCH_BIN": str(fake_sbatch_path),
+                "WORKER_SCRIPT": "run_cv_job.sh",
+                "FAKE_SBATCH_COUNTER": str(fake_counter_path),
+                "FAKE_SBATCH_LOG": str(fake_log_path),
+            },
+        )
+
+        log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 2)
+        self.assertIn("env:CV_CONTINUE=true", log_lines[0])
+        self.assertIn("run_cv_job.sh", log_lines[0])
+        self.assertIn("--refresh_manifest", log_lines[1])
         self.assertEqual(result.stdout.strip(), "job2")
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell orchestration test")

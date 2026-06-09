@@ -102,16 +102,14 @@ def _fit_input_artifacts(
     return artifacts
 
 
-def materialize_fit_root(
+def build_fit_materialization_payloads(
     experiment_row: dict[str, str],
     variant: dict[str, Any],
-    fit_root: str | Path,
     *,
     extra_input_artifacts: dict[str, object] | None = None,
     extra_metadata: dict[str, object] | None = None,
-) -> tuple[Path, object, dict[str, object]]:
+) -> tuple[object, dict[str, object]]:
     experiment_root = Path(experiment_row["experiment_path"])
-    fit_root_path = Path(fit_root)
     dims = infer_panel_dimensions(experiment_root)
     fit_config = build_fit_config(variant, dims)
     fit_config.input_artifacts = OmegaConf.create(
@@ -120,7 +118,6 @@ def materialize_fit_root(
             extra_input_artifacts=extra_input_artifacts,
         )
     )
-    config_path = fit_root_path / "fit_realized_config.yaml"
     fixed_scalar_params = OmegaConf.to_container(
         fit_config.estimation_params.fixed_scalar_params, resolve=True
     )
@@ -153,6 +150,25 @@ def materialize_fit_root(
     }
     if extra_metadata:
         fit_metadata.update(extra_metadata)
+    return fit_config, fit_metadata
+
+
+def materialize_fit_root(
+    experiment_row: dict[str, str],
+    variant: dict[str, Any],
+    fit_root: str | Path,
+    *,
+    extra_input_artifacts: dict[str, object] | None = None,
+    extra_metadata: dict[str, object] | None = None,
+) -> tuple[Path, object, dict[str, object]]:
+    fit_root_path = Path(fit_root)
+    fit_config, fit_metadata = build_fit_materialization_payloads(
+        experiment_row,
+        variant,
+        extra_input_artifacts=extra_input_artifacts,
+        extra_metadata=extra_metadata,
+    )
+    config_path = fit_root_path / "fit_realized_config.yaml"
     OmegaConf.save(fit_config, io_path(config_path))
     OmegaConf.save(
         OmegaConf.create(fit_metadata),
