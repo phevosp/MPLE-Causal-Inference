@@ -1,0 +1,50 @@
+experiment_root: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridExperiments_r5_c1_v2/r5_c1_hybrid_us_county_intervention_uscounty_graph_kernel_confounding
+num_folds: 7
+seed: 0
+partitioner: pymetis
+pymetis_seed_supported: false
+requested_seed: 0
+runtime_seconds: 0.0036097210831940174
+gamma_artifact_kind: sparse_npz
+gamma_validation:
+  passed: true
+  tolerance: 1.0e-12
+  max_symmetry_violation: 0.0
+  max_abs_diagonal: 0.0
+graph_preprocessing:
+  support_threshold: 1.0e-12
+  interpreted_as_unweighted_support_graph: true
+  symmetry_enforced_via_validation_only: true
+  zero_diagonal_enforced_via_validation_only: true
+metis:
+  mode: kway
+  contiguous: false
+  reported_cutcount: 494
+metrics:
+  num_vertices: 3014
+  num_edges: 13073
+  partition_sizes:
+  - 439
+  - 431
+  - 443
+  - 430
+  - 428
+  - 419
+  - 424
+  cut_edge_count: 494
+  separator_sizes:
+  - 39
+  - 62
+  - 82
+  - 56
+  - 104
+  - 29
+  - 60
+  separator_union_vertex_count: 416
+  separator_union_vertex_fraction: 0.13802256138022562
+  total_separator_memberships: 432
+  partition_size_mean: 430.57142857142856
+  partition_size_min: 419
+  partition_size_max: 443
+  partition_size_std: 7.650530193711933
+  max_relative_deviation_from_mean: 0.028865295288652993
