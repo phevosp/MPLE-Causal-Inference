@@ -1,0 +1,25 @@
+variant_name: alternating_rank_3_uv_5_e2_xi_zero
+variant_slug: alternating_rank_3_uv_5_e2_xi_zero
+fits_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/REVISIONS/synth/fits_spec.yaml
+experiment_name: confounding_strong_1
+experiment_slug: confounding_strong_1
+descriptor: confounding_strong_1
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_1
+intervention_source: generated
+graph_source: generated
+field_mode: confounded_low_rank
+model_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_1
+truth_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_1
+panel_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_1/panel_data.npz
+x0_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_1/x_0.npy
+latent_rank: 3
+optimizer_mode: alternating_latent_rank
+lambda_nuclear: 0.0
+lambda_frobenius: 0.0
+lambda_uv_ridge: 0.05
+fixed_scalar_params:
+  xi: 0.0
+'N': 500
+T: 50
+s: 0
+e: 11
