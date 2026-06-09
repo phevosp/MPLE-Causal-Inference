@@ -1,0 +1,45 @@
+2026-06-08 19:16:31 | INFO | Loading data...
+2026-06-08 19:16:31 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding/panel_data.npz
+2026-06-08 19:16:31 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding/x_0.npy
+2026-06-08 19:16:31 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding/cv_runs/default_test_train/candidates/default_test_train_candidate_0003/fold_6/fit_realized_config.yaml
+2026-06-08 19:16:31 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding
+2026-06-08 19:16:31 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding
+2026-06-08 19:16:31 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding/cv_runs/default_test_train/candidates/default_test_train_candidate_0003/fold_6/loss_mask.npy
+2026-06-08 19:16:31 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-06-08 19:16:31 | INFO | Configured latent rank: 5
+2026-06-08 19:16:31 | INFO | Using a fixed known graph with scalar xi.
+2026-06-08 19:16:31 | INFO | Fit-time hard bounds active: False
+2026-06-08 19:16:31 | INFO | Fixed scalar parameters: {}
+2026-06-08 19:16:31 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-06-08 19:16:31 | INFO | Beta mask before s: True with s=50
+2026-06-08 19:16:31 | INFO | Beta mask after e: True with e=115
+2026-06-08 19:16:31 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-06-08 19:16:31 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.01, v_column_l2_max=1.0, proximal_lr=1.0
+2026-06-08 19:16:31 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.780567 | initial_penalized=0.780568
+2026-06-08 19:16:31 | INFO | Alternating low-rank iter 0 | Loss: 0.603127 | Penalized: 0.603927
+2026-06-08 19:16:48 | INFO | Alternating low-rank iter 100 | Loss: 0.531886 | Penalized: 0.536431
+2026-06-08 19:17:02 | INFO | Alternating low-rank iter 200 | Loss: 0.531038 | Penalized: 0.535977
+2026-06-08 19:17:07 | INFO | Done fitting.
+2026-06-08 19:17:07 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-06-08 19:17:07 | INFO | Best optimizer start: 1 / 1
+2026-06-08 19:17:07 | INFO | Final Loss: 0.531020
+2026-06-08 19:17:07 | INFO | Estimated vs True Parameters:
+2026-06-08 19:17:07 | INFO |   beta: -0.1395 (True: -0.3000) | SQE: 0.025747
+2026-06-08 19:17:07 | INFO |   xi: 0.9167 (True: 0.8000) | SQE: 0.013618
+2026-06-08 19:17:07 | INFO |   eta: 0.3086 (True: 0.3000) | SQE: 0.000074
+2026-06-08 19:17:07 | INFO | Alternating low-rank optimizer diagnostics:
+2026-06-08 19:17:07 | INFO |   penalized_objective: 0.535969
+2026-06-08 19:17:07 | INFO |   mple_loss_without_penalty: 0.531020
+2026-06-08 19:17:07 | INFO |   lambda_uv_ridge: 0.010000
+2026-06-08 19:17:07 | INFO |   u_frobenius_norm: 337.719143
+2026-06-08 19:17:07 | INFO |   v_frobenius_norm: 2.236068
+2026-06-08 19:17:07 | INFO |   effective_rank: 5.000000
+2026-06-08 19:17:07 | INFO | Field and interaction diagnostics:
+2026-06-08 19:17:07 | INFO |   field_rmse: 0.493974
+2026-06-08 19:17:07 | INFO |   interaction_fro_error: 1.291138
+2026-06-08 19:17:07 | INFO |   estimated_field_max_abs_entry: 9.909331
+2026-06-08 19:17:07 | INFO |   estimated_field_rank: 5.000000
+2026-06-08 19:17:07 | INFO |   true_field_max_abs_entry: 2.360404
+2026-06-08 19:17:07 | INFO |   true_field_rank: 5.000000
+2026-06-08 19:17:08 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding/cv_runs/default_test_train/candidates/default_test_train_candidate_0003/fold_6/mple_summary.csv
+2026-06-08 19:17:08 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding/cv_runs/default_test_train/candidates/default_test_train_candidate_0003/fold_6/mple.log

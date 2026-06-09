@@ -1,0 +1,17 @@
+category,name,estimate,true,squared_error
+scalar,beta,-0.194029025680018,-0.3,0.011229847398326281
+scalar,xi,0.5182396220943964,0.8,0.07938891055750855
+scalar,eta,0.24224167653815867,0.3,0.003336023929122689
+metric,final_loss,0.5770706357929013,,
+metric,field_rmse,0.6547082513858397,,
+metric,interaction_fro_error,0.998204306036163,,
+metric,penalized_objective,0.610859984874405,,
+metric,mple_loss_without_penalty,0.5770706357929013,,
+metric,lambda_uv_ridge,0.5,,
+metric,u_frobenius_norm,24.56524449939035,,
+metric,v_frobenius_norm,1.7320508075688772,,
+metric,effective_rank,3.0,,
+latent_diagnostic,estimated_field_max_abs_entry,0.9271226861844715,,
+latent_diagnostic,estimated_field_rank,3.0,3.0,
+latent_diagnostic,true_field_max_abs_entry,4.4476018330732865,,
+latent_diagnostic,true_field_rank,3.0,,
