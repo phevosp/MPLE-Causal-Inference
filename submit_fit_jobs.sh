@@ -66,30 +66,18 @@ else
     echo "CV_SPEC_PATH is required when FIT_MODE=outer_masked." >&2
     exit 1
   fi
-  if [[ -z "${SEARCH_SLUG}" ]]; then
-    echo "SEARCH_SLUG is required when FIT_MODE=outer_masked." >&2
-    exit 1
+  search_args=()
+  if [[ -n "${SEARCH_SLUG}" ]]; then
+    search_args+=(--search_slug "${SEARCH_SLUG}")
   fi
 
   pixi run python -u run_fit_pipeline.py \
     --fit_mode outer_masked \
     --manifest_path "${GENERATION_MANIFEST_PATH}" \
     --cv_spec_path "${CV_SPEC_PATH}" \
-    --search_slug "${SEARCH_SLUG}" \
+    "${search_args[@]}" \
     "${split_args[@]}" \
     --write_requests >/dev/null
-
-  REQUESTS_PATH="$(
-    pixi run python - <<'PY' "${GENERATION_MANIFEST_PATH}" "${SEARCH_SLUG}"
-import sys
-from pathlib import Path
-
-print(
-    Path(sys.argv[1]).resolve().parent
-    / f"train_fit_requests__{str(sys.argv[2]).strip()}.csv"
-)
-PY
-  )"
 fi
 
 job_ids=()
@@ -164,36 +152,51 @@ else
     )"
     job_ids+=("${submit_output%%;*}")
   done < <(
-    pixi run python - <<'PY' "${REQUESTS_PATH}"
-import csv
+    pixi run python - <<'PY' "${GENERATION_MANIFEST_PATH}" "${CV_SPEC_PATH}" "${SEARCH_SLUG}" "${SPLIT_KIND}" "${NUM_FOLDS}" "${OUTER_NUM_FOLDS}" "${TEST_FOLD_ID}"
 import sys
+from run_fit_pipeline import collect_train_fit_request_rows
 
-with open(sys.argv[1], "r", encoding="utf-8", newline="") as handle:
-    for row in csv.DictReader(handle):
-        fields = [
-            row.get("generation_manifest_path", "").strip(),
-            row.get("cv_spec_path", "").strip(),
-            row.get("search_name", "").strip(),
-            row.get("search_slug", "").strip(),
-            row.get("split_kind", "").strip(),
-            row.get("num_folds", "").strip(),
-        ]
-        if "outer_num_folds" in row:
-            fields.append(row.get("outer_num_folds", "").strip())
-        else:
-            fields.append("")
-        if "test_fold_id" in row:
-            fields.append(row.get("test_fold_id", "").strip())
-        else:
-            fields.append("")
-        fields.extend([
-            row.get("experiment_name", "").strip(),
-            row.get("experiment_slug", "").strip(),
-            row.get("variant_name", "").strip(),
-            row.get("variant_slug", "").strip(),
-            row.get("fit_path", "").strip(),
-        ])
-        print("\x1f".join(fields))
+manifest_path, cv_spec_path, search_slug, split_kind, num_folds, outer_num_folds, test_fold_id = sys.argv[1:]
+kwargs = {}
+if split_kind.strip():
+    kwargs["split_kind"] = split_kind.strip()
+if num_folds.strip():
+    kwargs["num_folds"] = int(num_folds)
+if outer_num_folds.strip():
+    kwargs["outer_num_folds"] = int(outer_num_folds)
+if test_fold_id.strip():
+    kwargs["test_fold_id"] = int(test_fold_id)
+
+for row in collect_train_fit_request_rows(
+    manifest_path,
+    cv_spec_path,
+    search_slug.strip() or None,
+    **kwargs,
+):
+    fields = [
+        row.get("generation_manifest_path", "").strip(),
+        row.get("cv_spec_path", "").strip(),
+        row.get("search_name", "").strip(),
+        row.get("search_slug", "").strip(),
+        row.get("split_kind", "").strip(),
+        row.get("num_folds", "").strip(),
+    ]
+    if "outer_num_folds" in row:
+        fields.append(row.get("outer_num_folds", "").strip())
+    else:
+        fields.append("")
+    if "test_fold_id" in row:
+        fields.append(row.get("test_fold_id", "").strip())
+    else:
+        fields.append("")
+    fields.extend([
+        row.get("experiment_name", "").strip(),
+        row.get("experiment_slug", "").strip(),
+        row.get("variant_name", "").strip(),
+        row.get("variant_slug", "").strip(),
+        row.get("fit_path", "").strip(),
+    ])
+    print("\x1f".join(fields))
 PY
   )
 fi
@@ -222,7 +225,10 @@ if [[ "${FIT_MODE}" == "standard" ]]; then
       --wrap "pixi run python -u run_fit_pipeline.py --manifest_path '${GENERATION_MANIFEST_PATH}' --fits_spec_path '${FITS_SPEC_PATH}' --refresh_manifest"
   )"
 else
-  refresh_cmd="pixi run python -u run_fit_pipeline.py --fit_mode outer_masked --manifest_path '${GENERATION_MANIFEST_PATH}' --cv_spec_path '${CV_SPEC_PATH}' --search_slug '${SEARCH_SLUG}'"
+  refresh_cmd="pixi run python -u run_fit_pipeline.py --fit_mode outer_masked --manifest_path '${GENERATION_MANIFEST_PATH}' --cv_spec_path '${CV_SPEC_PATH}'"
+  if [[ -n "${SEARCH_SLUG}" ]]; then
+    refresh_cmd="${refresh_cmd} --search_slug '${SEARCH_SLUG}'"
+  fi
   if [[ -n "${SPLIT_KIND}" ]]; then
     refresh_cmd="${refresh_cmd} --split_kind '${SPLIT_KIND}'"
   fi

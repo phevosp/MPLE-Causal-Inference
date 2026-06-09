@@ -1,4 +1,4 @@
-"""Evaluate held-out test-set metrics for a saved fit root."""
+"""Evaluate held-out test-set metrics for saved fits listed in a fit manifest."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any
 from omegaconf import OmegaConf
 
 from utils.t0_config_utils import load_yaml_mapping
+from utils.t0_csv_utils import read_csv_rows
 from utils.t0_path_utils import io_path, path_exists
 from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
@@ -26,13 +27,9 @@ from utils.t7_validation_metrics import (
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate held-out test-set metrics for a saved fit root."
+        description="Evaluate held-out test-set metrics for every eligible fit in a fit manifest."
     )
-    parser.add_argument("--fit_path", required=True, type=str)
-    parser.add_argument("--experiment_path", type=str, default=None)
-    parser.add_argument("--outer_num_folds", type=int, default=None)
-    parser.add_argument("--test_fold_id", type=int, default=None)
-    parser.add_argument("--inner_num_folds", type=int, default=None)
+    parser.add_argument("--fit_manifest_path", required=True, type=str)
     parser.add_argument(
         "--num_samples",
         type=int,
@@ -48,7 +45,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=int(DEFAULT_VALIDATION_SAMPLING["seed"]),
     )
-    parser.add_argument("--output_path", type=str, default=None)
     return parser.parse_args(argv)
 
 
@@ -56,26 +52,9 @@ def _load_fit_metadata(fit_root: str | Path) -> dict[str, Any]:
     metadata_path = Path(fit_root) / "fit_metadata.yaml"
     if not path_exists(metadata_path):
         raise FileNotFoundError(
-            f"Could not infer experiment_path because {metadata_path} does not exist."
+            f"Could not infer fit metadata because {metadata_path} does not exist."
         )
     return load_yaml_mapping(metadata_path)
-
-
-def _resolve_experiment_path(
-    fit_root: str | Path,
-    experiment_path: str | Path | None,
-    *,
-    metadata: dict[str, Any] | None = None,
-) -> Path:
-    if experiment_path not in (None, ""):
-        return Path(str(experiment_path)).resolve()
-    resolved_metadata = metadata if metadata is not None else _load_fit_metadata(fit_root)
-    resolved = str(resolved_metadata.get("experiment_path", "")).strip()
-    if not resolved:
-        raise ValueError(
-            f"fit_metadata.yaml under {fit_root} does not contain experiment_path."
-        )
-    return Path(resolved).resolve()
 
 
 def _optional_int(mapping: dict[str, Any], key: str) -> int | None:
@@ -85,31 +64,49 @@ def _optional_int(mapping: dict[str, Any], key: str) -> int | None:
     return int(value)
 
 
-def _resolve_split_settings(
-    fit_root: str | Path,
-    *,
+def _resolved_split_kind(
+    manifest_row: dict[str, str],
     metadata: dict[str, Any],
-    outer_num_folds: int | None,
-    test_fold_id: int | None,
-    inner_num_folds: int | None,
-) -> dict[str, int]:
-    execution_mode = str(metadata.get("execution_mode", "")).strip().lower()
-    split_kind = str(metadata.get("split_kind", "")).strip().lower()
-    resolved_outer_num_folds = (
-        int(outer_num_folds) if outer_num_folds is not None else None
-    )
-    resolved_test_fold_id = int(test_fold_id) if test_fold_id is not None else None
-    resolved_inner_num_folds = (
-        int(inner_num_folds) if inner_num_folds is not None else None
-    )
+) -> str:
+    split_kind = str(
+        manifest_row.get("split_kind", metadata.get("split_kind", ""))
+    ).strip().lower()
+    if not split_kind:
+        raise ValueError(
+            "Could not infer split_kind from the fit manifest row or fit metadata."
+        )
+    return split_kind
 
-    if execution_mode == "train_fit" and split_kind == "test_train_cv":
-        if resolved_outer_num_folds is None:
-            resolved_outer_num_folds = _optional_int(metadata, "outer_num_folds")
-        if resolved_test_fold_id is None:
-            resolved_test_fold_id = _optional_int(metadata, "test_fold_id")
-        if resolved_inner_num_folds is None:
-            resolved_inner_num_folds = _optional_int(metadata, "num_folds")
+
+def _resolve_experiment_path(
+    manifest_row: dict[str, str],
+    metadata: dict[str, Any],
+    *,
+    fit_root: str | Path,
+) -> Path:
+    resolved = str(
+        manifest_row.get("experiment_path", metadata.get("experiment_path", ""))
+    ).strip()
+    if not resolved:
+        raise ValueError(
+            f"Could not infer experiment_path for fit {fit_root} from the manifest row or fit metadata."
+        )
+    return Path(resolved).resolve()
+
+
+def _resolve_split_settings(
+    manifest_row: dict[str, str],
+    metadata: dict[str, Any],
+) -> dict[str, int]:
+    resolved_outer_num_folds = _optional_int(manifest_row, "outer_num_folds")
+    if resolved_outer_num_folds is None:
+        resolved_outer_num_folds = _optional_int(metadata, "outer_num_folds")
+    resolved_test_fold_id = _optional_int(manifest_row, "test_fold_id")
+    if resolved_test_fold_id is None:
+        resolved_test_fold_id = _optional_int(metadata, "test_fold_id")
+    resolved_inner_num_folds = _optional_int(manifest_row, "num_folds")
+    if resolved_inner_num_folds is None:
+        resolved_inner_num_folds = _optional_int(metadata, "num_folds")
 
     if resolved_outer_num_folds is None:
         resolved_outer_num_folds = int(DEFAULT_OUTER_NUM_FOLDS)
@@ -139,30 +136,28 @@ def _default_output_path(
     )
 
 
-def run_test_evaluation(
-    fit_path: str | Path,
+def _evaluate_manifest_row(
+    manifest_row: dict[str, str],
     *,
-    experiment_path: str | Path | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-    inner_num_folds: int | None = None,
     sampling: dict[str, Any] | None = None,
-    output_path: str | Path | None = None,
 ) -> Path:
+    fit_path = str(manifest_row.get("fit_path", "")).strip()
+    if not fit_path:
+        raise ValueError("Fit manifest row is missing fit_path.")
     fit_root = Path(fit_path).resolve()
     fit_metadata = _load_fit_metadata(fit_root)
+    split_kind = _resolved_split_kind(manifest_row, fit_metadata)
+    if split_kind != "test_train_cv":
+        raise ValueError(
+            f"Fit {fit_root} is not eligible for held-out test evaluation because split_kind={split_kind!r}."
+        )
+
     resolved_experiment_root = _resolve_experiment_path(
-        fit_root,
-        experiment_path,
-        metadata=fit_metadata,
+        manifest_row,
+        fit_metadata,
+        fit_root=fit_root,
     )
-    split_settings = _resolve_split_settings(
-        fit_root,
-        metadata=fit_metadata,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-        inner_num_folds=inner_num_folds,
-    )
+    split_settings = _resolve_split_settings(manifest_row, fit_metadata)
     resolved_sampling = resolve_validation_sampling(sampling)
     split_artifacts = load_outer_test_split_masks(
         resolved_experiment_root,
@@ -177,14 +172,10 @@ def run_test_evaluation(
         test_loss_mask=split_artifacts["test_mask"],
         sampling=resolved_sampling,
     )
-    report_path = (
-        Path(output_path).resolve()
-        if output_path not in (None, "")
-        else _default_output_path(
-            fit_root,
-            test_fold_id=int(split_settings["test_fold_id"]),
-            inner_num_folds=int(split_settings["inner_num_folds"]),
-        )
+    report_path = _default_output_path(
+        fit_root,
+        test_fold_id=int(split_settings["test_fold_id"]),
+        inner_num_folds=int(split_settings["inner_num_folds"]),
     )
     payload = {
         "fit_path": str(fit_root),
@@ -204,22 +195,60 @@ def run_test_evaluation(
     return report_path
 
 
+def run_test_evaluation(
+    fit_manifest_path: str | Path,
+    *,
+    sampling: dict[str, Any] | None = None,
+) -> dict[str, object]:
+    manifest_rows = read_csv_rows(fit_manifest_path)
+    if not manifest_rows:
+        raise ValueError(f"No rows found in fit manifest {fit_manifest_path}.")
+
+    evaluated_report_paths: list[str] = []
+    skipped_rows: list[dict[str, str]] = []
+    for manifest_row in manifest_rows:
+        fit_path = str(manifest_row.get("fit_path", "")).strip()
+        if not fit_path:
+            raise ValueError("Fit manifest row is missing fit_path.")
+        fit_root = Path(fit_path).resolve()
+        fit_metadata = _load_fit_metadata(fit_root)
+        split_kind = _resolved_split_kind(manifest_row, fit_metadata)
+        if split_kind != "test_train_cv":
+            skipped_rows.append(
+                {
+                    "fit_path": str(fit_root),
+                    "split_kind": str(split_kind),
+                    "reason": "split_kind is not test_train_cv",
+                }
+            )
+            continue
+        report_path = _evaluate_manifest_row(manifest_row, sampling=sampling)
+        evaluated_report_paths.append(str(report_path))
+
+    return {
+        "fit_manifest_path": str(Path(fit_manifest_path).resolve()),
+        "evaluated_report_paths": evaluated_report_paths,
+        "num_evaluated_rows": int(len(evaluated_report_paths)),
+        "skipped_rows": skipped_rows,
+        "num_skipped_rows": int(len(skipped_rows)),
+    }
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    report_path = run_test_evaluation(
-        args.fit_path,
-        experiment_path=args.experiment_path,
-        outer_num_folds=args.outer_num_folds,
-        test_fold_id=args.test_fold_id,
-        inner_num_folds=args.inner_num_folds,
+    results = run_test_evaluation(
+        args.fit_manifest_path,
         sampling={
             "num_samples": int(args.num_samples),
             "gibbs_sweeps": int(args.gibbs_sweeps),
             "seed": int(args.seed),
         },
-        output_path=args.output_path,
     )
-    print(f"Test metrics report: {report_path}")
+    for report_path in results["evaluated_report_paths"]:
+        print(f"Test metrics report: {report_path}")
+    print(
+        f"Evaluated {results['num_evaluated_rows']} fit(s); skipped {results['num_skipped_rows']} ineligible row(s)."
+    )
 
 
 if __name__ == "__main__":

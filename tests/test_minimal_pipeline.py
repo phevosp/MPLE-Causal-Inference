@@ -3234,6 +3234,11 @@ class PipelineStageRequestTests(unittest.TestCase):
         OmegaConf.save(OmegaConf.create(spec), cv_spec_path)
         return cv_spec_path
 
+    def _write_fit_manifest_rows(self, rows: list[dict[str, object]]) -> Path:
+        manifest_path = self.root / "fit_manifest.csv"
+        write_csv_rows(manifest_path, rows)
+        return manifest_path
+
     def _write_fake_sbatch(self) -> tuple[Path, Path, Path]:
         fake_sbatch_path = self.root / "fake_sbatch.sh"
         fake_counter_path = self.root / "fake_sbatch_counter.txt"
@@ -3710,6 +3715,48 @@ class PipelineStageRequestTests(unittest.TestCase):
         )
         self.assertTrue(
             (self.root / "generated" / "best_train_fit_by_experiment__mask_grid.csv").exists()
+        )
+
+    def test_refresh_train_fit_manifest_without_search_slug_combines_all_searches(self) -> None:
+        generation_spec_path = self._write_generation_spec([{"name": "exp_a", "dimensions": {"T": 9}}])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest, overwrite=True)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {"name": "mask_grid", "grid": {"estimation": {"beta_mask_pre_s": [False]}}},
+                {"name": "mask_grid_alt", "grid": {"estimation": {"beta_mask_pre_s": [True]}}},
+            ]
+        )
+        cv_runner.run_cv_folds(generation_manifest, cv_spec_path, overwrite=True)
+        run_train_fit_request(
+            generation_manifest,
+            cv_spec_path,
+            "mask_grid",
+            "exp_a",
+            overwrite=True,
+        )
+        run_train_fit_request(
+            generation_manifest,
+            cv_spec_path,
+            "mask_grid_alt",
+            "exp_a",
+            overwrite=True,
+        )
+
+        manifest_path = refresh_train_fit_manifest(
+            generation_manifest,
+            cv_spec_path,
+        )
+
+        rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_path.name, "train_fit_manifest.csv")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["search_slug"] for row in rows}, {"mask_grid", "mask_grid_alt"})
+        self.assertTrue(
+            (self.root / "generated" / "exp_a" / "train_fit_summary.csv").exists()
+        )
+        self.assertTrue(
+            (self.root / "generated" / "best_train_fit_by_experiment.csv").exists()
         )
 
     def test_run_train_fit_request_uses_outer_training_mask_for_test_train_cv(self) -> None:
@@ -5391,6 +5438,53 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertIn("run_fit_job.sh exp_a rank_0", log_lines[0])
         self.assertIn("run_fit_job.sh exp_a rank_0_fixed", log_lines[1])
         self.assertIn("--refresh_manifest", log_lines[2])
+        self.assertEqual(result.stdout.strip(), "job3")
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
+    def test_submit_fit_jobs_outer_masked_without_search_slug_submits_all_searches(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        generation_spec_path = self._write_generation_spec([{"name": "exp_a", "dimensions": {"T": 9}}])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest, overwrite=True)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {"name": "mask_grid", "grid": {"estimation": {"beta_mask_pre_s": [False]}}},
+                {"name": "mask_grid_alt", "grid": {"estimation": {"beta_mask_pre_s": [True]}}},
+            ]
+        )
+        cv_runner.run_cv_folds(generation_manifest, cv_spec_path, overwrite=True)
+        fake_sbatch_path, fake_counter_path, fake_log_path = self._write_fake_sbatch()
+
+        result = subprocess.run(
+            [bash_path, "submit_fit_jobs.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "GENERATION_MANIFEST_PATH": str(generation_manifest),
+                "CV_SPEC_PATH": str(cv_spec_path),
+                "FIT_MODE": "outer_masked",
+                "SBATCH_BIN": str(fake_sbatch_path),
+                "WORKER_SCRIPT": "run_fit_job.sh",
+                "FAKE_SBATCH_COUNTER": str(fake_counter_path),
+                "FAKE_SBATCH_LOG": str(fake_log_path),
+            },
+        )
+
+        log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 3)
+        self.assertIn("run_fit_job.sh", log_lines[0])
+        self.assertIn("<exp_a>", log_lines[0])
+        self.assertIn("<mask_grid>", log_lines[0])
+        self.assertIn("run_fit_job.sh", log_lines[1])
+        self.assertIn("<exp_a>", log_lines[1])
+        self.assertIn("<mask_grid_alt>", log_lines[1])
+        self.assertIn("--refresh_manifest", log_lines[2])
+        self.assertNotIn("--search_slug", log_lines[2])
         self.assertEqual(result.stdout.strip(), "job3")
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
@@ -9068,6 +9162,11 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             writer.writerows(rows)
         return manifest_path
 
+    def _write_fit_manifest_rows(self, rows: list[dict[str, object]]) -> Path:
+        manifest_path = self.root / f"fit_manifest_{uuid.uuid4().hex[:8]}.csv"
+        write_csv_rows(manifest_path, rows)
+        return manifest_path
+
     def _write_us_county_experiment(
         self,
         *,
@@ -9877,11 +9976,22 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             overwrite=True,
         )
 
-        report_path = run_test_evaluation(
-            fit_root,
-            outer_num_folds=2,
-            inner_num_folds=2,
+        fit_manifest_path = self._write_fit_manifest_rows(
+            [
+                {
+                    "fit_path": str(fit_root.resolve()),
+                    "experiment_path": str(experiment_root.resolve()),
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 2,
+                    "test_fold_id": 1,
+                    "num_folds": 2,
+                }
+            ]
         )
+        results = run_test_evaluation(fit_manifest_path)
+        self.assertEqual(results["num_evaluated_rows"], 1)
+        self.assertEqual(results["num_skipped_rows"], 0)
+        report_path = Path(results["evaluated_report_paths"][0])
         self.assertEqual(
             report_path,
             fit_root
@@ -9961,7 +10071,21 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             ),
             fit_root / "fit_metadata.yaml",
         )
-        report_path = run_test_evaluation(fit_root)
+        fit_manifest_path = self._write_fit_manifest_rows(
+            [
+                {
+                    "fit_path": str(fit_root.resolve()),
+                    "experiment_path": str(experiment_root.resolve()),
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 3,
+                    "test_fold_id": 1,
+                    "num_folds": 3,
+                }
+            ]
+        )
+        results = run_test_evaluation(fit_manifest_path)
+        self.assertEqual(results["num_evaluated_rows"], 1)
+        report_path = Path(results["evaluated_report_paths"][0])
 
         self.assertEqual(
             report_path,
@@ -10010,14 +10134,70 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             overwrite=True,
         )
 
-        report_path = run_test_evaluation(
-            fit_root,
-            experiment_path=experiment_root,
-            outer_num_folds=2,
-            inner_num_folds=2,
+        fit_manifest_path = self._write_fit_manifest_rows(
+            [
+                {
+                    "fit_path": str(fit_root.resolve()),
+                    "experiment_path": str(experiment_root.resolve()),
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 2,
+                    "test_fold_id": 1,
+                    "num_folds": 2,
+                }
+            ]
         )
+        results = run_test_evaluation(fit_manifest_path)
+        self.assertEqual(results["num_evaluated_rows"], 1)
+        report_path = Path(results["evaluated_report_paths"][0])
         payload = load_yaml_mapping(report_path)
         self.assertEqual(payload["experiment_path"], str(experiment_root.resolve()))
+
+    def test_run_test_evaluation_skips_train_cv_rows_in_mixed_manifest(self) -> None:
+        experiment_root, _ = self._write_us_county_experiment()
+        fit_root = experiment_root / "fits" / "bundle_skip"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_estimated_parameter_bundle(
+            fit_root / "estimated_parameter_bundle.npz",
+            beta=0.1,
+            xi=0.05,
+            eta=0.0,
+            latent_rank=0,
+            t_steps=10,
+            field_matrix=np.zeros((10, 100), dtype=float),
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {"estimation_params": {"fixed_scalar_params": {}, "beta_mask_pre_s": False}}
+            ),
+            fit_root / "fit_realized_config.yaml",
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "experiment_path": str(experiment_root.resolve()),
+                    "execution_mode": "train_fit",
+                    "split_kind": "train_cv",
+                    "num_folds": 2,
+                }
+            ),
+            fit_root / "fit_metadata.yaml",
+        )
+        fit_manifest_path = self._write_fit_manifest_rows(
+            [
+                {
+                    "fit_path": str(fit_root.resolve()),
+                    "experiment_path": str(experiment_root.resolve()),
+                    "split_kind": "train_cv",
+                    "num_folds": 2,
+                }
+            ]
+        )
+
+        results = run_test_evaluation(fit_manifest_path)
+
+        self.assertEqual(results["num_evaluated_rows"], 0)
+        self.assertEqual(results["num_skipped_rows"], 1)
+        self.assertEqual(results["skipped_rows"][0]["split_kind"], "train_cv")
 
 
 if __name__ == "__main__":
