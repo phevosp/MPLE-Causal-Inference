@@ -284,8 +284,9 @@ def _build_loss_kwargs(
     x_0: np.ndarray,
     interaction_effect_x: np.ndarray,
 ) -> dict[str, Any]:
-    # Beta masking is a fit-objective choice only, so it is threaded into MPLE loss
-    # evaluation but not into predictive h(x), Brier/ECE, or posterior sampling.
+    # Beta masking is a fit-time optimization choice only. Reported losses are
+    # ordinary MPLE losses on the realized intervention panel, and predictive
+    # metrics/sampling use that same realized panel.
     return {
         "x": x,
         "z": z,
@@ -296,10 +297,6 @@ def _build_loss_kwargs(
         "eta": float(bundle.eta),
         "interaction_effect_x": interaction_effect_x,
         "fixed_scalar_params": {},
-        "s": int(panel_context["s"]),
-        "e": int(panel_context["e"]),
-        "beta_mask_pre_s": bool(bundle.beta_mask_pre_s),
-        "beta_mask_post_e": bool(bundle.beta_mask_post_e),
     }
 
 

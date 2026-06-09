@@ -54,10 +54,11 @@ class _FitEvalContext:
     x: np.ndarray
     prev_x: np.ndarray
     beta_feature: np.ndarray
-    beta_feature_masked: np.ndarray
+    beta_update_mask: np.ndarray
     interaction_effect_x: np.ndarray
     loss_mask: np.ndarray | None
     outcome_size: float
+    beta_outcome_size: float
     s: int
     e: int
     beta_mask_pre_s: bool
@@ -78,7 +79,7 @@ def _build_fit_eval_context(
     beta_mask_post_e: bool = False,
     loss_mask: np.ndarray | None = None,
 ) -> _FitEvalContext:
-    """Validate fit inputs once and cache the derived arrays used by every objective."""
+    """Validate fit inputs and cache the arrays used by every fit-time update."""
     fixed = validate_fixed_scalar_params(fixed_scalar_params)
     x_array = np.asarray(x, dtype=float)
     t_steps = x_array.shape[0]
@@ -90,11 +91,11 @@ def _build_fit_eval_context(
     if e_index < 0 or e_index > t_steps:
         raise ValueError(f"e={e_index} must lie in [0, T={t_steps}].")
     beta_feature = np.asarray(z, dtype=float)
-    beta_feature_masked = beta_feature.copy()
+    beta_update_mask = np.ones_like(x_array, dtype=bool)
     if bool(beta_mask_pre_s) and s_index > 0:
-        beta_feature_masked[:s_index, :] = 0.0
+        beta_update_mask[:s_index, :] = False
     if bool(beta_mask_post_e) and e_index < t_steps:
-        beta_feature_masked[e_index:, :] = 0.0
+        beta_update_mask[e_index:, :] = False
     resolved_loss_mask: np.ndarray | None = None
     outcome_size = float(x_array.size)
     if loss_mask is not None:
@@ -106,20 +107,24 @@ def _build_fit_eval_context(
         outcome_size = float(np.count_nonzero(resolved_loss_mask))
         if outcome_size <= 0.0:
             raise ValueError("loss_mask must contain at least one active entry.")
+        beta_update_mask = beta_update_mask & resolved_loss_mask
+    beta_outcome_size = float(np.count_nonzero(beta_update_mask))
+    free_names = free_scalar_parameter_names(fixed)
     return _FitEvalContext(
         x=x_array,
         prev_x=np.vstack([np.asarray(x_0, dtype=float), x_array[:-1, :]]),
         beta_feature=beta_feature,
-        beta_feature_masked=beta_feature_masked,
+        beta_update_mask=beta_update_mask,
         interaction_effect_x=np.asarray(interaction_effect_x, dtype=float),
         loss_mask=resolved_loss_mask,
         outcome_size=outcome_size,
+        beta_outcome_size=beta_outcome_size,
         s=s_index,
         e=e_index,
         beta_mask_pre_s=bool(beta_mask_pre_s),
         beta_mask_post_e=bool(beta_mask_post_e),
         fixed_scalar_params=fixed,
-        free_scalar_names=free_scalar_parameter_names(fixed),
+        free_scalar_names=free_names,
     )
 
 
@@ -165,7 +170,7 @@ def _compute_h_x(
     """Assemble the conditional natural-parameter matrix h_t,i(x, z)."""
     return (
         np.asarray(field_matrix, dtype=float)
-        + float(scalar_values["beta"]) * context.beta_feature_masked
+        + float(scalar_values["beta"]) * context.beta_feature
         + float(scalar_values["eta"]) * context.prev_x
         + float(scalar_values["xi"]) * context.interaction_effect_x
     )
@@ -175,12 +180,23 @@ def _scalar_gradient_from_residual(
     residual: np.ndarray,
     context: _FitEvalContext,
 ) -> np.ndarray:
-    """Project the residual matrix onto the currently free scalar features."""
+    """Project the residual matrix onto the scalar features used by fit updates."""
     if not context.free_scalar_names:
         return np.zeros(0, dtype=float)
+    beta_gradient = 0.0
+    if context.beta_outcome_size > 0.0:
+        beta_gradient = (
+            float(
+                (
+                    residual
+                    * context.beta_feature
+                    * np.asarray(context.beta_update_mask, dtype=float)
+                ).sum()
+            )
+            / context.beta_outcome_size
+        )
     gradient_lookup = {
-        "beta": float((residual * context.beta_feature_masked).sum())
-        / context.outcome_size,
+        "beta": beta_gradient,
         "xi": float((residual * context.interaction_effect_x).sum())
         / context.outcome_size,
         "eta": float((residual * context.prev_x).sum()) / context.outcome_size,
@@ -198,7 +214,7 @@ def _evaluate_full_field_loss(
     free_scalar_values: np.ndarray | None = None,
     scalar_values: dict[str, float] | None = None,
 ) -> tuple[float, np.ndarray, np.ndarray]:
-    """Evaluate MPLE loss for a full field matrix and return residual-based gradients."""
+    """Evaluate the ordinary MPLE loss and the fit-update gradients."""
     resolved_scalars = _resolve_scalar_values(
         context=context,
         free_scalar_values=free_scalar_values,
@@ -220,7 +236,7 @@ def _evaluate_scalar_only_loss(
     free_scalar_values: np.ndarray,
     context: _FitEvalContext,
 ) -> tuple[float, np.ndarray]:
-    """Evaluate the zero-field objective used by the no-external-field fit mode."""
+    """Evaluate the zero-field loss with fit-time scalar update gradients."""
     smooth_loss, residual, scalar_gradient = _evaluate_full_field_loss(
         np.zeros_like(context.x, dtype=float),
         context,
@@ -260,7 +276,7 @@ def _evaluate_factorized_loss_with_offset(
     scalar_offset: np.ndarray,
     context: _FitEvalContext,
 ) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
-    """Evaluate factor gradients when scalar contributions have already been folded in."""
+    """Evaluate factor gradients with scalar terms folded into the fixed offset."""
     field_matrix = time_factors @ node_factors.T
     h_x = field_matrix + scalar_offset
     loss_x = np.logaddexp(h_x, -h_x) - context.x * h_x
@@ -781,6 +797,11 @@ def _fit_zero_rank_unconstrained(
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
+    if "beta" in free_names and context.beta_outcome_size <= 0.0:
+        raise ValueError(
+            "beta-gradient masking removed every eligible beta observation for a free "
+            "beta parameter."
+        )
     rng = np.random.default_rng(seed)
     if theta_init is None:
         initial = rng.normal(0.0, 0.1, size=len(free_names))
@@ -863,6 +884,11 @@ def _fit_mple_low_rank_manifold(
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
+    if "beta" in free_names and context.beta_outcome_size <= 0.0:
+        raise ValueError(
+            "beta-gradient masking removed every eligible beta observation for a free "
+            "beta parameter."
+        )
     n_starts = max(1, int(n_starts))
     rank = int(artifacts.latent_rank)
     t_steps = int(artifacts.t_steps)
@@ -1231,6 +1257,11 @@ def _fit_mple_alternative_low_rank(
     )
     fixed = context.fixed_scalar_params
     free_names = context.free_scalar_names
+    if "beta" in free_names and context.beta_outcome_size <= 0.0:
+        raise ValueError(
+            "beta-gradient masking removed every eligible beta observation for a free "
+            "beta parameter."
+        )
     n_starts = max(1, int(n_starts))
     rank = int(artifacts.latent_rank)
     t_steps = int(artifacts.t_steps)
@@ -1305,19 +1336,38 @@ def _fit_mple_alternative_low_rank(
             node_gradient + ridge_scale * node_factors,
         )
 
-    def scalar_step_size() -> float:
+    def scalar_step_sizes() -> np.ndarray:
         if not free_names:
-            return 0.0
-        feature_columns = {
-            "beta": context.beta_feature_masked.reshape(-1),
-            "xi": context.interaction_effect_x.reshape(-1),
-            "eta": context.prev_x.reshape(-1),
-        }
-        feature_matrix = np.column_stack([feature_columns[name] for name in free_names])
-        lipschitz = (
-            float(np.linalg.norm(feature_matrix, ord=2) ** 2) / context.outcome_size
+            return np.zeros(0, dtype=float)
+        active_loss_mask = (
+            np.ones_like(context.x, dtype=float)
+            if context.loss_mask is None
+            else np.asarray(context.loss_mask, dtype=float)
         )
-        return 1.0 if lipschitz <= 0.0 else 1.0 / lipschitz
+        step_sizes: list[float] = []
+        for name in free_names:
+            if name == "beta":
+                feature = (
+                    context.beta_feature
+                    * np.asarray(context.beta_update_mask, dtype=float)
+                ).reshape(-1)
+                normalizer = float(context.beta_outcome_size)
+            elif name == "xi":
+                feature = (
+                    context.interaction_effect_x * active_loss_mask
+                ).reshape(-1)
+                normalizer = float(context.outcome_size)
+            else:
+                feature = (context.prev_x * active_loss_mask).reshape(-1)
+                normalizer = float(context.outcome_size)
+            if normalizer <= 0.0:
+                raise ValueError(
+                    "beta-gradient masking removed every eligible beta observation for "
+                    "a free beta parameter."
+                )
+            lipschitz = float(np.sum(feature * feature) / normalizer)
+            step_sizes.append(1.0 if lipschitz <= 0.0 else 1.0 / lipschitz)
+        return np.asarray(step_sizes, dtype=float)
 
     def factor_step_size(fixed_factors: np.ndarray) -> float:
         lipschitz = (
@@ -1326,7 +1376,7 @@ def _fit_mple_alternative_low_rank(
         ) / context.outcome_size
         return 1.0 if lipschitz <= 0.0 else 1.0 / lipschitz
 
-    scalar_lr = scalar_step_size()
+    scalar_lrs = scalar_step_sizes()
 
     def pack_state(
         time_factors: np.ndarray,
@@ -1383,7 +1433,7 @@ def _fit_mple_alternative_low_rank(
     def offset_matrix(free_scalar_values: np.ndarray) -> np.ndarray:
         scalars = _scalar_values_from_free_vector(free_scalar_values, context)
         return (
-            float(scalars["beta"]) * context.beta_feature_masked
+            float(scalars["beta"]) * context.beta_feature
             + float(scalars["eta"]) * context.prev_x
             + float(scalars["xi"]) * context.interaction_effect_x
         )
@@ -1437,7 +1487,7 @@ def _fit_mple_alternative_low_rank(
                     _,
                     scalar_gradient,
                 ) = evaluate_state(time_factors, node_factors, free_scalar_values)
-                free_scalar_values = free_scalar_values - scalar_lr * scalar_gradient
+                free_scalar_values = free_scalar_values - scalar_lrs * scalar_gradient
                 cost_evaluations += 1
 
             current_offset = offset_matrix(free_scalar_values)
@@ -1928,6 +1978,15 @@ def fit_mple(
     t_steps = x.shape[0]
     if t_steps != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
+    if (
+        (bool(beta_mask_pre_s) or bool(beta_mask_post_e))
+        and artifacts.optimizer_mode != OPTIMIZER_MODE_ALTERNATING_LATENT_RANK
+    ):
+        raise ValueError(
+            "beta-gradient-only masking is only supported for "
+            "optimizer_mode='alternating_latent_rank'; the other optimizer modes are "
+            "deprecated for masked-beta workflows."
+        )
 
     if warm_start_fixed_scalars and int(warm_start_steps) > 0:
         theta_init = _apply_warm_start(
@@ -2048,6 +2107,8 @@ def fit_mple(
             beta_mask_post_e=beta_mask_post_e,
             loss_mask=loss_mask,
         )
+    # Deprecated for masked-beta workflows because the quasi-Newton objective assumes
+    # one shared scalar objective/gradient pair.
     if artifacts.optimizer_mode == OPTIMIZER_MODE_CONCURRENT_LATENT_RANK:
         return _fit_mple_concurrent_low_rank(
             x,
@@ -2070,6 +2131,8 @@ def fit_mple(
             beta_mask_post_e=beta_mask_post_e,
             loss_mask=loss_mask,
         )
+    # Deprecated for masked-beta workflows because the manifold solver assumes a true
+    # scalar objective with a matching Euclidean gradient.
     if artifacts.optimizer_mode == OPTIMIZER_MODE_EXACT_RANK_MANIFOLD:
         return _fit_mple_low_rank_manifold(
             x,
@@ -2212,8 +2275,16 @@ def main() -> None:
         warm_start_fixed_scalars or {},
         warm_start_steps,
     )
-    logger.info("Beta mask before s: %s with s=%s", beta_mask_pre_s, config.global_params.s)
-    logger.info("Beta mask after e: %s with e=%s", beta_mask_post_e, config.global_params.e)
+    logger.info(
+        "Beta-gradient mask before s: %s with s=%s",
+        beta_mask_pre_s,
+        config.global_params.s,
+    )
+    logger.info(
+        "Beta-gradient mask after e: %s with e=%s",
+        beta_mask_post_e,
+        config.global_params.e,
+    )
     if v_column_l2_max is not None:
         if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
             logger.info(

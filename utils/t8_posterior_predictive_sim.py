@@ -23,7 +23,7 @@ def simulate_outcomes_for_bundle(
     """Simulate from the predictive model using the realized intervention panel.
 
     Fit-time beta masking is intentionally ignored here because it is only a
-    parameter-estimation choice, not part of the generative model.
+    fit-time optimization choice, not part of the generative model.
     """
     rng = np.random.default_rng(seed)
     interaction_matrix = compose_interaction_matrix(bundle.xi, bundle.gamma_matrix)

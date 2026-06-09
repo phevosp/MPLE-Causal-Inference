@@ -47,8 +47,8 @@ Both directories contain their own workflow specs. In `data/configs/`, the canon
 - `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, `alternating_latent_rank`, or `concurrent_latent_rank`.
 - `latent_rank`: must be ≥ 1 for `exact_rank_manifold`, `alternating_latent_rank`, and `concurrent_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
 - `estimation.fixed_scalar_params`: scalars held **fixed** at these values (not initial guesses). Leave as `{}` to estimate all scalars freely.
-- `estimation.beta_mask_pre_s`: if `true`, the fit objective masks the `beta * z` term for `t < s`. This is a parameter-estimation choice only; posterior predictive sampling, Brier/ECE metrics, and manifest-driven data generation still use the realized `z`.
-- `estimation.beta_mask_post_e`: if `true`, the fit objective masks the `beta * z` term for `t >= e`. This is also fit-only and does not alter predictive sampling, Brier/ECE evaluation, or data generation.
+- `estimation.beta_mask_pre_s`: if `true`, beta-gradient updates ignore observations with `t < s` while the forward model still uses the realized `z` everywhere. This masked-beta workflow is only supported for `alternating_latent_rank`.
+- `estimation.beta_mask_post_e`: if `true`, beta-gradient updates ignore observations with `t >= e` while the forward model still uses the realized `z` everywhere. This is also only supported for `alternating_latent_rank`.
 - `lambda_nuclear`: only active for `nuclear_norm`.
 - `lambda_frobenius`: only active for `exact_rank_manifold`.
 - `lambda_uv_ridge`: only active for `alternating_latent_rank` and `concurrent_latent_rank`.

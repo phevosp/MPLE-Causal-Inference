@@ -1760,12 +1760,12 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertAlmostEqual(kernel_loss, ref_loss, places=12)
         self.assertTrue(np.allclose(kernel_grad, ref_grad))
 
-    def test_beta_mask_pre_s_changes_beta_effect_only_after_s(self) -> None:
+    def test_beta_mask_pre_s_does_not_change_forward_model(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
-        context = _build_fit_eval_context(
+        masked_context = _build_fit_eval_context(
             x,
             z,
             x_0,
@@ -1774,27 +1774,35 @@ class MinimalPipelineTests(unittest.TestCase):
             s=1,
             beta_mask_pre_s=True,
         )
-
-        h_without_beta = _compute_h_x(
-            np.zeros_like(x),
-            {"beta": 0.0, "xi": 0.0, "eta": 0.0},
-            context,
+        unmasked_context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=False,
         )
-        h_with_beta = _compute_h_x(
+
+        h_masked = _compute_h_x(
             np.zeros_like(x),
             {"beta": 2.0, "xi": 0.0, "eta": 0.0},
-            context,
+            masked_context,
+        )
+        h_unmasked = _compute_h_x(
+            np.zeros_like(x),
+            {"beta": 2.0, "xi": 0.0, "eta": 0.0},
+            unmasked_context,
         )
 
-        self.assertTrue(np.allclose(h_without_beta[:1], h_with_beta[:1]))
-        self.assertFalse(np.allclose(h_without_beta[1:], h_with_beta[1:]))
+        np.testing.assert_allclose(h_masked, h_unmasked)
 
-    def test_beta_mask_pre_s_leaves_xi_and_eta_active_pre_s(self) -> None:
+    def test_beta_mask_pre_s_only_changes_beta_gradient(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
         x_0 = np.array([1.0, -1.0], dtype=float)
         gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
-        context = _build_fit_eval_context(
+        masked_context = _build_fit_eval_context(
             x,
             z,
             x_0,
@@ -1803,20 +1811,104 @@ class MinimalPipelineTests(unittest.TestCase):
             s=1,
             beta_mask_pre_s=True,
         )
-
-        h_without_xi_eta = _compute_h_x(
-            np.zeros_like(x),
-            {"beta": 0.0, "xi": 0.0, "eta": 0.0},
-            context,
-        )
-        h_with_xi_eta = _compute_h_x(
-            np.zeros_like(x),
-            {"beta": 0.0, "xi": 0.5, "eta": -0.75},
-            context,
+        unmasked_context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=False,
         )
 
-        self.assertFalse(np.allclose(h_without_xi_eta[:1], h_with_xi_eta[:1]))
-        self.assertFalse(np.allclose(h_without_xi_eta[1:], h_with_xi_eta[1:]))
+        masked_loss, masked_residual, masked_scalar_grad = _evaluate_full_field_loss(
+            np.zeros_like(x),
+            masked_context,
+            scalar_values={"beta": 0.75, "xi": 0.5, "eta": -0.25},
+        )
+        unmasked_loss, unmasked_residual, unmasked_scalar_grad = _evaluate_full_field_loss(
+            np.zeros_like(x),
+            unmasked_context,
+            scalar_values={"beta": 0.75, "xi": 0.5, "eta": -0.25},
+        )
+
+        self.assertAlmostEqual(masked_loss, unmasked_loss, places=12)
+        np.testing.assert_allclose(masked_residual, unmasked_residual)
+        np.testing.assert_allclose(masked_scalar_grad[1:], unmasked_scalar_grad[1:])
+        expected_beta_gradient = float(
+            (
+                masked_residual
+                * z
+                * np.asarray(masked_context.beta_update_mask, dtype=float)
+            ).sum()
+            / masked_context.beta_outcome_size
+        )
+        self.assertAlmostEqual(masked_scalar_grad[0], expected_beta_gradient, places=12)
+        self.assertNotAlmostEqual(masked_scalar_grad[0], unmasked_scalar_grad[0], places=12)
+
+    def test_beta_gradient_mask_intersects_loss_mask(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        loss_mask = np.array(
+            [[True, False], [True, True], [False, True]],
+            dtype=bool,
+        )
+        masked_context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=True,
+            loss_mask=loss_mask,
+        )
+        unmasked_context = _build_fit_eval_context(
+            x,
+            z,
+            x_0,
+            interaction_effect(x, gamma),
+            {},
+            s=1,
+            beta_mask_pre_s=False,
+            loss_mask=loss_mask,
+        )
+
+        masked_loss, masked_residual, masked_scalar_grad = _evaluate_full_field_loss(
+            np.zeros_like(x),
+            masked_context,
+            scalar_values={"beta": 0.75, "xi": 0.5, "eta": -0.25},
+        )
+        unmasked_loss, unmasked_residual, unmasked_scalar_grad = _evaluate_full_field_loss(
+            np.zeros_like(x),
+            unmasked_context,
+            scalar_values={"beta": 0.75, "xi": 0.5, "eta": -0.25},
+        )
+
+        expected_beta_mask = np.asarray(loss_mask, dtype=bool).copy()
+        expected_beta_mask[:1, :] = False
+        self.assertAlmostEqual(masked_loss, unmasked_loss, places=12)
+        np.testing.assert_allclose(masked_residual, unmasked_residual)
+        np.testing.assert_array_equal(masked_context.beta_update_mask, expected_beta_mask)
+        self.assertEqual(
+            int(masked_context.beta_outcome_size),
+            int(np.count_nonzero(expected_beta_mask)),
+        )
+        self.assertAlmostEqual(
+            masked_scalar_grad[0],
+            float(
+                (
+                    masked_residual
+                    * z
+                    * np.asarray(expected_beta_mask, dtype=float)
+                ).sum()
+                / np.count_nonzero(expected_beta_mask)
+            ),
+            places=12,
+        )
+        np.testing.assert_allclose(masked_scalar_grad[1:], unmasked_scalar_grad[1:])
 
     def test_pseudo_nll_gradient_matches_outcome_only_loss_scaling(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
@@ -1949,7 +2041,44 @@ class MinimalPipelineTests(unittest.TestCase):
         )
         self.assertAlmostEqual(helper_loss, ref_loss, places=12)
 
-    def test_fit_mple_uses_s_when_beta_mask_pre_s_is_enabled(self) -> None:
+    def test_fit_mple_rejects_beta_masking_for_deprecated_optimizers(self) -> None:
+        x = np.ones((2, 2), dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.zeros(2, dtype=float)
+        gamma = np.zeros((2, 2), dtype=float)
+        for optimizer_mode, latent_rank in [
+            ("no_external_field", 0),
+            ("nuclear_norm", 0),
+            ("concurrent_latent_rank", 1),
+            ("exact_rank_manifold", 1),
+        ]:
+            artifacts = ModelArtifacts(
+                gamma_matrix=gamma,
+                t_steps=2,
+                latent_rank=latent_rank,
+                optimizer_mode=optimizer_mode,
+            )
+            with self.subTest(optimizer_mode=optimizer_mode):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "beta-gradient-only masking is only supported",
+                ):
+                    fit_mple(
+                        x,
+                        z,
+                        x_0=x_0,
+                        s=1,
+                        param_names=parameter_names(artifacts),
+                        artifacts=artifacts,
+                        interaction_effect_x=interaction_effect(x, gamma),
+                        steps=4,
+                        tol=1.0e-8,
+                        seed=0,
+                        verbose_every=0,
+                        beta_mask_pre_s=True,
+                    )
+
+    def test_alternating_low_rank_supports_beta_gradient_masking(self) -> None:
         x = np.ones((2, 2), dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, 1.0]], dtype=float)
         x_0 = np.zeros(2, dtype=float)
@@ -1957,49 +2086,88 @@ class MinimalPipelineTests(unittest.TestCase):
         artifacts = ModelArtifacts(
             gamma_matrix=gamma,
             t_steps=2,
-            latent_rank=0,
-            optimizer_mode="no_external_field",
+            latent_rank=1,
+            optimizer_mode="alternating_latent_rank",
         )
         fixed_scalars = {"xi": 0.0, "eta": 0.0}
         param_keys = parameter_names(
             artifacts,
             fixed_scalar_params=fixed_scalars,
         )
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "s": 1,
+            "param_names": param_keys,
+            "artifacts": artifacts,
+            "interaction_effect_x": interaction_effect(x, gamma),
+            "steps": 8,
+            "tol": 1.0e-8,
+            "seed": 0,
+            "verbose_every": 0,
+            "fixed_scalar_params": fixed_scalars,
+            "n_starts": 1,
+            "lambda_uv_ridge": 0.0,
+        }
 
-        theta_no_mask, _, _ = fit_mple(
-            x,
-            z,
-            x_0=x_0,
-            s=0,
-            param_names=param_keys,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect(x, gamma),
-            steps=25,
-            tol=1.0e-8,
-            seed=0,
-            verbose_every=0,
-            fixed_scalar_params=fixed_scalars,
+        theta_unmasked, history_unmasked, result_unmasked = fit_mple(**common_kwargs)
+        theta_masked, history_masked, result_masked = fit_mple(
+            **common_kwargs,
             beta_mask_pre_s=True,
         )
-        theta_masked, _, _ = fit_mple(
-            x,
-            z,
-            x_0=x_0,
-            s=1,
-            param_names=param_keys,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect(x, gamma),
-            steps=25,
-            tol=1.0e-8,
-            seed=0,
-            verbose_every=0,
-            fixed_scalar_params=fixed_scalars,
-            beta_mask_pre_s=True,
+        beta_unmasked = float(
+            unpack_theta(
+                theta_unmasked,
+                artifacts,
+                fixed_scalar_params=fixed_scalars,
+            )["beta"]
+        )
+        beta_masked = float(
+            unpack_theta(
+                theta_masked,
+                artifacts,
+                fixed_scalar_params=fixed_scalars,
+            )["beta"]
         )
 
-        self.assertEqual(theta_no_mask.shape, (1,))
-        self.assertEqual(theta_masked.shape, (1,))
-        self.assertGreater(float(theta_masked[0]), float(theta_no_mask[0]))
+        self.assertTrue(np.isfinite(history_unmasked[-1]))
+        self.assertTrue(np.isfinite(history_masked[-1]))
+        self.assertTrue(np.isfinite(float(result_masked["final_penalized_objective"])))
+        self.assertGreater(beta_masked, beta_unmasked)
+
+    def test_alternating_low_rank_beta_gradient_masking_requires_eligible_beta_updates(
+        self,
+    ) -> None:
+        x = np.ones((2, 2), dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.zeros(2, dtype=float)
+        gamma = np.zeros((2, 2), dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_latent_rank",
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "removed every eligible beta observation",
+        ):
+            fit_mple(
+                x,
+                z,
+                x_0=x_0,
+                s=2,
+                param_names=parameter_names(artifacts),
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect(x, gamma),
+                steps=4,
+                tol=1.0e-8,
+                seed=0,
+                verbose_every=0,
+                beta_mask_pre_s=True,
+            )
 
     def test_fit_mple_uses_pymanopt_multistart_for_low_rank(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
