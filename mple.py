@@ -1979,13 +1979,15 @@ def fit_mple(
     if t_steps != artifacts.t_steps:
         raise ValueError("Panel length does not match artifact t_steps.")
     if (
-        (bool(beta_mask_pre_s) or bool(beta_mask_post_e))
-        and artifacts.optimizer_mode != OPTIMIZER_MODE_ALTERNATING_LATENT_RANK
-    ):
+        bool(beta_mask_pre_s) or bool(beta_mask_post_e)
+    ) and artifacts.optimizer_mode not in {
+        OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+        OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+    }:
         raise ValueError(
             "beta-gradient-only masking is only supported for "
-            "optimizer_mode='alternating_latent_rank'; the other optimizer modes are "
-            "deprecated for masked-beta workflows."
+            "optimizer_mode in {'alternating_latent_rank', 'no_external_field'}; "
+            "the other optimizer modes are deprecated for masked-beta workflows."
         )
 
     if warm_start_fixed_scalars and int(warm_start_steps) > 0:

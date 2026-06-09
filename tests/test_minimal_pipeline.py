@@ -2047,7 +2047,6 @@ class MinimalPipelineTests(unittest.TestCase):
         x_0 = np.zeros(2, dtype=float)
         gamma = np.zeros((2, 2), dtype=float)
         for optimizer_mode, latent_rank in [
-            ("no_external_field", 0),
             ("nuclear_norm", 0),
             ("concurrent_latent_rank", 1),
             ("exact_rank_manifold", 1),
@@ -2077,6 +2076,151 @@ class MinimalPipelineTests(unittest.TestCase):
                         verbose_every=0,
                         beta_mask_pre_s=True,
                     )
+
+    def test_no_external_field_supports_beta_gradient_masking(self) -> None:
+        x = np.ones((2, 2), dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.zeros(2, dtype=float)
+        gamma = np.zeros((2, 2), dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="no_external_field",
+        )
+        fixed_scalars = {"xi": 0.0, "eta": 0.0}
+        param_keys = parameter_names(
+            artifacts,
+            fixed_scalar_params=fixed_scalars,
+        )
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "s": 1,
+            "param_names": param_keys,
+            "artifacts": artifacts,
+            "interaction_effect_x": interaction_effect(x, gamma),
+            "steps": 8,
+            "tol": 1.0e-8,
+            "seed": 0,
+            "verbose_every": 0,
+            "fixed_scalar_params": fixed_scalars,
+        }
+
+        theta_unmasked, history_unmasked, _ = fit_mple(**common_kwargs)
+        theta_masked, history_masked, result_masked = fit_mple(
+            **common_kwargs,
+            beta_mask_pre_s=True,
+        )
+        beta_unmasked = float(
+            unpack_theta(
+                theta_unmasked,
+                artifacts,
+                fixed_scalar_params=fixed_scalars,
+            )["beta"]
+        )
+        beta_masked = float(
+            unpack_theta(
+                theta_masked,
+                artifacts,
+                fixed_scalar_params=fixed_scalars,
+            )["beta"]
+        )
+
+        self.assertTrue(np.isfinite(history_unmasked[-1]))
+        self.assertTrue(np.isfinite(history_masked[-1]))
+        self.assertTrue(np.isfinite(float(result_masked["final_penalized_objective"])))
+        self.assertGreater(beta_masked, beta_unmasked)
+
+    def test_no_external_field_supports_beta_gradient_post_e_masking(self) -> None:
+        x = np.ones((2, 2), dtype=float)
+        z = np.array([[1.0, 1.0], [-1.0, -1.0]], dtype=float)
+        x_0 = np.zeros(2, dtype=float)
+        gamma = np.zeros((2, 2), dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="no_external_field",
+        )
+        fixed_scalars = {"xi": 0.0, "eta": 0.0}
+        param_keys = parameter_names(
+            artifacts,
+            fixed_scalar_params=fixed_scalars,
+        )
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "s": 0,
+            "e": 1,
+            "param_names": param_keys,
+            "artifacts": artifacts,
+            "interaction_effect_x": interaction_effect(x, gamma),
+            "steps": 8,
+            "tol": 1.0e-8,
+            "seed": 0,
+            "verbose_every": 0,
+            "fixed_scalar_params": fixed_scalars,
+        }
+
+        theta_unmasked, _, _ = fit_mple(**common_kwargs)
+        theta_masked, history_masked, result_masked = fit_mple(
+            **common_kwargs,
+            beta_mask_post_e=True,
+        )
+        beta_unmasked = float(
+            unpack_theta(
+                theta_unmasked,
+                artifacts,
+                fixed_scalar_params=fixed_scalars,
+            )["beta"]
+        )
+        beta_masked = float(
+            unpack_theta(
+                theta_masked,
+                artifacts,
+                fixed_scalar_params=fixed_scalars,
+            )["beta"]
+        )
+
+        self.assertTrue(np.isfinite(history_masked[-1]))
+        self.assertTrue(np.isfinite(float(result_masked["final_penalized_objective"])))
+        self.assertGreater(beta_masked, beta_unmasked)
+
+    def test_no_external_field_beta_gradient_masking_requires_eligible_beta_updates(
+        self,
+    ) -> None:
+        x = np.ones((2, 2), dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, 1.0]], dtype=float)
+        x_0 = np.zeros(2, dtype=float)
+        gamma = np.zeros((2, 2), dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=0,
+            optimizer_mode="no_external_field",
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "removed every eligible beta observation",
+        ):
+            fit_mple(
+                x,
+                z,
+                x_0=x_0,
+                s=2,
+                param_names=parameter_names(artifacts),
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect(x, gamma),
+                steps=4,
+                tol=1.0e-8,
+                seed=0,
+                verbose_every=0,
+                beta_mask_pre_s=True,
+            )
 
     def test_alternating_low_rank_supports_beta_gradient_masking(self) -> None:
         x = np.ones((2, 2), dtype=float)
@@ -4102,6 +4246,10 @@ class PipelineStageRequestTests(unittest.TestCase):
                 {
                     "name": "nefg",
                     "optimizer_mode": "no_external_field",
+                    "estimation": {
+                        "beta_mask_pre_s": True,
+                        "beta_mask_post_e": True,
+                    },
                     "grid": {"optimizer": {"seed": [0, 1]}},
                 }
             ]
@@ -4138,6 +4286,11 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(len(fold_rows), 10)
         self.assertEqual(len(score_rows), 2)
         self.assertEqual(str(best_candidate.search_slug), "nefg")
+        self.assertTrue(all(row["status"] == "completed" for row in fold_rows))
+        first_fit_root = Path(fold_rows[0]["fit_path"])
+        fit_config = OmegaConf.load(first_fit_root / "fit_realized_config.yaml")
+        self.assertTrue(bool(fit_config.estimation_params.beta_mask_pre_s))
+        self.assertTrue(bool(fit_config.estimation_params.beta_mask_post_e))
         self.assertIn("weighted_mean_validation_brier_score", manifest_rows[0])
         self.assertIn("mean_fold_validation_brier_score", manifest_rows[0])
         self.assertIn("weighted_mean_validation_ece", manifest_rows[0])
@@ -4942,7 +5095,8 @@ class PipelineStageRequestTests(unittest.TestCase):
                     "test_fold_id": 1,
                     "num_folds": 3,
                     "optimizer_mode": "no_external_field",
-                    "grid": {"optimizer": {"seed": [0, 1]}},
+                    "estimation": {"beta_mask_pre_s": True},
+                    "grid": {"optimizer": {"seed": [0]}},
                 }
             ]
         )
@@ -4956,7 +5110,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(Path(manifest_path), self.root / "generated" / "cv_manifest.csv")
         requests_path = cv_runner.cv_requests_path_for_spec(cv_spec_path)
         request_rows = read_csv_manifest(requests_path)
-        self.assertEqual(len(request_rows), 2 * len(supported_fold_ids))
+        self.assertEqual(len(request_rows), len(supported_fold_ids))
         self.assertEqual({row["split_kind"] for row in request_rows}, {"test_train_cv"})
         self.assertEqual({row["outer_num_folds"] for row in request_rows}, {"3"})
         self.assertEqual({row["test_fold_id"] for row in request_rows}, {"1"})
@@ -4969,12 +5123,14 @@ class PipelineStageRequestTests(unittest.TestCase):
             self.root / "generated" / "exp_a" / "cv_runs" / "split_backed_grid"
         )
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
-        self.assertEqual(len(fold_rows), 2 * len(supported_fold_ids))
+        self.assertEqual(len(fold_rows), len(supported_fold_ids))
         self.assertEqual({row["split_kind"] for row in fold_rows}, {"test_train_cv"})
         self.assertEqual({row["outer_num_folds"] for row in fold_rows}, {"3"})
         self.assertEqual({row["test_fold_id"] for row in fold_rows}, {"1"})
         self.assertEqual({int(row["cv_fold_id"]) for row in fold_rows}, supported_fold_ids)
         self.assertEqual({row["status"] for row in fold_rows}, {"completed"})
+        fit_config = OmegaConf.load(Path(fold_rows[0]["fit_path"]) / "fit_realized_config.yaml")
+        self.assertTrue(bool(fit_config.estimation_params.beta_mask_pre_s))
 
     def test_test_train_cv_split_runs_only_fold_one_in_validation_mode(self) -> None:
         generation_spec_path = self._write_generation_spec(
