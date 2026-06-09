@@ -169,25 +169,30 @@ import sys
 
 with open(sys.argv[1], "r", encoding="utf-8", newline="") as handle:
     for row in csv.DictReader(handle):
-        print(
-            "\t".join(
-                [
-                    row.get("generation_manifest_path", "").strip(),
-                    row.get("cv_spec_path", "").strip(),
-                    row.get("search_name", "").strip(),
-                    row.get("search_slug", "").strip(),
-                    row.get("split_kind", "").strip(),
-                    row.get("num_folds", "").strip(),
-                    row.get("outer_num_folds", "").strip(),
-                    row.get("test_fold_id", "").strip(),
-                    row.get("experiment_name", "").strip(),
-                    row.get("experiment_slug", "").strip(),
-                    row.get("variant_name", "").strip(),
-                    row.get("variant_slug", "").strip(),
-                    row.get("fit_path", "").strip(),
-                ]
-            )
-        )
+        fields = [
+            row.get("generation_manifest_path", "").strip(),
+            row.get("cv_spec_path", "").strip(),
+            row.get("search_name", "").strip(),
+            row.get("search_slug", "").strip(),
+            row.get("split_kind", "").strip(),
+            row.get("num_folds", "").strip(),
+        ]
+        if "outer_num_folds" in row:
+            fields.append(row.get("outer_num_folds", "").strip())
+        else:
+            fields.append("")
+        if "test_fold_id" in row:
+            fields.append(row.get("test_fold_id", "").strip())
+        else:
+            fields.append("")
+        fields.extend([
+            row.get("experiment_name", "").strip(),
+            row.get("experiment_slug", "").strip(),
+            row.get("variant_name", "").strip(),
+            row.get("variant_slug", "").strip(),
+            row.get("fit_path", "").strip(),
+        ])
+        print("\t".join(fields))
 PY
   )
 fi
