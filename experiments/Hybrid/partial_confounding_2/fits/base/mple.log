@@ -1,33 +1,33 @@
-2026-06-09 01:28:34 | INFO | Loading data...
-2026-06-09 01:28:34 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/panel_data.npz
-2026-06-09 01:28:34 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/x_0.npy
-2026-06-09 01:28:34 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/fits/base/fit_realized_config.yaml
-2026-06-09 01:28:34 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2
-2026-06-09 01:28:34 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2
-2026-06-09 01:28:34 | INFO | Configured optimizer mode: no_external_field
-2026-06-09 01:28:34 | INFO | Configured latent rank: 0
-2026-06-09 01:28:34 | INFO | Using a fixed known graph with scalar xi.
-2026-06-09 01:28:34 | INFO | Fit-time hard bounds active: False
-2026-06-09 01:28:34 | INFO | Fixed scalar parameters: {}
-2026-06-09 01:28:34 | INFO | Warm-start fixed scalars: {} for 0 steps
-2026-06-09 01:28:34 | INFO | Beta mask before s: False with s=50
-2026-06-09 01:28:34 | INFO | Beta mask after e: False with e=115
-2026-06-09 01:28:34 | INFO | Ignoring v_column_l2_max=1.0 for optimizer_mode=no_external_field
-2026-06-09 01:28:34 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=5, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.0, v_column_l2_max=1.0, proximal_lr=1.0
-2026-06-09 01:28:34 | INFO | Done fitting.
-2026-06-09 01:28:34 | INFO | Optimizer status: Optimization terminated successfully.
-2026-06-09 01:28:34 | INFO | Best optimizer start: 1 / 1
-2026-06-09 01:28:34 | INFO | Final Loss: 0.618040
-2026-06-09 01:28:34 | INFO | Estimated vs True Parameters:
-2026-06-09 01:28:34 | INFO |   beta: -0.0961 (True: -0.3000) | SQE: 0.041586
-2026-06-09 01:28:34 | INFO |   xi: 0.8106 (True: 0.8000) | SQE: 0.000113
-2026-06-09 01:28:34 | INFO |   eta: 0.2696 (True: 0.3000) | SQE: 0.000922
-2026-06-09 01:28:34 | INFO | Field and interaction diagnostics:
-2026-06-09 01:28:34 | INFO |   field_rmse: 0.400000
-2026-06-09 01:28:34 | INFO |   interaction_fro_error: 0.117785
-2026-06-09 01:28:34 | INFO |   estimated_field_max_abs_entry: 0.000000
-2026-06-09 01:28:34 | INFO |   estimated_field_rank: 0.000000
-2026-06-09 01:28:34 | INFO |   true_field_max_abs_entry: 3.363760
-2026-06-09 01:28:34 | INFO |   true_field_rank: 5.000000
-2026-06-09 01:28:34 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/fits/base/mple_summary.csv
-2026-06-09 01:28:34 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/fits/base/mple.log
+2026-06-09 22:20:04 | INFO | Loading data...
+2026-06-09 22:20:04 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/panel_data.npz
+2026-06-09 22:20:04 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/x_0.npy
+2026-06-09 22:20:04 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/fits/base/fit_realized_config.yaml
+2026-06-09 22:20:04 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2
+2026-06-09 22:20:04 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2
+2026-06-09 22:20:05 | INFO | Configured optimizer mode: no_external_field
+2026-06-09 22:20:05 | INFO | Configured latent rank: 0
+2026-06-09 22:20:05 | INFO | Using a fixed known graph with scalar xi.
+2026-06-09 22:20:05 | INFO | Fit-time hard bounds active: False
+2026-06-09 22:20:05 | INFO | Fixed scalar parameters: {}
+2026-06-09 22:20:05 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-06-09 22:20:05 | INFO | Beta-gradient mask before s: False with s=50
+2026-06-09 22:20:05 | INFO | Beta-gradient mask after e: False with e=115
+2026-06-09 22:20:05 | INFO | Ignoring v_column_l2_max=1.0 for optimizer_mode=no_external_field
+2026-06-09 22:20:05 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.0, v_column_l2_max=1.0, proximal_lr=1.0
+2026-06-09 22:20:05 | INFO | Done fitting.
+2026-06-09 22:20:05 | INFO | Optimizer status: Optimization terminated successfully.
+2026-06-09 22:20:05 | INFO | Best optimizer start: 1 / 1
+2026-06-09 22:20:05 | INFO | Final Loss: 0.618040
+2026-06-09 22:20:05 | INFO | Estimated vs True Parameters:
+2026-06-09 22:20:05 | INFO |   beta: -0.0961 (True: -0.3000) | SQE: 0.041586
+2026-06-09 22:20:05 | INFO |   xi: 0.8106 (True: 0.8000) | SQE: 0.000113
+2026-06-09 22:20:05 | INFO |   eta: 0.2696 (True: 0.3000) | SQE: 0.000922
+2026-06-09 22:20:05 | INFO | Field and interaction diagnostics:
+2026-06-09 22:20:05 | INFO |   field_rmse: 0.400000
+2026-06-09 22:20:05 | INFO |   interaction_fro_error: 0.117785
+2026-06-09 22:20:05 | INFO |   estimated_field_max_abs_entry: 0.000000
+2026-06-09 22:20:05 | INFO |   estimated_field_rank: 0.000000
+2026-06-09 22:20:05 | INFO |   true_field_max_abs_entry: 3.363760
+2026-06-09 22:20:05 | INFO |   true_field_rank: 5.000000
+2026-06-09 22:20:05 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/fits/base/mple_summary.csv
+2026-06-09 22:20:05 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Hybrid/partial_confounding_2/fits/base/mple.log

@@ -1,0 +1,61 @@
+experiment_name: outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+experiment_slug: outcome_death_rate_100k_ge_2_intervention_complete_cov_ge_30_lag_2w_distance_kernel_8_start_2020_03_01
+execution_mode: cv
+cv_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/REVISIONS/uscounty/cv_spec.yaml
+search_name: default_test_train
+search_slug: default_test_train
+split_kind: test_train_cv
+outer_num_folds: 6
+test_fold_id: 1
+candidate_name: default_test_train__candidate_0015
+candidate_slug: default_test_train_candidate_0015
+candidate_index: 15
+candidate_config:
+  cv_root_name: cv_runs
+  cv_manifest_path: experiments/USCounty/cv_manifest.csv
+  num_folds: 7
+  outer_num_folds: 6
+  optimizer:
+    steps: 2000
+    tol: 1.0e-07
+    seed: 0
+    n_starts: 1
+    proximal_lr: 1.0
+  latent_rank: 8
+  optimizer_mode: alternating_latent_rank
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.01
+  v_column_l2_max: 1.0
+  estimation:
+    fixed_scalar_params: {}
+    beta_mask_pre_s: true
+    beta_mask_post_e: true
+  name: default_test_train__candidate_0015
+  split_kind: test_train_cv
+  slug: default_test_train_candidate_0015
+hyperparameters:
+  lambda_uv_ridge: 0.01
+  latent_rank: 8
+weighted_mean_validation_loss: 0.6313650890987448
+mean_fold_validation_loss: 0.6312393226734683
+weighted_mean_validation_brier_score: 0.19554842161505412
+mean_fold_validation_brier_score: 0.19552071523388806
+standard_error_fold_validation_brier_score: 0.004932443316457346
+weighted_mean_validation_ece: 0.10875070306932792
+mean_fold_validation_ece: 0.10871898037777765
+weighted_mean_validation_mean_magnetization_abs_diff: 0.049354121828332057
+mean_fold_validation_mean_magnetization_abs_diff: 0.04956151792001807
+standard_error_fold_validation_mean_magnetization_abs_diff: 0.012030098652505209
+total_validation_slots: 242538
+weighted_mean_post_s_validation_loss: 0.623718590063527
+mean_fold_post_s_validation_loss: 0.6239449521347474
+weighted_mean_post_s_validation_brier_score: 0.1967912774814882
+mean_fold_post_s_validation_brier_score: 0.19688055978445165
+standard_error_fold_post_s_validation_brier_score: 0.003266569728398422
+weighted_mean_post_s_validation_ece: 0.09986953490303699
+mean_fold_post_s_validation_ece: 0.09984924957728916
+weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.026848098714560845
+mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.026870376430302798
+standard_error_fold_post_s_validation_mean_magnetization_abs_diff: 0.00708215930303188
+total_post_s_validation_slots: 133962

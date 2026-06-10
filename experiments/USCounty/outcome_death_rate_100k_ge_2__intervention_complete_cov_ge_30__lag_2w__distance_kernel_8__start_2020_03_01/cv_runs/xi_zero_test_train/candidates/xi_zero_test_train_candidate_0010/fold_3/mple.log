@@ -1,0 +1,41 @@
+2026-06-09 19:53:30 | INFO | Loading data...
+2026-06-09 19:53:30 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/panel_data.npz
+2026-06-09 19:53:30 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/x_0.npy
+2026-06-09 19:53:30 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0010/fold_3/fit_realized_config.yaml
+2026-06-09 19:53:30 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+2026-06-09 19:53:30 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+2026-06-09 19:53:30 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0010/fold_3/loss_mask.npy
+2026-06-09 19:53:30 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-06-09 19:53:30 | INFO | Configured latent rank: 5
+2026-06-09 19:53:30 | INFO | Using a fixed known graph with scalar xi.
+2026-06-09 19:53:30 | INFO | Fit-time hard bounds active: False
+2026-06-09 19:53:30 | INFO | Fixed scalar parameters: {'xi': 0.0}
+2026-06-09 19:53:30 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-06-09 19:53:30 | INFO | Beta-gradient mask before s: True with s=50
+2026-06-09 19:53:30 | INFO | Beta-gradient mask after e: True with e=115
+2026-06-09 19:53:30 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-06-09 19:53:30 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.05, v_column_l2_max=1.0, proximal_lr=1.0
+2026-06-09 19:53:30 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.768250 | initial_penalized=0.768252
+2026-06-09 19:53:30 | INFO | Alternating low-rank iter 0 | Loss: 0.496074 | Penalized: 0.499717
+2026-06-09 19:53:44 | INFO | Alternating low-rank iter 100 | Loss: 0.411624 | Penalized: 0.441289
+2026-06-09 19:53:59 | INFO | Alternating low-rank iter 200 | Loss: 0.410593 | Penalized: 0.440673
+2026-06-09 19:54:07 | INFO | Done fitting.
+2026-06-09 19:54:07 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-06-09 19:54:07 | INFO | Best optimizer start: 1 / 1
+2026-06-09 19:54:07 | INFO | Final Loss: 0.410521
+2026-06-09 19:54:07 | INFO | Estimated Parameters:
+2026-06-09 19:54:07 | INFO |   beta: -0.0387
+2026-06-09 19:54:07 | INFO |   xi: 0.0000
+2026-06-09 19:54:07 | INFO |   eta: 0.1659
+2026-06-09 19:54:07 | INFO | Alternating low-rank optimizer diagnostics:
+2026-06-09 19:54:07 | INFO |   penalized_objective: 0.440633
+2026-06-09 19:54:07 | INFO |   mple_loss_without_penalty: 0.410521
+2026-06-09 19:54:07 | INFO |   lambda_uv_ridge: 0.050000
+2026-06-09 19:54:07 | INFO |   u_frobenius_norm: 370.213527
+2026-06-09 19:54:07 | INFO |   v_frobenius_norm: 2.236068
+2026-06-09 19:54:07 | INFO |   effective_rank: 5.000000
+2026-06-09 19:54:07 | INFO | Field and interaction diagnostics:
+2026-06-09 19:54:07 | INFO |   estimated_field_max_abs_entry: 2.897794
+2026-06-09 19:54:07 | INFO |   estimated_field_rank: 5.000000
+2026-06-09 19:54:07 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0010/fold_3/mple_summary.csv
+2026-06-09 19:54:07 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0010/fold_3/mple.log

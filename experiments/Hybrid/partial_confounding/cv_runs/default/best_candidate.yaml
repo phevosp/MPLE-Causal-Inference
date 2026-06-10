@@ -7,9 +7,9 @@ search_slug: default
 split_kind: train_cv
 outer_num_folds: 6
 test_fold_id: 1
-candidate_name: default__candidate_0002
-candidate_slug: default_candidate_0002
-candidate_index: 2
+candidate_name: default__candidate_0001
+candidate_slug: default_candidate_0001
+candidate_index: 1
 candidate_config:
   cv_root_name: cv_runs
   cv_manifest_path: experiments/Hybrid/cv_manifest.csv
@@ -25,37 +25,37 @@ candidate_config:
   optimizer_mode: alternating_latent_rank
   lambda_nuclear: 0.0
   lambda_frobenius: 0.0
-  lambda_uv_ridge: 0.005
+  lambda_uv_ridge: 0.001
   v_column_l2_max: 1.0
   estimation:
     fixed_scalar_params: {}
     beta_mask_pre_s: true
     beta_mask_post_e: true
-  name: default__candidate_0002
+  name: default__candidate_0001
   split_kind: train_cv
-  slug: default_candidate_0002
+  slug: default_candidate_0001
   test_fold_id: 1
 hyperparameters:
-  lambda_uv_ridge: 0.005
-weighted_mean_validation_loss: 0.6049932699381263
-mean_fold_validation_loss: 0.6049932776328275
-weighted_mean_validation_brier_score: 0.21043310370063706
-mean_fold_validation_brier_score: 0.2104331800394363
-standard_error_fold_validation_brier_score: 0.0009178054290621562
-weighted_mean_validation_ece: 0.06498838618542362
-mean_fold_validation_ece: 0.06498866386833897
-weighted_mean_validation_mean_magnetization_abs_diff: 0.16886486914277712
-mean_fold_validation_mean_magnetization_abs_diff: 0.16886261118234308
-standard_error_fold_validation_mean_magnetization_abs_diff: 0.006021266503072732
+  lambda_uv_ridge: 0.001
+weighted_mean_validation_loss: 0.6049705769455258
+mean_fold_validation_loss: 0.6049703818954454
+weighted_mean_validation_brier_score: 0.20653379539100844
+mean_fold_validation_brier_score: 0.20653374906314217
+standard_error_fold_validation_brier_score: 0.0007313716788931144
+weighted_mean_validation_ece: 0.04199955501685707
+mean_fold_validation_ece: 0.04199948229287971
+weighted_mean_validation_mean_magnetization_abs_diff: 0.010213422986308538
+mean_fold_validation_mean_magnetization_abs_diff: 0.010213306219842051
+standard_error_fold_validation_mean_magnetization_abs_diff: 0.0027451146176862705
 total_validation_slots: 328526
-weighted_mean_post_s_validation_loss: 0.5996361875016413
-mean_fold_post_s_validation_loss: 0.5996528249300441
-weighted_mean_post_s_validation_brier_score: 0.2036844005498866
-mean_fold_post_s_validation_brier_score: 0.20369176609848613
-standard_error_fold_post_s_validation_brier_score: 0.0015507539415970358
-weighted_mean_post_s_validation_ece: 0.04507621556308305
-mean_fold_post_s_validation_ece: 0.04507453033984722
-weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.013779275947218991
-mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.013757432719169233
-standard_error_fold_post_s_validation_mean_magnetization_abs_diff: 0.0029210025530021877
+weighted_mean_post_s_validation_loss: 0.5918948956842814
+mean_fold_post_s_validation_loss: 0.591912569624364
+weighted_mean_post_s_validation_brier_score: 0.20088106282473095
+mean_fold_post_s_validation_brier_score: 0.2008884334303223
+standard_error_fold_post_s_validation_brier_score: 0.00141106432859453
+weighted_mean_post_s_validation_ece: 0.0382015135013347
+mean_fold_post_s_validation_ece: 0.0382075702278278
+weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.012064600171875512
+mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.012029097759796247
+standard_error_fold_post_s_validation_mean_magnetization_abs_diff: 0.00322240887175498
 total_post_s_validation_slots: 183854

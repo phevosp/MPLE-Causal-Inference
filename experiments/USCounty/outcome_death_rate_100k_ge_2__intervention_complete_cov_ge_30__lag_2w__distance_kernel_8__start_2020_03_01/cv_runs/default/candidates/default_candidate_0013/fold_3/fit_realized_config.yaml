@@ -1,0 +1,29 @@
+global_params:
+  'N': 3014
+  T: 115
+  s: 50
+  e: 115
+  latent_rank: 8
+  optimizer_mode: alternating_latent_rank
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.001
+  v_column_l2_max: 1.0
+estimation_params:
+  fixed_scalar_params: {}
+  warm_start_fixed_scalars: {}
+  warm_start_steps: 0
+  beta_mask_pre_s: true
+  beta_mask_post_e: true
+optimizer_params:
+  steps: 2000
+  tol: 1.0e-07
+  seed: 0
+  n_starts: 1
+  proximal_lr: 1.0
+input_artifacts:
+  model_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+  truth_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
+  panel_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/panel_data.npz
+  x0_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/x_0.npy
+  loss_mask_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/cv_runs/default/candidates/default_candidate_0013/fold_3/loss_mask.npy
