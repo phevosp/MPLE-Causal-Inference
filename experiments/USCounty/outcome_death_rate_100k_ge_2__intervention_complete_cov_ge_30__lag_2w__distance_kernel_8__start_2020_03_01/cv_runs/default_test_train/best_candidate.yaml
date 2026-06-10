@@ -34,6 +34,7 @@ candidate_config:
   name: default_test_train__candidate_0015
   split_kind: test_train_cv
   slug: default_test_train_candidate_0015
+  test_fold_id: 1
 hyperparameters:
   lambda_uv_ridge: 0.01
   latent_rank: 8
