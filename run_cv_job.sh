@@ -10,6 +10,25 @@
 
 set -euo pipefail
 
+SCRIPT_START_TIME="$(date +%s)"
+
+format_elapsed_time() {
+  local elapsed="$1"
+  local hours=$((elapsed / 3600))
+  local minutes=$(((elapsed % 3600) / 60))
+  local seconds=$((elapsed % 60))
+  printf "%02d:%02d:%02d" "${hours}" "${minutes}" "${seconds}"
+}
+
+report_script_runtime() {
+  local exit_code="$1"
+  local end_time
+  end_time="$(date +%s)"
+  echo "Script runtime: $(format_elapsed_time "$((end_time - SCRIPT_START_TIME))") (exit_code=${exit_code})"
+}
+
+trap 'report_script_runtime $?' EXIT
+
 # Ensure the log directory exists
 DATE=$(date +%F)
 LOG_DIR="slurm-logs/$DATE"
