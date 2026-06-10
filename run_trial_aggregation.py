@@ -51,9 +51,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Summary: {outputs['summary_path']}")
     print(f"Trial rows: {outputs['num_trial_rows']}")
     print(f"Summary rows: {outputs['num_summary_rows']}")
+    print(f"Warnings: {outputs['warnings_path']}")
+    print(f"Warning rows: {outputs['num_warning_rows']}")
     if "wide_path" in outputs:
         print(f"Wide summary: {outputs['wide_path']}")
         print(f"Wide rows: {outputs['num_wide_rows']}")
+    if int(outputs.get("num_warning_rows", 0)) > 0:
+        print(
+            "Incomplete summary statistics omitted: "
+            f"{outputs['num_incomplete_summary_groups']}. "
+            f"See {outputs['warnings_path']} for details."
+        )
     return 0
 
 

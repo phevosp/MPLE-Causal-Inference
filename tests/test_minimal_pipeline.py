@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import shutil
 import os
 import subprocess
@@ -164,6 +165,7 @@ from run_generation_pipeline import (
     write_generation_requests,
 )
 from run_intervention_library import run_intervention_library
+import run_trial_aggregation as trial_aggregation_runner
 from run_trial_aggregation import run_trial_aggregation
 from utils.t6_posterior_predictive_manifest import (
     index_generation_rows,
@@ -3833,6 +3835,9 @@ class TrialAggregationTests(unittest.TestCase):
         self.assertTrue(Path(str(outputs["trial_statistics_path"])).exists())
         self.assertTrue(Path(str(outputs["summary_path"])).exists())
         self.assertTrue(Path(str(outputs["wide_path"])).exists())
+        self.assertTrue(Path(str(outputs["warnings_path"])).exists())
+        self.assertEqual(int(outputs["num_warning_rows"]), 0)
+        self.assertEqual(int(outputs["num_incomplete_summary_groups"]), 0)
         with Path(str(outputs["summary_path"])).open(
             "r",
             encoding="utf-8",
@@ -3864,6 +3869,241 @@ class TrialAggregationTests(unittest.TestCase):
         )
         self.assertEqual(truth_gte["num_trials"], "2")
         self.assertAlmostEqual(float(truth_gte["mean"]), 0.45)
+
+    def test_summarize_trial_statistics_excludes_incomplete_groups_when_expected_num_trials_provided(
+        self,
+    ) -> None:
+        rows = [
+            {
+                "cohort_label": "cohort_a",
+                "source_type": "fit",
+                "source_name": "rank_a",
+                "source_slug": "fit_rank_a",
+                "statistic_name": "beta_estimate",
+                "statistic_value": 1.0,
+            },
+            {
+                "cohort_label": "cohort_a",
+                "source_type": "fit",
+                "source_name": "rank_a",
+                "source_slug": "fit_rank_a",
+                "statistic_name": "beta_estimate",
+                "statistic_value": 3.0,
+            },
+            {
+                "cohort_label": "cohort_a",
+                "source_type": "fit",
+                "source_name": "rank_b",
+                "source_slug": "fit_rank_b",
+                "statistic_name": "beta_estimate",
+                "statistic_value": 5.0,
+            },
+        ]
+
+        summary_rows = summarize_trial_statistics(rows, expected_num_trials=2)
+
+        self.assertEqual(len(summary_rows), 1)
+        self.assertEqual(summary_rows[0]["source_name"], "rank_a")
+        self.assertEqual(summary_rows[0]["num_trials"], 2)
+
+    def test_run_trial_aggregation_missing_intervention_summary_omits_incomplete_gte_stats_and_writes_warnings(
+        self,
+    ) -> None:
+        generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
+        (
+            self.root
+            / "confounding_strong_2"
+            / "intervention_summaries"
+            / "no_intervention.csv"
+        ).unlink()
+
+        outputs = run_trial_aggregation(
+            generation_manifest_path,
+            fit_manifest_path,
+            cohort_label="confounding_strong_x2",
+            output_dir=self.root / "trial_aggregation_missing_summary",
+            write_wide=True,
+        )
+
+        trial_rows = read_csv_manifest(outputs["trial_statistics_path"])
+        summary_rows = read_csv_manifest(outputs["summary_path"])
+        warning_rows = read_csv_manifest(outputs["warnings_path"])
+
+        self.assertEqual(
+            len(
+                [
+                    row
+                    for row in trial_rows
+                    if row["statistic_name"] == "gte_overall_mean_magnetization"
+                ]
+            ),
+            3,
+        )
+        self.assertFalse(
+            any(
+                row["statistic_name"] == "gte_overall_mean_magnetization"
+                for row in summary_rows
+            )
+        )
+        self.assertTrue(
+            any(
+                row["warning_kind"] == "missing_no_intervention_summary"
+                and row["experiment_slug"] == "confounding_strong_2"
+                for row in warning_rows
+            )
+        )
+        self.assertTrue(
+            any(
+                row["warning_kind"] == "incomplete_statistic"
+                and row["statistic_name"] == "gte_overall_mean_magnetization"
+                for row in warning_rows
+            )
+        )
+        beta_rank_a = next(
+            row
+            for row in summary_rows
+            if row["source_name"] == "rank_a"
+            and row["statistic_name"] == "beta_estimate"
+        )
+        self.assertEqual(beta_rank_a["num_trials"], "2")
+
+    def test_run_trial_aggregation_mismatched_intervention_summaries_warns_and_skips_gte(
+        self,
+    ) -> None:
+        generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
+        mismatch_path = (
+            self.root
+            / "confounding_strong_2"
+            / "intervention_summaries"
+            / "no_intervention.csv"
+        )
+        rows = read_csv_manifest(mismatch_path)
+        write_csv_rows(mismatch_path, rows[:-1])
+
+        outputs = run_trial_aggregation(
+            generation_manifest_path,
+            fit_manifest_path,
+            cohort_label="confounding_strong_x2",
+            output_dir=self.root / "trial_aggregation_mismatch",
+        )
+
+        trial_rows = read_csv_manifest(outputs["trial_statistics_path"])
+        summary_rows = read_csv_manifest(outputs["summary_path"])
+        warning_rows = read_csv_manifest(outputs["warnings_path"])
+
+        self.assertEqual(
+            len(
+                [
+                    row
+                    for row in trial_rows
+                    if row["statistic_name"] == "gte_overall_mean_magnetization"
+                ]
+            ),
+            3,
+        )
+        self.assertFalse(
+            any(
+                row["statistic_name"] == "gte_overall_mean_magnetization"
+                for row in summary_rows
+            )
+        )
+        self.assertTrue(
+            any(
+                row["warning_kind"] == "intervention_summary_mismatch"
+                and row["experiment_slug"] == "confounding_strong_2"
+                for row in warning_rows
+            )
+        )
+
+    def test_run_trial_aggregation_missing_fit_summary_keeps_partial_raw_rows_but_omits_incomplete_summary(
+        self,
+    ) -> None:
+        generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
+        (
+            self.root
+            / "confounding_strong_2"
+            / "fits"
+            / "rank_b"
+            / "mple_summary.csv"
+        ).unlink()
+
+        outputs = run_trial_aggregation(
+            generation_manifest_path,
+            fit_manifest_path,
+            cohort_label="confounding_strong_x2",
+            output_dir=self.root / "trial_aggregation_missing_fit",
+        )
+
+        trial_rows = read_csv_manifest(outputs["trial_statistics_path"])
+        summary_rows = read_csv_manifest(outputs["summary_path"])
+        warning_rows = read_csv_manifest(outputs["warnings_path"])
+
+        rank_b_trial_rows = [
+            row
+            for row in trial_rows
+            if row["source_name"] == "rank_b"
+            and row["statistic_name"] == "beta_estimate"
+        ]
+        self.assertEqual(len(rank_b_trial_rows), 1)
+        self.assertFalse(
+            any(
+                row["source_name"] == "rank_b"
+                and row["statistic_name"] == "beta_estimate"
+                for row in summary_rows
+            )
+        )
+        self.assertTrue(
+            any(
+                row["warning_kind"] == "missing_fit_summary"
+                and row["experiment_slug"] == "confounding_strong_2"
+                for row in warning_rows
+            )
+        )
+        self.assertTrue(
+            any(
+                row["warning_kind"] == "incomplete_statistic"
+                and row["source_name"] == "rank_b"
+                and row["statistic_name"] == "beta_estimate"
+                for row in warning_rows
+            )
+        )
+        rank_a_summary_row = next(
+            row
+            for row in summary_rows
+            if row["source_name"] == "rank_a"
+            and row["statistic_name"] == "beta_estimate"
+        )
+        self.assertEqual(rank_a_summary_row["num_trials"], "2")
+
+    def test_run_trial_aggregation_cli_reports_warning_summary(self) -> None:
+        generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
+        (
+            self.root
+            / "confounding_strong_2"
+            / "intervention_summaries"
+            / "no_intervention.csv"
+        ).unlink()
+
+        stdout_buffer = io.StringIO()
+        with mock.patch("sys.stdout", stdout_buffer):
+            exit_code = trial_aggregation_runner.main(
+                [
+                    "--generation_manifest_path",
+                    str(generation_manifest_path),
+                    "--fit_manifest_path",
+                    str(fit_manifest_path),
+                    "--cohort_label",
+                    "confounding_strong_x2",
+                    "--output_dir",
+                    str(self.root / "trial_aggregation_cli"),
+                ]
+            )
+
+        output = stdout_buffer.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Warnings:", output)
+        self.assertIn("Warning rows:", output)
+        self.assertIn("Incomplete summary statistics omitted:", output)
 
 
 class PipelineStageRequestTests(unittest.TestCase):
