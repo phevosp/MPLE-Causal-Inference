@@ -15,6 +15,10 @@ import numpy as np
 from utils.t0_csv_utils import read_csv_rows
 from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t5_experiment_context import load_experiment_panel_context
+from utils.t8_posterior_predictive_reporting import (
+    COUNTERFACTUAL_SUMMARY_ROOT_NAME,
+    POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME,
+)
 
 
 def _time_summary_rows(csv_path: str | Path) -> list[dict[str, str]]:
@@ -143,6 +147,12 @@ def _resolved_roots(manifest_row: dict[str, str]) -> tuple[Path, Path]:
     return experiment_root, output_root
 
 
+def _report_root(experiment_root: Path, output_dir_name: str) -> Path:
+    if not str(output_dir_name).strip():
+        return experiment_root
+    return experiment_root / str(output_dir_name)
+
+
 def _posterior_predictive_rows(
     manifest_rows: list[dict[str, str]],
 ) -> dict[tuple[str, str], list[dict[str, str]]]:
@@ -217,9 +227,8 @@ def _write_posterior_predictive_plots(
             show_intervention_start=intervention_start,
         )
         output_path = (
-            experiment_root
-            / output_dir_name
-            / "posterior_predictive"
+            _report_root(experiment_root, output_dir_name)
+            / POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME
             / f"{run_slug}_time_mean.png"
         )
         output_paths.append(_save_figure(fig, output_path))
@@ -264,7 +273,7 @@ def _write_intervention_summary_plots(
                 color=colors[color_index % len(colors)],
             )
         title = (
-            f"Intervention average outcome over time"
+            f"Counterfactual average outcome over time"
             f" ({group_rows[0].get('experiment_name', '')}, {group_rows[0].get('source_name', '')}, {group_rows[0].get('run_name', '')})"
         )
         _finalize_axis(
@@ -273,9 +282,8 @@ def _write_intervention_summary_plots(
             show_intervention_start=None,
         )
         output_path = (
-            experiment_root
-            / output_dir_name
-            / "intervention_summaries"
+            _report_root(experiment_root, output_dir_name)
+            / COUNTERFACTUAL_SUMMARY_ROOT_NAME
             / f"{run_slug}__{source_slug}_time_mean.png"
         )
         output_paths.append(_save_figure(fig, output_path))
@@ -287,7 +295,7 @@ def write_posterior_predictive_plot_reports(
     *,
     plot_posterior_predictive: bool,
     plot_intervention_summaries: bool,
-    output_dir_name: str = "posterior_predictive_reports",
+    output_dir_name: str = "",
 ) -> dict[str, object]:
     manifest_rows = read_csv_rows(manifest_path)
     if not manifest_rows:
@@ -296,7 +304,7 @@ def write_posterior_predictive_plot_reports(
     outputs: dict[str, object] = {
         "manifest_path": str(Path(manifest_path).resolve()),
         "posterior_predictive_plot_paths": [],
-        "intervention_summary_plot_paths": [],
+        "counterfactual_summary_plot_paths": [],
         "messages": [],
     }
     messages: list[str] = []
@@ -312,13 +320,19 @@ def write_posterior_predictive_plot_reports(
             manifest_rows,
             output_dir_name=output_dir_name,
         )
-        outputs["intervention_summary_plot_paths"] = paths
+        outputs["counterfactual_summary_plot_paths"] = paths
         messages.extend(path_messages)
     outputs["num_posterior_predictive_plots"] = len(
         outputs["posterior_predictive_plot_paths"]
     )
-    outputs["num_intervention_summary_plots"] = len(
-        outputs["intervention_summary_plot_paths"]
+    outputs["num_counterfactual_summary_plots"] = len(
+        outputs["counterfactual_summary_plot_paths"]
     )
+    outputs["intervention_summary_plot_paths"] = outputs[
+        "counterfactual_summary_plot_paths"
+    ]
+    outputs["num_intervention_summary_plots"] = outputs[
+        "num_counterfactual_summary_plots"
+    ]
     outputs["messages"] = messages
     return outputs

@@ -21,6 +21,12 @@ from utils.t6_posterior_predictive_summary import (
 )
 from utils.t8_output_writers import _as_float, _metric_or_inf
 
+COUNTERFACTUAL_SUMMARY_ROOT_NAME = "counterfactual_summaries"
+POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME = "posterior_predictive_summaries"
+POSTERIOR_PREDICTIVE_PER_EXPERIMENT_SUMMARY_NAME = "posterior_predictive_summary.csv"
+POSTERIOR_PREDICTIVE_WINNERS_SUMMARY_NAME = (
+    "best_posterior_predictive_by_experiment.csv"
+)
 
 PER_EXPERIMENT_COLUMNS = [
     "experiment_name",
@@ -788,9 +794,11 @@ def group_and_rank_predictive_rows(
 def write_intervention_summaries(
     experiment_path: str | Path,
     rows: list[dict[str, object]],
+    *,
+    summary_dir_name: str = COUNTERFACTUAL_SUMMARY_ROOT_NAME,
 ) -> dict[str, dict[str, str]]:
     experiment_root = Path(experiment_path)
-    summary_dir = experiment_root / "intervention_summaries"
+    summary_dir = experiment_root / str(summary_dir_name)
     summary_dir.mkdir(exist_ok=True)
 
     grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
@@ -813,7 +821,11 @@ def write_per_experiment_summary(
     rows: list[dict[str, object]],
 ) -> Path:
     experiment_root = Path(experiment_path)
-    csv_path = experiment_root / "posterior_predictive_summary.csv"
+    csv_path = (
+        experiment_root
+        / POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME
+        / POSTERIOR_PREDICTIVE_PER_EXPERIMENT_SUMMARY_NAME
+    )
     write_csv(csv_path, rows, PER_EXPERIMENT_COLUMNS)
     return csv_path
 
@@ -823,7 +835,11 @@ def write_cross_experiment_summary(
     winner_rows: list[dict[str, object]],
 ) -> Path:
     manifest_root = Path(manifest_path).resolve().parent
-    csv_path = manifest_root / "best_posterior_predictive_by_experiment.csv"
+    csv_path = (
+        manifest_root
+        / POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME
+        / POSTERIOR_PREDICTIVE_WINNERS_SUMMARY_NAME
+    )
     write_csv(csv_path, winner_rows, WINNER_COLUMNS)
     return csv_path
 
@@ -861,10 +877,33 @@ def refresh_and_write_posterior_predictive_reports(
     by_experiment: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in all_rows:
         by_experiment[str(row["experiment_path"])].append(row)
-    intervention_outputs: dict[str, dict[str, dict[str, str]]] = {}
+    counterfactual_outputs: dict[str, dict[str, dict[str, str]]] = {}
+    posterior_predictive_target_outputs: dict[str, dict[str, dict[str, str]]] = {}
     for exp_path, exp_rows in by_experiment.items():
-        intervention_outputs[exp_path] = write_intervention_summaries(exp_path, exp_rows)
-    outputs["intervention_summaries"] = intervention_outputs
+        counterfactual_rows = [
+            row
+            for row in exp_rows
+            if str(row.get("target_intervention_source", "")).strip()
+            == "saved_intervention"
+        ]
+        observed_rows = [
+            row
+            for row in exp_rows
+            if str(row.get("target_intervention_source", "")).strip()
+            == "observed_experiment"
+        ]
+        counterfactual_outputs[exp_path] = write_intervention_summaries(
+            exp_path,
+            counterfactual_rows,
+            summary_dir_name=COUNTERFACTUAL_SUMMARY_ROOT_NAME,
+        )
+        posterior_predictive_target_outputs[exp_path] = write_intervention_summaries(
+            exp_path,
+            observed_rows,
+            summary_dir_name=POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME,
+        )
+    outputs["counterfactual_summaries"] = counterfactual_outputs
+    outputs["posterior_predictive_summaries"] = posterior_predictive_target_outputs
 
     predictive_rows = collect_predictive_rows(manifest_path)
     if predictive_rows:

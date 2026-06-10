@@ -363,7 +363,7 @@ experiments/SyntheticHybridExperiments/<experiment_slug>/
   field_artifacts.npz
   gamma_matrix.npy | gamma_matrix_sparse.npz
   fit_summary.csv
-  posterior_predictive_summary.csv
+  posterior_predictive_summaries/posterior_predictive_summary.csv
   fits/
   intervention_library/
   posterior_predictive/
@@ -464,12 +464,12 @@ Fit reports:
 
 Posterior-predictive reports:
 
-- per experiment: `posterior_predictive_summary.csv`
-- cross experiment: `best_posterior_predictive_by_experiment.csv`
+- per experiment: `posterior_predictive_summaries/posterior_predictive_summary.csv`
+- cross experiment: `posterior_predictive_summaries/best_posterior_predictive_by_experiment.csv`
 
 Counterfactual runs write scenario-specific summary CSVs under each counterfactual output root. They do not participate in posterior-predictive ranking reports.
 
-Saved-intervention `intervention_summaries/<intervention_slug>.csv` reports can compare fit rows against the matching truth row for the same run using overall, post-intervention, unit-level, and time-level mean magnetization summaries.
+Saved-intervention `counterfactual_summaries/<intervention_slug>.csv` reports can compare fit rows against the matching truth row for the same run using overall, post-intervention, unit-level, and time-level mean magnetization summaries.
 
 ## Ranking Rules
 

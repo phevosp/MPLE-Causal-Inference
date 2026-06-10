@@ -11,6 +11,7 @@ from utils.t0_csv_utils import read_csv_rows, write_csv, write_csv_rows
 from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t8_output_writers import _as_float
 from utils.t8_parameter_recovery_reporting import read_summary_entries, scalar_value
+from utils.t8_posterior_predictive_reporting import COUNTERFACTUAL_SUMMARY_ROOT_NAME
 
 
 TRIAL_STATISTICS_COLUMNS = [
@@ -320,7 +321,7 @@ def _gte_trial_rows(
         if experiment_root_value in (None, ""):
             continue
         experiment_root = Path(str(experiment_root_value))
-        summary_root = experiment_root / "intervention_summaries"
+        summary_root = experiment_root / COUNTERFACTUAL_SUMMARY_ROOT_NAME
         all_rows, current_warnings = _read_intervention_rows_by_key(
             summary_root / "all_intervention.csv",
             cohort_label=str(cohort_row["cohort_label"]),

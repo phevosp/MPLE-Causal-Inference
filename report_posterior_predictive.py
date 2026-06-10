@@ -22,11 +22,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--generation_manifest_path", required=True, type=str)
     parser.add_argument("--plot_posterior_predictive", action="store_true")
-    parser.add_argument("--plot_intervention_summaries", action="store_true")
+    parser.add_argument(
+        "--plot_intervention_summaries",
+        "--plot_counterfactual_summaries",
+        dest="plot_intervention_summaries",
+        action="store_true",
+    )
     parser.add_argument(
         "--output_dir_name",
         type=str,
-        default="posterior_predictive_reports",
+        default="",
     )
     return parser.parse_args(argv)
 
@@ -36,7 +41,7 @@ def run_report_posterior_predictive(
     *,
     plot_posterior_predictive: bool = False,
     plot_intervention_summaries: bool = False,
-    output_dir_name: str = "posterior_predictive_reports",
+    output_dir_name: str = "",
 ) -> dict[str, object]:
     outputs = refresh_and_write_posterior_predictive_reports(generation_manifest_path)
     if plot_posterior_predictive or plot_intervention_summaries:
@@ -67,8 +72,8 @@ def main(argv: list[str] | None = None) -> None:
             print(message)
         for plot_path in plot_outputs.get("posterior_predictive_plot_paths", []):
             print(f"Posterior predictive plot: {plot_path}")
-        for plot_path in plot_outputs.get("intervention_summary_plot_paths", []):
-            print(f"Intervention summary plot: {plot_path}")
+        for plot_path in plot_outputs.get("counterfactual_summary_plot_paths", []):
+            print(f"Counterfactual summary plot: {plot_path}")
 
 
 if __name__ == "__main__":

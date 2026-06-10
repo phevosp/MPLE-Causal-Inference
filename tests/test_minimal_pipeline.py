@@ -140,6 +140,10 @@ from utils.t8_posterior_predictive_reporting import (
     refresh_and_write_posterior_predictive_reports,
     write_intervention_summaries,
 )
+from utils.t8_posterior_predictive_plotting import (
+    write_posterior_predictive_plot_reports,
+)
+import utils.t8_posterior_predictive_plotting as posterior_predictive_plotting
 from utils.t8_parameter_recovery_reporting import (
     collect_fit_rows,
     group_and_rank_fit_rows,
@@ -177,6 +181,7 @@ from utils.t6_posterior_predictive_summary import (
     manifest_row_from_metadata,
 )
 from run_posterior_predictive import run_posterior_predictive
+from report_posterior_predictive import run_report_posterior_predictive
 from run_test_evaluation import run_test_evaluation
 from utils.t6_split_management import (
     load_model_selection_split_masks,
@@ -3497,7 +3502,7 @@ class TrialAggregationTests(unittest.TestCase):
         filename: str,
         rows: list[dict[str, object]],
     ) -> None:
-        summary_root = self.root / experiment_slug / "intervention_summaries"
+        summary_root = self.root / experiment_slug / "counterfactual_summaries"
         summary_root.mkdir(parents=True, exist_ok=True)
         with (summary_root / filename).open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
@@ -3913,7 +3918,7 @@ class TrialAggregationTests(unittest.TestCase):
         (
             self.root
             / "confounding_strong_2"
-            / "intervention_summaries"
+            / "counterfactual_summaries"
             / "no_intervention.csv"
         ).unlink()
 
@@ -3974,7 +3979,7 @@ class TrialAggregationTests(unittest.TestCase):
         mismatch_path = (
             self.root
             / "confounding_strong_2"
-            / "intervention_summaries"
+            / "counterfactual_summaries"
             / "no_intervention.csv"
         )
         rows = read_csv_manifest(mismatch_path)
@@ -4080,7 +4085,7 @@ class TrialAggregationTests(unittest.TestCase):
         (
             self.root
             / "confounding_strong_2"
-            / "intervention_summaries"
+            / "counterfactual_summaries"
             / "no_intervention.csv"
         ).unlink()
 
@@ -8102,6 +8107,10 @@ class PosteriorPredictiveTests(unittest.TestCase):
             writer.writerows(rows)
         return manifest_path
 
+    def _to_orcd(self, path: Path) -> str:
+        relative = path.resolve().relative_to(REPO_ROOT.resolve())
+        return f"/orcd/home/002/phevosp/MPLE-Causal-Inference/{relative.as_posix()}"
+
     def _write_target_pairs(self, rows: list[dict[str, object]]) -> Path:
         target_pairs_path = self.root / "target_pairs.csv"
         with target_pairs_path.open("w", encoding="utf-8", newline="") as handle:
@@ -9431,7 +9440,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         write_intervention_summaries(experiment_root, manifest_rows)
 
-        summary_path = experiment_root / "intervention_summaries" / "all_zeros.csv"
+        summary_path = experiment_root / "counterfactual_summaries" / "all_zeros.csv"
         with summary_path.open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual(len(rows), 3)
@@ -9508,7 +9517,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             ],
         )
 
-        summary_path = experiment_root / "intervention_summaries" / "all_zeros.csv"
+        summary_path = experiment_root / "counterfactual_summaries" / "all_zeros.csv"
         with summary_path.open("r", encoding="utf-8", newline="") as handle:
             row = next(csv.DictReader(handle))
         self.assertEqual(row["truth_unit_mean_squared_error_mean"], "")
@@ -9549,10 +9558,11 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "output_path": str(observed_root.resolve()),
                 }
             ],
+            summary_dir_name="posterior_predictive_summaries",
         )
 
         summary_path = (
-            experiment_root / "intervention_summaries" / "observed_experiment.csv"
+            experiment_root / "posterior_predictive_summaries" / "observed_experiment.csv"
         )
         with summary_path.open("r", encoding="utf-8", newline="") as handle:
             row = next(csv.DictReader(handle))
@@ -9935,6 +9945,14 @@ class PosteriorPredictiveTests(unittest.TestCase):
             / "default"
         )
         predictive_manifest = self.root / "generated" / "posterior_predictive_manifest.csv"
+        counterfactual_summary_csv = (
+            experiment_root / "counterfactual_summaries" / "full_on_from_s.csv"
+        )
+        posterior_predictive_target_csv = (
+            experiment_root
+            / "posterior_predictive_summaries"
+            / "observed_experiment.csv"
+        )
 
         self.assertEqual(
             Path(str(truth_row["output_path"])).resolve(),
@@ -9972,6 +9990,11 @@ class PosteriorPredictiveTests(unittest.TestCase):
         )
         self.assertFalse(
             (counterfactual_root / "posterior_predictive_stats.csv").exists()
+        )
+        self.assertTrue(counterfactual_summary_csv.exists())
+        self.assertTrue(posterior_predictive_target_csv.exists())
+        self.assertFalse(
+            (experiment_root / "counterfactual_summaries" / "observed_experiment.csv").exists()
         )
 
         observed_panel = load_experiment_panel_context(experiment_root)
@@ -10087,6 +10110,11 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertEqual(
             sum(row["target_intervention_source"] == "observed_experiment" for row in rows),
             1,
+        )
+        self.assertIn(str(experiment_root.resolve()), report_outputs["counterfactual_summaries"])
+        self.assertIn(
+            str(experiment_root.resolve()),
+            report_outputs["posterior_predictive_summaries"],
         )
 
     def test_run_posterior_predictive_reports_refresh_unified_manifest(self) -> None:
@@ -10248,9 +10276,16 @@ class PosteriorPredictiveTests(unittest.TestCase):
             / "longer"
             / "posterior_predictive_stats.csv"
         )
-        summary_csv = experiment_root / "posterior_predictive_summary.csv"
+        summary_csv = (
+            experiment_root
+            / "posterior_predictive_summaries"
+            / "posterior_predictive_summary.csv"
+        )
         winners_csv = (
-            self.root / "generated" / "best_posterior_predictive_by_experiment.csv"
+            self.root
+            / "generated"
+            / "posterior_predictive_summaries"
+            / "best_posterior_predictive_by_experiment.csv"
         )
 
         self.assertTrue(truth_default_csv.exists())
@@ -10275,6 +10310,394 @@ class PosteriorPredictiveTests(unittest.TestCase):
             Path(report_outputs["manifest_path"]),
             self.root / "generated" / "posterior_predictive_manifest.csv",
         )
+
+    def test_run_report_posterior_predictive_returns_plot_outputs(self) -> None:
+        generation_spec_path = self.root / "generation_spec.yaml"
+        fits_spec_path = self.root / "fits_spec.yaml"
+        predictive_spec_path = self.root / "posterior_predictive_spec.yaml"
+        target_pairs_path = self.root / "target_pairs.csv"
+        generation_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    f"  experiment_root: {self.root.as_posix()}/generated",
+                    f"  manifest_path: {self.root.as_posix()}/generated/generation_manifest.csv",
+                    "  dimensions:",
+                    "    N: 6",
+                    "    T: 4",
+                    "  generation:",
+                    "    gibbs_sweeps: 1",
+                    "    seed: 7",
+                    "  x0:",
+                    "    generator: bernoulli",
+                    "    params:",
+                    "      p: 0.5",
+                    "      fixed_val: null",
+                    "  graph:",
+                    "    source: generated",
+                    "    generator: erdos_renyi",
+                    "    params:",
+                    "      p: 0.5",
+                    "    artifact:",
+                    "      gamma_path: null",
+                    "      node_index_path: null",
+                    "      artifact_dir: null",
+                    "      network_name: null",
+                    "      trim_scope: null",
+                    "  intervention:",
+                    "    source: generated",
+                    "    artifact:",
+                    "      panel_path: null",
+                    "      z0_path: null",
+                    "      artifact_dir: null",
+                    "      shared_panel_dir: null",
+                    "      outcome_code: null",
+                    "      intervention_code: null",
+                    "      lag_code: null",
+                    "      trim_scope: null",
+                    "  truth:",
+                    "    B: 1.0",
+                    "    scalars:",
+                    "      beta: 0.2",
+                    "      xi: 0.1",
+                    "      eta: 0.05",
+                    "experiments:",
+                    "  - name: smoke_rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fits_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  fit_root_name: fits",
+                    f"  fit_manifest_path: {self.root.as_posix()}/generated/fit_manifest.csv",
+                    "  optimizer:",
+                    "    steps: 5",
+                    "    tol: 1.0e-6",
+                    "    seed: 0",
+                    "  B: 1.0",
+                    "  latent_rank: 0",
+                    "  estimation:",
+                    "    fixed_scalar_params: {}",
+                    "variants:",
+                    "  - name: rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        predictive_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  num_samples: 4",
+                    "  gibbs_sweeps: 1",
+                    "  seed: 0",
+                    "runs:",
+                    "  - name: default",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        target_pairs_path.write_text(
+            "\n".join(
+                [
+                    "experiment_name,source_type,variant_name,intervention_source,intervention_name",
+                    "smoke_rank_0,fit,rank_0,observed_experiment,",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        run_posterior_predictive(
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_name="smoke_rank_0",
+            source_type="fit",
+            variant_name="rank_0",
+            intervention_source="observed_experiment",
+            intervention_name="",
+            run_name="default",
+            overwrite=True,
+        )
+
+        outputs = run_report_posterior_predictive(
+            generation_manifest,
+            plot_posterior_predictive=True,
+        )
+
+        self.assertIn("plot_outputs", outputs)
+        plot_outputs = outputs["plot_outputs"]
+        self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 1)
+        self.assertEqual(plot_outputs["num_counterfactual_summary_plots"], 0)
+        self.assertTrue(
+            (
+                self.root
+                / "generated"
+                / "smoke_rank_0"
+                / "posterior_predictive_summaries"
+                / "default_time_mean.png"
+            ).exists()
+        )
+
+    def test_write_posterior_predictive_plot_reports_uses_orcd_paths_and_panel_observed_series(
+        self,
+    ) -> None:
+        generation_spec_path = self.root / "generation_spec.yaml"
+        fits_spec_path = self.root / "fits_spec.yaml"
+        predictive_spec_path = self.root / "posterior_predictive_spec.yaml"
+        target_pairs_path = self.root / "target_pairs.csv"
+        intervention_spec_path = self.root / "intervention_library_spec.yaml"
+        generation_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    f"  experiment_root: {self.root.as_posix()}/generated",
+                    f"  manifest_path: {self.root.as_posix()}/generated/generation_manifest.csv",
+                    "  dimensions:",
+                    "    N: 6",
+                    "    T: 4",
+                    "  generation:",
+                    "    gibbs_sweeps: 1",
+                    "    seed: 7",
+                    "  x0:",
+                    "    generator: bernoulli",
+                    "    params:",
+                    "      p: 0.5",
+                    "      fixed_val: null",
+                    "  graph:",
+                    "    source: generated",
+                    "    generator: erdos_renyi",
+                    "    params:",
+                    "      p: 0.5",
+                    "    artifact:",
+                    "      gamma_path: null",
+                    "      node_index_path: null",
+                    "      artifact_dir: null",
+                    "      network_name: null",
+                    "      trim_scope: null",
+                    "  intervention:",
+                    "    source: generated",
+                    "    artifact:",
+                    "      panel_path: null",
+                    "      z0_path: null",
+                    "      artifact_dir: null",
+                    "      shared_panel_dir: null",
+                    "      outcome_code: null",
+                    "      intervention_code: null",
+                    "      lag_code: null",
+                    "      trim_scope: null",
+                    "  truth:",
+                    "    B: 1.0",
+                    "    scalars:",
+                    "      beta: 0.2",
+                    "      xi: 0.1",
+                    "      eta: 0.05",
+                    "experiments:",
+                    "  - name: smoke_rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fits_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  fit_root_name: fits",
+                    f"  fit_manifest_path: {self.root.as_posix()}/generated/fit_manifest.csv",
+                    "  optimizer:",
+                    "    steps: 5",
+                    "    tol: 1.0e-6",
+                    "    seed: 0",
+                    "  B: 1.0",
+                    "  latent_rank: 0",
+                    "  estimation:",
+                    "    fixed_scalar_params: {}",
+                    "variants:",
+                    "  - name: rank_0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        predictive_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    "  num_samples: 4",
+                    "  gibbs_sweeps: 1",
+                    "  seed: 0",
+                    "runs:",
+                    "  - name: default",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        intervention_spec_path.write_text(
+            "\n".join(
+                [
+                    "interventions:",
+                    "  - name: full_on_from_s",
+                    "    source_kind: full_on",
+                    "    activation_scope: from_s",
+                    "  - name: no_intervention",
+                    "    source_kind: full_on",
+                    "    activation_scope: no_time",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        target_pairs_path.write_text(
+            "\n".join(
+                [
+                    "experiment_name,source_type,variant_name,intervention_source,intervention_name",
+                    "smoke_rank_0,fit,rank_0,observed_experiment,",
+                    "smoke_rank_0,fit,rank_0,saved_intervention,full_on_from_s",
+                    "smoke_rank_0,fit,rank_0,saved_intervention,no_intervention",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        run_intervention_library(
+            generation_manifest,
+            intervention_spec_path,
+            overwrite=True,
+        )
+        run_posterior_predictive(
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_name="smoke_rank_0",
+            source_type="fit",
+            variant_name="rank_0",
+            intervention_source="observed_experiment",
+            intervention_name="",
+            run_name="default",
+            overwrite=True,
+        )
+        for intervention_name in ["full_on_from_s", "no_intervention"]:
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="rank_0",
+                intervention_source="saved_intervention",
+                intervention_name=intervention_name,
+                run_name="default",
+                overwrite=True,
+            )
+
+        report_outputs = refresh_and_write_posterior_predictive_reports(generation_manifest)
+        manifest_path = Path(report_outputs["manifest_path"])
+        manifest_rows = read_csv_manifest(manifest_path)
+        for row in manifest_rows:
+            row["experiment_path"] = self._to_orcd(Path(str(row["experiment_path"])))
+            row["output_path"] = self._to_orcd(Path(str(row["output_path"])))
+        write_csv_rows(manifest_path, manifest_rows, columns=list(manifest_rows[0].keys()))
+
+        experiment_root = self.root / "generated" / "smoke_rank_0"
+        observed_panel = load_experiment_panel_context(experiment_root)
+        expected_observed_mean = np.mean(
+            np.asarray(observed_panel["x"], dtype=float),
+            axis=1,
+        )
+        observed_time_summary_path = (
+            experiment_root
+            / "posterior_predictive"
+            / "fit_rank_0"
+            / "default"
+            / "posterior_predictive_time_summary.csv"
+        )
+        observed_time_rows = read_csv_manifest(observed_time_summary_path)
+        for row in observed_time_rows:
+            row["observed_value"] = "999.0"
+        write_csv_rows(
+            observed_time_summary_path,
+            observed_time_rows,
+            columns=list(observed_time_rows[0].keys()),
+        )
+
+        captured_observed_series: list[np.ndarray] = []
+        captured_labels: list[str] = []
+        original_plot_observed = posterior_predictive_plotting._plot_observed_trajectory
+        original_plot_sample = posterior_predictive_plotting._plot_sample_trajectory
+
+        def _capture_observed(ax, time_index, observed_mean):
+            captured_observed_series.append(np.asarray(observed_mean, dtype=float).copy())
+            return original_plot_observed(ax, time_index, observed_mean)
+
+        def _capture_sample(
+            ax,
+            time_index,
+            sample_mean,
+            lower,
+            upper,
+            *,
+            label,
+            color,
+        ):
+            captured_labels.append(str(label))
+            return original_plot_sample(
+                ax,
+                time_index,
+                sample_mean,
+                lower,
+                upper,
+                label=label,
+                color=color,
+            )
+
+        with mock.patch.object(
+            posterior_predictive_plotting,
+            "_plot_observed_trajectory",
+            side_effect=_capture_observed,
+        ), mock.patch.object(
+            posterior_predictive_plotting,
+            "_plot_sample_trajectory",
+            side_effect=_capture_sample,
+        ):
+            plot_outputs = write_posterior_predictive_plot_reports(
+                manifest_path,
+                plot_posterior_predictive=True,
+                plot_intervention_summaries=True,
+            )
+
+        self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 1)
+        self.assertEqual(plot_outputs["num_counterfactual_summary_plots"], 1)
+        self.assertTrue(
+            (
+                experiment_root
+                / "posterior_predictive_summaries"
+                / "default_time_mean.png"
+            ).exists()
+        )
+        self.assertTrue(
+            (
+                experiment_root
+                / "counterfactual_summaries"
+                / "default__fit_rank_0_time_mean.png"
+            ).exists()
+        )
+        self.assertTrue(
+            all(
+                np.allclose(series, expected_observed_mean)
+                for series in captured_observed_series
+            )
+        )
+        self.assertIn("rank_0", captured_labels)
+        self.assertIn("full_on_from_s", captured_labels)
+        self.assertIn("no_intervention", captured_labels)
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_posterior_predictive_jobs_submits_workers_and_report(self) -> None:

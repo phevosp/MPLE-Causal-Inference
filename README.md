@@ -90,7 +90,7 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | MPLE variant fitting | `run_fit_pipeline.py`, `submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/quickstart_fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
 | Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
 | Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `utils.t8_posterior_predictive_reporting`, `submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
-| Cross-trial synthetic cohort aggregation | `run_trial_aggregation.py`, `utils.t9_trial_aggregation` | generation manifest, fit manifest, per-experiment `intervention_summaries/*.csv` | `trial_aggregation/trial_statistics.csv`, cohort summary tables |
+| Cross-trial synthetic cohort aggregation | `run_trial_aggregation.py`, `utils.t9_trial_aggregation` | generation manifest, fit manifest, per-experiment `counterfactual_summaries/*.csv` | `trial_aggregation/trial_statistics.csv`, cohort summary tables |
 | CV fold construction for `U,V` regularizer tuning | `build_cv_folds.py` | `generation_manifest.csv` for experiments with `Gamma`, `panel_data.npz`, and optional `node_index.csv` / `time_index.csv` | `cv_folds/folds_5/` spatial partitions plus spatiotemporal fold artifacts |
 | Cross-validated MPLE hyperparameter search | `run_cv_folds.py` | `generation_manifest.csv`, prebuilt `cv_folds/folds_5/`, `data/configs/cv_spec.yaml` | `cv_requests.csv`, `cv_manifest.csv`, per-search candidate scores and fold fits |
 | Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census geography sources | cached raw inputs |
@@ -292,7 +292,7 @@ Refresh reports and write time-series plots:
 pixi run python -u report_posterior_predictive.py \
   --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
   --plot_posterior_predictive \
-  --plot_intervention_summaries
+  --plot_counterfactual_summaries
 ```
 
 Unified outputs:
@@ -300,8 +300,8 @@ Unified outputs:
 - `experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv`
 - `posterior_predictive/<source_slug>/<run_slug>/...` under each experiment root
 - `counterfactual/<source_slug>/<intervention_slug>/<run_slug>/...` under each experiment root
-- per-experiment `posterior_predictive_summary.csv`
-- cross-experiment `best_posterior_predictive_by_experiment.csv`
+- per-experiment `posterior_predictive_summaries/posterior_predictive_summary.csv`
+- cross-experiment `posterior_predictive_summaries/best_posterior_predictive_by_experiment.csv`
 - `counterfactual_sample_summaries.npz`
 - `counterfactual_summary.csv`
 - `counterfactual_unit_summary.csv`
@@ -310,7 +310,7 @@ Unified outputs:
 
 Counterfactual rows are included in the unified `posterior_predictive_manifest.csv`, but they do not write `posterior_predictive_stats.csv` and are excluded from posterior-predictive ranking.
 
-Saved-intervention `intervention_summaries/<intervention_slug>.csv` files now include truth-referenced counterfactual comparison columns when a matching `truth` row exists for the same run. These reports compare overall, post-intervention, unit-level, and time-level mean magnetization summaries against the saved truth row.
+Saved-intervention `counterfactual_summaries/<intervention_slug>.csv` files now include truth-referenced counterfactual comparison columns when a matching `truth` row exists for the same run. Observed-intervention grouped summaries now live under `posterior_predictive_summaries/observed_experiment.csv`.
 
 Example counterfactual target-pairs file:
 
