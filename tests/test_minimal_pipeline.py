@@ -10435,6 +10435,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
         plot_outputs = outputs["plot_outputs"]
         self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 1)
         self.assertEqual(plot_outputs["num_counterfactual_summary_plots"], 0)
+        self.assertEqual(plot_outputs["num_intervention_share_plots"], 0)
         self.assertTrue(
             (
                 self.root
@@ -10630,8 +10631,11 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         captured_observed_series: list[np.ndarray] = []
         captured_labels: list[str] = []
+        captured_share_labels: list[str] = []
+        captured_share_series: dict[str, np.ndarray] = {}
         original_plot_observed = posterior_predictive_plotting._plot_observed_trajectory
         original_plot_sample = posterior_predictive_plotting._plot_sample_trajectory
+        original_plot_line = posterior_predictive_plotting._plot_line_trajectory
 
         def _capture_observed(ax, time_index, observed_mean):
             captured_observed_series.append(np.asarray(observed_mean, dtype=float).copy())
@@ -10658,6 +10662,18 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 color=color,
             )
 
+        def _capture_line(ax, time_index, values, *, label, color):
+            label_text = str(label)
+            captured_share_labels.append(label_text)
+            captured_share_series[label_text] = np.asarray(values, dtype=float).copy()
+            return original_plot_line(
+                ax,
+                time_index,
+                values,
+                label=label,
+                color=color,
+            )
+
         with mock.patch.object(
             posterior_predictive_plotting,
             "_plot_observed_trajectory",
@@ -10666,6 +10682,10 @@ class PosteriorPredictiveTests(unittest.TestCase):
             posterior_predictive_plotting,
             "_plot_sample_trajectory",
             side_effect=_capture_sample,
+        ), mock.patch.object(
+            posterior_predictive_plotting,
+            "_plot_line_trajectory",
+            side_effect=_capture_line,
         ):
             plot_outputs = write_posterior_predictive_plot_reports(
                 manifest_path,
@@ -10675,6 +10695,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 1)
         self.assertEqual(plot_outputs["num_counterfactual_summary_plots"], 1)
+        self.assertEqual(plot_outputs["num_intervention_share_plots"], 1)
         self.assertTrue(
             (
                 experiment_root
@@ -10690,6 +10711,13 @@ class PosteriorPredictiveTests(unittest.TestCase):
             ).exists()
         )
         self.assertTrue(
+            (
+                experiment_root
+                / "counterfactual_summaries"
+                / "intervention_share_over_time.png"
+            ).exists()
+        )
+        self.assertTrue(
             all(
                 np.allclose(series, expected_observed_mean)
                 for series in captured_observed_series
@@ -10698,6 +10726,31 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertIn("rank_0", captured_labels)
         self.assertIn("full_on_from_s", captured_labels)
         self.assertIn("no_intervention", captured_labels)
+        self.assertEqual(len(captured_share_labels), 3)
+        self.assertEqual(
+            set(captured_share_labels),
+            {"observed_experiment", "full_on_from_s", "no_intervention"},
+        )
+        self.assertTrue(
+            np.allclose(
+                captured_share_series["observed_experiment"],
+                np.mean(np.asarray(observed_panel["z"], dtype=float) == 1.0, axis=1),
+            )
+        )
+        self.assertTrue(
+            np.allclose(
+                captured_share_series["no_intervention"],
+                np.zeros(int(observed_panel["T"]), dtype=float),
+            )
+        )
+        expected_full_on = np.zeros(int(observed_panel["T"]), dtype=float)
+        expected_full_on[int(observed_panel["s"]) :] = 1.0
+        self.assertTrue(
+            np.allclose(
+                captured_share_series["full_on_from_s"],
+                expected_full_on,
+            )
+        )
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_posterior_predictive_jobs_submits_workers_and_report(self) -> None:

@@ -15,6 +15,7 @@ import numpy as np
 from utils.t0_csv_utils import read_csv_rows
 from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t5_experiment_context import load_experiment_panel_context
+from utils.t6_intervention_utils import resolve_intervention_context
 from utils.t8_posterior_predictive_reporting import (
     COUNTERFACTUAL_SUMMARY_ROOT_NAME,
     POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME,
@@ -61,6 +62,10 @@ def _load_summary_series(csv_path: str | Path) -> dict[str, np.ndarray]:
     }
 
 
+def _intervention_share_series(z: np.ndarray) -> np.ndarray:
+    return np.mean(np.asarray(z, dtype=float) == 1.0, axis=1)
+
+
 def _observed_time_mean(experiment_root: str | Path) -> tuple[np.ndarray, np.ndarray, int]:
     panel_context = load_experiment_panel_context(experiment_root)
     observed = np.mean(np.asarray(panel_context["x"], dtype=float), axis=1)
@@ -104,6 +109,24 @@ def _plot_sample_trajectory(
     ax.plot(
         time_index,
         sample_mean,
+        color=color,
+        linewidth=2.0,
+        label=label,
+        zorder=3,
+    )
+
+
+def _plot_line_trajectory(
+    ax: plt.Axes,
+    time_index: np.ndarray,
+    values: np.ndarray,
+    *,
+    label: str,
+    color: object,
+) -> None:
+    ax.plot(
+        time_index,
+        values,
         color=color,
         linewidth=2.0,
         label=label,
@@ -184,6 +207,27 @@ def _intervention_rows(
                 str(row.get("source_slug", "")),
             )
         ].append(row)
+    return grouped
+
+
+def _intervention_share_rows_by_experiment(
+    manifest_rows: list[dict[str, str]],
+) -> dict[str, list[dict[str, str]]]:
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    seen_keys: set[tuple[str, str]] = set()
+    for row in manifest_rows:
+        intervention_source = str(row.get("target_intervention_source", "")).strip()
+        if intervention_source not in {"observed_experiment", "saved_intervention"}:
+            continue
+        experiment_root, _ = _resolved_roots(row)
+        intervention_slug = str(row.get("target_intervention_slug", "")).strip()
+        if not intervention_slug:
+            intervention_slug = "observed_experiment"
+        dedupe_key = (str(experiment_root), intervention_slug)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        grouped[str(experiment_root)].append(row)
     return grouped
 
 
@@ -290,6 +334,73 @@ def _write_intervention_summary_plots(
     return output_paths, []
 
 
+def _write_intervention_share_plots(
+    manifest_rows: list[dict[str, str]],
+    *,
+    output_dir_name: str,
+) -> tuple[list[str], list[str]]:
+    grouped = _intervention_share_rows_by_experiment(manifest_rows)
+    if not grouped:
+        return [], ["Skipped intervention-share plots: no intervention rows found."]
+
+    output_paths: list[str] = []
+    colors = list(plt.get_cmap("tab10").colors)
+    for experiment_root_text, group_rows in sorted(grouped.items()):
+        experiment_root = Path(experiment_root_text)
+        fig, ax = plt.subplots(figsize=(11, 5))
+        for color_index, row in enumerate(
+            sorted(
+                group_rows,
+                key=lambda item: (
+                    str(item.get("target_intervention_source", "")) != "observed_experiment",
+                    str(
+                        item.get(
+                            "target_intervention_name",
+                            item.get("target_intervention_slug", ""),
+                        )
+                    ),
+                ),
+            )
+        ):
+            intervention_source = str(row.get("target_intervention_source", "")).strip()
+            intervention_name = str(row.get("target_intervention_name", "")).strip()
+            context = resolve_intervention_context(
+                experiment_root,
+                intervention_source=intervention_source,
+                intervention_name=intervention_name,
+            )
+            share_series = _intervention_share_series(context.z)
+            time_index = np.arange(share_series.shape[0], dtype=int)
+            label = (
+                str(row.get("target_intervention_name", "")).strip()
+                or str(row.get("target_intervention_slug", "")).strip()
+                or context.intervention_name
+            )
+            _plot_line_trajectory(
+                ax,
+                time_index,
+                share_series,
+                label=label,
+                color=colors[color_index % len(colors)],
+            )
+        ax.set_xlabel("Time index")
+        ax.set_ylabel("Share intervened")
+        ax.set_ylim(0.0, 1.0)
+        ax.set_title(
+            "Intervention share over time"
+            f" ({group_rows[0].get('experiment_name', '')})"
+        )
+        ax.grid(axis="y", alpha=0.25)
+        ax.legend(loc="best")
+        output_path = (
+            _report_root(experiment_root, output_dir_name)
+            / COUNTERFACTUAL_SUMMARY_ROOT_NAME
+            / "intervention_share_over_time.png"
+        )
+        output_paths.append(_save_figure(fig, output_path))
+    return output_paths, []
+
+
 def write_posterior_predictive_plot_reports(
     manifest_path: str | Path,
     *,
@@ -305,6 +416,7 @@ def write_posterior_predictive_plot_reports(
         "manifest_path": str(Path(manifest_path).resolve()),
         "posterior_predictive_plot_paths": [],
         "counterfactual_summary_plot_paths": [],
+        "intervention_share_plot_paths": [],
         "messages": [],
     }
     messages: list[str] = []
@@ -322,11 +434,20 @@ def write_posterior_predictive_plot_reports(
         )
         outputs["counterfactual_summary_plot_paths"] = paths
         messages.extend(path_messages)
+        paths, path_messages = _write_intervention_share_plots(
+            manifest_rows,
+            output_dir_name=output_dir_name,
+        )
+        outputs["intervention_share_plot_paths"] = paths
+        messages.extend(path_messages)
     outputs["num_posterior_predictive_plots"] = len(
         outputs["posterior_predictive_plot_paths"]
     )
     outputs["num_counterfactual_summary_plots"] = len(
         outputs["counterfactual_summary_plot_paths"]
+    )
+    outputs["num_intervention_share_plots"] = len(
+        outputs["intervention_share_plot_paths"]
     )
     outputs["intervention_summary_plot_paths"] = outputs[
         "counterfactual_summary_plot_paths"

@@ -74,6 +74,8 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Posterior predictive plot: {plot_path}")
         for plot_path in plot_outputs.get("counterfactual_summary_plot_paths", []):
             print(f"Counterfactual summary plot: {plot_path}")
+        for plot_path in plot_outputs.get("intervention_share_plot_paths", []):
+            print(f"Intervention share plot: {plot_path}")
 
 
 if __name__ == "__main__":
