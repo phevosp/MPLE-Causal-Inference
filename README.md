@@ -286,6 +286,15 @@ Manifest/report refresh utility:
 pixi run python -c "from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'experiments/SyntheticHybridExperiments/generation_manifest.csv')"
 ```
 
+Refresh reports and write time-series plots:
+
+```bash
+pixi run python -u report_posterior_predictive.py \
+  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
+  --plot_posterior_predictive \
+  --plot_intervention_summaries
+```
+
 Unified outputs:
 
 - `experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv`
