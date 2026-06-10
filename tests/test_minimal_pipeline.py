@@ -5134,12 +5134,19 @@ class PipelineStageRequestTests(unittest.TestCase):
             "execute_fit_root",
             side_effect=AssertionError("should not refit matching completed fold"),
         ):
-            manifest_path = cv_runner.run_cv_folds(
-                generation_manifest,
-                cv_spec_path,
-                execution_mode="validation",
-                continue_mode=True,
-            )
+            with mock.patch.object(
+                cv_runner,
+                "_evaluate_and_store_fold_metrics",
+                side_effect=AssertionError(
+                    "should not recompute matching persisted fold score"
+                ),
+            ):
+                manifest_path = cv_runner.run_cv_folds(
+                    generation_manifest,
+                    cv_spec_path,
+                    execution_mode="validation",
+                    continue_mode=True,
+                )
 
         manifest_rows = read_csv_manifest(manifest_path)
         self.assertEqual(len(manifest_rows), 1)
@@ -5154,6 +5161,305 @@ class PipelineStageRequestTests(unittest.TestCase):
         fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
         self.assertEqual(len(fold_rows), 1)
         self.assertEqual(fold_rows[0]["status"], "completed")
+
+    def test_run_cv_folds_continue_recomputes_when_fold_scores_missing(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "rfsm",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "rfsm"
+        )
+        (output_root / "fold_scores.csv").unlink()
+
+        original_evaluator = cv_runner._evaluate_and_store_fold_metrics
+        with mock.patch.object(
+            cv_runner,
+            "execute_fit_root",
+            side_effect=AssertionError("should not refit completed fold"),
+        ):
+            with mock.patch.object(
+                cv_runner,
+                "_evaluate_and_store_fold_metrics",
+                wraps=original_evaluator,
+            ) as evaluate_mock:
+                manifest_path = cv_runner.run_cv_folds(
+                    generation_manifest,
+                    cv_spec_path,
+                    execution_mode="validation",
+                    continue_mode=True,
+                )
+
+        self.assertEqual(evaluate_mock.call_count, 1)
+        self.assertTrue((output_root / "fold_scores.csv").exists())
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+
+    def test_run_cv_folds_continue_recomputes_when_fold_score_row_missing(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "rfsr",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0, 1]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "rfsr"
+        )
+        original_fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        write_csv_rows(output_root / "fold_scores.csv", [original_fold_rows[0]])
+
+        original_evaluator = cv_runner._evaluate_and_store_fold_metrics
+        with mock.patch.object(
+            cv_runner,
+            "execute_fit_root",
+            side_effect=AssertionError("should not refit completed fold"),
+        ):
+            with mock.patch.object(
+                cv_runner,
+                "_evaluate_and_store_fold_metrics",
+                wraps=original_evaluator,
+            ) as evaluate_mock:
+                manifest_path = cv_runner.run_cv_folds(
+                    generation_manifest,
+                    cv_spec_path,
+                    execution_mode="validation",
+                    continue_mode=True,
+                )
+
+        self.assertEqual(evaluate_mock.call_count, 1)
+        refreshed_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(len(refreshed_rows), 2)
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+
+    def test_run_cv_folds_continue_recomputes_when_fold_score_status_not_completed(
+        self,
+    ) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "rfsn",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "rfsn"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        stale_row = dict(fold_rows[0])
+        stale_row["status"] = "failed"
+        stale_row["error_message"] = "stale status"
+        write_csv_rows(output_root / "fold_scores.csv", [stale_row])
+
+        original_evaluator = cv_runner._evaluate_and_store_fold_metrics
+        with mock.patch.object(
+            cv_runner,
+            "execute_fit_root",
+            side_effect=AssertionError("should not refit completed fold"),
+        ):
+            with mock.patch.object(
+                cv_runner,
+                "_evaluate_and_store_fold_metrics",
+                wraps=original_evaluator,
+            ) as evaluate_mock:
+                manifest_path = cv_runner.run_cv_folds(
+                    generation_manifest,
+                    cv_spec_path,
+                    execution_mode="validation",
+                    continue_mode=True,
+                )
+
+        self.assertEqual(evaluate_mock.call_count, 1)
+        refreshed_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(refreshed_rows[0]["status"], "completed")
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+
+    def test_run_cv_folds_continue_recomputes_when_fold_score_metadata_mismatches(
+        self,
+    ) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "rfsm",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "rfsm"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        stale_row = dict(fold_rows[0])
+        stale_row["num_validation_slots"] = str(int(stale_row["num_validation_slots"]) + 1)
+        write_csv_rows(output_root / "fold_scores.csv", [stale_row])
+
+        original_evaluator = cv_runner._evaluate_and_store_fold_metrics
+        with mock.patch.object(
+            cv_runner,
+            "execute_fit_root",
+            side_effect=AssertionError("should not refit completed fold"),
+        ):
+            with mock.patch.object(
+                cv_runner,
+                "_evaluate_and_store_fold_metrics",
+                wraps=original_evaluator,
+            ) as evaluate_mock:
+                manifest_path = cv_runner.run_cv_folds(
+                    generation_manifest,
+                    cv_spec_path,
+                    execution_mode="validation",
+                    continue_mode=True,
+                )
+
+        self.assertEqual(evaluate_mock.call_count, 1)
+        refreshed_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        self.assertEqual(
+            int(refreshed_rows[0]["num_validation_slots"]),
+            int(fold_rows[0]["num_validation_slots"]),
+        )
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+
+    def test_run_cv_folds_continue_accepts_orcd_fold_score_fit_path(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "rforcd",
+                    "optimizer_mode": "no_external_field",
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            execution_mode="validation",
+            overwrite=True,
+        )
+
+        output_root = (
+            self.root
+            / "generated"
+            / "exp_a"
+            / "validation_runs"
+            / "rforcd"
+        )
+        fold_rows = read_csv_manifest(output_root / "fold_scores.csv")
+        remapped_row = dict(fold_rows[0])
+        fit_root = Path(remapped_row["fit_path"]).resolve()
+        suffix = fit_root.relative_to(REPO_ROOT).as_posix()
+        remapped_row["fit_path"] = (
+            f"/orcd/home/002/phevosp/MPLE-Causal-Inference/{suffix}"
+        )
+        write_csv_rows(output_root / "fold_scores.csv", [remapped_row])
+
+        with mock.patch.object(
+            cv_runner,
+            "execute_fit_root",
+            side_effect=AssertionError("should not refit completed fold"),
+        ):
+            with mock.patch.object(
+                cv_runner,
+                "_evaluate_and_store_fold_metrics",
+                side_effect=AssertionError(
+                    "should not recompute matching ORCD-remapped fold score"
+                ),
+            ):
+                manifest_path = cv_runner.run_cv_folds(
+                    generation_manifest,
+                    cv_spec_path,
+                    execution_mode="validation",
+                    continue_mode=True,
+                )
+
+        manifest_rows = read_csv_manifest(manifest_path)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
 
     def test_run_cv_folds_continue_errors_on_completed_fold_mismatch(self) -> None:
         generation_spec_path = self._write_generation_spec(

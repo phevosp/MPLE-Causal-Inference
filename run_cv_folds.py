@@ -14,6 +14,7 @@ from omegaconf import OmegaConf
 
 from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping, to_plain_mapping
 from utils.t0_csv_utils import read_csv_rows, write_csv_rows
+from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t0_string_utils import slugify
 from utils.t1_matrix_io import save_loss_mask
 from utils.t0_path_utils import io_path
@@ -772,6 +773,76 @@ def _persist_fold_score_rows(
     write_csv_rows(Path(output_root) / "fold_scores.csv", fold_rows)
 
 
+def _normalized_fold_score_path_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return str(resolve_orcd_local_path(text))
+    except FileNotFoundError:
+        return Path(text).as_posix()
+
+
+def _fold_score_lookup_key(row: dict[str, object]) -> tuple[str, str, str, int]:
+    execution_mode = str(row.get("execution_mode", "")).strip().lower()
+    search_slug = str(row.get("search_slug", "")).strip()
+    candidate_slug = str(row.get("candidate_slug", "")).strip()
+    cv_fold_id = int(_parse_manifest_scalar(row.get("cv_fold_id", 0)))
+    return execution_mode, search_slug, candidate_slug, cv_fold_id
+
+
+def _load_persisted_fold_score_lookup(
+    output_root: str | Path,
+) -> dict[tuple[str, str, str, int], dict[str, str]]:
+    fold_scores_path = Path(output_root) / "fold_scores.csv"
+    if not fold_scores_path.exists():
+        return {}
+    try:
+        rows = read_csv_rows(fold_scores_path)
+    except Exception:  # noqa: BLE001
+        return {}
+
+    lookup: dict[tuple[str, str, str, int], dict[str, str]] = {}
+    for row in rows:
+        try:
+            lookup[_fold_score_lookup_key(row)] = dict(row)
+        except Exception:  # noqa: BLE001
+            continue
+    return lookup
+
+
+def _persisted_fold_score_matches_expected_row(
+    expected_row: dict[str, object],
+    observed_row: dict[str, str],
+) -> bool:
+    if str(observed_row.get("status", "")).strip().lower() != "completed":
+        return False
+    for key, expected_value in expected_row.items():
+        if key not in observed_row:
+            return False
+        if key == "fit_path":
+            if _normalized_fold_score_path_text(
+                observed_row[key]
+            ) != _normalized_fold_score_path_text(expected_value):
+                return False
+            continue
+        if _parse_manifest_scalar(observed_row[key]) != expected_value:
+            return False
+    return True
+
+
+def _reusable_persisted_fold_score_row(
+    expected_row: dict[str, object],
+    persisted_lookup: dict[tuple[str, str, str, int], dict[str, str]],
+) -> dict[str, object] | None:
+    persisted_row = persisted_lookup.get(_fold_score_lookup_key(expected_row))
+    if persisted_row is None:
+        return None
+    if not _persisted_fold_score_matches_expected_row(expected_row, persisted_row):
+        return None
+    return dict(persisted_row)
+
+
 def _first_nested_mismatch(
     expected: object,
     observed: object,
@@ -1059,6 +1130,9 @@ def _run_search_for_experiment(
         for candidate in candidates
     ]
     write_csv_rows(output_root / "candidate_grid.csv", candidate_grid_rows)
+    persisted_fold_score_lookup = (
+        _load_persisted_fold_score_lookup(output_root) if continue_mode else {}
+    )
 
     fold_rows: list[dict[str, object]] = []
     for candidate in candidates:
@@ -1131,14 +1205,21 @@ def _run_search_for_experiment(
                         continue_mode=continue_mode,
                     )
                     if fold_state == FOLD_STATE_REUSE:
-                        _evaluate_and_store_fold_metrics(
+                        persisted_row = _reusable_persisted_fold_score_row(
                             row,
-                            fit_root=fold_root,
-                            experiment_root=experiment_root,
-                            training_loss_mask=training_loss_mask,
-                            validation_loss_mask=validation_loss_mask,
-                            validation_sampling=validation_sampling,
+                            persisted_fold_score_lookup,
                         )
+                        if persisted_row is not None:
+                            row = persisted_row
+                        else:
+                            _evaluate_and_store_fold_metrics(
+                                row,
+                                fit_root=fold_root,
+                                experiment_root=experiment_root,
+                                training_loss_mask=training_loss_mask,
+                                validation_loss_mask=validation_loss_mask,
+                                validation_sampling=validation_sampling,
+                            )
                         fold_rows.append(row)
                         _persist_fold_score_rows(output_root, fold_rows)
                         continue
