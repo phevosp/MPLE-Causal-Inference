@@ -10358,6 +10358,10 @@ class PosteriorPredictiveTests(unittest.TestCase):
             "8|<--parsable><run_posterior_predictive_job.sh><exp_a><truth><><observed_experiment><><longer>",
         )
         self.assertIn("<--wrap>", log_lines[2])
+        self.assertIn(
+            "refresh_and_write_posterior_predictive_reports",
+            log_lines[2],
+        )
 
 
 class GraphPartitioningTests(unittest.TestCase):
