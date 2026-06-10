@@ -222,7 +222,8 @@ experiments/**
 !experiments/**/**_requests**.csv
 !experiments/**/**_scores**.csv
 !experiments/**/**_grid**.csv
-!experiments/**/intervention_summaries/**.csv
+!experiments/**/counterfactual_summaries/**
+!experiments/**/posterior_predictive_summaries/**
 experiments/DEPRECIATED/**
 
 
