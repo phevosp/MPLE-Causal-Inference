@@ -9,9 +9,11 @@ import numpy as np
 
 from utils.t0_csv_utils import read_csv_rows, write_csv, write_csv_rows
 from utils.t0_orcd_path_remap import resolve_orcd_local_path
-from utils.t8_output_writers import _as_float
 from utils.t8_parameter_recovery_reporting import read_summary_entries, scalar_value
-from utils.t8_posterior_predictive_reporting import COUNTERFACTUAL_SUMMARY_ROOT_NAME
+from utils.t8_posterior_predictive_reporting import (
+    COUNTERFACTUAL_SUMMARY_ROOT_NAME,
+    GTE_REPORT_NAME,
+)
 
 
 TRIAL_STATISTICS_COLUMNS = [
@@ -54,32 +56,13 @@ WARNING_COLUMNS = [
     "artifact_path",
     "message",
 ]
-_GTE_COLUMN = "overall_mean_magnetization_mean"
-_GTE_AFTER_S_COLUMN = "post_intervention_mean_magnetization_mean"
 _FIT_TRIAL_STATISTIC_NAME_MAP = {
     "beta_estimate": "beta",
     "xi_estimate": "xi",
     "eta_estimate": "eta",
     "field_rmse": "field_rmse",
 }
-_INTERVENTION_DIFFERENCE_SPECS = (
-    {
-        "left_summary_slug": "all_intervention",
-        "right_summary_slug": "no_intervention",
-        "statistic_name": "gte_overall_mean_magnetization",
-        "metric_column": _GTE_COLUMN,
-        "missing_statistic_warning_kind": "missing_gte_statistic",
-        "mismatch_warning_kind": "intervention_summary_mismatch",
-    },
-    {
-        "left_summary_slug": "all_intervention_from_s",
-        "right_summary_slug": "no_intervention",
-        "statistic_name": "gte_after_s",
-        "metric_column": _GTE_AFTER_S_COLUMN,
-        "missing_statistic_warning_kind": "missing_gte_after_s_statistic",
-        "mismatch_warning_kind": "intervention_summary_mismatch_gte_after_s",
-    },
-)
+_GTE_STATISTIC_COLUMNS = ("gte", "gte_post_s")
 
 
 def _warning_row(
@@ -282,54 +265,6 @@ def _parameter_trial_rows(
     return rows, warnings
 
 
-def _intervention_rows_by_key(
-    summary_path: Path,
-) -> dict[tuple[str, str, str, str, str], dict[str, str]]:
-    rows = read_csv_rows(summary_path)
-    return {
-        (
-            str(row.get("source_type", "")),
-            str(row.get("source_name", "")),
-            str(row.get("source_slug", "")),
-            str(row.get("run_name", "")),
-            str(row.get("run_slug", "")),
-        ): row
-        for row in rows
-    }
-
-
-def _read_intervention_rows_by_key(
-    summary_path: Path,
-    *,
-    cohort_label: str,
-    experiment_slug: str,
-    warning_kind: str,
-    unreadable_warning_kind: str,
-) -> tuple[dict[tuple[str, str, str, str, str], dict[str, str]] | None, list[dict[str, object]]]:
-    if not summary_path.exists():
-        return None, [
-            _warning_row(
-                cohort_label=cohort_label,
-                experiment_slug=experiment_slug,
-                warning_kind=warning_kind,
-                artifact_path=summary_path,
-                message=f"Missing intervention summary at {summary_path}.",
-            )
-        ]
-    try:
-        return _intervention_rows_by_key(summary_path), []
-    except Exception as exc:  # noqa: BLE001
-        return None, [
-            _warning_row(
-                cohort_label=cohort_label,
-                experiment_slug=experiment_slug,
-                warning_kind=unreadable_warning_kind,
-                artifact_path=summary_path,
-                message=str(exc),
-            )
-        ]
-
-
 def _gte_trial_rows(
     cohort_rows: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -340,62 +275,40 @@ def _gte_trial_rows(
         if experiment_root_value in (None, ""):
             continue
         experiment_root = Path(str(experiment_root_value))
-        summary_root = experiment_root / COUNTERFACTUAL_SUMMARY_ROOT_NAME
-        required_summary_slugs = {
-            str(spec["left_summary_slug"])
-            for spec in _INTERVENTION_DIFFERENCE_SPECS
-        } | {
-            str(spec["right_summary_slug"])
-            for spec in _INTERVENTION_DIFFERENCE_SPECS
-        }
-        summary_rows_by_slug: dict[
-            str, dict[tuple[str, str, str, str, str], dict[str, str]] | None
-        ] = {}
-        for summary_slug in sorted(required_summary_slugs):
-            current_rows, current_warnings = _read_intervention_rows_by_key(
-                summary_root / f"{summary_slug}.csv",
-                cohort_label=str(cohort_row["cohort_label"]),
-                experiment_slug=str(cohort_row["experiment_slug"]),
-                warning_kind=f"missing_{summary_slug}_summary",
-                unreadable_warning_kind=f"unreadable_{summary_slug}_summary",
-            )
-            warnings.extend(current_warnings)
-            summary_rows_by_slug[summary_slug] = current_rows
-
-        for spec in _INTERVENTION_DIFFERENCE_SPECS:
-            left_summary_slug = str(spec["left_summary_slug"])
-            right_summary_slug = str(spec["right_summary_slug"])
-            statistic_name = str(spec["statistic_name"])
-            metric_column = str(spec["metric_column"])
-            left_rows = summary_rows_by_slug[left_summary_slug]
-            right_rows = summary_rows_by_slug[right_summary_slug]
-            if left_rows is None or right_rows is None:
-                continue
-            if set(left_rows) != set(right_rows):
-                missing_from_right = sorted(set(left_rows) - set(right_rows))
-                missing_from_left = sorted(set(right_rows) - set(left_rows))
-                warnings.append(
-                    _warning_row(
-                        cohort_label=str(cohort_row["cohort_label"]),
-                        experiment_slug=str(cohort_row["experiment_slug"]),
-                        statistic_name=statistic_name,
-                        warning_kind=str(spec["mismatch_warning_kind"]),
-                        artifact_path=summary_root,
-                        message=(
-                            f"Intervention summary mismatch for {experiment_root}. "
-                            f"Missing from {right_summary_slug}: {missing_from_right}. "
-                            f"Missing from {left_summary_slug}: {missing_from_left}."
-                        ),
-                    )
+        report_path = experiment_root / COUNTERFACTUAL_SUMMARY_ROOT_NAME / GTE_REPORT_NAME
+        if not report_path.exists():
+            warnings.append(
+                _warning_row(
+                    cohort_label=str(cohort_row["cohort_label"]),
+                    experiment_slug=str(cohort_row["experiment_slug"]),
+                    warning_kind="missing_gte_report",
+                    artifact_path=report_path,
+                    message=f"Missing GTE report at {report_path}.",
                 )
-                continue
-            for key in sorted(left_rows):
-                left_row = left_rows[key]
-                right_row = right_rows[key]
-                left_value = _as_float(left_row.get(metric_column))
-                right_value = _as_float(right_row.get(metric_column))
-                if left_value is None or right_value is None:
-                    source_type, source_name, source_slug, run_name, run_slug = key
+            )
+            continue
+        try:
+            report_rows = read_csv_rows(report_path)
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(
+                _warning_row(
+                    cohort_label=str(cohort_row["cohort_label"]),
+                    experiment_slug=str(cohort_row["experiment_slug"]),
+                    warning_kind="unreadable_gte_report",
+                    artifact_path=report_path,
+                    message=str(exc),
+                )
+            )
+            continue
+        for report_row in report_rows:
+            source_type = str(report_row.get("source_type", ""))
+            source_name = str(report_row.get("source_name", ""))
+            source_slug = str(report_row.get("source_slug", ""))
+            run_name = str(report_row.get("run_name", ""))
+            run_slug = str(report_row.get("run_slug", ""))
+            for statistic_name in _GTE_STATISTIC_COLUMNS:
+                statistic_value_text = str(report_row.get(statistic_name, "")).strip()
+                if not statistic_value_text:
                     warnings.append(
                         _warning_row(
                             cohort_label=str(cohort_row["cohort_label"]),
@@ -406,16 +319,37 @@ def _gte_trial_rows(
                             run_name=run_name,
                             run_slug=run_slug,
                             statistic_name=statistic_name,
-                            warning_kind=str(spec["missing_statistic_warning_kind"]),
-                            artifact_path=summary_root,
+                            warning_kind="missing_gte_report_statistic",
+                            artifact_path=report_path,
                             message=(
-                                f"Missing numeric {metric_column} value in intervention "
-                                f"summaries for source '{source_slug}' run '{run_slug}'."
+                                f"GTE report at {report_path} is missing a numeric "
+                                f"value for {statistic_name}."
                             ),
                         )
                     )
                     continue
-                source_type, source_name, source_slug, run_name, run_slug = key
+                try:
+                    statistic_value = float(statistic_value_text)
+                except ValueError:
+                    warnings.append(
+                        _warning_row(
+                            cohort_label=str(cohort_row["cohort_label"]),
+                            experiment_slug=str(cohort_row["experiment_slug"]),
+                            source_type=source_type,
+                            source_name=source_name,
+                            source_slug=source_slug,
+                            run_name=run_name,
+                            run_slug=run_slug,
+                            statistic_name=statistic_name,
+                            warning_kind="missing_gte_report_statistic",
+                            artifact_path=report_path,
+                            message=(
+                                f"GTE report at {report_path} is missing a numeric "
+                                f"value for {statistic_name}."
+                            ),
+                        )
+                    )
+                    continue
                 rows.append(
                     {
                         "cohort_label": cohort_row["cohort_label"],
@@ -428,7 +362,7 @@ def _gte_trial_rows(
                         "run_name": run_name,
                         "run_slug": run_slug,
                         "statistic_name": statistic_name,
-                        "statistic_value": float(left_value - right_value),
+                        "statistic_value": float(statistic_value),
                     }
                 )
     return rows, warnings

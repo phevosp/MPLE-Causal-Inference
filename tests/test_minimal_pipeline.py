@@ -135,9 +135,11 @@ from utils.t8_output_writers import (
 )
 from utils.t6_intervention_utils import derive_pre_intervention_steps
 from utils.t8_posterior_predictive_reporting import (
+    _build_intervention_summary_groups,
     collect_predictive_rows,
     group_and_rank_predictive_rows,
     refresh_and_write_posterior_predictive_reports,
+    write_gte_report,
     write_intervention_summaries,
 )
 from utils.t8_posterior_predictive_plotting import (
@@ -3513,8 +3515,90 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug",
                     "run_name",
                     "run_slug",
+                    "s",
                     "overall_mean_magnetization_mean",
                     "post_intervention_mean_magnetization_mean",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def _write_counterfactual_time_summary(
+        self,
+        experiment_slug: str,
+        *,
+        source_type: str,
+        source_name: str,
+        source_slug: str,
+        intervention_slug: str,
+        run_slug: str = "default",
+        s: int,
+        time_means: list[float],
+    ) -> None:
+        output_root = (
+            self.root
+            / experiment_slug
+            / "counterfactual"
+            / source_slug
+            / intervention_slug
+            / run_slug
+        )
+        output_root.mkdir(parents=True, exist_ok=True)
+        (output_root / "counterfactual_metadata.yaml").write_text(
+            "\n".join(
+                [
+                    f"source_type: {source_type}",
+                    f"source_name: {source_name}",
+                    f"source_slug: {source_slug}",
+                    f"run_name: {run_slug}",
+                    f"run_slug: {run_slug}",
+                    f"intervention_name: {intervention_slug}",
+                    f"intervention_slug: {intervention_slug}",
+                    f"s: {int(s)}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with (output_root / "counterfactual_time_summary.csv").open(
+            "w",
+            encoding="utf-8",
+            newline="",
+        ) as handle:
+            writer = csv.DictWriter(handle, fieldnames=["time_index", "sample_mean"])
+            writer.writeheader()
+            writer.writerows(
+                [
+                    {"time_index": time_index, "sample_mean": sample_mean}
+                    for time_index, sample_mean in enumerate(time_means)
+                ]
+            )
+
+    def _write_gte_report(
+        self,
+        experiment_slug: str,
+        rows: list[dict[str, object]],
+    ) -> None:
+        summary_root = self.root / experiment_slug / "counterfactual_summaries"
+        summary_root.mkdir(parents=True, exist_ok=True)
+        with (summary_root / "gte_report.csv").open(
+            "w",
+            encoding="utf-8",
+            newline="",
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "source_type",
+                    "source_name",
+                    "source_slug",
+                    "run_name",
+                    "run_slug",
+                    "treated_intervention_slug",
+                    "control_intervention_slug",
+                    "s",
+                    "gte",
+                    "gte_post_s",
                 ],
             )
             writer.writeheader()
@@ -3582,6 +3666,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_a",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 0.90,
                     "post_intervention_mean_magnetization_mean": 0.80,
                 },
@@ -3591,6 +3676,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_b",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 0.70,
                     "post_intervention_mean_magnetization_mean": 0.65,
                 },
@@ -3600,6 +3686,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "truth",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 1.00,
                     "post_intervention_mean_magnetization_mean": 0.90,
                 },
@@ -3615,6 +3702,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_a",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 0.90,
                     "post_intervention_mean_magnetization_mean": 0.80,
                 },
@@ -3624,6 +3712,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_b",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 0.70,
                     "post_intervention_mean_magnetization_mean": 0.65,
                 },
@@ -3633,6 +3722,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "truth",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 1.00,
                     "post_intervention_mean_magnetization_mean": 0.90,
                 },
@@ -3648,8 +3738,8 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_a",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 0,
                     "overall_mean_magnetization_mean": 0.40,
-                    "post_intervention_mean_magnetization_mean": 0.30,
                 },
                 {
                     "source_type": "fit",
@@ -3657,8 +3747,8 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_b",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 0,
                     "overall_mean_magnetization_mean": 0.50,
-                    "post_intervention_mean_magnetization_mean": 0.35,
                 },
                 {
                     "source_type": "truth",
@@ -3666,8 +3756,8 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "truth",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 0,
                     "overall_mean_magnetization_mean": 0.60,
-                    "post_intervention_mean_magnetization_mean": 0.40,
                 },
             ],
         )
@@ -3681,6 +3771,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_a",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 1.20,
                     "post_intervention_mean_magnetization_mean": 1.05,
                 },
@@ -3690,6 +3781,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_b",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 0.90,
                     "post_intervention_mean_magnetization_mean": 0.85,
                 },
@@ -3699,6 +3791,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "truth",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 1.30,
                     "post_intervention_mean_magnetization_mean": 1.15,
                 },
@@ -3714,6 +3807,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_a",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 1.20,
                     "post_intervention_mean_magnetization_mean": 1.05,
                 },
@@ -3723,6 +3817,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_b",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 0.90,
                     "post_intervention_mean_magnetization_mean": 0.85,
                 },
@@ -3732,6 +3827,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "truth",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 1,
                     "overall_mean_magnetization_mean": 1.30,
                     "post_intervention_mean_magnetization_mean": 1.15,
                 },
@@ -3747,8 +3843,8 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_a",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 0,
                     "overall_mean_magnetization_mean": 0.60,
-                    "post_intervention_mean_magnetization_mean": 0.55,
                 },
                 {
                     "source_type": "fit",
@@ -3756,8 +3852,8 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "fit_rank_b",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 0,
                     "overall_mean_magnetization_mean": 0.50,
-                    "post_intervention_mean_magnetization_mean": 0.45,
                 },
                 {
                     "source_type": "truth",
@@ -3765,8 +3861,187 @@ class TrialAggregationTests(unittest.TestCase):
                     "source_slug": "truth",
                     "run_name": "default",
                     "run_slug": "default",
+                    "s": 0,
                     "overall_mean_magnetization_mean": 0.80,
-                    "post_intervention_mean_magnetization_mean": 0.65,
+                },
+            ],
+        )
+
+        counterfactual_time_specs = {
+            "confounding_strong_1": {
+                ("fit", "rank_a", "fit_rank_a", "all_intervention_from_s", 1): [
+                    0.90,
+                    0.70,
+                    0.90,
+                    0.80,
+                ],
+                ("fit", "rank_a", "fit_rank_a", "no_intervention", 0): [
+                    0.40,
+                    0.20,
+                    0.30,
+                    0.40,
+                ],
+                ("fit", "rank_b", "fit_rank_b", "all_intervention_from_s", 1): [
+                    0.70,
+                    0.60,
+                    0.70,
+                    0.65,
+                ],
+                ("fit", "rank_b", "fit_rank_b", "no_intervention", 0): [
+                    0.50,
+                    0.30,
+                    0.40,
+                    0.35,
+                ],
+                ("truth", "truth", "truth", "all_intervention_from_s", 1): [
+                    1.00,
+                    0.80,
+                    0.90,
+                    1.00,
+                ],
+                ("truth", "truth", "truth", "no_intervention", 0): [
+                    0.60,
+                    0.30,
+                    0.50,
+                    0.40,
+                ],
+            },
+            "confounding_strong_2": {
+                ("fit", "rank_a", "fit_rank_a", "all_intervention_from_s", 1): [
+                    1.20,
+                    0.90,
+                    1.10,
+                    1.15,
+                ],
+                ("fit", "rank_a", "fit_rank_a", "no_intervention", 0): [
+                    0.60,
+                    0.50,
+                    0.55,
+                    0.60,
+                ],
+                ("fit", "rank_b", "fit_rank_b", "all_intervention_from_s", 1): [
+                    0.90,
+                    0.80,
+                    0.85,
+                    0.90,
+                ],
+                ("fit", "rank_b", "fit_rank_b", "no_intervention", 0): [
+                    0.50,
+                    0.40,
+                    0.45,
+                    0.50,
+                ],
+                ("truth", "truth", "truth", "all_intervention_from_s", 1): [
+                    1.30,
+                    1.00,
+                    1.20,
+                    1.25,
+                ],
+                ("truth", "truth", "truth", "no_intervention", 0): [
+                    0.80,
+                    0.60,
+                    0.65,
+                    0.70,
+                ],
+            },
+        }
+        for experiment_slug, time_specs in counterfactual_time_specs.items():
+            for (
+                source_type,
+                source_name,
+                source_slug,
+                intervention_slug,
+                s,
+            ), time_means in time_specs.items():
+                self._write_counterfactual_time_summary(
+                    experiment_slug,
+                    source_type=source_type,
+                    source_name=source_name,
+                    source_slug=source_slug,
+                    intervention_slug=intervention_slug,
+                    s=s,
+                    time_means=time_means,
+                )
+
+        self._write_gte_report(
+            "confounding_strong_1",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "treated_intervention_slug": "all_intervention_from_s",
+                    "control_intervention_slug": "no_intervention",
+                    "s": 1,
+                    "gte": 0.5,
+                    "gte_post_s": 0.5,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "treated_intervention_slug": "all_intervention_from_s",
+                    "control_intervention_slug": "no_intervention",
+                    "s": 1,
+                    "gte": 0.2,
+                    "gte_post_s": 0.3,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "treated_intervention_slug": "all_intervention_from_s",
+                    "control_intervention_slug": "no_intervention",
+                    "s": 1,
+                    "gte": 0.4,
+                    "gte_post_s": 0.5,
+                },
+            ],
+        )
+        self._write_gte_report(
+            "confounding_strong_2",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "treated_intervention_slug": "all_intervention_from_s",
+                    "control_intervention_slug": "no_intervention",
+                    "s": 1,
+                    "gte": 0.6,
+                    "gte_post_s": 0.5,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "treated_intervention_slug": "all_intervention_from_s",
+                    "control_intervention_slug": "no_intervention",
+                    "s": 1,
+                    "gte": 0.4,
+                    "gte_post_s": 0.4,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "treated_intervention_slug": "all_intervention_from_s",
+                    "control_intervention_slug": "no_intervention",
+                    "s": 1,
+                    "gte": 0.5,
+                    "gte_post_s": 0.5,
                 },
             ],
         )
@@ -3834,7 +4109,7 @@ class TrialAggregationTests(unittest.TestCase):
         gte_rows = [
             row
             for row in rows
-            if row["statistic_name"] == "gte_overall_mean_magnetization"
+            if row["statistic_name"] == "gte"
         ]
         self.assertEqual(len(gte_rows), 6)
         self.assertEqual(
@@ -3857,7 +4132,7 @@ class TrialAggregationTests(unittest.TestCase):
             },
         )
         gte_after_s_rows = [
-            row for row in rows if row["statistic_name"] == "gte_after_s"
+            row for row in rows if row["statistic_name"] == "gte_post_s"
         ]
         self.assertEqual(len(gte_after_s_rows), 6)
         gte_after_s_by_key = {
@@ -3983,7 +4258,7 @@ class TrialAggregationTests(unittest.TestCase):
             for row in rows
             if row["source_type"] == "truth"
             and row["source_name"] == "truth"
-            and row["statistic_name"] == "gte_overall_mean_magnetization"
+            and row["statistic_name"] == "gte"
         )
         self.assertEqual(truth_gte["num_trials"], "2")
         self.assertAlmostEqual(float(truth_gte["mean"]), 0.45)
@@ -3992,7 +4267,7 @@ class TrialAggregationTests(unittest.TestCase):
             for row in rows
             if row["source_type"] == "truth"
             and row["source_name"] == "truth"
-            and row["statistic_name"] == "gte_after_s"
+            and row["statistic_name"] == "gte_post_s"
         )
         self.assertEqual(truth_gte_after_s["num_trials"], "2")
         self.assertAlmostEqual(float(truth_gte_after_s["mean"]), 0.5)
@@ -4033,7 +4308,7 @@ class TrialAggregationTests(unittest.TestCase):
         self.assertEqual(summary_rows[0]["source_name"], "rank_a")
         self.assertEqual(summary_rows[0]["num_trials"], 2)
 
-    def test_run_trial_aggregation_missing_intervention_summary_omits_incomplete_gte_stats_and_writes_warnings(
+    def test_run_trial_aggregation_missing_gte_report_omits_incomplete_gte_stats_and_writes_warnings(
         self,
     ) -> None:
         generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
@@ -4041,7 +4316,7 @@ class TrialAggregationTests(unittest.TestCase):
             self.root
             / "confounding_strong_2"
             / "counterfactual_summaries"
-            / "no_intervention.csv"
+            / "gte_report.csv"
         ).unlink()
 
         outputs = run_trial_aggregation(
@@ -4061,20 +4336,24 @@ class TrialAggregationTests(unittest.TestCase):
                 [
                     row
                     for row in trial_rows
-                    if row["statistic_name"] == "gte_overall_mean_magnetization"
+                    if row["statistic_name"] == "gte"
                 ]
             ),
             3,
         )
+        self.assertEqual(
+            len([row for row in trial_rows if row["statistic_name"] == "gte_post_s"]),
+            3,
+        )
         self.assertFalse(
-            any(
-                row["statistic_name"] == "gte_overall_mean_magnetization"
-                for row in summary_rows
-            )
+            any(row["statistic_name"] == "gte" for row in summary_rows)
+        )
+        self.assertFalse(
+            any(row["statistic_name"] == "gte_post_s" for row in summary_rows)
         )
         self.assertTrue(
             any(
-                row["warning_kind"] == "missing_no_intervention_summary"
+                row["warning_kind"] == "missing_gte_report"
                 and row["experiment_slug"] == "confounding_strong_2"
                 for row in warning_rows
             )
@@ -4082,7 +4361,14 @@ class TrialAggregationTests(unittest.TestCase):
         self.assertTrue(
             any(
                 row["warning_kind"] == "incomplete_statistic"
-                and row["statistic_name"] == "gte_overall_mean_magnetization"
+                and row["statistic_name"] == "gte"
+                for row in warning_rows
+            )
+        )
+        self.assertTrue(
+            any(
+                row["warning_kind"] == "incomplete_statistic"
+                and row["statistic_name"] == "gte_post_s"
                 for row in warning_rows
             )
         )
@@ -4094,7 +4380,7 @@ class TrialAggregationTests(unittest.TestCase):
         )
         self.assertEqual(beta_rank_a["num_trials"], "2")
 
-    def test_run_trial_aggregation_mismatched_intervention_summaries_warns_and_skips_gte(
+    def test_run_trial_aggregation_partial_gte_report_omits_incomplete_gte_stats(
         self,
     ) -> None:
         generation_manifest_path, fit_manifest_path = self._build_trial_fixture()
@@ -4102,7 +4388,7 @@ class TrialAggregationTests(unittest.TestCase):
             self.root
             / "confounding_strong_2"
             / "counterfactual_summaries"
-            / "no_intervention.csv"
+            / "gte_report.csv"
         )
         rows = read_csv_manifest(mismatch_path)
         write_csv_rows(mismatch_path, rows[:-1])
@@ -4123,21 +4409,32 @@ class TrialAggregationTests(unittest.TestCase):
                 [
                     row
                     for row in trial_rows
-                    if row["statistic_name"] == "gte_overall_mean_magnetization"
+                    if row["statistic_name"] == "gte"
                 ]
             ),
-            3,
+            5,
+        )
+        self.assertEqual(
+            len([row for row in trial_rows if row["statistic_name"] == "gte_post_s"]),
+            5,
         )
         self.assertFalse(
+            any(row["statistic_name"] == "gte" for row in summary_rows)
+        )
+        self.assertFalse(
+            any(row["statistic_name"] == "gte_post_s" for row in summary_rows)
+        )
+        self.assertTrue(
             any(
-                row["statistic_name"] == "gte_overall_mean_magnetization"
-                for row in summary_rows
+                row["warning_kind"] == "incomplete_statistic"
+                and row["statistic_name"] == "gte"
+                for row in warning_rows
             )
         )
         self.assertTrue(
             any(
-                row["warning_kind"] == "intervention_summary_mismatch"
-                and row["experiment_slug"] == "confounding_strong_2"
+                row["warning_kind"] == "incomplete_statistic"
+                and row["statistic_name"] == "gte_post_s"
                 for row in warning_rows
             )
         )
@@ -4208,7 +4505,7 @@ class TrialAggregationTests(unittest.TestCase):
             self.root
             / "confounding_strong_2"
             / "counterfactual_summaries"
-            / "no_intervention.csv"
+            / "gte_report.csv"
         ).unlink()
 
         stdout_buffer = io.StringIO()
@@ -9693,6 +9990,154 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertEqual(row["truth_time_mean_squared_error_mean"], "")
         self.assertEqual(row["truth_rank_in_run"], "")
 
+    def test_write_gte_report_only_uses_eligible_intervention_slugs(self) -> None:
+        experiment_root = self.root / "exp_gte"
+        treated_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_rank_0"
+            / "all_intervention_from_s"
+            / "default"
+        )
+        control_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_rank_0"
+            / "no_intervention"
+            / "default"
+        )
+        unrelated_root = (
+            experiment_root
+            / "counterfactual"
+            / "fit_rank_0"
+            / "single_unit_2_from_step_2"
+            / "default"
+        )
+        self._write_counterfactual_summary_outputs(
+            treated_root,
+            overall_mean=0.55,
+            overall_q025=0.50,
+            overall_q500=0.55,
+            overall_q975=0.60,
+            post_mean=0.70,
+            post_q025=0.65,
+            post_q500=0.70,
+            post_q975=0.75,
+            unit_means=[0.55, 0.55],
+            unit_q025=[0.50, 0.50],
+            unit_q975=[0.60, 0.60],
+            time_means=[0.10, 0.20, 0.80, 1.10],
+            time_q025=[0.05, 0.15, 0.75, 1.05],
+            time_q975=[0.15, 0.25, 0.85, 1.15],
+        )
+        self._write_counterfactual_summary_outputs(
+            control_root,
+            overall_mean=0.15,
+            overall_q025=0.10,
+            overall_q500=0.15,
+            overall_q975=0.20,
+            post_mean=None,
+            post_q025=None,
+            post_q500=None,
+            post_q975=None,
+            unit_means=[0.15, 0.15],
+            unit_q025=[0.10, 0.10],
+            unit_q975=[0.20, 0.20],
+            time_means=[0.00, 0.10, 0.20, 0.30],
+            time_q025=[-0.05, 0.05, 0.15, 0.25],
+            time_q975=[0.05, 0.15, 0.25, 0.35],
+        )
+        self._write_counterfactual_summary_outputs(
+            unrelated_root,
+            overall_mean=0.30,
+            overall_q025=0.25,
+            overall_q500=0.30,
+            overall_q975=0.35,
+            post_mean=0.35,
+            post_q025=0.30,
+            post_q500=0.35,
+            post_q975=0.40,
+            unit_means=[0.30, 0.30],
+            unit_q025=[0.25, 0.25],
+            unit_q975=[0.35, 0.35],
+            time_means=[0.10, 0.30, 0.40, 0.40],
+            time_q025=[0.05, 0.25, 0.35, 0.35],
+            time_q975=[0.15, 0.35, 0.45, 0.45],
+        )
+
+        manifest_rows = [
+            {
+                "source_type": "fit",
+                "source_name": "rank_0",
+                "source_slug": "fit_rank_0",
+                "run_name": "default",
+                "run_slug": "default",
+                "num_samples": 4,
+                "gibbs_sweeps": 1,
+                "s": 2,
+                "target_intervention_source": "saved_intervention",
+                "target_intervention_slug": "all_intervention_from_s",
+                "output_path": str(treated_root.resolve()),
+            },
+            {
+                "source_type": "fit",
+                "source_name": "rank_0",
+                "source_slug": "fit_rank_0",
+                "run_name": "default",
+                "run_slug": "default",
+                "num_samples": 4,
+                "gibbs_sweeps": 1,
+                "s": 0,
+                "target_intervention_source": "saved_intervention",
+                "target_intervention_slug": "no_intervention",
+                "output_path": str(control_root.resolve()),
+            },
+            {
+                "source_type": "fit",
+                "source_name": "rank_0",
+                "source_slug": "fit_rank_0",
+                "run_name": "default",
+                "run_slug": "default",
+                "num_samples": 4,
+                "gibbs_sweeps": 1,
+                "s": 2,
+                "target_intervention_source": "saved_intervention",
+                "target_intervention_slug": "single_unit_2_from_step_2",
+                "output_path": str(unrelated_root.resolve()),
+            },
+        ]
+
+        write_intervention_summaries(experiment_root, manifest_rows)
+        self.assertTrue(
+            (experiment_root / "counterfactual_summaries" / "all_intervention_from_s.csv").exists()
+        )
+        self.assertTrue(
+            (experiment_root / "counterfactual_summaries" / "no_intervention.csv").exists()
+        )
+        self.assertTrue(
+            (
+                experiment_root
+                / "counterfactual_summaries"
+                / "single_unit_2_from_step_2.csv"
+            ).exists()
+        )
+        gte_output = write_gte_report(
+            experiment_root,
+            _build_intervention_summary_groups(manifest_rows),
+        )
+
+        gte_report_path = Path(gte_output["csv"])
+        self.assertTrue(gte_report_path.exists())
+        with gte_report_path.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["treated_intervention_slug"], "all_intervention_from_s")
+        self.assertEqual(row["control_intervention_slug"], "no_intervention")
+        self.assertEqual(row["s"], "2")
+        self.assertAlmostEqual(float(row["gte"]), 0.4)
+        self.assertAlmostEqual(float(row["gte_post_s"]), 0.7)
+
     def test_target_pair_resolution_validates_truth_and_fit_rows(self) -> None:
         generation_manifest_path = self.root / "generation_manifest.csv"
         fit_manifest_path = self.root / "fit_manifest.csv"
@@ -10070,6 +10515,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
         counterfactual_summary_csv = (
             experiment_root / "counterfactual_summaries" / "full_on_from_s.csv"
         )
+        gte_report_csv = experiment_root / "counterfactual_summaries" / "gte_report.csv"
         posterior_predictive_target_csv = (
             experiment_root
             / "posterior_predictive_summaries"
@@ -10114,6 +10560,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             (counterfactual_root / "posterior_predictive_stats.csv").exists()
         )
         self.assertTrue(counterfactual_summary_csv.exists())
+        self.assertTrue(gte_report_csv.exists())
         self.assertTrue(posterior_predictive_target_csv.exists())
         self.assertFalse(
             (experiment_root / "counterfactual_summaries" / "observed_experiment.csv").exists()
@@ -10234,6 +10681,11 @@ class PosteriorPredictiveTests(unittest.TestCase):
             1,
         )
         self.assertIn(str(experiment_root.resolve()), report_outputs["counterfactual_summaries"])
+        self.assertIn(str(experiment_root.resolve()), report_outputs["gte_reports"])
+        self.assertEqual(
+            Path(report_outputs["gte_reports"][str(experiment_root.resolve())]["csv"]).resolve(),
+            gte_report_csv.resolve(),
+        )
         self.assertIn(
             str(experiment_root.resolve()),
             report_outputs["posterior_predictive_summaries"],

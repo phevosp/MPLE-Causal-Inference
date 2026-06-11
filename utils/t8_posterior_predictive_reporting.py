@@ -27,6 +27,7 @@ POSTERIOR_PREDICTIVE_PER_EXPERIMENT_SUMMARY_NAME = "posterior_predictive_summary
 POSTERIOR_PREDICTIVE_WINNERS_SUMMARY_NAME = (
     "best_posterior_predictive_by_experiment.csv"
 )
+GTE_REPORT_NAME = "gte_report.csv"
 
 PER_EXPERIMENT_COLUMNS = [
     "experiment_name",
@@ -135,6 +136,18 @@ INTERVENTION_SUMMARY_COLUMNS = [
     "truth_rank_in_run",
     "truth_is_best",
 ]
+GTE_REPORT_COLUMNS = [
+    "source_type",
+    "source_name",
+    "source_slug",
+    "run_name",
+    "run_slug",
+    "treated_intervention_slug",
+    "control_intervention_slug",
+    "s",
+    "gte",
+    "gte_post_s",
+]
 
 _INTERVENTION_METRIC_COLUMNS = [
     "overall_mean_magnetization_mean",
@@ -170,6 +183,8 @@ _TRUTH_RANKING_COLUMNS = [
     "truth_rank_in_run",
     "truth_is_best",
 ]
+_GTE_ELIGIBLE_TREATED_SLUGS = ("all_intervention", "all_intervention_from_s")
+_GTE_CONTROL_SLUG = "no_intervention"
 
 
 def summarize_observed_mean_statistics(
@@ -750,6 +765,8 @@ def _build_intervention_row(manifest_row: dict[str, object]) -> dict[str, object
         "gibbs_sweeps": manifest_row.get("gibbs_sweeps", ""),
         "s": manifest_row.get("s", ""),
         "target_intervention_source": intervention_source,
+        "target_intervention_slug": manifest_row.get("target_intervention_slug", ""),
+        "target_intervention_name": manifest_row.get("target_intervention_name", ""),
         **stats,
         **unit_stats,
         **time_stats,
@@ -791,29 +808,144 @@ def group_and_rank_predictive_rows(
     return ranked_groups, winners
 
 
+def _build_intervention_summary_groups(
+    rows: list[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        slug = str(row.get("target_intervention_slug", "unknown"))
+        grouped[slug].append(row)
+
+    built_groups: dict[str, list[dict[str, object]]] = {}
+    for slug, group_rows in grouped.items():
+        built_rows = [_build_intervention_row(r) for r in group_rows]
+        built_groups[slug] = _apply_truth_metrics_and_ranking(built_rows)
+    return built_groups
+
+
+def _write_intervention_summary_groups(
+    experiment_path: str | Path,
+    grouped_rows: dict[str, list[dict[str, object]]],
+    *,
+    summary_dir_name: str,
+) -> dict[str, dict[str, str]]:
+    experiment_root = Path(experiment_path)
+    summary_dir = experiment_root / str(summary_dir_name)
+    summary_dir.mkdir(exist_ok=True)
+
+    outputs: dict[str, dict[str, str]] = {}
+    for slug, built_rows in grouped_rows.items():
+        csv_path = summary_dir / f"{slug}.csv"
+        write_csv(csv_path, built_rows, INTERVENTION_SUMMARY_COLUMNS)
+        outputs[slug] = {"csv": str(csv_path)}
+    return outputs
+
+
 def write_intervention_summaries(
     experiment_path: str | Path,
     rows: list[dict[str, object]],
     *,
     summary_dir_name: str = COUNTERFACTUAL_SUMMARY_ROOT_NAME,
 ) -> dict[str, dict[str, str]]:
+    grouped_rows = _build_intervention_summary_groups(rows)
+    return _write_intervention_summary_groups(
+        experiment_path,
+        grouped_rows,
+        summary_dir_name=summary_dir_name,
+    )
+
+
+def _intervention_match_key(row: dict[str, object]) -> tuple[str, str, str, str, str]:
+    return (
+        str(row.get("source_type", "")),
+        str(row.get("source_name", "")),
+        str(row.get("source_slug", "")),
+        str(row.get("run_name", "")),
+        str(row.get("run_slug", "")),
+    )
+
+
+def _mean_time_window(
+    row: dict[str, object],
+    *,
+    start_index: int,
+) -> float | None:
+    values = row.get("time_mean_sample_mean")
+    if values is None:
+        return None
+    series = np.asarray(values, dtype=float)
+    if series.ndim != 1 or start_index < 0 or start_index >= series.size:
+        return None
+    window = series[start_index:]
+    if window.size == 0 or not np.all(np.isfinite(window)):
+        return None
+    return float(np.mean(window))
+
+
+def _build_gte_report_rows(
+    grouped_rows: dict[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    control_by_key = {
+        _intervention_match_key(row): row
+        for row in grouped_rows.get(_GTE_CONTROL_SLUG, [])
+    }
+    report_rows: list[dict[str, object]] = []
+    for treated_slug in _GTE_ELIGIBLE_TREATED_SLUGS:
+        for treated_row in grouped_rows.get(treated_slug, []):
+            key = _intervention_match_key(treated_row)
+            control_row = control_by_key.get(key)
+            if control_row is None:
+                continue
+            s_value = _as_float(treated_row.get("s"))
+            if s_value is None:
+                continue
+            s_index = int(s_value)
+            treated_overall = _mean_time_window(treated_row, start_index=0)
+            control_overall = _mean_time_window(control_row, start_index=0)
+            treated_post_s = _mean_time_window(treated_row, start_index=s_index)
+            control_post_s = _mean_time_window(control_row, start_index=s_index)
+            if (
+                treated_overall is None
+                or control_overall is None
+                or treated_post_s is None
+                or control_post_s is None
+            ):
+                continue
+            report_rows.append(
+                {
+                    "source_type": key[0],
+                    "source_name": key[1],
+                    "source_slug": key[2],
+                    "run_name": key[3],
+                    "run_slug": key[4],
+                    "treated_intervention_slug": treated_slug,
+                    "control_intervention_slug": _GTE_CONTROL_SLUG,
+                    "s": s_index,
+                    "gte": float(treated_overall - control_overall),
+                    "gte_post_s": float(treated_post_s - control_post_s),
+                }
+            )
+    report_rows.sort(
+        key=lambda row: (
+            str(row.get("source_type", "")),
+            str(row.get("source_name", "")),
+            str(row.get("run_slug", "")),
+            str(row.get("treated_intervention_slug", "")),
+        )
+    )
+    return report_rows
+
+
+def write_gte_report(
+    experiment_path: str | Path,
+    grouped_rows: dict[str, list[dict[str, object]]],
+) -> dict[str, str]:
     experiment_root = Path(experiment_path)
-    summary_dir = experiment_root / str(summary_dir_name)
+    summary_dir = experiment_root / COUNTERFACTUAL_SUMMARY_ROOT_NAME
     summary_dir.mkdir(exist_ok=True)
-
-    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
-    for row in rows:
-        slug = str(row.get("target_intervention_slug", "unknown"))
-        grouped[slug].append(row)
-
-    outputs: dict[str, dict[str, str]] = {}
-    for slug, group_rows in grouped.items():
-        built_rows = [_build_intervention_row(r) for r in group_rows]
-        built_rows = _apply_truth_metrics_and_ranking(built_rows)
-        csv_path = summary_dir / f"{slug}.csv"
-        write_csv(csv_path, built_rows, INTERVENTION_SUMMARY_COLUMNS)
-        outputs[slug] = {"csv": str(csv_path)}
-    return outputs
+    csv_path = summary_dir / GTE_REPORT_NAME
+    write_csv(csv_path, _build_gte_report_rows(grouped_rows), GTE_REPORT_COLUMNS)
+    return {"csv": str(csv_path)}
 
 
 def write_per_experiment_summary(
@@ -878,6 +1010,7 @@ def refresh_and_write_posterior_predictive_reports(
     for row in all_rows:
         by_experiment[str(row["experiment_path"])].append(row)
     counterfactual_outputs: dict[str, dict[str, dict[str, str]]] = {}
+    gte_outputs: dict[str, dict[str, str]] = {}
     posterior_predictive_target_outputs: dict[str, dict[str, dict[str, str]]] = {}
     for exp_path, exp_rows in by_experiment.items():
         counterfactual_rows = [
@@ -892,17 +1025,21 @@ def refresh_and_write_posterior_predictive_reports(
             if str(row.get("target_intervention_source", "")).strip()
             == "observed_experiment"
         ]
-        counterfactual_outputs[exp_path] = write_intervention_summaries(
+        counterfactual_groups = _build_intervention_summary_groups(counterfactual_rows)
+        counterfactual_outputs[exp_path] = _write_intervention_summary_groups(
             exp_path,
-            counterfactual_rows,
+            counterfactual_groups,
             summary_dir_name=COUNTERFACTUAL_SUMMARY_ROOT_NAME,
         )
-        posterior_predictive_target_outputs[exp_path] = write_intervention_summaries(
+        gte_outputs[exp_path] = write_gte_report(exp_path, counterfactual_groups)
+        observed_groups = _build_intervention_summary_groups(observed_rows)
+        posterior_predictive_target_outputs[exp_path] = _write_intervention_summary_groups(
             exp_path,
-            observed_rows,
+            observed_groups,
             summary_dir_name=POSTERIOR_PREDICTIVE_SUMMARY_ROOT_NAME,
         )
     outputs["counterfactual_summaries"] = counterfactual_outputs
+    outputs["gte_reports"] = gte_outputs
     outputs["posterior_predictive_summaries"] = posterior_predictive_target_outputs
 
     predictive_rows = collect_predictive_rows(manifest_path)
