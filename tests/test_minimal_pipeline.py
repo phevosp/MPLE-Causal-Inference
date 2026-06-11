@@ -3514,6 +3514,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name",
                     "run_slug",
                     "overall_mean_magnetization_mean",
+                    "post_intervention_mean_magnetization_mean",
                 ],
             )
             writer.writeheader()
@@ -3582,6 +3583,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.90,
+                    "post_intervention_mean_magnetization_mean": 0.80,
                 },
                 {
                     "source_type": "fit",
@@ -3590,6 +3592,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.70,
+                    "post_intervention_mean_magnetization_mean": 0.65,
                 },
                 {
                     "source_type": "truth",
@@ -3598,6 +3601,40 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 1.00,
+                    "post_intervention_mean_magnetization_mean": 0.90,
+                },
+            ],
+        )
+        self._write_intervention_summary(
+            "confounding_strong_1",
+            "all_intervention_from_s.csv",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.90,
+                    "post_intervention_mean_magnetization_mean": 0.80,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.70,
+                    "post_intervention_mean_magnetization_mean": 0.65,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 1.00,
+                    "post_intervention_mean_magnetization_mean": 0.90,
                 },
             ],
         )
@@ -3612,6 +3649,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.40,
+                    "post_intervention_mean_magnetization_mean": 0.30,
                 },
                 {
                     "source_type": "fit",
@@ -3620,6 +3658,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.50,
+                    "post_intervention_mean_magnetization_mean": 0.35,
                 },
                 {
                     "source_type": "truth",
@@ -3628,6 +3667,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.60,
+                    "post_intervention_mean_magnetization_mean": 0.40,
                 },
             ],
         )
@@ -3642,6 +3682,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 1.20,
+                    "post_intervention_mean_magnetization_mean": 1.05,
                 },
                 {
                     "source_type": "fit",
@@ -3650,6 +3691,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.90,
+                    "post_intervention_mean_magnetization_mean": 0.85,
                 },
                 {
                     "source_type": "truth",
@@ -3658,6 +3700,40 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 1.30,
+                    "post_intervention_mean_magnetization_mean": 1.15,
+                },
+            ],
+        )
+        self._write_intervention_summary(
+            "confounding_strong_2",
+            "all_intervention_from_s.csv",
+            [
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_a",
+                    "source_slug": "fit_rank_a",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 1.20,
+                    "post_intervention_mean_magnetization_mean": 1.05,
+                },
+                {
+                    "source_type": "fit",
+                    "source_name": "rank_b",
+                    "source_slug": "fit_rank_b",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 0.90,
+                    "post_intervention_mean_magnetization_mean": 0.85,
+                },
+                {
+                    "source_type": "truth",
+                    "source_name": "truth",
+                    "source_slug": "truth",
+                    "run_name": "default",
+                    "run_slug": "default",
+                    "overall_mean_magnetization_mean": 1.30,
+                    "post_intervention_mean_magnetization_mean": 1.15,
                 },
             ],
         )
@@ -3672,6 +3748,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.60,
+                    "post_intervention_mean_magnetization_mean": 0.55,
                 },
                 {
                     "source_type": "fit",
@@ -3680,6 +3757,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.50,
+                    "post_intervention_mean_magnetization_mean": 0.45,
                 },
                 {
                     "source_type": "truth",
@@ -3688,6 +3766,7 @@ class TrialAggregationTests(unittest.TestCase):
                     "run_name": "default",
                     "run_slug": "default",
                     "overall_mean_magnetization_mean": 0.80,
+                    "post_intervention_mean_magnetization_mean": 0.65,
                 },
             ],
         )
@@ -3776,6 +3855,40 @@ class TrialAggregationTests(unittest.TestCase):
                 ("truth", "confounding_strong_1", "truth", 0.4),
                 ("truth", "confounding_strong_2", "truth", 0.5),
             },
+        )
+        gte_after_s_rows = [
+            row for row in rows if row["statistic_name"] == "gte_after_s"
+        ]
+        self.assertEqual(len(gte_after_s_rows), 6)
+        gte_after_s_by_key = {
+            (row["source_type"], row["experiment_slug"], row["source_name"]): row[
+                "statistic_value"
+            ]
+            for row in gte_after_s_rows
+        }
+        self.assertAlmostEqual(
+            gte_after_s_by_key[("fit", "confounding_strong_1", "rank_a")],
+            0.5,
+        )
+        self.assertAlmostEqual(
+            gte_after_s_by_key[("fit", "confounding_strong_1", "rank_b")],
+            0.3,
+        )
+        self.assertAlmostEqual(
+            gte_after_s_by_key[("fit", "confounding_strong_2", "rank_a")],
+            0.5,
+        )
+        self.assertAlmostEqual(
+            gte_after_s_by_key[("fit", "confounding_strong_2", "rank_b")],
+            0.4,
+        )
+        self.assertAlmostEqual(
+            gte_after_s_by_key[("truth", "confounding_strong_1", "truth")],
+            0.5,
+        )
+        self.assertAlmostEqual(
+            gte_after_s_by_key[("truth", "confounding_strong_2", "truth")],
+            0.5,
         )
 
     def test_summarize_trial_statistics_computes_standard_error_and_quantiles(self) -> None:
@@ -3874,6 +3987,15 @@ class TrialAggregationTests(unittest.TestCase):
         )
         self.assertEqual(truth_gte["num_trials"], "2")
         self.assertAlmostEqual(float(truth_gte["mean"]), 0.45)
+        truth_gte_after_s = next(
+            row
+            for row in rows
+            if row["source_type"] == "truth"
+            and row["source_name"] == "truth"
+            and row["statistic_name"] == "gte_after_s"
+        )
+        self.assertEqual(truth_gte_after_s["num_trials"], "2")
+        self.assertAlmostEqual(float(truth_gte_after_s["mean"]), 0.5)
 
     def test_summarize_trial_statistics_excludes_incomplete_groups_when_expected_num_trials_provided(
         self,

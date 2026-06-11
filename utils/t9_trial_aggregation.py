@@ -55,12 +55,31 @@ WARNING_COLUMNS = [
     "message",
 ]
 _GTE_COLUMN = "overall_mean_magnetization_mean"
+_GTE_AFTER_S_COLUMN = "post_intervention_mean_magnetization_mean"
 _FIT_TRIAL_STATISTIC_NAME_MAP = {
     "beta_estimate": "beta",
     "xi_estimate": "xi",
     "eta_estimate": "eta",
     "field_rmse": "field_rmse",
 }
+_INTERVENTION_DIFFERENCE_SPECS = (
+    {
+        "left_summary_slug": "all_intervention",
+        "right_summary_slug": "no_intervention",
+        "statistic_name": "gte_overall_mean_magnetization",
+        "metric_column": _GTE_COLUMN,
+        "missing_statistic_warning_kind": "missing_gte_statistic",
+        "mismatch_warning_kind": "intervention_summary_mismatch",
+    },
+    {
+        "left_summary_slug": "all_intervention_from_s",
+        "right_summary_slug": "no_intervention",
+        "statistic_name": "gte_after_s",
+        "metric_column": _GTE_AFTER_S_COLUMN,
+        "missing_statistic_warning_kind": "missing_gte_after_s_statistic",
+        "mismatch_warning_kind": "intervention_summary_mismatch_gte_after_s",
+    },
+)
 
 
 def _warning_row(
@@ -322,83 +341,96 @@ def _gte_trial_rows(
             continue
         experiment_root = Path(str(experiment_root_value))
         summary_root = experiment_root / COUNTERFACTUAL_SUMMARY_ROOT_NAME
-        all_rows, current_warnings = _read_intervention_rows_by_key(
-            summary_root / "all_intervention.csv",
-            cohort_label=str(cohort_row["cohort_label"]),
-            experiment_slug=str(cohort_row["experiment_slug"]),
-            warning_kind="missing_all_intervention_summary",
-            unreadable_warning_kind="unreadable_all_intervention_summary",
-        )
-        warnings.extend(current_warnings)
-        no_rows, current_warnings = _read_intervention_rows_by_key(
-            summary_root / "no_intervention.csv",
-            cohort_label=str(cohort_row["cohort_label"]),
-            experiment_slug=str(cohort_row["experiment_slug"]),
-            warning_kind="missing_no_intervention_summary",
-            unreadable_warning_kind="unreadable_no_intervention_summary",
-        )
-        warnings.extend(current_warnings)
-        if all_rows is None or no_rows is None:
-            continue
-        if set(all_rows) != set(no_rows):
-            missing_from_no = sorted(set(all_rows) - set(no_rows))
-            missing_from_all = sorted(set(no_rows) - set(all_rows))
-            warnings.append(
-                _warning_row(
-                    cohort_label=str(cohort_row["cohort_label"]),
-                    experiment_slug=str(cohort_row["experiment_slug"]),
-                    warning_kind="intervention_summary_mismatch",
-                    artifact_path=summary_root,
-                    message=(
-                        f"Intervention summary mismatch for {experiment_root}. "
-                        f"Missing from no_intervention: {missing_from_no}. "
-                        f"Missing from all_intervention: {missing_from_all}."
-                    ),
-                )
+        required_summary_slugs = {
+            str(spec["left_summary_slug"])
+            for spec in _INTERVENTION_DIFFERENCE_SPECS
+        } | {
+            str(spec["right_summary_slug"])
+            for spec in _INTERVENTION_DIFFERENCE_SPECS
+        }
+        summary_rows_by_slug: dict[
+            str, dict[tuple[str, str, str, str, str], dict[str, str]] | None
+        ] = {}
+        for summary_slug in sorted(required_summary_slugs):
+            current_rows, current_warnings = _read_intervention_rows_by_key(
+                summary_root / f"{summary_slug}.csv",
+                cohort_label=str(cohort_row["cohort_label"]),
+                experiment_slug=str(cohort_row["experiment_slug"]),
+                warning_kind=f"missing_{summary_slug}_summary",
+                unreadable_warning_kind=f"unreadable_{summary_slug}_summary",
             )
-            continue
-        for key in sorted(all_rows):
-            all_row = all_rows[key]
-            no_row = no_rows[key]
-            all_value = _as_float(all_row.get(_GTE_COLUMN))
-            no_value = _as_float(no_row.get(_GTE_COLUMN))
-            if all_value is None or no_value is None:
-                source_type, source_name, source_slug, run_name, run_slug = key
+            warnings.extend(current_warnings)
+            summary_rows_by_slug[summary_slug] = current_rows
+
+        for spec in _INTERVENTION_DIFFERENCE_SPECS:
+            left_summary_slug = str(spec["left_summary_slug"])
+            right_summary_slug = str(spec["right_summary_slug"])
+            statistic_name = str(spec["statistic_name"])
+            metric_column = str(spec["metric_column"])
+            left_rows = summary_rows_by_slug[left_summary_slug]
+            right_rows = summary_rows_by_slug[right_summary_slug]
+            if left_rows is None or right_rows is None:
+                continue
+            if set(left_rows) != set(right_rows):
+                missing_from_right = sorted(set(left_rows) - set(right_rows))
+                missing_from_left = sorted(set(right_rows) - set(left_rows))
                 warnings.append(
                     _warning_row(
                         cohort_label=str(cohort_row["cohort_label"]),
                         experiment_slug=str(cohort_row["experiment_slug"]),
-                        source_type=source_type,
-                        source_name=source_name,
-                        source_slug=source_slug,
-                        run_name=run_name,
-                        run_slug=run_slug,
-                        statistic_name="gte_overall_mean_magnetization",
-                        warning_kind="missing_gte_statistic",
+                        statistic_name=statistic_name,
+                        warning_kind=str(spec["mismatch_warning_kind"]),
                         artifact_path=summary_root,
                         message=(
-                            f"Missing numeric {_GTE_COLUMN} value in intervention "
-                            f"summaries for source '{source_slug}' run '{run_slug}'."
+                            f"Intervention summary mismatch for {experiment_root}. "
+                            f"Missing from {right_summary_slug}: {missing_from_right}. "
+                            f"Missing from {left_summary_slug}: {missing_from_left}."
                         ),
                     )
                 )
                 continue
-            source_type, source_name, source_slug, run_name, run_slug = key
-            rows.append(
-                {
-                    "cohort_label": cohort_row["cohort_label"],
-                    "experiment_name": cohort_row["experiment_name"],
-                    "experiment_slug": cohort_row["experiment_slug"],
-                    "descriptor": cohort_row["descriptor"],
-                    "source_type": source_type,
-                    "source_name": source_name,
-                    "source_slug": source_slug,
-                    "run_name": run_name,
-                    "run_slug": run_slug,
-                    "statistic_name": "gte_overall_mean_magnetization",
-                    "statistic_value": float(all_value - no_value),
-                }
-            )
+            for key in sorted(left_rows):
+                left_row = left_rows[key]
+                right_row = right_rows[key]
+                left_value = _as_float(left_row.get(metric_column))
+                right_value = _as_float(right_row.get(metric_column))
+                if left_value is None or right_value is None:
+                    source_type, source_name, source_slug, run_name, run_slug = key
+                    warnings.append(
+                        _warning_row(
+                            cohort_label=str(cohort_row["cohort_label"]),
+                            experiment_slug=str(cohort_row["experiment_slug"]),
+                            source_type=source_type,
+                            source_name=source_name,
+                            source_slug=source_slug,
+                            run_name=run_name,
+                            run_slug=run_slug,
+                            statistic_name=statistic_name,
+                            warning_kind=str(spec["missing_statistic_warning_kind"]),
+                            artifact_path=summary_root,
+                            message=(
+                                f"Missing numeric {metric_column} value in intervention "
+                                f"summaries for source '{source_slug}' run '{run_slug}'."
+                            ),
+                        )
+                    )
+                    continue
+                source_type, source_name, source_slug, run_name, run_slug = key
+                rows.append(
+                    {
+                        "cohort_label": cohort_row["cohort_label"],
+                        "experiment_name": cohort_row["experiment_name"],
+                        "experiment_slug": cohort_row["experiment_slug"],
+                        "descriptor": cohort_row["descriptor"],
+                        "source_type": source_type,
+                        "source_name": source_name,
+                        "source_slug": source_slug,
+                        "run_name": run_name,
+                        "run_slug": run_slug,
+                        "statistic_name": statistic_name,
+                        "statistic_value": float(left_value - right_value),
+                    }
+                )
     return rows, warnings
 
 
