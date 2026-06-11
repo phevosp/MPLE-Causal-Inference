@@ -10,7 +10,7 @@ intervention_name: observed_experiment
 intervention_slug: observed_experiment
 latent_rank: 5
 num_samples: 8
-gibbs_sweeps: 25
+gibbs_sweeps: 100
 seed: 0
 seed_strategy: blake2b(base_seed, run_slug, target identity, sample_index)
 s: 50
@@ -18,17 +18,17 @@ num_units: 3014
 num_time_steps: 115
 summary:
   s: 50
-  mean_abs_zscore: 14.40346916063734
-  max_abs_zscore: 61.92830830681731
+  mean_abs_zscore: 14.85590297372482
+  max_abs_zscore: 56.10904912897841
   coverage_rate: 0.1
   num_statistics: 10
-  overall_mean_abs_error: 0.010939528576786539
-  post_intervention_mean_abs_error: 0.002211474656730106
-  unit_mean_abs_error_mean: 0.031011078734023836
-  unit_mean_rmse: 0.03858875711940476
-  unit_mean_max_abs_error: 0.13043478260869568
-  unit_mean_95_interval_coverage_rate: 0.9508958195089582
-  time_mean_abs_error_mean: 0.027980294855889903
-  time_mean_rmse: 0.04134362444997659
-  time_mean_max_abs_error: 0.1717816854678168
-  time_mean_95_interval_coverage_rate: 0.6
+  overall_mean_abs_error: 0.00974149620611059
+  post_intervention_mean_abs_error: 0.0009047521821244908
+  unit_mean_abs_error_mean: 0.030844464960618562
+  unit_mean_rmse: 0.03804876378521311
+  unit_mean_max_abs_error: 0.1391304347826087
+  unit_mean_95_interval_coverage_rate: 0.9548772395487723
+  time_mean_abs_error_mean: 0.02860275237298404
+  time_mean_rmse: 0.04245724710380231
+  time_mean_max_abs_error: 0.17037159920371592
+  time_mean_95_interval_coverage_rate: 0.6260869565217392

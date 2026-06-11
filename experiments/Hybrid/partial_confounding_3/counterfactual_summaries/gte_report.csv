@@ -1,0 +1,5 @@
+source_type,source_name,source_slug,run_name,run_slug,treated_intervention_slug,control_intervention_slug,s,gte,gte_post_s
+fit,alternating_rank_5_uv_1_e3_beta_mask,fit_alternating_rank_5_uv_1_e3_beta_mask,default,default,all_intervention_from_s,no_intervention,50,-0.5602543204177605,-0.9888367107345208
+fit,alternating_rank_5_uv_5_e2_beta_mask_xi_zero,fit_alternating_rank_5_uv_5_e2_beta_mask_xi_zero,default,default,all_intervention_from_s,no_intervention,50,-0.4318008712962696,-0.7656462150987697
+fit,base,fit_base,default,default,all_intervention_from_s,no_intervention,50,-0.3035998672859987,-0.5358021540503293
+truth,truth,truth,default,default,all_intervention_from_s,no_intervention,50,-0.5627217910620005,-0.9969743759889745

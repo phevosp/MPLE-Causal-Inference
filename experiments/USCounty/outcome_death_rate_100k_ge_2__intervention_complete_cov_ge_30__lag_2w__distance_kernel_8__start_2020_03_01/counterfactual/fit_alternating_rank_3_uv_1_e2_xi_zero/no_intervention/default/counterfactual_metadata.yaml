@@ -10,7 +10,7 @@ intervention_name: no_intervention
 intervention_slug: no_intervention
 latent_rank: 5
 num_samples: 8
-gibbs_sweeps: 25
+gibbs_sweeps: 100
 seed: 0
 seed_strategy: blake2b(base_seed, run_slug, target identity, sample_index)
 s: 115
