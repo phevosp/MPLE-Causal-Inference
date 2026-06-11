@@ -2,8 +2,8 @@
 #SBATCH --job-name=posterior-predictive
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=16G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=8G
 #SBATCH --partition=mit_normal
 #SBATCH --output=/dev/stdout         # Send SLURM output to stdout (captured by exec below)
 #SBATCH --error=/dev/stderr          # Send SLURM errors to stderr (captured by exec below)
