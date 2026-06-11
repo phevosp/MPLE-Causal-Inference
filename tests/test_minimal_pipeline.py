@@ -11205,6 +11205,13 @@ class PosteriorPredictiveTests(unittest.TestCase):
             np.asarray(observed_panel["x"], dtype=float),
             axis=0,
         )
+        expected_observed_unit_order = np.argsort(
+            expected_observed_unit_mean,
+            kind="stable",
+        )
+        expected_observed_unit_mean_sorted = expected_observed_unit_mean[
+            expected_observed_unit_order
+        ]
         expected_counterfactual_s = resolve_intervention_context(
             experiment_root,
             intervention_source="saved_intervention",
@@ -11396,7 +11403,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
         )
         self.assertTrue(
             all(
-                np.allclose(series, expected_observed_unit_mean)
+                np.allclose(series, expected_observed_unit_mean_sorted)
                 for series in observed_unit_series
             )
         )

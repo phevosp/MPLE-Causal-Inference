@@ -94,6 +94,14 @@ def _observed_unit_mean(panel_context: dict[str, object]) -> tuple[np.ndarray, n
     return unit_index, observed
 
 
+def _unit_order_from_observed(observed_mean: np.ndarray) -> np.ndarray:
+    return np.argsort(np.asarray(observed_mean, dtype=float), kind="stable")
+
+
+def _apply_unit_order(values: np.ndarray, order: np.ndarray) -> np.ndarray:
+    return np.asarray(values, dtype=float)[np.asarray(order, dtype=int)]
+
+
 def _plot_observed_trajectory(
     ax: plt.Axes,
     index_axis: np.ndarray,
@@ -355,6 +363,9 @@ def _write_posterior_predictive_unit_plots(
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
         unit_index, observed_mean = _observed_unit_mean(panel_context)
+        unit_order = _unit_order_from_observed(observed_mean)
+        unit_index = np.arange(observed_mean.shape[0], dtype=int)
+        observed_mean = _apply_unit_order(observed_mean, unit_order)
         fig, ax = plt.subplots(figsize=(11, 6))
         _plot_observed_trajectory(ax, unit_index, observed_mean)
         for color_index, row in enumerate(
@@ -368,10 +379,10 @@ def _write_posterior_predictive_unit_plots(
             )
             _plot_sample_trajectory(
                 ax,
-                series["index"],
-                series["sample_mean"],
-                series["q025"],
-                series["q975"],
+                unit_index,
+                _apply_unit_order(series["sample_mean"], unit_order),
+                _apply_unit_order(series["q025"], unit_order),
+                _apply_unit_order(series["q975"], unit_order),
                 label=str(row.get("source_name", row.get("source_slug", ""))),
                 color=colors[color_index % len(colors)],
             )
@@ -383,7 +394,7 @@ def _write_posterior_predictive_unit_plots(
             ax,
             title=title,
             show_intervention_start=None,
-            x_label="Unit index",
+            x_label="Unit rank (sorted by observed outcome)",
             y_label="Average outcome",
         )
         output_path = (
@@ -502,6 +513,9 @@ def _write_intervention_summary_unit_plots(
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
         unit_index, observed_mean = _observed_unit_mean(panel_context)
+        unit_order = _unit_order_from_observed(observed_mean)
+        unit_index = np.arange(observed_mean.shape[0], dtype=int)
+        observed_mean = _apply_unit_order(observed_mean, unit_order)
         fig, ax = plt.subplots(figsize=(11, 6))
         _plot_observed_trajectory(ax, unit_index, observed_mean)
         for color_index, row in enumerate(sorted(group_rows, key=_counterfactual_group_sort_key)):
@@ -513,10 +527,10 @@ def _write_intervention_summary_unit_plots(
             )
             _plot_sample_trajectory(
                 ax,
-                series["index"],
-                series["sample_mean"],
-                series["q025"],
-                series["q975"],
+                unit_index,
+                _apply_unit_order(series["sample_mean"], unit_order),
+                _apply_unit_order(series["q025"], unit_order),
+                _apply_unit_order(series["q975"], unit_order),
                 label=_counterfactual_group_sort_key(row),
                 color=colors[color_index % len(colors)],
             )
@@ -528,7 +542,7 @@ def _write_intervention_summary_unit_plots(
             ax,
             title=title,
             show_intervention_start=None,
-            x_label="Unit index",
+            x_label="Unit rank (sorted by observed outcome)",
             y_label="Average outcome",
         )
         output_path = (
