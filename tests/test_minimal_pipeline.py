@@ -48,7 +48,10 @@ from data.USCountyVaccination.experiment_artifacts import (
     write_realized_network_artifact,
     write_shared_panel_artifacts,
 )
-from utils.t6_intervention_utils import load_saved_intervention_context
+from utils.t6_intervention_utils import (
+    load_saved_intervention_context,
+    resolve_intervention_context,
+)
 from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping
 from utils.t0_csv_utils import read_csv_rows as read_csv_manifest, write_csv_rows
 from utils.t0_orcd_path_remap import resolve_orcd_local_path
@@ -11007,7 +11010,9 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         self.assertIn("plot_outputs", outputs)
         plot_outputs = outputs["plot_outputs"]
-        self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 1)
+        self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 2)
+        self.assertEqual(plot_outputs["num_posterior_predictive_time_plots"], 1)
+        self.assertEqual(plot_outputs["num_posterior_predictive_unit_plots"], 1)
         self.assertEqual(plot_outputs["num_counterfactual_summary_plots"], 0)
         self.assertEqual(plot_outputs["num_intervention_share_plots"], 0)
         self.assertTrue(
@@ -11017,6 +11022,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 / "smoke_rank_0"
                 / "posterior_predictive_summaries"
                 / "default_time_mean.png"
+            ).exists()
+        )
+        self.assertTrue(
+            (
+                self.root
+                / "generated"
+                / "smoke_rank_0"
+                / "posterior_predictive_summaries"
+                / "default_unit_mean.png"
             ).exists()
         )
 
@@ -11116,7 +11130,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             "\n".join(
                 [
                     "interventions:",
-                    "  - name: full_on_from_s",
+                    "  - name: all_intervention_from_s",
                     "    source_kind: full_on",
                     "    activation_scope: from_s",
                     "  - name: no_intervention",
@@ -11131,7 +11145,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 [
                     "experiment_name,source_type,variant_name,intervention_source,intervention_name",
                     "smoke_rank_0,fit,rank_0,observed_experiment,",
-                    "smoke_rank_0,fit,rank_0,saved_intervention,full_on_from_s",
+                    "smoke_rank_0,fit,rank_0,saved_intervention,all_intervention_from_s",
                     "smoke_rank_0,fit,rank_0,saved_intervention,no_intervention",
                 ]
             ),
@@ -11158,7 +11172,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
             run_name="default",
             overwrite=True,
         )
-        for intervention_name in ["full_on_from_s", "no_intervention"]:
+        for intervention_name in ["all_intervention_from_s", "no_intervention"]:
             run_posterior_predictive(
                 generation_manifest,
                 fit_manifest,
@@ -11187,6 +11201,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
             np.asarray(observed_panel["x"], dtype=float),
             axis=1,
         )
+        expected_observed_unit_mean = np.mean(
+            np.asarray(observed_panel["x"], dtype=float),
+            axis=0,
+        )
+        expected_counterfactual_s = resolve_intervention_context(
+            experiment_root,
+            intervention_source="saved_intervention",
+            intervention_name="all_intervention_from_s",
+        ).s
         observed_time_summary_path = (
             experiment_root
             / "posterior_predictive"
@@ -11205,11 +11228,14 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         captured_observed_series: list[np.ndarray] = []
         captured_labels: list[str] = []
+        captured_sample_calls: list[dict[str, object]] = []
         captured_share_labels: list[str] = []
         captured_share_series: dict[str, np.ndarray] = {}
+        captured_finalize_calls: list[dict[str, object]] = []
         original_plot_observed = posterior_predictive_plotting._plot_observed_trajectory
         original_plot_sample = posterior_predictive_plotting._plot_sample_trajectory
         original_plot_line = posterior_predictive_plotting._plot_line_trajectory
+        original_finalize_axis = posterior_predictive_plotting._finalize_axis
 
         def _capture_observed(ax, time_index, observed_mean):
             captured_observed_series.append(np.asarray(observed_mean, dtype=float).copy())
@@ -11225,7 +11251,15 @@ class PosteriorPredictiveTests(unittest.TestCase):
             label,
             color,
         ):
-            captured_labels.append(str(label))
+            label_text = str(label)
+            captured_labels.append(label_text)
+            captured_sample_calls.append(
+                {
+                    "label": label_text,
+                    "index_axis": np.asarray(time_index, dtype=int).copy(),
+                    "sample_mean": np.asarray(sample_mean, dtype=float).copy(),
+                }
+            )
             return original_plot_sample(
                 ax,
                 time_index,
@@ -11248,6 +11282,30 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 color=color,
             )
 
+        def _capture_finalize_axis(
+            ax,
+            *,
+            title,
+            show_intervention_start,
+            x_label,
+            y_label,
+        ):
+            captured_finalize_calls.append(
+                {
+                    "title": str(title),
+                    "show_intervention_start": show_intervention_start,
+                    "x_label": str(x_label),
+                    "y_label": str(y_label),
+                }
+            )
+            return original_finalize_axis(
+                ax,
+                title=title,
+                show_intervention_start=show_intervention_start,
+                x_label=x_label,
+                y_label=y_label,
+            )
+
         with mock.patch.object(
             posterior_predictive_plotting,
             "_plot_observed_trajectory",
@@ -11260,6 +11318,10 @@ class PosteriorPredictiveTests(unittest.TestCase):
             posterior_predictive_plotting,
             "_plot_line_trajectory",
             side_effect=_capture_line,
+        ), mock.patch.object(
+            posterior_predictive_plotting,
+            "_finalize_axis",
+            side_effect=_capture_finalize_axis,
         ):
             plot_outputs = write_posterior_predictive_plot_reports(
                 manifest_path,
@@ -11267,14 +11329,26 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 plot_intervention_summaries=True,
             )
 
-        self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 1)
-        self.assertEqual(plot_outputs["num_counterfactual_summary_plots"], 1)
+        self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 2)
+        self.assertEqual(plot_outputs["num_posterior_predictive_time_plots"], 1)
+        self.assertEqual(plot_outputs["num_posterior_predictive_unit_plots"], 1)
+        self.assertEqual(plot_outputs["num_counterfactual_summary_plots"], 3)
+        self.assertEqual(plot_outputs["num_counterfactual_summary_time_plots"], 1)
+        self.assertEqual(plot_outputs["num_counterfactual_summary_unit_plots"], 1)
+        self.assertEqual(plot_outputs["num_counterfactual_summary_post_s_plots"], 1)
         self.assertEqual(plot_outputs["num_intervention_share_plots"], 1)
         self.assertTrue(
             (
                 experiment_root
                 / "posterior_predictive_summaries"
                 / "default_time_mean.png"
+            ).exists()
+        )
+        self.assertTrue(
+            (
+                experiment_root
+                / "posterior_predictive_summaries"
+                / "default_unit_mean.png"
             ).exists()
         )
         self.assertTrue(
@@ -11288,22 +11362,134 @@ class PosteriorPredictiveTests(unittest.TestCase):
             (
                 experiment_root
                 / "counterfactual_summaries"
-                / "intervention_share_over_time.png"
+                / "default__fit_rank_0_unit_mean.png"
             ).exists()
         )
         self.assertTrue(
+            (
+                experiment_root
+                / "counterfactual_summaries"
+                / "default__fit_rank_0_time_mean_post_s.png"
+            ).exists()
+        )
+        self.assertTrue(
+            (
+                experiment_root
+                / "counterfactual_summaries"
+                / "intervention_share_over_time.png"
+            ).exists()
+        )
+        observed_time_series = [
+            series
+            for series in captured_observed_series
+            if series.shape == expected_observed_mean.shape
+        ]
+        observed_unit_series = [
+            series
+            for series in captured_observed_series
+            if series.shape == expected_observed_unit_mean.shape
+        ]
+        self.assertGreaterEqual(len(observed_time_series), 3)
+        self.assertGreaterEqual(len(observed_unit_series), 2)
+        self.assertTrue(
+            all(np.allclose(series, expected_observed_mean) for series in observed_time_series)
+        )
+        self.assertTrue(
             all(
-                np.allclose(series, expected_observed_mean)
-                for series in captured_observed_series
+                np.allclose(series, expected_observed_unit_mean)
+                for series in observed_unit_series
             )
         )
         self.assertIn("rank_0", captured_labels)
-        self.assertIn("full_on_from_s", captured_labels)
+        self.assertIn("all_intervention_from_s", captured_labels)
         self.assertIn("no_intervention", captured_labels)
+        full_counterfactual_axis = np.arange(int(observed_panel["T"]), dtype=int)
+        post_s_axis = np.arange(int(expected_counterfactual_s), int(observed_panel["T"]), dtype=int)
+        self.assertTrue(
+            any(
+                call["label"] == "rank_0"
+                and np.array_equal(call["index_axis"], full_counterfactual_axis)
+                for call in captured_sample_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                call["label"] == "all_intervention_from_s"
+                and np.array_equal(call["index_axis"], full_counterfactual_axis)
+                for call in captured_sample_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                call["label"] == "no_intervention"
+                and np.array_equal(call["index_axis"], full_counterfactual_axis)
+                for call in captured_sample_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                call["label"] == "all_intervention_from_s"
+                and np.array_equal(call["index_axis"], post_s_axis)
+                for call in captured_sample_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                call["label"] == "no_intervention"
+                and np.array_equal(call["index_axis"], post_s_axis)
+                for call in captured_sample_calls
+            )
+        )
+        posterior_time_calls = [
+            call
+            for call in captured_finalize_calls
+            if call["title"].startswith("Posterior predictive average outcome over time")
+        ]
+        counterfactual_time_calls = [
+            call
+            for call in captured_finalize_calls
+            if call["title"].startswith("Counterfactual average outcome over time")
+            and "(post-s)" not in call["title"]
+        ]
+        counterfactual_post_s_calls = [
+            call
+            for call in captured_finalize_calls
+            if call["title"].startswith("Counterfactual average outcome over time")
+            and "(post-s)" in call["title"]
+        ]
+        posterior_unit_calls = [
+            call
+            for call in captured_finalize_calls
+            if call["title"].startswith("Posterior predictive average outcome by unit")
+        ]
+        counterfactual_unit_calls = [
+            call
+            for call in captured_finalize_calls
+            if call["title"].startswith("Counterfactual average outcome by unit")
+        ]
+        self.assertEqual(len(posterior_time_calls), 1)
+        self.assertEqual(len(counterfactual_time_calls), 1)
+        self.assertEqual(len(counterfactual_post_s_calls), 1)
+        self.assertEqual(len(posterior_unit_calls), 1)
+        self.assertEqual(len(counterfactual_unit_calls), 1)
+        self.assertEqual(
+            posterior_time_calls[0]["show_intervention_start"],
+            int(observed_panel["s"]),
+        )
+        self.assertEqual(
+            counterfactual_time_calls[0]["show_intervention_start"],
+            int(expected_counterfactual_s),
+        )
+        self.assertEqual(
+            counterfactual_post_s_calls[0]["show_intervention_start"],
+            int(expected_counterfactual_s),
+        )
+        self.assertIsNone(posterior_unit_calls[0]["show_intervention_start"])
+        self.assertIsNone(counterfactual_unit_calls[0]["show_intervention_start"])
         self.assertEqual(len(captured_share_labels), 3)
         self.assertEqual(
             set(captured_share_labels),
-            {"observed_experiment", "full_on_from_s", "no_intervention"},
+            {"observed_experiment", "all_intervention_from_s", "no_intervention"},
         )
         self.assertTrue(
             np.allclose(
@@ -11321,10 +11507,84 @@ class PosteriorPredictiveTests(unittest.TestCase):
         expected_full_on[int(observed_panel["s"]) :] = 1.0
         self.assertTrue(
             np.allclose(
-                captured_share_series["full_on_from_s"],
+                captured_share_series["all_intervention_from_s"],
                 expected_full_on,
             )
         )
+
+        legacy_rows = []
+        for row in manifest_rows:
+            legacy_row = dict(row)
+            if legacy_row.get("target_intervention_source") == "saved_intervention":
+                if legacy_row.get("target_intervention_name") == "all_intervention_from_s":
+                    legacy_row["target_intervention_name"] = "all_ones"
+                    legacy_row["target_intervention_slug"] = "all_ones"
+                elif legacy_row.get("target_intervention_name") == "no_intervention":
+                    legacy_row["target_intervention_name"] = "all_zeros"
+                    legacy_row["target_intervention_slug"] = "all_zeros"
+            legacy_rows.append(legacy_row)
+        write_csv_rows(manifest_path, legacy_rows, columns=list(legacy_rows[0].keys()))
+
+        legacy_finalize_calls: list[dict[str, object]] = []
+
+        def _capture_legacy_finalize_axis(
+            ax,
+            *,
+            title,
+            show_intervention_start,
+            x_label,
+            y_label,
+        ):
+            legacy_finalize_calls.append(
+                {
+                    "title": str(title),
+                    "show_intervention_start": show_intervention_start,
+                    "x_label": str(x_label),
+                    "y_label": str(y_label),
+                }
+            )
+            return original_finalize_axis(
+                ax,
+                title=title,
+                show_intervention_start=show_intervention_start,
+                x_label=x_label,
+                y_label=y_label,
+            )
+
+        with mock.patch.object(
+            posterior_predictive_plotting,
+            "_finalize_axis",
+            side_effect=_capture_legacy_finalize_axis,
+        ), mock.patch.object(
+            posterior_predictive_plotting,
+            "_write_intervention_share_plots",
+            return_value=([], []),
+        ):
+            legacy_plot_outputs = write_posterior_predictive_plot_reports(
+                manifest_path,
+                plot_posterior_predictive=False,
+                plot_intervention_summaries=True,
+                output_dir_name="legacy_plots",
+            )
+
+        self.assertEqual(legacy_plot_outputs["num_counterfactual_summary_time_plots"], 1)
+        self.assertEqual(legacy_plot_outputs["num_counterfactual_summary_unit_plots"], 1)
+        self.assertEqual(legacy_plot_outputs["num_counterfactual_summary_post_s_plots"], 0)
+        self.assertFalse(
+            (
+                experiment_root
+                / "legacy_plots"
+                / "counterfactual_summaries"
+                / "default__fit_rank_0_time_mean_post_s.png"
+            ).exists()
+        )
+        legacy_counterfactual_time_calls = [
+            call
+            for call in legacy_finalize_calls
+            if call["title"].startswith("Counterfactual average outcome over time")
+        ]
+        self.assertEqual(len(legacy_counterfactual_time_calls), 1)
+        self.assertIsNone(legacy_counterfactual_time_calls[0]["show_intervention_start"])
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_posterior_predictive_jobs_submits_workers_and_report(self) -> None:
