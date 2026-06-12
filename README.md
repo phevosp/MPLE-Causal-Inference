@@ -708,7 +708,15 @@ Run the minimal regression suite:
 pixi run python tests/test_minimal_pipeline.py
 ```
 
-Run the staged shell orchestrator:
+Run the model-selection/test-evaluation orchestrator:
+
+```bash
+GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
+CV_SPEC_PATH=data/configs/cv_spec.yaml \
+bash run_and_submit_full_pipeline.sh
+```
+
+Run the posterior-predictive orchestrator:
 
 ```bash
 GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
@@ -716,7 +724,7 @@ FITS_SPEC_PATH=data/configs/quickstart_fits_spec.yaml \
 INTERVENTION_LIBRARY_SPEC_PATH=data/configs/intervention_library_spec.yaml \
 TARGET_PAIRS_PATH=data/configs/posterior_predictive_target_pairs.csv \
 POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
-bash run_and_submit_full_pipeline.sh
+bash run_and_submit_posterior_predictive_pipeline.sh
 ```
 
 ## Manual MPLE Invocation
@@ -757,16 +765,26 @@ The repo ships lightweight wrappers:
 - `submit_generation_jobs.sh`
 - `run_fit_job.sh`
 - `submit_fit_jobs.sh`
+- `run_test_evaluation_job.sh`
+- `submit_test_evaluation_jobs.sh`
 - `run_posterior_predictive_job.sh`
 - `submit_posterior_predictive_jobs.sh`
 - `run_and_submit_full_pipeline.sh`
+- `run_and_submit_posterior_predictive_pipeline.sh`
 
 They call the same Python entry points and accept environment-variable overrides:
 
 - `GENERATION_SPEC_PATH`, `GENERATION_OVERWRITE`
 - `GENERATION_MANIFEST_PATH`, `FITS_SPEC_PATH`, `FIT_OVERWRITE`
+- `FIT_MANIFEST_PATH`, `NUM_SAMPLES`, `GIBBS_SWEEPS`, `SEED`
 - `GEN_MANIFEST`, `FIT_MANIFEST`, `TARGET_PAIRS_PATH`, `POSTERIOR_PREDICTIVE_SPEC_PATH`, `POSTERIOR_PREDICTIVE_OVERWRITE`
 - `INTERVENTION_LIBRARY_SPEC_PATH`
+- `SEARCH_SLUG`, `CV_SPEC_PATH`, split-build knobs such as `BUILD_SPLITS_SEED`, `BUILD_SPLITS_RECURSIVE`, `BUILD_SPLITS_CONTIGUOUS`, `BUILD_SPLITS_TOLERANCE`, and `BUILD_SPLITS_OVERWRITE`
+
+Wrapper roles:
+
+- `run_and_submit_full_pipeline.sh`: generation submit + refresh, local split build, CV submit + refresh, outer-masked train-fit submit + refresh, then test-set evaluation submit
+- `run_and_submit_posterior_predictive_pipeline.sh`: generation submit + refresh, standard fit submit + refresh, local intervention-library materialization, then posterior-predictive submit + report refresh
 
 ## Repository Map
 
@@ -775,11 +793,13 @@ They call the same Python entry points and accept environment-variable overrides
 - `submit_generation_jobs.sh`: SLURM fan-out for generation requests plus manifest refresh barrier
 - `run_fit_pipeline.py`: fit request planning, single-fit execution, and manifest refresh/report rebuild
 - `submit_fit_jobs.sh`: SLURM fan-out for fit requests plus manifest/report refresh barrier
+- `submit_test_evaluation_jobs.sh`: single-job SLURM wrapper for manifest-driven test-set evaluation
 - `run_intervention_library.py`: reusable intervention-panel materialization
 - `build_cv_folds.py`: manifest-driven spatial partition plus spatiotemporal CV-fold construction
 - `run_posterior_predictive.py`: single-target posterior-predictive/counterfactual execution
 - `utils/t8_posterior_predictive_reporting.py`: posterior-predictive summaries, manifest refresh, intervention summaries, grouped ranking/reporting
-- `run_and_submit_full_pipeline.sh`: staged generation → fit → intervention → posterior-predictive shell orchestrator
+- `run_and_submit_full_pipeline.sh`: staged generation → split build → CV → outer-masked train-fit → test-evaluation shell orchestrator
+- `run_and_submit_posterior_predictive_pipeline.sh`: staged generation → standard fit → intervention-library → posterior-predictive shell orchestrator
 - `mple.py`: conditional MPLE optimizer and artifact writer
 - `utils/`: tiered utility modules (`t0_*` through `t8_*`) for config/path I/O, model artifacts, parameter packing, experiment loading, intervention handling, validation metrics, fit reporting, and posterior-predictive reporting
 - `utils/t3_field_generation.py`: synthetic-field specification parsing and field construction

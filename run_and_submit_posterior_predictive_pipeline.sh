@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mple-tests
+#SBATCH --job-name=mple-posterior-predictive
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -13,8 +13,8 @@ set -euo pipefail
 DATE=$(date +%F)
 LOG_DIR="slurm-logs/$DATE"
 mkdir -p "$LOG_DIR"
-OUT_PATH="$LOG_DIR/${SLURM_JOB_ID:-manual}_${SLURM_JOB_NAME:-run-and-submit-full-pipeline}.out"
-ERR_PATH="$LOG_DIR/${SLURM_JOB_ID:-manual}_${SLURM_JOB_NAME:-run-and-submit-full-pipeline}.err"
+OUT_PATH="$LOG_DIR/${SLURM_JOB_ID:-manual}_${SLURM_JOB_NAME:-run-and-submit-posterior-predictive-pipeline}.out"
+ERR_PATH="$LOG_DIR/${SLURM_JOB_ID:-manual}_${SLURM_JOB_NAME:-run-and-submit-posterior-predictive-pipeline}.err"
 exec >"$OUT_PATH" 2>"$ERR_PATH"
 
 echo "Job started at $(date)"
@@ -26,20 +26,18 @@ export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 GENERATION_SPEC_PATH="${GENERATION_SPEC_PATH:-data/configs/generation_spec.yaml}"
-CV_SPEC_PATH="${CV_SPEC_PATH:-data/configs/cv_spec.yaml}"
-SEARCH_SLUG="${SEARCH_SLUG:-}"
-GEN_MANIFEST="${GEN_MANIFEST:-}"
-FIT_MANIFEST_PATH="${FIT_MANIFEST_PATH:-}"
+FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
+INTERVENTION_LIBRARY_SPEC_PATH="${INTERVENTION_LIBRARY_SPEC_PATH:-data/configs/intervention_library_spec.yaml}"
+TARGET_PAIRS_PATH="${TARGET_PAIRS_PATH:-data/configs/posterior_predictive_target_pairs.csv}"
+POSTERIOR_PREDICTIVE_SPEC_PATH="${POSTERIOR_PREDICTIVE_SPEC_PATH:-data/configs/posterior_predictive_spec.yaml}"
 
 GENERATION_OVERWRITE="${GENERATION_OVERWRITE:-false}"
-CV_OVERWRITE="${CV_OVERWRITE:-false}"
 FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
+INTERVENTION_LIBRARY_OVERWRITE="${INTERVENTION_LIBRARY_OVERWRITE:-false}"
+POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE:-false}"
 
-BUILD_SPLITS_SEED="${BUILD_SPLITS_SEED:-${SEED:-}}"
-BUILD_SPLITS_RECURSIVE="${BUILD_SPLITS_RECURSIVE:-${RECURSIVE:-}}"
-BUILD_SPLITS_CONTIGUOUS="${BUILD_SPLITS_CONTIGUOUS:-${CONTIGUOUS:-}}"
-BUILD_SPLITS_TOLERANCE="${BUILD_SPLITS_TOLERANCE:-${TOLERANCE:-}}"
-BUILD_SPLITS_OVERWRITE="${BUILD_SPLITS_OVERWRITE:-${OVERWRITE:-false}}"
+GEN_MANIFEST="${GEN_MANIFEST:-}"
+FIT_MANIFEST="${FIT_MANIFEST:-}"
 
 SBATCH_BIN="${SBATCH_BIN:-sbatch}"
 SACCT_BIN="${SACCT_BIN:-sacct}"
@@ -48,21 +46,16 @@ SLEEP_BIN="${SLEEP_BIN:-sleep}"
 WAIT_POLL_SECONDS="${WAIT_POLL_SECONDS:-10}"
 
 GENERATION_SUBMITTER="${GENERATION_SUBMITTER:-submit_generation_jobs.sh}"
-CV_SUBMITTER="${CV_SUBMITTER:-submit_cv_jobs.sh}"
 FIT_SUBMITTER="${FIT_SUBMITTER:-submit_fit_jobs.sh}"
-TEST_EVALUATION_SUBMITTER="${TEST_EVALUATION_SUBMITTER:-submit_test_evaluation_jobs.sh}"
+POSTERIOR_PREDICTIVE_SUBMITTER="${POSTERIOR_PREDICTIVE_SUBMITTER:-submit_posterior_predictive_jobs.sh}"
 
 GENERATION_WORKER_SCRIPT="${GENERATION_WORKER_SCRIPT:-run_generation_job.sh}"
-CV_WORKER_SCRIPT="${CV_WORKER_SCRIPT:-run_cv_job.sh}"
 FIT_WORKER_SCRIPT="${FIT_WORKER_SCRIPT:-run_fit_job.sh}"
-TEST_EVALUATION_WORKER_SCRIPT="${TEST_EVALUATION_WORKER_SCRIPT:-run_test_evaluation_job.sh}"
+POSTERIOR_PREDICTIVE_WORKER_SCRIPT="${POSTERIOR_PREDICTIVE_WORKER_SCRIPT:-run_posterior_predictive_job.sh}"
 
 GENERATION_REPORT_JOB_NAME="${GENERATION_REPORT_JOB_NAME:-generation-refresh}"
-CV_REPORT_JOB_NAME="${CV_REPORT_JOB_NAME:-cv-refresh}"
 FIT_REPORT_JOB_NAME="${FIT_REPORT_JOB_NAME:-fit-refresh}"
-TEST_EVALUATION_JOB_NAME="${TEST_EVALUATION_JOB_NAME:-test-eval}"
-
-BUILD_SPLITS_SCRIPT="${BUILD_SPLITS_SCRIPT:-${BUILD_CV_FOLDS_SCRIPT:-}}"
+POSTERIOR_PREDICTIVE_REPORT_JOB_NAME="${POSTERIOR_PREDICTIVE_REPORT_JOB_NAME:-posterior-predictive-report}"
 
 resolve_generation_manifest_path() {
   if [[ -n "${RESOLVE_GENERATION_MANIFEST_SCRIPT:-}" ]]; then
@@ -77,16 +70,16 @@ print(generation_manifest_path_for_spec(sys.argv[1]))
 PY
 }
 
-resolve_train_fit_manifest_path() {
-  if [[ -n "${RESOLVE_TRAIN_FIT_MANIFEST_SCRIPT:-}" ]]; then
-    bash "${RESOLVE_TRAIN_FIT_MANIFEST_SCRIPT}" "${GEN_MANIFEST}" "${SEARCH_SLUG}"
+resolve_fit_manifest_path() {
+  if [[ -n "${RESOLVE_FIT_MANIFEST_SCRIPT:-}" ]]; then
+    bash "${RESOLVE_FIT_MANIFEST_SCRIPT}" "${FITS_SPEC_PATH}"
     return 0
   fi
-  pixi run python - <<'PY' "${GEN_MANIFEST}" "${SEARCH_SLUG}"
+  pixi run python - <<'PY' "${FITS_SPEC_PATH}"
 import sys
-from run_fit_pipeline import train_fit_manifest_path_for_scope
+from run_fit_pipeline import fit_manifest_path_for_spec
 
-print(train_fit_manifest_path_for_scope(sys.argv[1], search_slug=sys.argv[2] or None))
+print(fit_manifest_path_for_spec(sys.argv[1]))
 PY
 }
 
@@ -140,67 +133,42 @@ submit_generation_stage() {
   bash "${GENERATION_SUBMITTER}"
 }
 
-build_splits_stage() {
-  if [[ -n "${BUILD_SPLITS_SCRIPT}" ]]; then
-    bash "${BUILD_SPLITS_SCRIPT}" "${GEN_MANIFEST}" "${CV_SPEC_PATH}"
+submit_fit_stage() {
+  GENERATION_MANIFEST_PATH="${GEN_MANIFEST}" \
+  FITS_SPEC_PATH="${FITS_SPEC_PATH}" \
+  FIT_MODE="standard" \
+  FIT_OVERWRITE="${FIT_OVERWRITE}" \
+  SBATCH_BIN="${SBATCH_BIN}" \
+  WORKER_SCRIPT="${FIT_WORKER_SCRIPT}" \
+  REPORT_JOB_NAME="${FIT_REPORT_JOB_NAME}" \
+  bash "${FIT_SUBMITTER}"
+}
+
+run_intervention_stage() {
+  if [[ -n "${INTERVENTION_LIBRARY_SCRIPT:-}" ]]; then
+    bash "${INTERVENTION_LIBRARY_SCRIPT}" "${GEN_MANIFEST}" "${INTERVENTION_LIBRARY_SPEC_PATH}"
     return 0
   fi
-
-  local split_args=(
+  local intervention_args=(
     --generation_manifest_path "${GEN_MANIFEST}"
-    --cv_spec_path "${CV_SPEC_PATH}"
+    --spec_path "${INTERVENTION_LIBRARY_SPEC_PATH}"
   )
-  if [[ -n "${BUILD_SPLITS_SEED}" ]]; then
-    split_args+=(--seed "${BUILD_SPLITS_SEED}")
+  if [[ "${INTERVENTION_LIBRARY_OVERWRITE}" == "true" ]]; then
+    intervention_args+=(--overwrite)
   fi
-  if [[ "${BUILD_SPLITS_RECURSIVE}" == "true" ]]; then
-    split_args+=(--recursive)
-  fi
-  if [[ "${BUILD_SPLITS_CONTIGUOUS}" == "true" ]]; then
-    split_args+=(--contiguous)
-  fi
-  if [[ -n "${BUILD_SPLITS_TOLERANCE}" ]]; then
-    split_args+=(--tolerance "${BUILD_SPLITS_TOLERANCE}")
-  fi
-  if [[ "${BUILD_SPLITS_OVERWRITE}" == "true" ]]; then
-    split_args+=(--overwrite)
-  fi
-  pixi run python -u build_splits.py "${split_args[@]}"
+  pixi run python -u run_intervention_library.py "${intervention_args[@]}"
 }
 
-submit_cv_stage() {
-  GENERATION_MANIFEST_PATH="${GEN_MANIFEST}" \
-  CV_SPEC_PATH="${CV_SPEC_PATH}" \
-  CV_OVERWRITE="${CV_OVERWRITE}" \
-  EXECUTION_MODE="cv" \
+submit_posterior_predictive_stage() {
+  GEN_MANIFEST="${GEN_MANIFEST}" \
+  FIT_MANIFEST="${FIT_MANIFEST}" \
+  TARGET_PAIRS_PATH="${TARGET_PAIRS_PATH}" \
+  POSTERIOR_PREDICTIVE_SPEC_PATH="${POSTERIOR_PREDICTIVE_SPEC_PATH}" \
+  POSTERIOR_PREDICTIVE_OVERWRITE="${POSTERIOR_PREDICTIVE_OVERWRITE}" \
   SBATCH_BIN="${SBATCH_BIN}" \
-  WORKER_SCRIPT="${CV_WORKER_SCRIPT}" \
-  REPORT_JOB_NAME="${CV_REPORT_JOB_NAME}" \
-  bash "${CV_SUBMITTER}"
-}
-
-submit_fit_stage() {
-  local fit_env=(
-    "GENERATION_MANIFEST_PATH=${GEN_MANIFEST}"
-    "CV_SPEC_PATH=${CV_SPEC_PATH}"
-    "FIT_MODE=outer_masked"
-    "FIT_OVERWRITE=${FIT_OVERWRITE}"
-    "SBATCH_BIN=${SBATCH_BIN}"
-    "WORKER_SCRIPT=${FIT_WORKER_SCRIPT}"
-    "REPORT_JOB_NAME=${FIT_REPORT_JOB_NAME}"
-  )
-  if [[ -n "${SEARCH_SLUG}" ]]; then
-    fit_env+=("SEARCH_SLUG=${SEARCH_SLUG}")
-  fi
-  env "${fit_env[@]}" bash "${FIT_SUBMITTER}"
-}
-
-submit_test_evaluation_stage() {
-  FIT_MANIFEST_PATH="${FIT_MANIFEST_PATH}" \
-  SBATCH_BIN="${SBATCH_BIN}" \
-  WORKER_SCRIPT="${TEST_EVALUATION_WORKER_SCRIPT}" \
-  WORKER_JOB_NAME="${TEST_EVALUATION_JOB_NAME}" \
-  bash "${TEST_EVALUATION_SUBMITTER}"
+  WORKER_SCRIPT="${POSTERIOR_PREDICTIVE_WORKER_SCRIPT}" \
+  REPORT_JOB_NAME="${POSTERIOR_PREDICTIVE_REPORT_JOB_NAME}" \
+  bash "${POSTERIOR_PREDICTIVE_SUBMITTER}"
 }
 
 echo "Submitting generation jobs..."
@@ -211,23 +179,19 @@ if [[ -z "${GEN_MANIFEST}" ]]; then
   GEN_MANIFEST="$(resolve_generation_manifest_path)"
 fi
 
-echo "Building split bundles..."
-build_splits_stage
-
-echo "Submitting CV jobs..."
-cv_barrier_job_id="$(submit_cv_stage)"
-wait_for_job "${cv_barrier_job_id}" "CV"
-
-echo "Submitting outer-masked fit jobs..."
+echo "Submitting fit jobs..."
 fit_barrier_job_id="$(submit_fit_stage)"
 wait_for_job "${fit_barrier_job_id}" "Fit"
 
-if [[ -z "${FIT_MANIFEST_PATH}" ]]; then
-  FIT_MANIFEST_PATH="$(resolve_train_fit_manifest_path)"
+if [[ -z "${FIT_MANIFEST}" ]]; then
+  FIT_MANIFEST="$(resolve_fit_manifest_path)"
 fi
 
-echo "Submitting test-set evaluation jobs..."
-test_evaluation_job_id="$(submit_test_evaluation_stage)"
-wait_for_job "${test_evaluation_job_id}" "Test evaluation"
+echo "Running intervention library..."
+run_intervention_stage
+
+echo "Submitting posterior predictive jobs..."
+posterior_predictive_job_id="$(submit_posterior_predictive_stage)"
+wait_for_job "${posterior_predictive_job_id}" "Posterior predictive"
 
 echo "Job finished at $(date)"

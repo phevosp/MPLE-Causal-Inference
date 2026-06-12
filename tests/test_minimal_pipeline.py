@@ -164,6 +164,7 @@ from run_fit_pipeline import (
     run_fit_request,
     run_fits,
     run_train_fit_request,
+    train_fit_manifest_path_for_scope,
     write_train_fit_requests,
     write_fit_requests,
 )
@@ -5251,6 +5252,23 @@ class PipelineStageRequestTests(unittest.TestCase):
             (self.root / "generated" / "best_train_fit_by_experiment.csv").exists()
         )
 
+    def test_train_fit_manifest_path_for_scope_without_search_slug_uses_combined_name(self) -> None:
+        manifest_path = self.root / "generated" / "generation_manifest.csv"
+
+        resolved = train_fit_manifest_path_for_scope(manifest_path)
+
+        self.assertEqual(resolved, self.root / "generated" / "train_fit_manifest.csv")
+
+    def test_train_fit_manifest_path_for_scope_with_search_slug_uses_scoped_name(self) -> None:
+        manifest_path = self.root / "generated" / "generation_manifest.csv"
+
+        resolved = train_fit_manifest_path_for_scope(manifest_path, search_slug="mask_grid")
+
+        self.assertEqual(
+            resolved,
+            self.root / "generated" / "train_fit_manifest__mask_grid.csv",
+        )
+
     def test_run_train_fit_request_uses_outer_training_mask_for_test_train_cv(self) -> None:
         generation_spec_path = self._write_generation_spec(
             [
@@ -7646,7 +7664,67 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "job2")
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell orchestration test")
-    def test_run_tests_sh_waits_between_stage_submissions(self) -> None:
+    def test_submit_test_evaluation_jobs_submits_single_worker(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        fit_manifest_path = self.root / "train_fit_manifest.csv"
+        fit_manifest_path.write_text("experiment_name\n", encoding="utf-8")
+        fake_sbatch_path = self.root / "fake_sbatch.sh"
+        fake_counter_path = self.root / "fake_sbatch_counter.txt"
+        fake_log_path = self.root / "fake_sbatch_log.txt"
+
+        fake_sbatch_path.write_text(
+            "\n".join(
+                [
+                    "#!/bin/bash",
+                    "set -euo pipefail",
+                    'count="0"',
+                    'if [[ -f "${FAKE_SBATCH_COUNTER}" ]]; then',
+                    '  count="$(cat "${FAKE_SBATCH_COUNTER}")"',
+                    "fi",
+                    'count="$((count + 1))"',
+                    'printf "%s" "${count}" > "${FAKE_SBATCH_COUNTER}"',
+                    'printf "env:FIT_MANIFEST_PATH=%s|NUM_SAMPLES=%s|GIBBS_SWEEPS=%s|SEED=%s|" "${FIT_MANIFEST_PATH:-}" "${NUM_SAMPLES:-}" "${GIBBS_SWEEPS:-}" "${SEED:-}" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "<%s>" "$@" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "\\n" >> "${FAKE_SBATCH_LOG}"',
+                    'printf "%s\\n" "job${count}"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        fake_sbatch_path.chmod(0o755)
+
+        result = subprocess.run(
+            [bash_path, "submit_test_evaluation_jobs.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "FIT_MANIFEST_PATH": str(fit_manifest_path),
+                "NUM_SAMPLES": "10",
+                "GIBBS_SWEEPS": "3",
+                "SEED": "99",
+                "SBATCH_BIN": str(fake_sbatch_path),
+                "WORKER_SCRIPT": "run_test_evaluation_job.sh",
+                "FAKE_SBATCH_COUNTER": str(fake_counter_path),
+                "FAKE_SBATCH_LOG": str(fake_log_path),
+            },
+        )
+
+        log_lines = fake_log_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log_lines), 1)
+        self.assertIn(f"env:FIT_MANIFEST_PATH={fit_manifest_path}", log_lines[0])
+        self.assertIn("NUM_SAMPLES=10", log_lines[0])
+        self.assertIn("GIBBS_SWEEPS=3", log_lines[0])
+        self.assertIn("SEED=99", log_lines[0])
+        self.assertIn("run_test_evaluation_job.sh", log_lines[0])
+        self.assertEqual(result.stdout.strip(), "job1")
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell orchestration test")
+    def test_run_and_submit_full_pipeline_waits_between_stage_submissions(self) -> None:
         bash_path = shutil.which("bash")
         if bash_path is None or "system32" in bash_path.lower():
             self.skipTest("portable bash is not available in this environment")
@@ -7654,34 +7732,41 @@ class PipelineStageRequestTests(unittest.TestCase):
         generation_submitter = self.root / "fake_generation_submitter.sh"
         cv_submitter = self.root / "fake_cv_submitter.sh"
         fit_submitter = self.root / "fake_fit_submitter.sh"
-        posterior_submitter = self.root / "fake_posterior_submitter.sh"
-        build_cv_script = self.root / "fake_build_cv.sh"
-        intervention_script = self.root / "fake_intervention.sh"
+        test_evaluation_submitter = self.root / "fake_test_eval_submitter.sh"
+        build_splits_script = self.root / "fake_build_splits.sh"
+        resolve_generation_manifest_script = self.root / "fake_resolve_generation_manifest.sh"
+        resolve_train_fit_manifest_script = self.root / "fake_resolve_train_fit_manifest.sh"
         sacct_script = self.root / "fake_sacct.sh"
         squeue_script = self.root / "fake_squeue.sh"
+        generation_manifest_path = self.root / "generated" / "generation_manifest.csv"
+        train_fit_manifest_path = self.root / "generated" / "train_fit_manifest__mask_grid.csv"
 
         generation_submitter.write_text(
             "#!/bin/bash\nset -euo pipefail\nprintf 'generation_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-generation\\n'\n",
             encoding="utf-8",
         )
-        fit_submitter.write_text(
-            "#!/bin/bash\nset -euo pipefail\nprintf 'fit_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-fit\\n'\n",
-            encoding="utf-8",
-        )
         cv_submitter.write_text(
-            "#!/bin/bash\nset -euo pipefail\nprintf 'model_selection_submit:%s\\n' \"${EXECUTION_MODE}\" >> \"${STAGE_LOG}\"\nprintf 'job-model-%s\\n' \"${EXECUTION_MODE}\"\n",
+            "#!/bin/bash\nset -euo pipefail\nprintf 'cv_submit:%s:%s\\n' \"${EXECUTION_MODE}\" \"${GENERATION_MANIFEST_PATH}\" >> \"${STAGE_LOG}\"\nprintf 'job-cv\\n'\n",
             encoding="utf-8",
         )
-        posterior_submitter.write_text(
-            "#!/bin/bash\nset -euo pipefail\nprintf 'posterior_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-posterior\\n'\n",
+        fit_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'fit_submit:%s:%s:%s:%s\\n' \"${FIT_MODE}\" \"${GENERATION_MANIFEST_PATH}\" \"${CV_SPEC_PATH}\" \"${SEARCH_SLUG:-}\" >> \"${STAGE_LOG}\"\nprintf 'job-fit\\n'\n",
             encoding="utf-8",
         )
-        build_cv_script.write_text(
-            "#!/bin/bash\nset -euo pipefail\nprintf 'build_cv\\n' >> \"${STAGE_LOG}\"\n",
+        test_evaluation_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'test_eval_submit:%s\\n' \"${FIT_MANIFEST_PATH}\" >> \"${STAGE_LOG}\"\nprintf 'job-test\\n'\n",
             encoding="utf-8",
         )
-        intervention_script.write_text(
-            "#!/bin/bash\nset -euo pipefail\nprintf 'intervention\\n' >> \"${STAGE_LOG}\"\n",
+        build_splits_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'build_splits:%s:%s\\n' \"$1\" \"$2\" >> \"${STAGE_LOG}\"\n",
+            encoding="utf-8",
+        )
+        resolve_generation_manifest_script.write_text(
+            f"#!/bin/bash\nset -euo pipefail\nprintf 'resolve_generation_manifest:%s\\n' \"$1\" >> \"${{STAGE_LOG}}\"\nprintf '%s\\n' \"{generation_manifest_path.as_posix()}\"\n",
+            encoding="utf-8",
+        )
+        resolve_train_fit_manifest_script.write_text(
+            f"#!/bin/bash\nset -euo pipefail\nprintf 'resolve_train_fit_manifest:%s:%s\\n' \"$1\" \"$2\" >> \"${{STAGE_LOG}}\"\nprintf '%s\\n' \"{train_fit_manifest_path.as_posix()}\"\n",
             encoding="utf-8",
         )
         sacct_script.write_text(
@@ -7696,29 +7781,32 @@ class PipelineStageRequestTests(unittest.TestCase):
             generation_submitter,
             cv_submitter,
             fit_submitter,
-            posterior_submitter,
-            build_cv_script,
-            intervention_script,
+            test_evaluation_submitter,
+            build_splits_script,
+            resolve_generation_manifest_script,
+            resolve_train_fit_manifest_script,
             sacct_script,
             squeue_script,
         ]:
             script_path.chmod(0o755)
 
         subprocess.run(
-            [bash_path, "run_tests.sh"],
+            [bash_path, "run_and_submit_full_pipeline.sh"],
             check=True,
             cwd=REPO_ROOT,
             env={
                 **os.environ,
                 "STAGE_LOG": str(log_path),
-                "GEN_MANIFEST": str(self.root / "generation_manifest.csv"),
-                "FIT_MANIFEST": str(self.root / "fit_manifest.csv"),
+                "GENERATION_SPEC_PATH": str(self.root / "generation_spec.yaml"),
+                "CV_SPEC_PATH": str(self.root / "cv_spec.yaml"),
+                "SEARCH_SLUG": "mask_grid",
                 "GENERATION_SUBMITTER": str(generation_submitter),
                 "CV_SUBMITTER": str(cv_submitter),
                 "FIT_SUBMITTER": str(fit_submitter),
-                "POSTERIOR_PREDICTIVE_SUBMITTER": str(posterior_submitter),
-                "BUILD_CV_FOLDS_SCRIPT": str(build_cv_script),
-                "INTERVENTION_LIBRARY_SCRIPT": str(intervention_script),
+                "TEST_EVALUATION_SUBMITTER": str(test_evaluation_submitter),
+                "BUILD_SPLITS_SCRIPT": str(build_splits_script),
+                "RESOLVE_GENERATION_MANIFEST_SCRIPT": str(resolve_generation_manifest_script),
+                "RESOLVE_TRAIN_FIT_MANIFEST_SCRIPT": str(resolve_train_fit_manifest_script),
                 "SACCT_BIN": str(sacct_script),
                 "SQUEUE_BIN": str(squeue_script),
                 "SLEEP_BIN": str(squeue_script),
@@ -7731,13 +7819,115 @@ class PipelineStageRequestTests(unittest.TestCase):
             [
                 "generation_submit",
                 "wait:job-generation",
-                "build_cv",
-                "model_selection_submit:cv",
-                "wait:job-model-cv",
-                "fit_submit",
+                f"resolve_generation_manifest:{self.root / 'generation_spec.yaml'}",
+                f"build_splits:{generation_manifest_path.as_posix()}:{self.root / 'cv_spec.yaml'}",
+                f"cv_submit:cv:{generation_manifest_path.as_posix()}",
+                "wait:job-cv",
+                f"fit_submit:outer_masked:{generation_manifest_path.as_posix()}:{self.root / 'cv_spec.yaml'}:mask_grid",
                 "wait:job-fit",
-                "intervention",
-                "posterior_submit",
+                f"resolve_train_fit_manifest:{generation_manifest_path.as_posix()}:mask_grid",
+                f"test_eval_submit:{train_fit_manifest_path.as_posix()}",
+                "wait:job-test",
+            ],
+        )
+
+    @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell orchestration test")
+    def test_run_and_submit_posterior_predictive_pipeline_waits_between_stage_submissions(self) -> None:
+        bash_path = shutil.which("bash")
+        if bash_path is None or "system32" in bash_path.lower():
+            self.skipTest("portable bash is not available in this environment")
+        log_path = self.root / "posterior_orchestration.log"
+        generation_submitter = self.root / "fake_generation_submitter.sh"
+        fit_submitter = self.root / "fake_fit_submitter.sh"
+        posterior_submitter = self.root / "fake_posterior_submitter.sh"
+        intervention_script = self.root / "fake_intervention.sh"
+        resolve_generation_manifest_script = self.root / "fake_resolve_generation_manifest.sh"
+        resolve_fit_manifest_script = self.root / "fake_resolve_fit_manifest.sh"
+        sacct_script = self.root / "fake_sacct.sh"
+        squeue_script = self.root / "fake_squeue.sh"
+        generation_manifest_path = self.root / "generated" / "generation_manifest.csv"
+        fit_manifest_path = self.root / "generated" / "fit_manifest.csv"
+
+        generation_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'generation_submit\\n' >> \"${STAGE_LOG}\"\nprintf 'job-generation\\n'\n",
+            encoding="utf-8",
+        )
+        fit_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'fit_submit:%s:%s:%s\\n' \"${FIT_MODE}\" \"${GENERATION_MANIFEST_PATH}\" \"${FITS_SPEC_PATH}\" >> \"${STAGE_LOG}\"\nprintf 'job-fit\\n'\n",
+            encoding="utf-8",
+        )
+        posterior_submitter.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'posterior_submit:%s:%s:%s:%s\\n' \"${GEN_MANIFEST}\" \"${FIT_MANIFEST}\" \"${TARGET_PAIRS_PATH}\" \"${POSTERIOR_PREDICTIVE_SPEC_PATH}\" >> \"${STAGE_LOG}\"\nprintf 'job-posterior\\n'\n",
+            encoding="utf-8",
+        )
+        intervention_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\nprintf 'intervention:%s:%s\\n' \"$1\" \"$2\" >> \"${STAGE_LOG}\"\n",
+            encoding="utf-8",
+        )
+        resolve_generation_manifest_script.write_text(
+            f"#!/bin/bash\nset -euo pipefail\nprintf 'resolve_generation_manifest:%s\\n' \"$1\" >> \"${{STAGE_LOG}}\"\nprintf '%s\\n' \"{generation_manifest_path.as_posix()}\"\n",
+            encoding="utf-8",
+        )
+        resolve_fit_manifest_script.write_text(
+            f"#!/bin/bash\nset -euo pipefail\nprintf 'resolve_fit_manifest:%s\\n' \"$1\" >> \"${{STAGE_LOG}}\"\nprintf '%s\\n' \"{fit_manifest_path.as_posix()}\"\n",
+            encoding="utf-8",
+        )
+        sacct_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\njob_id=\"\"\nwhile [[ $# -gt 0 ]]; do\n  if [[ \"$1\" == \"-j\" ]]; then\n    job_id=\"$2\"\n    shift 2\n    continue\n  fi\n  shift\n done\nprintf 'wait:%s\\n' \"${job_id}\" >> \"${STAGE_LOG}\"\nprintf 'COMPLETED\\n'\n",
+            encoding="utf-8",
+        )
+        squeue_script.write_text(
+            "#!/bin/bash\nset -euo pipefail\n",
+            encoding="utf-8",
+        )
+        for script_path in [
+            generation_submitter,
+            fit_submitter,
+            posterior_submitter,
+            intervention_script,
+            resolve_generation_manifest_script,
+            resolve_fit_manifest_script,
+            sacct_script,
+            squeue_script,
+        ]:
+            script_path.chmod(0o755)
+
+        subprocess.run(
+            [bash_path, "run_and_submit_posterior_predictive_pipeline.sh"],
+            check=True,
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "STAGE_LOG": str(log_path),
+                "GENERATION_SPEC_PATH": str(self.root / "generation_spec.yaml"),
+                "FITS_SPEC_PATH": str(self.root / "fits_spec.yaml"),
+                "INTERVENTION_LIBRARY_SPEC_PATH": str(self.root / "intervention_library_spec.yaml"),
+                "TARGET_PAIRS_PATH": str(self.root / "target_pairs.csv"),
+                "POSTERIOR_PREDICTIVE_SPEC_PATH": str(self.root / "posterior_predictive_spec.yaml"),
+                "GENERATION_SUBMITTER": str(generation_submitter),
+                "FIT_SUBMITTER": str(fit_submitter),
+                "POSTERIOR_PREDICTIVE_SUBMITTER": str(posterior_submitter),
+                "INTERVENTION_LIBRARY_SCRIPT": str(intervention_script),
+                "RESOLVE_GENERATION_MANIFEST_SCRIPT": str(resolve_generation_manifest_script),
+                "RESOLVE_FIT_MANIFEST_SCRIPT": str(resolve_fit_manifest_script),
+                "SACCT_BIN": str(sacct_script),
+                "SQUEUE_BIN": str(squeue_script),
+                "SLEEP_BIN": str(squeue_script),
+                "WAIT_POLL_SECONDS": "0",
+            },
+        )
+
+        self.assertEqual(
+            log_path.read_text(encoding="utf-8").splitlines(),
+            [
+                "generation_submit",
+                "wait:job-generation",
+                f"resolve_generation_manifest:{self.root / 'generation_spec.yaml'}",
+                f"fit_submit:standard:{generation_manifest_path.as_posix()}:{self.root / 'fits_spec.yaml'}",
+                "wait:job-fit",
+                f"resolve_fit_manifest:{self.root / 'fits_spec.yaml'}",
+                f"intervention:{generation_manifest_path.as_posix()}:{self.root / 'intervention_library_spec.yaml'}",
+                f"posterior_submit:{generation_manifest_path.as_posix()}:{fit_manifest_path.as_posix()}:{self.root / 'target_pairs.csv'}:{self.root / 'posterior_predictive_spec.yaml'}",
                 "wait:job-posterior",
             ],
         )

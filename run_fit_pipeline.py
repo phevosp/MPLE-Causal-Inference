@@ -99,6 +99,14 @@ def fit_requests_path_for_spec(fits_spec_path: str | Path) -> Path:
     return fit_manifest_path_for_spec(fits_spec_path).with_name(FIT_REQUESTS_NAME)
 
 
+def train_fit_manifest_path_for_scope(
+    generation_manifest_path: str | Path,
+    search_slug: str | None = None,
+) -> Path:
+    """Return the refreshed train-fit manifest path for an outer-masked fit scope."""
+    return _train_fit_manifest_path(generation_manifest_path, search_slug=search_slug)
+
+
 def _train_fit_requests_path(
     manifest_path: str | Path,
     search_slug: str,
