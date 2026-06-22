@@ -1,0 +1,184 @@
+base:
+  experiment_root: experiments/SyntheticNoInterference
+  manifest_path: experiments/SyntheticNoInterference/generation_manifest_x10.csv
+  dimensions:
+    N: 500
+    T: 50
+  generation:
+    gibbs_sweeps: 100
+    seed: 50
+  x0:
+    generator: bernoulli
+    params:
+      p: 0.5
+      fixed_val: null
+  graph:
+    source: generated
+    generator: erdos_renyi
+    params:
+      p: 0.01
+    artifact:
+      gamma_path: null
+      node_index_path: null
+      artifact_dir: null
+      network_name: null
+      trim_scope: null
+  intervention:
+    source: generated
+    generator: low_rank_probability
+    params:
+      singular_values: [1.0, 0.7, 0.49]
+      probability_amplitude: 0.5
+    artifact:
+      panel_path: null
+      z0_path: null
+      artifact_dir: null
+      shared_panel_dir: null
+      outcome_code: null
+      intervention_code: null
+      lag_code: null
+      trim_scope: null
+  truth:
+    B: 1.0
+    field_mode: random_low_rank
+    field_params:
+      singular_values: [2.0, 0.7, 0.49]
+      target_rms_fraction: 0.4
+    scalars:
+      beta: -0.3
+      xi: 0.0
+      eta: 0.3
+
+experiments:
+#   - name: synth_no_interference
+#     generation:
+#       seed: 42
+#     intervention:
+#       params:
+#         singular_values: [1.0, 0.7, 0.49]
+#     truth:
+#       field_mode: confounded_low_rank
+#       field_params:
+#         singular_values: [1.0, 0.8, 0.6]
+#         target_rms_fraction: 0.75
+
+  - name: synth_no_interference_1
+    generation:
+      seed: 42
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_2
+    generation:
+      seed: 43
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_3
+    generation:
+      seed: 44
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_4
+    generation:
+      seed: 45
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_5
+    generation:
+      seed: 46
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_6
+    generation:
+      seed: 47
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_7
+    generation:
+      seed: 48
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_8
+    generation:
+      seed: 49
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_9
+    generation:
+      seed: 50
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+
+  - name: synth_no_interference_10
+    generation:
+      seed: 51
+    intervention:
+      params:
+        singular_values: [1.0, 0.7, 0.49]
+    truth:
+      field_mode: confounded_low_rank
+      field_params:
+        singular_values: [1.0, 0.8, 0.6]
+        target_rms_fraction: 0.75
+

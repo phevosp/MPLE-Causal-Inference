@@ -1,0 +1,22 @@
+experiment_name: partial_confounding_4
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/HybridAlt2/partial_confounding_4
+run_name: default
+run_slug: default
+source_type: fit
+source_name: alternating_rank_8_uv_1_e2_beta_mask_xi_zero
+source_slug: fit_alternating_rank_8_uv_1_e2_beta_mask_xi_zero
+intervention_source: saved_intervention
+intervention_name: all_intervention_from_s
+intervention_slug: all_intervention_from_s
+latent_rank: 8
+num_samples: 8
+gibbs_sweeps: 100
+seed: 0
+seed_strategy: blake2b(base_seed, run_slug, target identity, sample_index)
+s: 50
+num_units: 3014
+num_time_steps: 115
+summary:
+  s: 50
+  num_samples: 8
+  num_units: 3014

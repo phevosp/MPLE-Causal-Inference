@@ -1,0 +1,22 @@
+experiment_name: synth_no_interference_3
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference_3
+run_name: default
+run_slug: default
+source_type: fit
+source_name: alternating_rank_3_uv_5_e2_xi_zero
+source_slug: fit_alternating_rank_3_uv_5_e2_xi_zero
+intervention_source: saved_intervention
+intervention_name: no_intervention
+intervention_slug: no_intervention
+latent_rank: 3
+num_samples: 8
+gibbs_sweeps: 100
+seed: 0
+seed_strategy: blake2b(base_seed, run_slug, target identity, sample_index)
+s: 50
+num_units: 500
+num_time_steps: 50
+summary:
+  s: 50
+  num_samples: 8
+  num_units: 500

@@ -1,0 +1,61 @@
+experiment_name: partial_confounding
+experiment_slug: partial_confounding
+execution_mode: cv
+cv_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/REVISIONS/hybrid_alt/cv_spec.yaml
+search_name: default_test_train
+search_slug: default_test_train
+split_kind: test_train_cv
+outer_num_folds: 6
+test_fold_id: 1
+candidate_name: default_test_train__candidate_0002
+candidate_slug: default_test_train_candidate_0002
+candidate_index: 2
+candidate_config:
+  cv_root_name: cv_runs
+  cv_manifest_path: experiments/HybridAlt2/cv_manifest.csv
+  num_folds: 7
+  outer_num_folds: 6
+  optimizer:
+    steps: 2000
+    tol: 1.0e-07
+    seed: 0
+    n_starts: 1
+    proximal_lr: 1.0
+  latent_rank: 8
+  optimizer_mode: alternating_latent_rank
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.005
+  v_column_l2_max: 1.0
+  estimation:
+    fixed_scalar_params: {}
+    beta_mask_pre_s: true
+    beta_mask_post_e: true
+  name: default_test_train__candidate_0002
+  split_kind: test_train_cv
+  slug: default_test_train_candidate_0002
+  test_fold_id: 1
+hyperparameters:
+  lambda_uv_ridge: 0.005
+weighted_mean_validation_loss: 0.7116269700102993
+mean_fold_validation_loss: 0.7116824883791487
+weighted_mean_validation_brier_score: 0.22646533935873622
+mean_fold_validation_brier_score: 0.22647497539406186
+standard_error_fold_validation_brier_score: 0.0023765087227802946
+weighted_mean_validation_ece: 0.09425303765933114
+mean_fold_validation_ece: 0.09427942551146576
+weighted_mean_validation_mean_magnetization_abs_diff: 0.005858875722567185
+mean_fold_validation_mean_magnetization_abs_diff: 0.005869257956527897
+standard_error_fold_validation_mean_magnetization_abs_diff: 0.0017192312201653093
+total_validation_slots: 242538
+weighted_mean_post_s_validation_loss: 0.6858162384807373
+mean_fold_post_s_validation_loss: 0.6854960636506485
+weighted_mean_post_s_validation_brier_score: 0.2188354920262213
+mean_fold_post_s_validation_brier_score: 0.21879199737693225
+standard_error_fold_post_s_validation_brier_score: 0.002333990996426328
+weighted_mean_post_s_validation_ece: 0.08638893027224614
+mean_fold_post_s_validation_ece: 0.08631421446214435
+weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.013845344202087159
+mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.013849396204380549
+standard_error_fold_post_s_validation_mean_magnetization_abs_diff: 0.0032947520379801257
+total_post_s_validation_slots: 133962

@@ -1,0 +1,43 @@
+2026-06-11 22:46:34 | INFO | Loading data...
+2026-06-11 22:46:34 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/panel_data.npz
+2026-06-11 22:46:34 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/x_0.npy
+2026-06-11 22:46:34 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0004/fold_3/fit_realized_config.yaml
+2026-06-11 22:46:34 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference
+2026-06-11 22:46:34 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference
+2026-06-11 22:46:34 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0004/fold_3/loss_mask.npy
+2026-06-11 22:46:34 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-06-11 22:46:34 | INFO | Configured latent rank: 3
+2026-06-11 22:46:34 | INFO | Using a fixed known graph with scalar xi.
+2026-06-11 22:46:34 | INFO | Fit-time hard bounds active: False
+2026-06-11 22:46:34 | INFO | Fixed scalar parameters: {'xi': 0.0}
+2026-06-11 22:46:34 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-06-11 22:46:34 | INFO | Beta-gradient mask before s: True with s=0
+2026-06-11 22:46:34 | INFO | Beta-gradient mask after e: True with e=11
+2026-06-11 22:46:34 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-06-11 22:46:34 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.05, v_column_l2_max=1.0, proximal_lr=1.0
+2026-06-11 22:46:34 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.742236 | initial_penalized=0.742263
+2026-06-11 22:46:34 | INFO | Alternating low-rank iter 0 | Loss: 0.572561 | Penalized: 0.578018
+2026-06-11 22:46:35 | INFO | Done fitting.
+2026-06-11 22:46:35 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-06-11 22:46:35 | INFO | Best optimizer start: 1 / 1
+2026-06-11 22:46:35 | INFO | Final Loss: 0.465071
+2026-06-11 22:46:35 | INFO | Estimated vs True Parameters:
+2026-06-11 22:46:35 | INFO |   beta: -0.2090 (True: -0.3000) | SQE: 0.008283
+2026-06-11 22:46:35 | INFO |   xi: 0.0000 (True: 0.0000) | SQE: 0.000000
+2026-06-11 22:46:35 | INFO |   eta: 0.3012 (True: 0.3000) | SQE: 0.000001
+2026-06-11 22:46:35 | INFO | Alternating low-rank optimizer diagnostics:
+2026-06-11 22:46:35 | INFO |   penalized_objective: 0.506308
+2026-06-11 22:46:35 | INFO |   mple_loss_without_penalty: 0.465071
+2026-06-11 22:46:35 | INFO |   lambda_uv_ridge: 0.050000
+2026-06-11 22:46:35 | INFO |   u_frobenius_norm: 83.773645
+2026-06-11 22:46:35 | INFO |   v_frobenius_norm: 1.732051
+2026-06-11 22:46:35 | INFO |   effective_rank: 3.000000
+2026-06-11 22:46:35 | INFO | Field and interaction diagnostics:
+2026-06-11 22:46:35 | INFO |   field_rmse: 0.539162
+2026-06-11 22:46:35 | INFO |   interaction_fro_error: 0.000000
+2026-06-11 22:46:35 | INFO |   estimated_field_max_abs_entry: 2.462107
+2026-06-11 22:46:35 | INFO |   estimated_field_rank: 3.000000
+2026-06-11 22:46:35 | INFO |   true_field_max_abs_entry: 4.447602
+2026-06-11 22:46:35 | INFO |   true_field_rank: 3.000000
+2026-06-11 22:46:36 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0004/fold_3/mple_summary.csv
+2026-06-11 22:46:36 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs/xi_zero_test_train/candidates/xi_zero_test_train_candidate_0004/fold_3/mple.log
