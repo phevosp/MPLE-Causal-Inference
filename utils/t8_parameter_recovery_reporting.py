@@ -9,7 +9,6 @@ from pathlib import Path
 import numpy as np
 
 from utils.t0_csv_utils import read_csv_rows, write_csv
-from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t3_field_operations import latent_field_bound_norm
 from utils.t8_output_writers import _as_float, _metric_or_inf
 
@@ -218,13 +217,13 @@ def latent_diagnostics(folder: Path) -> dict[str, object]:
 
 
 def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | None:
-    fit_root = resolve_orcd_local_path(manifest_row["fit_path"])
+    fit_root = Path(manifest_row["fit_path"]).resolve()
     summary_path = fit_root / "mple_summary.csv"
     if not summary_path.exists():
         return None
     experiment_path = manifest_row.get("experiment_path", "")
     resolved_experiment_path = (
-        str(resolve_orcd_local_path(experiment_path))
+        str(Path(experiment_path).resolve())
         if str(experiment_path).strip()
         else ""
     )

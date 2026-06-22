@@ -12,9 +12,8 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping, to_plain_mapping
+from utils.t0_config_utils import assign_nested_value, deep_merge_mappings, load_yaml_mapping, to_plain_mapping
 from utils.t0_csv_utils import read_csv_rows, write_csv_rows
-from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t0_string_utils import slugify
 from utils.t1_matrix_io import save_loss_mask
 from utils.t0_path_utils import io_path
@@ -221,15 +220,6 @@ def _grid_leaf_entries(
     return leaves
 
 
-def _assign_nested_value(target: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
-    cursor = target
-    for key in path[:-1]:
-        child = cursor.get(key)
-        if not isinstance(child, dict):
-            child = {}
-            cursor[key] = child
-        cursor = child
-    cursor[path[-1]] = value
 
 
 def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
@@ -246,7 +236,7 @@ def expand_search_candidates(search: dict[str, Any]) -> list[dict[str, Any]]:
         overrides: dict[str, Any] = {}
         flat_params: dict[str, Any] = {}
         for (path, _), value in zip(leaves, values):
-            _assign_nested_value(overrides, path, value)
+            assign_nested_value(overrides, path, value)
             flat_params[".".join(path)] = value
         candidate = deep_merge_mappings(search_base, overrides)
         candidate_name = f"{search['name']}__candidate_{candidate_index:04d}"
@@ -777,10 +767,7 @@ def _normalized_fold_score_path_text(value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    try:
-        return str(resolve_orcd_local_path(text))
-    except FileNotFoundError:
-        return Path(text).as_posix()
+    return str(Path(text).resolve())
 
 
 def _fold_score_lookup_key(row: dict[str, object]) -> tuple[str, str, str, int]:

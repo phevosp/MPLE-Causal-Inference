@@ -47,14 +47,3 @@ def write_csv_rows(
 def write_csv(path: str | Path, rows: list[dict[str, object]], columns: list[str]) -> None:
     """Write rows to a CSV file with specified columns."""
     write_csv_rows(path, rows, columns=columns)
-
-
-def _fmt(value: object) -> str:
-    """Format a value for display in CSV/reports."""
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, float):
-        return f"{value:.6f}"
-    return str(value)

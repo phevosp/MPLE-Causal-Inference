@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from utils.t0_csv_utils import read_csv_rows
-from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t6_intervention_utils import resolve_intervention_context
 from utils.t8_posterior_predictive_reporting import (
@@ -196,8 +195,8 @@ def _save_figure(fig: plt.Figure, output_path: str | Path) -> str:
 
 
 def _resolved_roots(manifest_row: dict[str, str]) -> tuple[Path, Path]:
-    experiment_root = resolve_orcd_local_path(str(manifest_row.get("experiment_path", "")))
-    output_root = resolve_orcd_local_path(str(manifest_row.get("output_path", "")))
+    experiment_root = Path(str(manifest_row.get("experiment_path", ""))).resolve()
+    output_root = Path(str(manifest_row.get("output_path", ""))).resolve()
     return experiment_root, output_root
 
 

@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 
 from utils.t0_csv_utils import read_csv_rows, write_csv, write_csv_rows
-from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t8_parameter_recovery_reporting import read_summary_entries, scalar_value
 from utils.t8_posterior_predictive_reporting import (
     COUNTERFACTUAL_SUMMARY_ROOT_NAME,
@@ -106,18 +105,18 @@ def _cohort_rows(
         experiment_path = str(manifest_row.get("experiment_path", "")).strip()
         experiment_root: Path | None = None
         if experiment_path:
-            try:
-                experiment_root = resolve_orcd_local_path(experiment_path)
-            except FileNotFoundError as exc:
+            experiment_root = Path(experiment_path).resolve()
+            if not experiment_root.exists():
                 warnings.append(
                     _warning_row(
                         cohort_label=str(cohort_label),
                         experiment_slug=str(manifest_row.get("experiment_slug", "")),
                         warning_kind="missing_experiment_path",
                         artifact_path=experiment_path,
-                        message=str(exc),
+                        message=f"Experiment path does not exist: {experiment_root}",
                     )
                 )
+                experiment_root = None
         else:
             warnings.append(
                 _warning_row(
@@ -178,9 +177,8 @@ def _parameter_trial_rows(
                 )
             )
             continue
-        try:
-            fit_root = resolve_orcd_local_path(fit_path)
-        except FileNotFoundError as exc:
+        fit_root = Path(fit_path).resolve()
+        if not fit_root.exists():
             warnings.append(
                 _warning_row(
                     cohort_label=str(cohort_row["cohort_label"]),
@@ -190,7 +188,7 @@ def _parameter_trial_rows(
                     source_slug=source_slug,
                     warning_kind="missing_fit_path",
                     artifact_path=fit_path,
-                    message=str(exc),
+                    message=f"Fit path does not exist: {fit_root}",
                 )
             )
             continue

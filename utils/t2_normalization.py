@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from scipy import sparse
 
-_DEGENERACY_THRESHOLD = 1e-12
+from utils.t3_model_artifacts import _DEGENERACY_THRESHOLD
 
 
 def interaction_matrix_infinity_norm(matrix) -> float:

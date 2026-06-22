@@ -23,7 +23,7 @@ from typing import Any
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping
+from utils.t0_config_utils import assign_nested_value, deep_merge_mappings, load_yaml_mapping
 from utils.t0_csv_utils import read_csv_rows, write_csv_rows
 from utils.t0_path_utils import io_path, path_exists
 from utils.t1_matrix_io import save_loss_mask
@@ -208,17 +208,6 @@ def _select_fit_variant(
     return matches[0]
 
 
-def _assign_nested_value(target: dict[str, Any], dotted_path: str, value: Any) -> None:
-    parts = [part for part in str(dotted_path).split(".") if part]
-    cursor = target
-    for key in parts[:-1]:
-        child = cursor.get(key)
-        if not isinstance(child, dict):
-            child = {}
-            cursor[key] = child
-        cursor = child
-    if parts:
-        cursor[parts[-1]] = value
 
 
 def _load_best_candidate_payload(best_candidate_path: str | Path) -> dict[str, Any]:
@@ -247,12 +236,16 @@ def _variant_from_best_candidate_payload(
         search_base = {key: value for key, value in dict(search).items() if key != "grid"}
         overrides: dict[str, Any] = {}
         for dotted_key, value in hyperparameters.items():
-            _assign_nested_value(overrides, str(dotted_key), value)
+            path = tuple(part for part in str(dotted_key).split(".") if part)
+            if path:
+                assign_nested_value(overrides, path, value)
         variant = deep_merge_mappings(search_base, overrides)
     else:
         variant = {}
         for dotted_key, value in hyperparameters.items():
-            _assign_nested_value(variant, str(dotted_key), value)
+            path = tuple(part for part in str(dotted_key).split(".") if part)
+            if path:
+                assign_nested_value(variant, path, value)
 
     variant["name"] = str(payload.get("candidate_name", variant.get("name", "train_fit_candidate")))
     variant["slug"] = str(payload.get("candidate_slug", variant.get("slug", "train_fit_candidate")))

@@ -48,3 +48,15 @@ def load_yaml_mapping(path: str | Path) -> dict[str, Any]:
     if not isinstance(container, dict):
         raise ValueError(f"Spec at {path} must be a mapping.")
     return deepcopy(container)
+
+
+def assign_nested_value(target: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    """Assign a value to a nested dict using a tuple path."""
+    cursor = target
+    for key in path[:-1]:
+        child = cursor.get(key)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[key] = child
+        cursor = child
+    cursor[path[-1]] = value

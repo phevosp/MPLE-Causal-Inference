@@ -54,7 +54,6 @@ from utils.t6_intervention_utils import (
 )
 from utils.t0_config_utils import deep_merge_mappings, load_yaml_mapping
 from utils.t0_csv_utils import read_csv_rows as read_csv_manifest, write_csv_rows
-from utils.t0_orcd_path_remap import resolve_orcd_local_path
 from utils.t0_path_utils import io_path
 from utils.t0_string_utils import slugify
 from utils.t5_parameter_bundles import (
@@ -1057,7 +1056,7 @@ class MinimalPipelineTests(unittest.TestCase):
         quickstart_spec = next(
             experiment
             for experiment in experiments
-            if experiment["name"] == "quickstart_rank_2"
+            if experiment["name"] == "Quickstart"
         )
         self.assertEqual(
             quickstart_spec["truth"]["field_mode"],
@@ -4053,27 +4052,6 @@ class TrialAggregationTests(unittest.TestCase):
         self._write_manifest(generation_manifest_path, generation_rows)
         self._write_manifest(fit_manifest_path, fit_rows)
         return generation_manifest_path, fit_manifest_path
-
-    def test_resolve_orcd_local_path_returns_original_when_path_exists(self) -> None:
-        existing_path = self.root / "existing.txt"
-        existing_path.write_text("hello", encoding="utf-8")
-
-        resolved = resolve_orcd_local_path(existing_path)
-
-        self.assertEqual(resolved, existing_path.resolve())
-
-    def test_resolve_orcd_local_path_remaps_missing_orcd_path(self) -> None:
-        local_path = self.root / "remapped.txt"
-        local_path.write_text("hello", encoding="utf-8")
-
-        resolved = resolve_orcd_local_path(self._to_orcd(local_path))
-
-        self.assertEqual(resolved, local_path.resolve())
-
-    def test_resolve_orcd_local_path_raises_when_no_candidate_exists(self) -> None:
-        missing_local = self.root / "missing.txt"
-        with self.assertRaisesRegex(FileNotFoundError, "missing.txt"):
-            resolve_orcd_local_path(self._to_orcd(missing_local))
 
     def test_collect_fit_rows_succeeds_against_orcd_manifest_rows(self) -> None:
         manifest_path = self.root / "fit_manifest.csv"

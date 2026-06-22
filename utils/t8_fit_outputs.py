@@ -10,7 +10,7 @@ from scipy import sparse
 from scipy.optimize import OptimizeResult
 
 from utils.t0_config_utils import load_yaml_config
-from utils.t0_csv_utils import _fmt, write_csv
+from utils.t0_csv_utils import write_csv
 from utils.t0_path_utils import first_existing_path, io_path
 from utils.t3_field_operations import latent_field_bound_norm, with_theta_field
 from utils.t3_interaction_matrices import compose_interaction_matrix
@@ -26,6 +26,17 @@ from utils.t3_model_artifacts import (
 from utils.t4_parameter_packing import unpack_theta
 from utils.t4_scalar_parameters import scalar_parameter_names
 from utils.t5_parameter_bundles import save_estimated_parameter_bundle
+
+
+def _fmt(value: object) -> str:
+    """Format a value for display in CSV/reports."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return f"{value:.6f}"
+    return str(value)
 
 
 def scalar_summary_rows(

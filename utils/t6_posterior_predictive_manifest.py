@@ -15,7 +15,7 @@ POSTERIOR_PREDICTIVE_ROOT_NAME = "posterior_predictive"
 POSTERIOR_PREDICTIVE_MANIFEST_NAME = "posterior_predictive_manifest.csv"
 
 
-def as_bool(value: object, default: bool = True) -> bool:
+def _as_bool(value: object, default: bool = True) -> bool:
     if value in (None, ""):
         return default
     if isinstance(value, bool):
@@ -30,7 +30,7 @@ def as_bool(value: object, default: bool = True) -> bool:
 
 def experiment_has_truth(experiment_row: dict[str, str]) -> bool:
     if "has_truth" in experiment_row:
-        return as_bool(experiment_row.get("has_truth"), default=True)
+        return _as_bool(experiment_row.get("has_truth"), default=True)
     metadata_path = (
         Path(str(experiment_row.get("experiment_path", "")))
         / "experiment_metadata.yaml"
@@ -38,7 +38,7 @@ def experiment_has_truth(experiment_row: dict[str, str]) -> bool:
     if not metadata_path.exists():
         return True
     metadata = load_yaml_mapping(metadata_path)
-    return as_bool(metadata.get("has_truth"), default=True)
+    return _as_bool(metadata.get("has_truth"), default=True)
 
 
 def index_generation_rows(

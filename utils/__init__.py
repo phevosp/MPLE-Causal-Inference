@@ -6,7 +6,6 @@ TIER 0: INFRASTRUCTURE (no domain dependencies)
   t0_path_utils: Path resolution, file existence checks (Windows-safe I/O)
   t0_config_utils: YAML configuration loading, mapping normalization, deep merge
   t0_csv_utils: Generic CSV reading/writing, value formatting for reports
-  t0_orcd_path_remap: ORCD-to-local path remapping fallback
   t0_string_utils: Shared string normalization helpers such as slugify
 
 TIER 1: MATRIX I/O

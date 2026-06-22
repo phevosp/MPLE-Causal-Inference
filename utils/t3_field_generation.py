@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from omegaconf import OmegaConf
 
-from utils.t0_config_utils import load_yaml_config
+from utils.t0_config_utils import load_yaml_config, to_plain_mapping
 from utils.t2_normalization import normalize_known_graph
 from utils.t3_model_artifacts import (
     ModelArtifacts,
@@ -27,19 +27,11 @@ from utils.t3_field_operations import (
 from utils.t4_scalar_parameters import get_B
 
 
-def _config_section_to_dict(section) -> dict[str, object]:
-    if section is None:
-        return {}
-    if isinstance(section, dict):
-        return dict(section)
-    return dict(OmegaConf.to_container(section, resolve=True))
-
-
 def _get_synthetic_field_params(config) -> dict[str, object]:
     global_params = getattr(config, "global_params", None)
     if global_params is None or "field_params" not in global_params:
         return {}
-    return _config_section_to_dict(global_params.field_params)
+    return to_plain_mapping(global_params.field_params)
 
 
 def parse_singular_values(

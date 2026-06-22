@@ -18,6 +18,6 @@ base:
     beta_mask_post_e: false
 
 variants:
-  - name: exact_rank_manifold_rank_2
-    optimizer_mode: exact_rank_manifold
+  - name: alternating_rank
+    optimizer_mode: alternating_latent_rank
     latent_rank: 2

@@ -9,60 +9,45 @@ Spec-driven conditional MPLE experiments for binary outcome/intervention panel d
 The repository currently supports two main workflows:
 
 1. Synthetic and hybrid experiment generation, fitting, and posterior-predictive evaluation
-2. Nationwide US county vaccination data preparation and experiment materialization
+2. Nationwide US county vaccination data preparation and experiment materialization (see [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md))
 
-## Repo Guide
+## Overview
 
-- Root workflow and commands: this file
-- Manifest and artifact reference: [PIPELINE_REFERENCE.md](PIPELINE_REFERENCE.md)
-- US county workflow details: [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md)
+This repo is organized around a small set of shared pipeline entrypoints that work across synthetic, hybrid, and real-data experiments. At the top level, `run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_intervention_library.py`, `run_posterior_predictive.py`, `build_splits.py`, `run_cv_folds.py`, and `run_test_evaluation.py` cover the full lifecycle from data materialization through model selection and held-out evaluation.
+
+In practice, the codebase supports:
+
+- synthetic data generation from YAML specs in `data/configs/`
+- hybrid data generation that mixes generated and fixed graph or intervention artifacts
+- fixed-hyperparameter MPLE fits from a generation manifest plus a fit spec
+- posterior-predictive and counterfactual simulation, including saved intervention scenarios
+- split-bundle construction and cross-validation for hyperparameter selection
+- outer-masked retraining and evaluation on unseen test sets
+- real-world experiment construction from `data/USCountyVaccination/`
+
+Committed experiment-family configs live under `data/configs/REVISIONS/*/`, while the `data/USCountyVaccination/` subtree contains the staged real-data materialization pipeline. For the applied-data workflow, experiment scope, and example commands, see [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md).
 
 ## Quickstart
 
-Verify your install works end-to-end in under 2 minutes using the toy experiment (N=30, T=10, rank=2, 500 optimizer steps):
+Verify your install works end-to-end in under 2 minutes using the toy experiment (`N=30`, `T=10`, rank `2`, `500` optimizer steps):
 
 ```bash
 pixi install
 pixi run python -u run_generation_pipeline.py --spec_path data/configs/quickstart_generation_spec.yaml
 pixi run python -u run_fit_pipeline.py --manifest_path experiments/Quickstart/generation_manifest.csv --fits_spec_path data/configs/quickstart_fits_spec.yaml
+pixi run python -u run_posterior_predictive.py \
+  --generation_manifest_path experiments/Quickstart/generation_manifest.csv \
+  --fit_manifest_path experiments/Quickstart/fit_manifest.csv \
+  --target_pairs_path data/configs/quickstart_posterior_predictive_target_pairs.csv \
+  --spec_path data/configs/posterior_predictive_spec.yaml \
+  --experiment_name Quickstart \
+  --source_type fit \
+  --variant_name alternating_rank \
+  --intervention_source observed_experiment \
+  --run_name default
 ```
 
-Outputs land in `experiments/Quickstart/`. Once this works, proceed to the full synthetic or real-data workflows below.
-
-## Configuration Guide
-
-All pipeline YAML specs use a `base + named entries` pattern: every named entry is deep-merged with `base`, inheriting all fields it doesn't override. The spec is then expanded into one config per entry by `utils.t6_pipeline_spec_utils.expand_named_entries()`.
-
-**There are two separate config directories — do not mix them:**
-
-| Directory | Used by |
-| --- | --- |
-| `data/configs/` | Synthetic/hybrid pipeline (`run_generation_pipeline.py`, `run_fit_pipeline.py`, `run_posterior_predictive.py`) |
-| `data/USCountyVaccination/experiment_configs/` | Real-data pipeline |
-
-Both directories contain their own workflow specs. In `data/configs/`, the canonical example specs are `quickstart_generation_spec.yaml` and `quickstart_fits_spec.yaml`; the real-data pipeline keeps its own separate fit specs under `data/USCountyVaccination/experiment_configs/`.
-
-**Key `quickstart_fits_spec.yaml` fields:**
-
-- `optimizer_mode`: one of `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, `alternating_latent_rank`, or `concurrent_latent_rank`.
-- `latent_rank`: must be ≥ 1 for `exact_rank_manifold`, `alternating_latent_rank`, and `concurrent_latent_rank`; ignored for `no_external_field` and `nuclear_norm`.
-- `estimation.fixed_scalar_params`: scalars held **fixed** at these values (not initial guesses). Leave as `{}` to estimate all scalars freely.
-- `estimation.beta_mask_pre_s`: if `true`, beta-gradient updates ignore observations with `t < s` while the forward model still uses the realized `z` everywhere. This masked-beta workflow is supported for `no_external_field` and `alternating_latent_rank`.
-- `estimation.beta_mask_post_e`: if `true`, beta-gradient updates ignore observations with `t >= e` while the forward model still uses the realized `z` everywhere. This is also supported for `no_external_field` and `alternating_latent_rank`.
-- `lambda_nuclear`: only active for `nuclear_norm`.
-- `lambda_frobenius`: only active for `exact_rank_manifold`.
-- `lambda_uv_ridge`: only active for `alternating_latent_rank` and `concurrent_latent_rank`.
-- `v_column_l2_max`: optional per-column `||v_k||_2 <= c` constraint for `alternating_latent_rank`; ignored by `concurrent_latent_rank`.
-
-**Key `quickstart_generation_spec.yaml` fields:**
-
-- `intervention.generator`: use `low_rank_probability` to sample `z` independently from a spectral low-rank probability matrix
-- `intervention.params.singular_values`: explicit singular values for the intervention low-rank generator
-- `intervention.params.probability_amplitude`: maps normalized low-rank scores to probabilities via `p = 0.5 + amplitude * score`
-- `truth.field_mode`: `random_low_rank` or `confounded_low_rank`
-- `truth.field_params.singular_values`: explicit singular values for spectral low-rank field generation
-- `truth.field_params.shared_rank`: optional for `confounded_low_rank`; the first `k` field components reuse the intervention basis and the remaining field components are sampled in an orthogonal complement. If omitted, `confounded_low_rank` keeps the original full-confounding behavior.
-- `truth.field_params.target_rms_fraction`: optional RMS target for the field as a fraction of `B`; defaults to `0.4`
+Outputs land in `experiments/Quickstart/`. Once this works, move to the larger synthetic, hybrid, or US-county experiment families below.
 
 ## Environment
 
@@ -82,780 +67,196 @@ pixi run python -u <script>.py ...
 
 The shell wrappers in the repo are `bash` scripts. On Windows they are intended for Git Bash, WSL, or another compatible shell.
 
-## Top-Level Workflows
+## Workflows
 
-| Workflow | Entry points | Main inputs | Main outputs |
-| --- | --- | --- | --- |
-| Synthetic and hybrid generation | `run_generation_pipeline.py`, `submit_generation_jobs.sh` | `data/configs/quickstart_generation_spec.yaml` | `generation_requests.csv`, `generation_manifest.csv`, experiment folders |
-| MPLE variant fitting | `run_fit_pipeline.py`, `submit_fit_jobs.sh` | `generation_manifest.csv`, `data/configs/quickstart_fits_spec.yaml` | `fit_requests.csv`, `fit_manifest.csv`, `fits/<variant>/...`, fit summaries |
-| Intervention library generation | `run_intervention_library.py` | generation manifest, `data/configs/intervention_library_spec.yaml` | `intervention_library_manifest.csv`, saved intervention panels |
-| Posterior predictive and counterfactual simulation | `run_posterior_predictive.py`, `utils.t8_posterior_predictive_reporting`, `submit_posterior_predictive_jobs.sh` | generation manifest, fit manifest, `posterior_predictive_spec.yaml`, `posterior_predictive_target_pairs.csv` | `posterior_predictive_manifest.csv`, predictive or counterfactual summaries |
-| Cross-trial synthetic cohort aggregation | `run_trial_aggregation.py`, `utils.t9_trial_aggregation` | generation manifest, fit manifest, per-experiment `counterfactual_summaries/*.csv` | `trial_aggregation/trial_statistics.csv`, cohort summary tables |
-| CV fold construction for `U,V` regularizer tuning | `build_cv_folds.py` | `generation_manifest.csv` for experiments with `Gamma`, `panel_data.npz`, and optional `node_index.csv` / `time_index.csv` | `cv_folds/folds_5/` spatial partitions plus spatiotemporal fold artifacts |
-| Cross-validated MPLE hyperparameter search | `run_cv_folds.py` | `generation_manifest.csv`, prebuilt `cv_folds/folds_5/`, `data/configs/cv_spec.yaml` | `cv_requests.csv`, `cv_manifest.csv`, per-search candidate scores and fold fits |
-| Real-data raw load | `data/USCountyVaccination/load_raw_data.py` | remote NYT, CDC, Bansal, Census geography sources | cached raw inputs |
-| Real-data preprocessing and realization | `data/USCountyVaccination/preprocess_us_county_vaccination_data.py` | cached raw inputs | processed panels, `realized_*`, `shared_panels` |
-| Real-data experiment materialization | `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | `realized_*`, `shared_panels` | shared-compatible experiment folders, `generation_manifest.csv` |
+| Workflow | Entry Point (Python / Bash) | Description |
+| --- | --- | --- |
+| Generation | `run_generation_pipeline.py` / `submit_generation_jobs.sh` | Materialize synthetic or hybrid experiments from YAML specs. |
+| Real-World Data | `data/USCountyVaccination/load_raw_data.py`, `data/USCountyVaccination/preprocess_us_county_vaccination_data.py`, `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | Stage raw US county inputs into shared-pipeline experiment roots and a compatible generation manifest. |
+| Fits | `run_fit_pipeline.py` / `submit_fit_jobs.sh` | Run standard fixed-hyperparameter MPLE fits for every `(experiment, variant)` pair. |
+| Posterior Predictive | `run_intervention_library.py`, `run_posterior_predictive.py` / `submit_posterior_predictive_jobs.sh` | Build reusable intervention scenarios and run observed-intervention posterior predictive or saved-intervention counterfactual simulations. |
+| Split Bundle Construction | `build_splits.py` | Build the `splits/train_cv/...` and `splits/test_train_cv/...` bundles consumed by CV and held-out test evaluation. |
+| CV | `run_cv_folds.py` / `submit_cv_jobs.sh` | Score hyperparameter candidates over saved split bundles and write `best_candidate.yaml` selections for each search. |
+| Test Set Evaluation | `run_fit_pipeline.py --fit_mode outer_masked`, `run_test_evaluation.py` / `submit_fit_jobs.sh`, `submit_test_evaluation_jobs.sh` | Refit the best `test_train_cv` candidates on training support only, then evaluate the resulting train fits on unseen test support. |
 
-## Synthetic And Hybrid Pipeline
+## Workflow Details
 
-### 1. Generation
+### Generation
 
-`run_generation_pipeline.py` expands a YAML spec with `base + experiments` into concrete experiment folders. It now also supports a staged request workflow: write `generation_requests.csv`, materialize one experiment by `experiment_slug`, or refresh `generation_manifest.csv` from completed outputs.
+`run_generation_pipeline.py` expands `base + experiments` specs into concrete experiment folders and a shared `generation_manifest.csv`. The same experiment contract is used for:
 
-Default config:
+- fully synthetic experiments with generated graphs and generated interventions
+- hybrid experiments with fixed graph artifacts, fixed intervention artifacts, or both
 
-- `data/configs/quickstart_generation_spec.yaml`
+Hybrid experiments read from saved graph or intervention artifacts from real world data (see [Real-World Data](#real-world-data)).
 
-Default command:
+### Real-World Data
 
-```bash
-pixi run python -u run_generation_pipeline.py --spec_path data/configs/quickstart_generation_spec.yaml
-```
+The real-world data workflow lives under `data/USCountyVaccination/` and stages public county-level COVID and vaccination inputs into the same shared experiment contract used downstream by synthetic and hybrid runs. The three main stages are:
 
-What generation resolves:
+1. `load_raw_data.py` to download or refresh raw source files
+2. `preprocess_us_county_vaccination_data.py` to build processed county-week tables, threshold panels, and realized artifacts
+3. `create_us_county_vaccination_experiments.py` to write experiment roots plus a shared `generation_manifest.csv`
 
-- `dimensions.N` and `dimensions.T`
-- outcome truth scalars `beta`, `xi`, `eta`
-- `truth.field_mode`
-- graph source
-- intervention source
-- initial state generator
-- generation seed and Gibbs sweeps
+Once materialized, those experiment roots can flow through the same fit, intervention-library, posterior-predictive, split-construction, CV, and test-evaluation runners as any other experiment family. The applied-data details and examples live in [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md).
 
-Supported experiment styles:
+### Fits
 
-- fully synthetic: generated graph and generated intervention panel
-- hybrid with fixed intervention artifacts
-- hybrid with fixed graph artifacts
-- hybrid with both fixed intervention and fixed graph artifacts
+`run_fit_pipeline.py` in standard mode reads a generation manifest plus a fit spec and runs one MPLE fit per `(experiment, variant)` pair. Fit specs control the optimizer mode, latent rank, scalar constraints, masking settings, and any low-rank regularization. Standard fits write `fit_manifest.csv` plus per-experiment and cross-experiment summaries.
 
-If graph or intervention artifacts are fixed, generation materialization can resolve missing `N` and `T` directly from those artifacts.
+This is the right path when you already know which hyperparameters or MPLE variants you want to compare and do not need model selection first.
 
-Outputs:
+### Posterior Predictive
 
-- `experiments/SyntheticHybridExperiments/generation_requests.csv`
-- `experiments/SyntheticHybridExperiments/generation_manifest.csv`
-- one folder per generated experiment under `experiments/SyntheticHybridExperiments/<experiment_slug>/`
+Posterior-predictive work uses two pieces:
 
-Batch submission command:
+- `run_intervention_library.py` to save reusable intervention panels such as no intervention or all interventions
+- `run_posterior_predictive.py` to simulate outcomes under truth parameters or saved fit bundles
 
-```bash
-GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
-GENERATION_OVERWRITE=true \
-bash submit_generation_jobs.sh
-```
+The `run_posterior_predictive.py` command supports two intervention sources: `observed_experiment` to use the realized interventions from the experiment, and `saved_intervention` to use the saved panels from the intervention library. The former is for goodness-of-fit checks against observed outcomes, while the latter is for counterfactual simulations under hypothetical scenarios generated by `run_intervention_library.py`. The target list comes from a `posterior_predictive_target_pairs.csv` file, while shared simulation settings come from `data/configs/posterior_predictive_spec.yaml`.
 
-### 2. Fit Variants
+### Split Bundle Construction
 
-`run_fit_pipeline.py` reads a generation manifest plus a fit spec with `base + variants`, creates a fit folder for every `(experiment, variant)` pair, and runs `mple.py`. It now also supports a staged request workflow: write `fit_requests.csv`, run one `(experiment_slug, variant_slug)` request, or refresh `fit_manifest.csv` and grouped fit reports from completed outputs.
+`build_splits.py` constructs the saved split bundles used by both CV and held-out test evaluation. It reads a generation manifest plus a CV spec and writes one bundle per required split configuration under:
 
-Default config:
+- `splits/train_cv/folds_<k>/`
+- `splits/test_train_cv/outer_<outer>__test_<fold>__inner_<inner>/`
 
-- `data/configs/quickstart_fits_spec.yaml`
+The two supported split kinds are:
 
-Default command:
+- `train_cv` for inner model-selection folds only
+- `test_train_cv` for an outer held-out test split plus inner model-selection folds
 
-```bash
-pixi run python -u run_fit_pipeline.py \
-  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/quickstart_fits_spec.yaml
-```
+These bundles capture the outer active/test masks and the inner training/separator/validation masks. They are the prerequisite for `run_cv_folds.py` and for held-out test evaluation later in the pipeline.
 
-Each fit variant controls:
+### CV
 
-- `B`
-- `optimizer_mode`
-- `latent_rank`
-- `lambda_nuclear` for `nuclear_norm`
-- `lambda_frobenius` for `exact_rank_manifold`
-- `lambda_uv_ridge` for `alternating_latent_rank` and `concurrent_latent_rank`
-- `v_column_l2_max` for alternating-only `V`-column L2-ball constraints
-- `estimation.fixed_scalar_params`
-- `estimation.beta_mask_pre_s`
-- optimizer `steps`, `tol`, `seed`, `n_starts`, and `proximal_lr`
+`run_cv_folds.py` consumes the saved split bundles and expands the cv spec into a search over a grid of candidate hyperparameters. It scores candidates fold by fold, writes `candidate_scores.csv`, and selects a winner in `best_candidate.yaml` for each `(experiment, search)` pair. A single CV spec can contain multiple searches, and each search can have multiple candidates. 
 
-Outputs:
+The `best_candidate.yaml` file is consumed directly by the held-out test evaluation workflow (see below). For the standard pipeline, the hyperparameters of the best candidate are manually copied into a fit spec that is then used to run the final fits for posterior-predictive simulation. For a more automated workflow, the fit pipeline could be extended to read the CV search results directly and run the winning candidates without an intermediate fit spec.
 
-- `experiments/SyntheticHybridExperiments/fit_requests.csv`
-- `experiments/SyntheticHybridExperiments/fit_manifest.csv`
-- `fits/<variant_slug>/` under each experiment root
-- per-experiment `fit_summary.csv`
-- cross-experiment `best_fit_by_experiment.csv`
 
-Batch submission command:
+
+### Test Set Evaluation
+
+Held-out testing is a four-step chain:
+
+1. Build `test_train_cv` split bundles with `build_splits.py`.
+2. Run `run_cv_folds.py` so each `test_train_cv` search writes its `best_candidate.yaml`.
+3. Run `run_fit_pipeline.py --fit_mode outer_masked` to refit the winning candidates on training support only, producing `train_fits/...` outputs and a `train_fit_manifest__<search_slug>.csv`.
+4. Run `run_test_evaluation.py` on that train-fit manifest to score the saved fits on the unseen test support.
+
+This separates hyperparameter selection from final test scoring and keeps the held-out test units out of both candidate selection and retraining.
+
+## Example Experiments
+
+### 1. Synthetic Experiment Family With CV, Fixed Fits, And Posterior Predictive
 
 ```bash
-GENERATION_MANIFEST_PATH=experiments/SyntheticHybridExperiments/generation_manifest.csv \
-FITS_SPEC_PATH=data/configs/quickstart_fits_spec.yaml \
-FIT_OVERWRITE=true \
-bash submit_fit_jobs.sh
-```
+pixi run python -u run_generation_pipeline.py \
+  --spec_path data/configs/REVISIONS/synth/generation_spec.yaml
 
-### 3. Intervention Library
-
-`run_intervention_library.py` creates reusable intervention panels under each generated experiment root listed in a generation manifest. These panels are useful for counterfactual posterior-predictive runs where the outcomes are simulated under an intervention different from the one observed in the original experiment.
-
-Default config:
-
-- `data/configs/intervention_library_spec.yaml`
-
-Default command:
-
-```bash
-pixi run python -u run_intervention_library.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --spec_path data/configs/intervention_library_spec.yaml \
+pixi run python -u build_splits.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --cv_spec_path data/configs/REVISIONS/synth/cv_spec.yaml \
   --overwrite
-```
 
-Supported intervention entries:
+pixi run python -u run_cv_folds.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --cv_spec_path data/configs/REVISIONS/synth/cv_spec.yaml
 
-- `observed_experiment`: copies the realized `z` and `z_0` from the experiment into the library
-- `full_on`: creates a population-wide intervention with `activation_scope: all_time | no_time | from_s`
-- `single_unit_on`: creates a one-unit intervention with `activation_scope: all_time | no_time | from_s | from_step`
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --fits_spec_path data/configs/REVISIONS/synth/fits_spec.yaml
 
-Saved intervention panels use the model's `-1/+1` coding for `z`. The library also accepts the repo's legacy `z_0 = 0` convention when copying observed experiment artifacts.
+pixi run python -u run_intervention_library.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --spec_path data/configs/REVISIONS/synth/intervention_library_spec.yaml \
+  --overwrite
 
-Examples:
-
-- `full_on` with `activation_scope: all_time` is all `+1`
-- `full_on` with `activation_scope: no_time` is all `-1`
-- `full_on` with `activation_scope: from_s` is `-1` before the experiment's `s` and `+1` from `s` onward
-
-Outputs:
-
-- `experiments/SyntheticHybridExperiments/intervention_library_manifest.csv`
-- `intervention_library/<intervention_slug>/intervention_panel.npz` under each experiment root
-- `intervention_library/<intervention_slug>/z_0.npy`
-- `intervention_library/<intervention_slug>/intervention_metadata.yaml`
-
-### 4. Posterior Predictive And Counterfactual Simulation
-
-`run_posterior_predictive.py` runs one explicit posterior-predictive or counterfactual target while keeping the intervention panel fixed. The shared reporting utilities in `utils.t8_posterior_predictive_reporting` then scan completed outputs, rebuild the unified manifest, and write grouped posterior-predictive reports. Simulations can draw from either:
-
-- the experiment truth parameters
-- one or more saved MPLE fit bundles
-
-The same runner also supports counterfactual simulations under saved interventions from the intervention library. Observed-intervention runs are used for posterior-predictive goodness-of-fit diagnostics. Saved-intervention runs are treated as counterfactual scenarios and write compact causal summaries instead of z-score diagnostics.
-
-Targeting is explicit. `data/configs/posterior_predictive_target_pairs.csv` must contain:
-
-- `experiment_name`
-- `source_type` as `truth` or `fit`
-- `variant_name`, blank for truth rows
-
-It may also contain:
-
-- `intervention_source`, either `observed_experiment` or `saved_intervention`
-- `intervention_name`, required when `intervention_source` is `saved_intervention`
-
-If the intervention columns are omitted, the runner defaults to `observed_experiment` for backward compatibility.
-
-Run settings live in `data/configs/posterior_predictive_spec.yaml` and currently use `base + runs`.
-
-Single-target command:
-
-```bash
 pixi run python -u run_posterior_predictive.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fit_manifest_path experiments/SyntheticHybridExperiments/fit_manifest.csv \
-  --target_pairs_path data/configs/posterior_predictive_target_pairs.csv \
-  --spec_path data/configs/posterior_predictive_spec.yaml \
-  --experiment_name synthetic_rank_40_B1 \
-  --source_type fit \
-  --variant_name rank_40_B1 \
-  --intervention_source observed_experiment \
-  --intervention_name observed_experiment \
-  --run_name default
-```
-
-Batch submission command:
-
-```bash
-GEN_MANIFEST=experiments/SyntheticHybridExperiments/generation_manifest.csv \
-FIT_MANIFEST=experiments/SyntheticHybridExperiments/fit_manifest.csv \
-TARGET_PAIRS_PATH=data/configs/posterior_predictive_target_pairs.csv \
-POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
-bash submit_posterior_predictive_jobs.sh
-```
-
-Manifest/report refresh utility:
-
-```bash
-pixi run python -c "from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'experiments/SyntheticHybridExperiments/generation_manifest.csv')"
-```
-
-Refresh reports and write time-series plots:
-
-```bash
-pixi run python -u report_posterior_predictive.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --plot_posterior_predictive \
-  --plot_counterfactual_summaries
-```
-
-Unified outputs:
-
-- `experiments/SyntheticHybridExperiments/posterior_predictive_manifest.csv`
-- `posterior_predictive/<source_slug>/<run_slug>/...` under each experiment root
-- `counterfactual/<source_slug>/<intervention_slug>/<run_slug>/...` under each experiment root
-- per-experiment `posterior_predictive_summaries/posterior_predictive_summary.csv`
-- cross-experiment `posterior_predictive_summaries/best_posterior_predictive_by_experiment.csv`
-- `counterfactual_sample_summaries.npz`
-- `counterfactual_summary.csv`
-- `counterfactual_unit_summary.csv`
-- `counterfactual_time_summary.csv`
-- `counterfactual_metadata.yaml`
-
-Counterfactual rows are included in the unified `posterior_predictive_manifest.csv`, but they do not write `posterior_predictive_stats.csv` and are excluded from posterior-predictive ranking.
-
-Saved-intervention `counterfactual_summaries/<intervention_slug>.csv` files now include truth-referenced counterfactual comparison columns when a matching `truth` row exists for the same run. Observed-intervention grouped summaries now live under `posterior_predictive_summaries/observed_experiment.csv`.
-
-Example counterfactual target-pairs file:
-
-```csv
-experiment_name,source_type,variant_name,intervention_source,intervention_name
-synthetic_rank_40_B1,truth,,saved_intervention,all_minus_ones
-synthetic_rank_40_B1,fit,rank_40_B1,saved_intervention,all_minus_ones
-```
-
-The `seed` in `posterior_predictive_spec.yaml` is the base seed for a run. Individual samples use a deterministic hash of:
-
-- the base seed
-- the run slug
-- the experiment / source / intervention target identity
-- `sample_index`
-
-So repeated runs are reproducible, samples within a run are distinct, and different targets do not accidentally reuse the same random stream.
-
-### 5. Trial Aggregation Across Replicated Synthetic Cohorts
-
-`run_trial_aggregation.py` aggregates per-trial scalar estimates and saved-intervention magnetization summaries into cohort-level CSV tables. It is intended for replicated synthetic families such as the `x10` manifests under `experiments/Synthetic/` and `experiments/Hybrid/`.
-
-Command:
-
-```bash
-pixi run python -u run_trial_aggregation.py \
   --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
   --fit_manifest_path experiments/Synthetic/fit_manifest_x10.csv \
-  --cohort_label confounding_strong_x10 \
-  --write_wide
-```
-
-Outputs:
-
-- `trial_aggregation/trial_statistics.csv`
-- `trial_aggregation/<cohort_label>_summary.csv`
-- optional `trial_aggregation/<cohort_label>_wide.csv`
-
-## CV Fold Construction
-
-`build_cv_folds.py` is the canonical downstream entry point for building the spatial and spatiotemporal folds used to tune `lambda_uv_ridge` or related `U,V` regularization choices. It now consumes a generation manifest and builds folds for every experiment listed there.
-
-Run it with:
-
-```bash
-pixi run python -u build_cv_folds.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
-```
-
-Required experiment artifacts:
-
-- `gamma_matrix.npy` or `gamma_matrix_sparse.npz`
-- `panel_data.npz`
-- optional `node_index.csv`
-- optional `time_index.csv`
-
-`pymetis` is required and is pinned in `pixi.toml`. The script validates that the loaded `Gamma` artifact is:
-
-- square
-- symmetric within the configured tolerance
-- zero-diagonal within the configured tolerance
-
-The graph partitioning stage then computes:
-
-- `C_1, ..., C_5`: a 5-way METIS partition of the vertex set
-- `S_i = {v in V \ C_i : v has at least one neighbor in C_i}` for each `i`
-
-METIS optimizes a balanced edge-cut objective. The saved separator sets `S_i` are derived diagnostics used to construct the CV folds; they are not the optimization target of METIS itself.
-
-The time horizon is split into 5 contiguous ordered blocks `T_1, ..., T_5` with:
-
-- minimum block sizes `[1, 2, 2, 2, 2]`
-- the first time index of `T_2, ..., T_5` marked as a transition step
-- a minimum supported horizon of `T = 9`
-
-The 5 composite folds use cyclic validation schedules:
-
-- fold 1 validates `C_1, C_2, C_3, C_4, C_5` on `T_1, ..., T_5`
-- fold 2 validates `C_5, C_1, C_2, C_3, C_4`
-- fold 3 validates `C_4, C_5, C_1, C_2, C_3`
-- fold 4 validates `C_3, C_4, C_5, C_1, C_2`
-- fold 5 validates `C_2, C_3, C_4, C_5, C_1`
-
-Per-time role assignment uses three roles:
-
-- `training`
-- `separator`
-- `validation`
-
-On non-transition times in block `T_b`:
-
-- validation = `C_active`
-- separator = `S_active`
-- training = `V \ (C_active ∪ S_active)`
-
-On the first time index of each of `T_2, ..., T_5`, if the active validation partition changes from `C_prev` to `C_curr`:
-
-- separator = `S_curr ∪ C_prev ∪ C_curr`
-- validation = empty
-- training = the complement
-
-This guarantees a 1-step temporal separator whenever a partition switches between training and validation. There is no wraparound transition after `T_5`.
-
-During construction, `build_cv_folds.py` also validates that the separator acts as a Markov blanket in the **full spatiotemporal dependency graph** implied by the model:
-
-- same-time spatial dependencies come from `Gamma`
-- adjacent-time self-dependencies come from the `eta * prev_x` term
-
-So the construction succeeds only if:
-
-- there is no same-time `Gamma` edge between validation and training vertices
-- there is no adjacent-time self-transition where the same vertex is validation at one time and training at the next
-
-The script always writes the blanket and coverage diagnostics, then raises if the Markov-blanket check fails.
-
-Artifacts are written under each experiment root:
-
-- `<experiment_root>/cv_folds/folds_5/`
-
-Files:
-
-- `vertex_assignments.csv`: one row per vertex with its `C_i` assignment
-- `separator_vertices.csv`: one row per `(S_i, vertex)` membership
-- `fold_roles.npz`: compact `(cv_fold, time, vertex)` role tensor
-- `time_blocks.csv`: block assignment and transition-step metadata for each time index
-- `fold_schedule.csv`: the 5 cyclic validation schedules
-- `fold_role_counts.csv`: aggregated training/separator/validation counts by fold and block
-- `spatial_partition_metadata.yaml`
-- `spatiotemporal_cv_metadata.yaml`
-- `markov_blanket_summary.yaml`
-
-`fold_roles.npz` contains:
-
-- `role_codes` with shape `(5, T, N)`
-- `time_block_ids` with shape `(T,)`
-- `is_transition_step` with shape `(T,)`
-- `validation_partition_ids_by_fold_block` with shape `(5, 5)`
-
-Role codes are:
-
-- `0 = training`
-- `1 = separator`
-- `2 = validation`
-
-`markov_blanket_summary.yaml` records whether the constructed folds pass the full spatiotemporal blanket test, along with counts of spatial and temporal violations by fold.
-
-`spatiotemporal_cv_metadata.yaml` now also includes the aggregate coverage-count diagnostics describing how often vertices appear in validation, separator, and training across the full 5-fold family. These coverage counts are descriptive diagnostics only; they are not enforced as hard acceptance thresholds.
-
-Example on a US county experiment root:
-
-```bash
-pixi run python -u build_cv_folds.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv
-```
-
-## Cross-Validated MPLE Search
-
-`run_cv_folds.py` consumes the prebuilt fold artifacts from `build_cv_folds.py` and runs a 5-fold hyperparameter grid search without duplicating the core MPLE fitting code.
-
-Run it with:
-
-```bash
-pixi run python -u run_cv_folds.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --cv_spec_path data/configs/cv_spec.yaml
-```
-
-To recompute CV fold and candidate metrics from existing fold fit artifacts without
-rerunning any fits, refresh scores from a saved request file:
-
-```bash
-pixi run python -u run_cv_folds.py \
-  --refresh_scores \
-  --cv_requests_path experiments/SyntheticHybridExperiments/cv_requests.csv
-```
-
-The CV spec mirrors the fit-spec layout but adds a required `grid:` section inside each named search. Fixed values outside `grid` apply to every candidate, and list-valued leaves inside `grid` are expanded as a Cartesian product.
-
-Example:
-
-```yaml
-base:
-  cv_root_name: cv_runs
-  cv_manifest_path: experiments/SyntheticHybridExperiments/cv_manifest.csv
-  optimizer:
-    steps: 20000
-    tol: 1.0e-9
-    seed: 0
-    n_starts: 1
-    proximal_lr: 1.0
-  optimizer_mode: alternating_latent_rank
-  latent_rank: 3
-  lambda_uv_ridge: 0.0
-  estimation:
-    fixed_scalar_params: {}
-
-searches:
-  - name: alternating_uv_grid
-    optimizer_mode: alternating_latent_rank
-    grid:
-      latent_rank: [3, 5, 7]
-      lambda_uv_ridge: [0.001, 0.01, 0.1]
-      estimation:
-        beta_mask_pre_s: [false, true]
-```
-
-Each CV fold uses the saved role tensor from `fold_roles.npz`:
-
-- training loss mask = entries with role `training`
-- validation loss mask = entries with role `validation`
-- separator entries stay visible in `x`, `z`, `prev_x`, and `Gamma x`, but contribute zero loss during fitting and zero loss during validation scoring
-
-So the fitted MPLE parameters are learned by conditioning on separator unit-times while optimizing only over training unit-times. Validation uses the same fitted parameters and evaluates masked statistics only on validation unit-times. Separator entries remain visible to the model through `x`, `z`, `x_{t-1}`, and `Gamma x`, but they are never scored as part of validation.
-
-Selection is not based on pooled validation Brier score alone. The current winner rule is:
-
-- keep the existing `validation_*` columns as full-horizon validation metrics over all validation slots
-- additionally save `post_s_validation_loss`, `post_s_validation_brier_score`, `post_s_validation_ece`, and post-`s` magnetization diagnostics over validation slots with `t >= s`
-- for each candidate and fold, save those metrics plus the numbers of active training, validation, and post-`s` validation slots
-- aggregate across the folds using slot-weighted means for both the full-horizon and post-`s` validation metrics
-- also report mean-per-fold summaries and standard errors for the full-horizon and post-`s` validation metrics
-- rank candidates by post-`s` weighted magnetization error first, then post-`s` weighted Brier score, then post-`s` weighted loss; if post-`s` metrics are unavailable, fall back to the full-horizon versions
-- choose the final winner with a 1-standard-error rule on mean-per-fold post-`s` magnetization error, then mean-per-fold post-`s` Brier score, and finally prefer the less regularized candidate among those still eligible
-
-The reported validation Brier score and ECE use the model-implied probability of a positive spin:
-
-- `h_it = M_it + beta z_it + xi (Gamma x_t)_i + eta x_{i,t-1}`
-- `P(x_it = 1 | h_it) = (1 + tanh(h_it)) / 2`
-- observed outcome on the probability scale is `(x_it + 1) / 2`
-- fit-only beta masking does not enter this predictive `h_it`; Brier/ECE always use the realized intervention panel
-- ECE uses 10 equal-width bins on `[0, 1]`, skips empty bins, and is computed only on validation unit-times
-- post-`s` validation metrics further restrict scoring to validation unit-times with `t >= s`
-
-Artifacts are written under:
-
-- `<experiment_root>/<cv_root_name>/<search_slug>/`
-
-Files:
-
-- `candidate_grid.csv`: resolved hyperparameter combinations
-- `fold_scores.csv`: one row per `(candidate, cv_fold)`
-- `candidate_scores.csv`: aggregated 5-fold metrics and ranks
-- `best_candidate.yaml`: winning hyperparameters and summary metrics
-- `candidates/<candidate_slug>/fold_<i>/...`: ordinary MPLE fit artifacts for each fold
-
-Top-level outputs:
-
-- `cv_requests.csv`: one row per `(experiment, search, candidate, fold)`
-- `cv_manifest.csv`: one row per `(experiment, search)` with the selected winner
-
-The refresh workflow reads `cv_requests.csv`, reloads each saved fold fit, recomputes
-`fit_loss`, the full-horizon validation metrics, and the post-`s` validation metrics, and
-then rewrites `fold_scores.csv`, `candidate_scores.csv`, `best_candidate.yaml`, and
-`cv_manifest.csv`.
-
-The runner requires:
-
-- prebuilt `cv_folds/folds_5/fold_roles.npz`
-- `markov_blanket_summary.yaml` with `blanket_validation_passed: true`
-- exactly 5 folds in v1
-
-## Core Artifact Contract
-
-At experiment scope, the shared panel/model artifacts are:
-
-- `panel_data.npz`
-- `x_0.npy`
-- `z_0.npy`
-- `field_artifacts.npz`
-- `gamma_matrix.npy` or `gamma_matrix_sparse.npz`
-
-`field_artifacts.npz` stores:
-
-- `latent_rank`
-- `t_steps`
-- `optimizer_mode`
-- `field_matrix`
-
-`latent_rank = 0` means the realized field is exactly zero.
-
-Each fit folder additionally writes:
-
-- `fit_realized_config.yaml`
-- `fit_metadata.yaml`
-- `mple.log`
-- `mple_summary.csv`
-- `estimated_field_artifacts.npz`
-- `estimated_parameter_bundle.npz`
-- `estimated_interaction_matrix.npy` or `estimated_interaction_matrix_sparse.npz`
-
-When truth is available, fit folders also write:
-
-- `true_field_artifacts.npz`
-- `true_interaction_matrix.npy` or `true_interaction_matrix_sparse.npz`
-
-Each posterior-predictive run writes:
-
-- `posterior_predictive_stats.csv`
-- `posterior_predictive_metadata.yaml`
-
-Each saved intervention writes:
-
-- `intervention_panel.npz`
-- `z_0.npy`
-- `intervention_metadata.yaml`
-
-Each counterfactual run writes:
-
-- `counterfactual_sample_summaries.npz`
-- `counterfactual_summary.csv`
-- `counterfactual_unit_summary.csv`
-- `counterfactual_time_summary.csv`
-- `counterfactual_metadata.yaml`
-
-`PIPELINE_REFERENCE.md` has the full directory and manifest layout.
-
-## Ranking Rules
-
-Fit reporting:
-
-- If truth metrics exist, variants are ranked by `total_recovery_rmse = field_rmse + sum(abs scalar errors)`, then `field_rmse`, then `interaction_fro_error`, then `final_loss`
-- If truth metrics do not exist, ranking falls back to `final_loss`
-
-Posterior-predictive reporting:
-
-- rows are ranked by lowest `mean_abs_zscore`
-- ties break on lowest `max_abs_zscore`
-
-## Main Commands
-
-Generate synthetic and hybrid experiments:
-
-```bash
-pixi run python -u run_generation_pipeline.py --spec_path data/configs/quickstart_generation_spec.yaml
-```
-
-Fit all configured variants:
-
-```bash
-pixi run python -u run_fit_pipeline.py \
-  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/quickstart_fits_spec.yaml
-```
-
-Run one posterior predictive target:
-
-```bash
-pixi run python -u run_posterior_predictive.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fit_manifest_path experiments/SyntheticHybridExperiments/fit_manifest.csv \
-  --target_pairs_path data/configs/posterior_predictive_target_pairs.csv \
+  --target_pairs_path data/configs/REVISIONS/synth/posterior_predictive_target_pairs.csv \
   --spec_path data/configs/posterior_predictive_spec.yaml \
-  --experiment_name synthetic_rank_40_B1 \
+  --experiment_name confounding_strong_1 \
   --source_type fit \
-  --variant_name rank_40_B1 \
-  --intervention_source observed_experiment \
-  --intervention_name observed_experiment \
+  --variant_name alternating_rank_3_uv_5_e2 \
+  --intervention_source saved_intervention \
+  --intervention_name all_intervention \
   --run_name default
 ```
 
-Build saved intervention panels:
+### 2. Real-World USCounty Experiment With Fits And Posterior Predictive
 
-```bash
-pixi run python -u run_intervention_library.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --spec_path data/configs/intervention_library_spec.yaml \
-  --overwrite
-```
-
-Build unified spatial + spatiotemporal CV folds:
-
-```bash
-pixi run python -u build_cv_folds.py \
-  --generation_manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv
-```
-
-Regenerate grouped fit reports from an existing fit manifest:
-
-```bash
-pixi run python -u run_fit_pipeline.py \
-  --manifest_path experiments/SyntheticHybridExperiments/generation_manifest.csv \
-  --fits_spec_path data/configs/quickstart_fits_spec.yaml \
-  --refresh_manifest
-```
-
-Refresh the unified posterior-predictive manifest and grouped reports:
-
-```bash
-pixi run python -c "from utils.t8_posterior_predictive_reporting import refresh_and_write_posterior_predictive_reports as f; f(r'experiments/SyntheticHybridExperiments/generation_manifest.csv')"
-```
-
-Run the minimal regression suite:
-
-```bash
-pixi run python tests/test_minimal_pipeline.py
-```
-
-Run the model-selection/test-evaluation orchestrator:
-
-```bash
-GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
-CV_SPEC_PATH=data/configs/cv_spec.yaml \
-bash run_and_submit_full_pipeline.sh
-```
-
-Run the posterior-predictive orchestrator:
-
-```bash
-GENERATION_SPEC_PATH=data/configs/quickstart_generation_spec.yaml \
-FITS_SPEC_PATH=data/configs/quickstart_fits_spec.yaml \
-INTERVENTION_LIBRARY_SPEC_PATH=data/configs/intervention_library_spec.yaml \
-TARGET_PAIRS_PATH=data/configs/posterior_predictive_target_pairs.csv \
-POSTERIOR_PREDICTIVE_SPEC_PATH=data/configs/posterior_predictive_spec.yaml \
-bash run_and_submit_posterior_predictive_pipeline.sh
-```
-
-## Manual MPLE Invocation
-
-`mple.py` can fit directly from a generated experiment root or from an explicit fit folder.
-
-Typical manual fit with an explicit fit config:
-
-```bash
-pixi run python -u mple.py \
-  --data_folder experiments/<experiment>/fits/<variant>
-```
-
-Useful flags:
-
-- optimizer settings and artifact paths are read from `fit_realized_config.yaml` in the fit folder
-- `--log_file` redirects the MPLE log
-
-When `n_starts > 1`, MPLE runs independent random starts and keeps the fit with the lowest final pseudo-negative log likelihood. Per-start diagnostics are saved to `optimizer_start_summary.csv`.
-
-For `optimizer_mode: nuclear_norm`, MPLE optimizes the full latent field directly with a nuclear-norm penalty, using proximal singular-value thresholding instead of the low-rank factorization. The usual `mple_summary.csv` includes the unpenalized MPLE loss, penalized objective, nuclear norm, and effective rank.
-
-For `optimizer_mode: concurrent_latent_rank`, MPLE uses SciPy `L-BFGS-B` to optimize the same factorized `U, V` formulation and `lambda_uv_ridge * (||U||_F^2 + ||V||_F^2) / outcome_size` penalty used by `alternating_latent_rank`, but updates all packed parameters jointly rather than alternating block steps.
-
-For `optimizer_mode: alternating_latent_rank`, setting `global_params.v_column_l2_max` projects each column of `V` (`node_factors`) onto the Euclidean ball `||v_k||_2 <= v_column_l2_max` after initialization and after each `V`-update step. The current `concurrent_latent_rank` solver ignores this setting.
-
-`global_params.B` is the active fit-time bound:
-
-- scalar parameters are clipped to `[-B, B]`
-- `xi` is also constrained so that `||xi * Gamma||_inf <= B`
-- the latent field is projected so its maximum absolute entry respects the same bound
-
-## Shell Wrappers
-
-The repo ships lightweight wrappers:
-
-- `run_generation_job.sh`
-- `submit_generation_jobs.sh`
-- `run_fit_job.sh`
-- `submit_fit_jobs.sh`
-- `run_test_evaluation_job.sh`
-- `submit_test_evaluation_jobs.sh`
-- `run_posterior_predictive_job.sh`
-- `submit_posterior_predictive_jobs.sh`
-- `run_and_submit_full_pipeline.sh`
-- `run_and_submit_posterior_predictive_pipeline.sh`
-
-They call the same Python entry points and accept environment-variable overrides:
-
-- `GENERATION_SPEC_PATH`, `GENERATION_OVERWRITE`
-- `GENERATION_MANIFEST_PATH`, `FITS_SPEC_PATH`, `FIT_OVERWRITE`
-- `FIT_MANIFEST_PATH`, `NUM_SAMPLES`, `GIBBS_SWEEPS`, `SEED`
-- `GEN_MANIFEST`, `FIT_MANIFEST`, `TARGET_PAIRS_PATH`, `POSTERIOR_PREDICTIVE_SPEC_PATH`, `POSTERIOR_PREDICTIVE_OVERWRITE`
-- `INTERVENTION_LIBRARY_SPEC_PATH`
-- `SEARCH_SLUG`, `CV_SPEC_PATH`, split-build knobs such as `BUILD_SPLITS_SEED`, `BUILD_SPLITS_RECURSIVE`, `BUILD_SPLITS_CONTIGUOUS`, `BUILD_SPLITS_TOLERANCE`, and `BUILD_SPLITS_OVERWRITE`
-
-Wrapper roles:
-
-- `run_and_submit_full_pipeline.sh`: generation submit + refresh, local split build, CV submit + refresh, outer-masked train-fit submit + refresh, then test-set evaluation submit
-- `run_and_submit_posterior_predictive_pipeline.sh`: generation submit + refresh, standard fit submit + refresh, local intervention-library materialization, then posterior-predictive submit + report refresh
-
-## Repository Map
-
-- `data/synthetic_data_generation.py`: synthetic and hybrid artifact materialization
-- `run_generation_pipeline.py`: generation request planning, single-request execution, and manifest refresh
-- `submit_generation_jobs.sh`: SLURM fan-out for generation requests plus manifest refresh barrier
-- `run_fit_pipeline.py`: fit request planning, single-fit execution, and manifest refresh/report rebuild
-- `submit_fit_jobs.sh`: SLURM fan-out for fit requests plus manifest/report refresh barrier
-- `submit_test_evaluation_jobs.sh`: single-job SLURM wrapper for manifest-driven test-set evaluation
-- `run_intervention_library.py`: reusable intervention-panel materialization
-- `build_cv_folds.py`: manifest-driven spatial partition plus spatiotemporal CV-fold construction
-- `run_posterior_predictive.py`: single-target posterior-predictive/counterfactual execution
-- `utils/t8_posterior_predictive_reporting.py`: posterior-predictive summaries, manifest refresh, intervention summaries, grouped ranking/reporting
-- `run_and_submit_full_pipeline.sh`: staged generation → split build → CV → outer-masked train-fit → test-evaluation shell orchestrator
-- `run_and_submit_posterior_predictive_pipeline.sh`: staged generation → standard fit → intervention-library → posterior-predictive shell orchestrator
-- `mple.py`: conditional MPLE optimizer and artifact writer
-- `utils/`: tiered utility modules (`t0_*` through `t8_*`) for config/path I/O, model artifacts, parameter packing, experiment loading, intervention handling, validation metrics, fit reporting, and posterior-predictive reporting
-- `utils/t3_field_generation.py`: synthetic-field specification parsing and field construction
-- `utils/t5_experiment_context.py`: experiment/panel artifact loading and experiment-context assembly
-- `utils/t6_intervention_utils.py`: intervention construction, saved-intervention artifacts, and intervention timing helpers
-- `utils/t8_posterior_predictive_sim.py`: predictive simulation and posterior-predictive panel statistics
-- `utils/t8_posterior_predictive_reporting.py`: posterior-predictive metric summaries, manifest refresh, grouped ranking, and CSV production
-- `utils/t8_parameter_recovery_reporting.py`: fit-manifest aggregation, latent diagnostics, grouped ranking, and CSV production
-- `utils/t6_pipeline_spec_utils.py`: pipeline-spec expansion and validation helpers
-- `tests/test_minimal_pipeline.py`: regression coverage for generation, fitting, summaries, and predictive ranking
-
-## Real-Data Workflow
-
-USCountyVaccination experiments are real-data experiments with `has_truth: false`. The materializer writes the same root-level artifact contract as synthetic/hybrid experiments, so the shared fit, intervention-library, and counterfactual posterior-predictive runners can consume them directly. Fit-based posterior predictive is supported; `source_type=truth` targets are intentionally rejected for these experiments.
-
-Default trimmed death-rate/vaccine-rate materialization:
+The committed US-county revision configs assume the shared workflow outputs live under `experiments/USCounty`, so this example uses that root directly.
 
 ```bash
 pixi run python data/USCountyVaccination/load_raw_data.py
+
 pixi run python data/USCountyVaccination/preprocess_us_county_vaccination_data.py \
   --trim \
-  --output_root experiments/USCountyVaccination_US_trimmed \
+  --output_root experiments/USCounty \
   --outcomes death_rate_100k_ge_2 \
+  --interventions complete_cov_ge_30 \
+  --lags 2w \
+  --networks distance_kernel_8 \
   --overwrite
+
 pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
   --trim \
-  --output_root experiments/USCountyVaccination_US_trimmed \
+  --output_root experiments/USCounty \
   --outcomes death_rate_100k_ge_2 \
+  --interventions complete_cov_ge_30 \
+  --lags 2w \
+  --networks distance_kernel_8 \
+  --start_dates 2020-03-01 \
   --overwrite
+
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/USCounty/generation_manifest.csv \
+  --fits_spec_path data/configs/REVISIONS/uscounty/fits_spec.yaml
+
+pixi run python -u run_intervention_library.py \
+  --generation_manifest_path experiments/USCounty/generation_manifest.csv \
+  --spec_path data/configs/REVISIONS/uscounty/intervention_library_spec.yaml \
+  --overwrite
+
+pixi run python -u run_posterior_predictive.py \
+  --generation_manifest_path experiments/USCounty/generation_manifest.csv \
+  --fit_manifest_path experiments/USCounty/fit_manifest.csv \
+  --target_pairs_path data/configs/REVISIONS/uscounty/posterior_predictive_target_pairs.csv \
+  --spec_path data/configs/posterior_predictive_spec.yaml \
+  --experiment_name outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01 \
+  --source_type fit \
+  --variant_name alternating_rank_5_uv_5_e2 \
+  --intervention_source observed_experiment \
+  --run_name default
 ```
 
-To materialize trimmed experiments starting from one or more later modeled weeks, pass `--start_dates`. Each requested date rounds forward to the first available `WeekEndDate >= requested date`, and each resolved slice gets its own `__start_YYYY_MM_DD` experiment root:
+### 3. Synthetic Held-Out Test Evaluation With `default_test_train`
+
+The CV command below runs every committed search in the synth CV spec, including `default_test_train`. The train-fit and test-evaluation steps then narrow to that held-out-test search.
 
 ```bash
-pixi run python data/USCountyVaccination/create_us_county_vaccination_experiments.py \
-  --trim \
-  --output_root experiments/USCountyVaccination_US_trimmed \
-  --outcomes death_rate_100k_ge_2 \
-  --start_dates 2020-09-06 2021-01-03 \
-  --overwrite
-```
+pixi run python -u run_generation_pipeline.py \
+  --spec_path data/configs/REVISIONS/synth/generation_spec.yaml
 
-Then run the shared workflow:
-
-```bash
-GENERATION_MANIFEST_PATH=experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-FITS_SPEC_PATH=data/USCountyVaccination/experiment_configs/fits_spec.yaml \
-FIT_OVERWRITE=true \
-bash submit_fit_jobs.sh
-
-pixi run python run_intervention_library.py \
-  --generation_manifest_path experiments/USCountyVaccination_US_trimmed/generation_manifest.csv \
-  --spec_path data/USCountyVaccination/experiment_configs/intervention_library_spec.yaml \
+pixi run python -u build_splits.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --cv_spec_path data/configs/REVISIONS/synth/cv_spec.yaml \
   --overwrite
 
-bash submit_posterior_predictive_jobs.sh
-```
+pixi run python -u run_cv_folds.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --cv_spec_path data/configs/REVISIONS/synth/cv_spec.yaml
 
-The full US county workflow is documented in [data/USCountyVaccination/README.md](data/USCountyVaccination/README.md).
+pixi run python -u run_fit_pipeline.py \
+  --fit_mode outer_masked \
+  --manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --cv_spec_path data/configs/REVISIONS/synth/cv_spec.yaml \
+  --search_slug default_test_train
+
+pixi run python -u run_test_evaluation.py \
+  --fit_manifest_path experiments/Synthetic/train_fit_manifest__default_test_train.csv
+```

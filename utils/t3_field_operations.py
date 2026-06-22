@@ -13,10 +13,8 @@ from utils.t2_normalization import (
 from utils.t3_model_artifacts import (
     ModelArtifacts,
     SpectralLowRankStructure,
+    _DEGENERACY_THRESHOLD,
 )
-
-
-_DEGENERACY_THRESHOLD = 1e-12   # norms below this are treated as zero/degenerate
 
 
 def compose_latent_field_matrix(
