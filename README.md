@@ -135,8 +135,6 @@ These bundles capture the outer active/test masks and the inner training/separat
 
 The `best_candidate.yaml` file is consumed directly by the held-out test evaluation workflow (see below). For the standard pipeline, the hyperparameters of the best candidate are manually copied into a fit spec that is then used to run the final fits for posterior-predictive simulation. For a more automated workflow, the fit pipeline could be extended to read the CV search results directly and run the winning candidates without an intermediate fit spec.
 
-
-
 ### Test Set Evaluation
 
 Held-out testing is a four-step chain:

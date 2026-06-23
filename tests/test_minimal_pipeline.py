@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from matplotlib import colors as mcolors
 from omegaconf import OmegaConf
 from scipy import sparse
 
@@ -11174,6 +11175,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
         outputs = run_report_posterior_predictive(
             generation_manifest,
             plot_posterior_predictive=True,
+            pretty=True,
         )
 
         self.assertIn("plot_outputs", outputs)
@@ -11277,6 +11279,10 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "    fixed_scalar_params: {}",
                     "variants:",
                     "  - name: rank_0",
+                    "  - name: rank_0_xi_zero",
+                    "    estimation:",
+                    "      fixed_scalar_params:",
+                    "        xi: 0.0",
                 ]
             ),
             encoding="utf-8",
@@ -11313,6 +11319,7 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 [
                     "experiment_name,source_type,variant_name,intervention_source,intervention_name",
                     "smoke_rank_0,fit,rank_0,observed_experiment,",
+                    "smoke_rank_0,fit,rank_0_xi_zero,observed_experiment,",
                     "smoke_rank_0,fit,rank_0,saved_intervention,all_intervention_from_s",
                     "smoke_rank_0,fit,rank_0,saved_intervention,no_intervention",
                 ]
@@ -11327,19 +11334,20 @@ class PosteriorPredictiveTests(unittest.TestCase):
             intervention_spec_path,
             overwrite=True,
         )
-        run_posterior_predictive(
-            generation_manifest,
-            fit_manifest,
-            target_pairs_path,
-            predictive_spec_path,
-            experiment_name="smoke_rank_0",
-            source_type="fit",
-            variant_name="rank_0",
-            intervention_source="observed_experiment",
-            intervention_name="",
-            run_name="default",
-            overwrite=True,
-        )
+        for variant_name in ["rank_0", "rank_0_xi_zero"]:
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name=variant_name,
+                intervention_source="observed_experiment",
+                intervention_name="",
+                run_name="default",
+                overwrite=True,
+            )
         for intervention_name in ["all_intervention_from_s", "no_intervention"]:
             run_posterior_predictive(
                 generation_manifest,
@@ -11401,20 +11409,28 @@ class PosteriorPredictiveTests(unittest.TestCase):
             columns=list(observed_time_rows[0].keys()),
         )
 
-        captured_observed_series: list[np.ndarray] = []
+        captured_observed_calls: list[dict[str, object]] = []
         captured_labels: list[str] = []
         captured_sample_calls: list[dict[str, object]] = []
         captured_share_labels: list[str] = []
         captured_share_series: dict[str, np.ndarray] = {}
+        captured_share_colors: dict[str, object] = {}
         captured_finalize_calls: list[dict[str, object]] = []
+        captured_saved_figures: list[dict[str, object]] = []
         original_plot_observed = posterior_predictive_plotting._plot_observed_trajectory
         original_plot_sample = posterior_predictive_plotting._plot_sample_trajectory
         original_plot_line = posterior_predictive_plotting._plot_line_trajectory
         original_finalize_axis = posterior_predictive_plotting._finalize_axis
+        original_save_figure = posterior_predictive_plotting._save_figure
 
         def _capture_observed(ax, time_index, observed_mean):
-            captured_observed_series.append(np.asarray(observed_mean, dtype=float).copy())
-            return original_plot_observed(ax, time_index, observed_mean)
+            original_plot_observed(ax, time_index, observed_mean)
+            captured_observed_calls.append(
+                {
+                    "values": np.asarray(observed_mean, dtype=float).copy(),
+                    "color": str(ax.lines[-1].get_color()),
+                }
+            )
 
         def _capture_sample(
             ax,
@@ -11433,9 +11449,10 @@ class PosteriorPredictiveTests(unittest.TestCase):
                     "label": label_text,
                     "index_axis": np.asarray(time_index, dtype=int).copy(),
                     "sample_mean": np.asarray(sample_mean, dtype=float).copy(),
+                    "color": color,
                 }
             )
-            return original_plot_sample(
+            original_plot_sample(
                 ax,
                 time_index,
                 sample_mean,
@@ -11449,7 +11466,8 @@ class PosteriorPredictiveTests(unittest.TestCase):
             label_text = str(label)
             captured_share_labels.append(label_text)
             captured_share_series[label_text] = np.asarray(values, dtype=float).copy()
-            return original_plot_line(
+            captured_share_colors[label_text] = color
+            original_plot_line(
                 ax,
                 time_index,
                 values,
@@ -11465,21 +11483,38 @@ class PosteriorPredictiveTests(unittest.TestCase):
             x_label,
             y_label,
         ):
-            captured_finalize_calls.append(
-                {
-                    "title": str(title),
-                    "show_intervention_start": show_intervention_start,
-                    "x_label": str(x_label),
-                    "y_label": str(y_label),
-                }
-            )
-            return original_finalize_axis(
+            original_finalize_axis(
                 ax,
                 title=title,
                 show_intervention_start=show_intervention_start,
                 x_label=x_label,
                 y_label=y_label,
             )
+            captured_finalize_calls.append(
+                {
+                    "show_intervention_start": show_intervention_start,
+                    "x_label": str(x_label),
+                    "y_label": str(y_label),
+                    "axis_title": str(ax.get_title()),
+                }
+            )
+
+        def _capture_save_figure(fig, output_path):
+            axis = fig.axes[0]
+            dashed_at_50 = [
+                line
+                for line in axis.lines
+                if line.get_linestyle() == "--"
+                and np.allclose(np.asarray(line.get_xdata(), dtype=float), np.asarray([50.0, 50.0]))
+            ]
+            captured_saved_figures.append(
+                {
+                    "path": Path(output_path).name,
+                    "title": str(axis.get_title()),
+                    "num_dashed_at_50": len(dashed_at_50),
+                }
+            )
+            return original_save_figure(fig, output_path)
 
         with mock.patch.object(
             posterior_predictive_plotting,
@@ -11497,11 +11532,16 @@ class PosteriorPredictiveTests(unittest.TestCase):
             posterior_predictive_plotting,
             "_finalize_axis",
             side_effect=_capture_finalize_axis,
+        ), mock.patch.object(
+            posterior_predictive_plotting,
+            "_save_figure",
+            side_effect=_capture_save_figure,
         ):
             plot_outputs = write_posterior_predictive_plot_reports(
                 manifest_path,
                 plot_posterior_predictive=True,
                 plot_intervention_summaries=True,
+                pretty=True,
             )
 
         self.assertEqual(plot_outputs["num_posterior_predictive_plots"], 2)
@@ -11555,14 +11595,14 @@ class PosteriorPredictiveTests(unittest.TestCase):
             ).exists()
         )
         observed_time_series = [
-            series
-            for series in captured_observed_series
-            if series.shape == expected_observed_mean.shape
+            call["values"]
+            for call in captured_observed_calls
+            if np.asarray(call["values"]).shape == expected_observed_mean.shape
         ]
         observed_unit_series = [
-            series
-            for series in captured_observed_series
-            if series.shape == expected_observed_unit_mean.shape
+            call["values"]
+            for call in captured_observed_calls
+            if np.asarray(call["values"]).shape == expected_observed_unit_mean.shape
         ]
         self.assertGreaterEqual(len(observed_time_series), 3)
         self.assertGreaterEqual(len(observed_unit_series), 2)
@@ -11575,115 +11615,113 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 for series in observed_unit_series
             )
         )
-        self.assertIn("rank_0", captured_labels)
-        self.assertIn("all_intervention_from_s", captured_labels)
-        self.assertIn("no_intervention", captured_labels)
+        self.assertTrue(
+            all(
+                mcolors.to_rgba(str(call["color"]))
+                == mcolors.to_rgba(posterior_predictive_plotting._OBSERVED_COLOR)
+                for call in captured_observed_calls
+            )
+        )
+        self.assertIn("Interference", captured_labels)
+        self.assertIn("No Interference", captured_labels)
+        self.assertIn("All Intervention", captured_labels)
+        self.assertIn("No Intervention", captured_labels)
         full_counterfactual_axis = np.arange(int(observed_panel["T"]), dtype=int)
         post_s_axis = np.arange(int(expected_counterfactual_s), int(observed_panel["T"]), dtype=int)
         self.assertTrue(
             any(
-                call["label"] == "rank_0"
+                call["label"] == "Interference"
                 and np.array_equal(call["index_axis"], full_counterfactual_axis)
+                and mcolors.to_rgba(call["color"])
+                == mcolors.to_rgba(posterior_predictive_plotting._FIT_INTERFERENCE_COLOR)
                 for call in captured_sample_calls
             )
         )
         self.assertTrue(
             any(
-                call["label"] == "all_intervention_from_s"
+                call["label"] == "No Interference"
                 and np.array_equal(call["index_axis"], full_counterfactual_axis)
+                and mcolors.to_rgba(call["color"])
+                == mcolors.to_rgba(posterior_predictive_plotting._FIT_NO_INTERFERENCE_COLOR)
                 for call in captured_sample_calls
             )
         )
         self.assertTrue(
             any(
-                call["label"] == "no_intervention"
+                call["label"] == "All Intervention"
                 and np.array_equal(call["index_axis"], full_counterfactual_axis)
+                and mcolors.to_rgba(call["color"])
+                == mcolors.to_rgba(posterior_predictive_plotting._ALL_INTERVENTION_COLOR)
                 for call in captured_sample_calls
             )
         )
         self.assertTrue(
             any(
-                call["label"] == "all_intervention_from_s"
+                call["label"] == "No Intervention"
+                and np.array_equal(call["index_axis"], full_counterfactual_axis)
+                and mcolors.to_rgba(call["color"])
+                == mcolors.to_rgba(posterior_predictive_plotting._NO_INTERVENTION_COLOR)
+                for call in captured_sample_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                call["label"] == "All Intervention"
                 and np.array_equal(call["index_axis"], post_s_axis)
                 for call in captured_sample_calls
             )
         )
         self.assertTrue(
             any(
-                call["label"] == "no_intervention"
+                call["label"] == "No Intervention"
                 and np.array_equal(call["index_axis"], post_s_axis)
                 for call in captured_sample_calls
             )
         )
-        posterior_time_calls = [
+        time_finalize_calls = [
+            call for call in captured_finalize_calls if call["x_label"] == "Time index"
+        ]
+        unit_finalize_calls = [
             call
             for call in captured_finalize_calls
-            if call["title"].startswith("Posterior predictive average outcome over time")
+            if call["x_label"] == "Unit rank (sorted by observed outcome)"
         ]
-        counterfactual_time_calls = [
-            call
-            for call in captured_finalize_calls
-            if call["title"].startswith("Counterfactual average outcome over time")
-            and "(post-s)" not in call["title"]
-        ]
-        counterfactual_post_s_calls = [
-            call
-            for call in captured_finalize_calls
-            if call["title"].startswith("Counterfactual average outcome over time")
-            and "(post-s)" in call["title"]
-        ]
-        posterior_unit_calls = [
-            call
-            for call in captured_finalize_calls
-            if call["title"].startswith("Posterior predictive average outcome by unit")
-        ]
-        counterfactual_unit_calls = [
-            call
-            for call in captured_finalize_calls
-            if call["title"].startswith("Counterfactual average outcome by unit")
-        ]
-        self.assertEqual(len(posterior_time_calls), 1)
-        self.assertEqual(len(counterfactual_time_calls), 1)
-        self.assertEqual(len(counterfactual_post_s_calls), 1)
-        self.assertEqual(len(posterior_unit_calls), 1)
-        self.assertEqual(len(counterfactual_unit_calls), 1)
-        self.assertEqual(
-            posterior_time_calls[0]["show_intervention_start"],
+        self.assertEqual(len(time_finalize_calls), 3)
+        self.assertEqual(len(unit_finalize_calls), 2)
+        self.assertTrue(
+            all(call["axis_title"] == "" for call in captured_finalize_calls)
+        )
+        self.assertIn(
             int(observed_panel["s"]),
+            [int(call["show_intervention_start"]) for call in time_finalize_calls],
         )
-        self.assertEqual(
-            counterfactual_time_calls[0]["show_intervention_start"],
-            int(expected_counterfactual_s),
+        self.assertGreaterEqual(
+            [call["show_intervention_start"] for call in time_finalize_calls].count(
+                int(expected_counterfactual_s)
+            ),
+            2,
         )
-        self.assertEqual(
-            counterfactual_post_s_calls[0]["show_intervention_start"],
-            int(expected_counterfactual_s),
+        self.assertTrue(
+            all(call["show_intervention_start"] is None for call in unit_finalize_calls)
         )
-        self.assertIsNone(posterior_unit_calls[0]["show_intervention_start"])
-        self.assertIsNone(counterfactual_unit_calls[0]["show_intervention_start"])
-        self.assertEqual(len(captured_share_labels), 3)
-        self.assertEqual(
-            set(captured_share_labels),
-            {"observed_experiment", "all_intervention_from_s", "no_intervention"},
-        )
+        self.assertEqual(len(captured_share_labels), 1)
+        self.assertEqual(captured_share_labels, ["Observed Intervention"])
         self.assertTrue(
             np.allclose(
-                captured_share_series["observed_experiment"],
+                captured_share_series["Observed Intervention"],
                 np.mean(np.asarray(observed_panel["z"], dtype=float) == 1.0, axis=1),
             )
         )
         self.assertTrue(
-            np.allclose(
-                captured_share_series["no_intervention"],
-                np.zeros(int(observed_panel["T"]), dtype=float),
-            )
+            mcolors.to_rgba(captured_share_colors["Observed Intervention"])
+            == mcolors.to_rgba(posterior_predictive_plotting._OBSERVED_COLOR)
         )
-        expected_full_on = np.zeros(int(observed_panel["T"]), dtype=float)
-        expected_full_on[int(observed_panel["s"]) :] = 1.0
         self.assertTrue(
-            np.allclose(
-                captured_share_series["all_intervention_from_s"],
-                expected_full_on,
+            any(
+                figure["path"] == "intervention_share_over_time.png"
+                and figure["title"] == ""
+                and figure["num_dashed_at_50"] == 1
+                for figure in captured_saved_figures
             )
         )
 
@@ -11710,20 +11748,20 @@ class PosteriorPredictiveTests(unittest.TestCase):
             x_label,
             y_label,
         ):
-            legacy_finalize_calls.append(
-                {
-                    "title": str(title),
-                    "show_intervention_start": show_intervention_start,
-                    "x_label": str(x_label),
-                    "y_label": str(y_label),
-                }
-            )
-            return original_finalize_axis(
+            original_finalize_axis(
                 ax,
                 title=title,
                 show_intervention_start=show_intervention_start,
                 x_label=x_label,
                 y_label=y_label,
+            )
+            legacy_finalize_calls.append(
+                {
+                    "show_intervention_start": show_intervention_start,
+                    "x_label": str(x_label),
+                    "y_label": str(y_label),
+                    "axis_title": str(ax.get_title()),
+                }
             )
 
         with mock.patch.object(
@@ -11756,10 +11794,18 @@ class PosteriorPredictiveTests(unittest.TestCase):
         legacy_counterfactual_time_calls = [
             call
             for call in legacy_finalize_calls
-            if call["title"].startswith("Counterfactual average outcome over time")
+            if call["x_label"] == "Time index"
+        ]
+        legacy_counterfactual_unit_calls = [
+            call
+            for call in legacy_finalize_calls
+            if call["x_label"] == "Unit rank (sorted by observed outcome)"
         ]
         self.assertEqual(len(legacy_counterfactual_time_calls), 1)
+        self.assertEqual(len(legacy_counterfactual_unit_calls), 1)
         self.assertIsNone(legacy_counterfactual_time_calls[0]["show_intervention_start"])
+        self.assertEqual(legacy_counterfactual_time_calls[0]["axis_title"], "")
+        self.assertEqual(legacy_counterfactual_unit_calls[0]["axis_title"], "")
 
     @unittest.skipIf(shutil.which("bash") is None, "bash is required for shell submission test")
     def test_submit_posterior_predictive_jobs_submits_workers_and_report(self) -> None:

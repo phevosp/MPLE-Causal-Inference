@@ -33,6 +33,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default="",
     )
+    parser.add_argument("--pretty", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -42,6 +43,7 @@ def run_report_posterior_predictive(
     plot_posterior_predictive: bool = False,
     plot_intervention_summaries: bool = False,
     output_dir_name: str = "",
+    pretty: bool = False,
 ) -> dict[str, object]:
     outputs = refresh_and_write_posterior_predictive_reports(generation_manifest_path)
     if plot_posterior_predictive or plot_intervention_summaries:
@@ -50,6 +52,7 @@ def run_report_posterior_predictive(
             plot_posterior_predictive=plot_posterior_predictive,
             plot_intervention_summaries=plot_intervention_summaries,
             output_dir_name=output_dir_name,
+            pretty=pretty,
         )
     return outputs
 
@@ -61,6 +64,7 @@ def main(argv: list[str] | None = None) -> None:
         plot_posterior_predictive=args.plot_posterior_predictive,
         plot_intervention_summaries=args.plot_intervention_summaries,
         output_dir_name=args.output_dir_name,
+        pretty=args.pretty,
     )
     print(f"Posterior predictive manifest: {outputs['manifest_path']}")
     print(f"Manifest rows: {outputs['num_manifest_rows']}")

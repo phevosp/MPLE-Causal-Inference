@@ -24,6 +24,12 @@ _COUNTERFACTUAL_S_PRIORITY = (
     "all_intervention_from_s",
     "all_intervention",
 )
+_OBSERVED_COLOR = "black"
+_FIT_INTERFERENCE_COLOR = "#2E6F40"
+_FIT_NO_INTERFERENCE_COLOR = "#8FBC8F"
+_ALL_INTERVENTION_COLOR = "#1f77b4"
+_NO_INTERVENTION_COLOR = "#ff7f0e"
+_FALLBACK_COLORS = list(plt.get_cmap("tab10").colors)
 
 
 def _summary_rows(csv_path: str | Path, *, kind: str) -> list[dict[str, str]]:
@@ -109,7 +115,7 @@ def _plot_observed_trajectory(
     ax.plot(
         index_axis,
         observed_mean,
-        color="black",
+        color=_OBSERVED_COLOR,
         linewidth=2.5,
         label="Observed",
         zorder=5,
@@ -180,9 +186,63 @@ def _finalize_axis(
         )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    ax.set_title(title)
+    ax.set_title("")
     ax.grid(axis="y", alpha=0.25)
     ax.legend(loc="best")
+
+
+def _contains_xi_zero(*values: str) -> bool:
+    return any("xi_zero" in str(value).strip() for value in values)
+
+
+def _posterior_predictive_label(row: dict[str, str], *, pretty: bool) -> str:
+    source_name = str(row.get("source_name", "")).strip()
+    source_slug = str(row.get("source_slug", "")).strip()
+    if pretty:
+        if _contains_xi_zero(source_name, source_slug):
+            return "No Interference"
+        return "Interference"
+    return source_name or source_slug
+
+
+def _posterior_predictive_color(row: dict[str, str]) -> str:
+    source_name = str(row.get("source_name", "")).strip()
+    source_slug = str(row.get("source_slug", "")).strip()
+    if _contains_xi_zero(source_name, source_slug):
+        return _FIT_NO_INTERFERENCE_COLOR
+    return _FIT_INTERFERENCE_COLOR
+
+
+def _counterfactual_label(row: dict[str, str], *, pretty: bool) -> str:
+    intervention_slug = str(row.get("target_intervention_slug", "")).strip()
+    intervention_name = str(
+        row.get("target_intervention_name", row.get("target_intervention_slug", ""))
+    ).strip()
+    if pretty:
+        if intervention_slug == "all_intervention_from_s":
+            return "All Intervention"
+        if intervention_slug == "no_intervention":
+            return "No Intervention"
+    return intervention_name or intervention_slug
+
+
+def _counterfactual_color(
+    row: dict[str, str],
+    *,
+    fallback_index: int,
+) -> object:
+    intervention_slug = str(row.get("target_intervention_slug", "")).strip()
+    if intervention_slug in {"all_intervention_from_s", "all_intervention"}:
+        return _ALL_INTERVENTION_COLOR
+    if intervention_slug == "no_intervention":
+        return _NO_INTERVENTION_COLOR
+    return _FALLBACK_COLORS[fallback_index % len(_FALLBACK_COLORS)]
+
+
+def _observed_intervention_label(*, pretty: bool) -> str:
+    if pretty:
+        return "Observed Intervention"
+    return "observed_experiment"
 
 
 def _save_figure(fig: plt.Figure, output_path: str | Path) -> str:
@@ -269,20 +329,17 @@ def _intervention_share_rows_by_experiment(
     manifest_rows: list[dict[str, str]],
 ) -> dict[str, list[dict[str, str]]]:
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
-    seen_keys: set[tuple[str, str]] = set()
+    seen_experiments: set[str] = set()
     for row in manifest_rows:
         intervention_source = str(row.get("target_intervention_source", "")).strip()
-        if intervention_source not in {"observed_experiment", "saved_intervention"}:
+        if intervention_source != "observed_experiment":
             continue
         experiment_root, _ = _resolved_roots(row)
-        intervention_slug = str(row.get("target_intervention_slug", "")).strip()
-        if not intervention_slug:
-            intervention_slug = "observed_experiment"
-        dedupe_key = (str(experiment_root), intervention_slug)
-        if dedupe_key in seen_keys:
+        experiment_key = str(experiment_root)
+        if experiment_key in seen_experiments:
             continue
-        seen_keys.add(dedupe_key)
-        grouped[str(experiment_root)].append(row)
+        seen_experiments.add(experiment_key)
+        grouped[experiment_key].append(row)
     return grouped
 
 
@@ -296,22 +353,20 @@ def _write_posterior_predictive_time_plots(
     manifest_rows: list[dict[str, str]],
     *,
     output_dir_name: str,
+    pretty: bool,
 ) -> tuple[list[str], list[str]]:
     grouped = _posterior_predictive_rows(manifest_rows)
     if not grouped:
         return [], ["Skipped posterior-predictive plots: no eligible fit rows found."]
 
     output_paths: list[str] = []
-    colors = list(plt.get_cmap("tab10").colors)
     for (experiment_root_text, run_slug), group_rows in sorted(grouped.items()):
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
         time_index, observed_mean, intervention_start = _observed_time_mean(panel_context)
         fig, ax = plt.subplots(figsize=(11, 6))
         _plot_observed_trajectory(ax, time_index, observed_mean)
-        for color_index, row in enumerate(
-            sorted(group_rows, key=lambda item: str(item.get("source_name", "")))
-        ):
+        for row in sorted(group_rows, key=lambda item: str(item.get("source_name", ""))):
             _, output_root = _resolved_roots(row)
             series = _load_summary_series(
                 output_root / "posterior_predictive_time_summary.csv",
@@ -324,16 +379,12 @@ def _write_posterior_predictive_time_plots(
                 series["sample_mean"],
                 series["q025"],
                 series["q975"],
-                label=str(row.get("source_name", row.get("source_slug", ""))),
-                color=colors[color_index % len(colors)],
+                label=_posterior_predictive_label(row, pretty=pretty),
+                color=_posterior_predictive_color(row),
             )
-        title = (
-            f"Posterior predictive average outcome over time"
-            f" ({group_rows[0].get('experiment_name', '')}, {group_rows[0].get('run_name', '')})"
-        )
         _finalize_axis(
             ax,
-            title=title,
+            title="",
             show_intervention_start=intervention_start,
             x_label="Time index",
             y_label="Average outcome",
@@ -351,13 +402,13 @@ def _write_posterior_predictive_unit_plots(
     manifest_rows: list[dict[str, str]],
     *,
     output_dir_name: str,
+    pretty: bool,
 ) -> tuple[list[str], list[str]]:
     grouped = _posterior_predictive_rows(manifest_rows)
     if not grouped:
         return [], ["Skipped posterior-predictive unit plots: no eligible fit rows found."]
 
     output_paths: list[str] = []
-    colors = list(plt.get_cmap("tab10").colors)
     for (experiment_root_text, run_slug), group_rows in sorted(grouped.items()):
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
@@ -367,9 +418,7 @@ def _write_posterior_predictive_unit_plots(
         observed_mean = _apply_unit_order(observed_mean, unit_order)
         fig, ax = plt.subplots(figsize=(11, 6))
         _plot_observed_trajectory(ax, unit_index, observed_mean)
-        for color_index, row in enumerate(
-            sorted(group_rows, key=lambda item: str(item.get("source_name", "")))
-        ):
+        for row in sorted(group_rows, key=lambda item: str(item.get("source_name", ""))):
             _, output_root = _resolved_roots(row)
             series = _load_summary_series(
                 output_root / "posterior_predictive_unit_summary.csv",
@@ -382,16 +431,12 @@ def _write_posterior_predictive_unit_plots(
                 _apply_unit_order(series["sample_mean"], unit_order),
                 _apply_unit_order(series["q025"], unit_order),
                 _apply_unit_order(series["q975"], unit_order),
-                label=str(row.get("source_name", row.get("source_slug", ""))),
-                color=colors[color_index % len(colors)],
+                label=_posterior_predictive_label(row, pretty=pretty),
+                color=_posterior_predictive_color(row),
             )
-        title = (
-            f"Posterior predictive average outcome by unit"
-            f" ({group_rows[0].get('experiment_name', '')}, {group_rows[0].get('run_name', '')})"
-        )
         _finalize_axis(
             ax,
-            title=title,
+            title="",
             show_intervention_start=None,
             x_label="Unit rank (sorted by observed outcome)",
             y_label="Average outcome",
@@ -409,6 +454,7 @@ def _write_intervention_summary_time_plots(
     manifest_rows: list[dict[str, str]],
     *,
     output_dir_name: str,
+    pretty: bool,
 ) -> tuple[list[str], list[str], list[str]]:
     grouped = _intervention_rows(manifest_rows)
     if not grouped:
@@ -416,7 +462,6 @@ def _write_intervention_summary_time_plots(
 
     output_paths: list[str] = []
     post_s_output_paths: list[str] = []
-    colors = list(plt.get_cmap("tab10").colors)
     for (experiment_root_text, run_slug, source_slug), group_rows in sorted(grouped.items()):
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
@@ -439,16 +484,12 @@ def _write_intervention_summary_time_plots(
                 series["sample_mean"],
                 series["q025"],
                 series["q975"],
-                label=_counterfactual_group_sort_key(row),
-                color=colors[color_index % len(colors)],
+                label=_counterfactual_label(row, pretty=pretty),
+                color=_counterfactual_color(row, fallback_index=color_index),
             )
-        title = (
-            f"Counterfactual average outcome over time"
-            f" ({group_rows[0].get('experiment_name', '')}, {group_rows[0].get('source_name', '')}, {group_rows[0].get('run_name', '')})"
-        )
         _finalize_axis(
             ax,
-            title=title,
+            title="",
             show_intervention_start=intervention_start,
             x_label="Time index",
             y_label="Average outcome",
@@ -478,12 +519,12 @@ def _write_intervention_summary_time_plots(
                 series["sample_mean"][keep],
                 series["q025"][keep],
                 series["q975"][keep],
-                label=_counterfactual_group_sort_key(row),
-                color=colors[color_index % len(colors)],
+                label=_counterfactual_label(row, pretty=pretty),
+                color=_counterfactual_color(row, fallback_index=color_index),
             )
         _finalize_axis(
             ax,
-            title=f"{title} (post-s)",
+            title="",
             show_intervention_start=intervention_start,
             x_label="Time index",
             y_label="Average outcome",
@@ -501,13 +542,13 @@ def _write_intervention_summary_unit_plots(
     manifest_rows: list[dict[str, str]],
     *,
     output_dir_name: str,
+    pretty: bool,
 ) -> tuple[list[str], list[str]]:
     grouped = _intervention_rows(manifest_rows)
     if not grouped:
         return [], ["Skipped intervention-summary unit plots: no eligible fit rows found."]
 
     output_paths: list[str] = []
-    colors = list(plt.get_cmap("tab10").colors)
     for (experiment_root_text, run_slug, source_slug), group_rows in sorted(grouped.items()):
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
@@ -530,16 +571,12 @@ def _write_intervention_summary_unit_plots(
                 _apply_unit_order(series["sample_mean"], unit_order),
                 _apply_unit_order(series["q025"], unit_order),
                 _apply_unit_order(series["q975"], unit_order),
-                label=_counterfactual_group_sort_key(row),
-                color=colors[color_index % len(colors)],
+                label=_counterfactual_label(row, pretty=pretty),
+                color=_counterfactual_color(row, fallback_index=color_index),
             )
-        title = (
-            f"Counterfactual average outcome by unit"
-            f" ({group_rows[0].get('experiment_name', '')}, {group_rows[0].get('source_name', '')}, {group_rows[0].get('run_name', '')})"
-        )
         _finalize_axis(
             ax,
-            title=title,
+            title="",
             show_intervention_start=None,
             x_label="Unit rank (sorted by observed outcome)",
             y_label="Average outcome",
@@ -557,58 +594,42 @@ def _write_intervention_share_plots(
     manifest_rows: list[dict[str, str]],
     *,
     output_dir_name: str,
+    pretty: bool,
 ) -> tuple[list[str], list[str]]:
     grouped = _intervention_share_rows_by_experiment(manifest_rows)
     if not grouped:
         return [], ["Skipped intervention-share plots: no intervention rows found."]
 
     output_paths: list[str] = []
-    colors = list(plt.get_cmap("tab10").colors)
     for experiment_root_text, group_rows in sorted(grouped.items()):
         experiment_root = Path(experiment_root_text)
         fig, ax = plt.subplots(figsize=(11, 5))
-        for color_index, row in enumerate(
-            sorted(
-                group_rows,
-                key=lambda item: (
-                    str(item.get("target_intervention_source", "")) != "observed_experiment",
-                    str(
-                        item.get(
-                            "target_intervention_name",
-                            item.get("target_intervention_slug", ""),
-                        )
-                    ),
-                ),
-            )
-        ):
-            intervention_source = str(row.get("target_intervention_source", "")).strip()
-            intervention_name = str(row.get("target_intervention_name", "")).strip()
-            context = resolve_intervention_context(
-                experiment_root,
-                intervention_source=intervention_source,
-                intervention_name=intervention_name,
-            )
-            share_series = _intervention_share_series(context.z)
-            time_index = np.arange(share_series.shape[0], dtype=int)
-            label = (
-                str(row.get("target_intervention_name", "")).strip()
-                or str(row.get("target_intervention_slug", "")).strip()
-                or context.intervention_name
-            )
-            _plot_line_trajectory(
-                ax,
-                time_index,
-                share_series,
-                label=label,
-                color=colors[color_index % len(colors)],
-            )
+        row = group_rows[0]
+        context = resolve_intervention_context(
+            experiment_root,
+            intervention_source="observed_experiment",
+            intervention_name="",
+        )
+        share_series = _intervention_share_series(context.z)
+        time_index = np.arange(share_series.shape[0], dtype=int)
+        _plot_line_trajectory(
+            ax,
+            time_index,
+            share_series,
+            label=_observed_intervention_label(pretty=pretty),
+            color=_OBSERVED_COLOR,
+        )
+        ax.axvline(
+            50,
+            color="gray",
+            linestyle="--",
+            linewidth=1.5,
+            alpha=0.9,
+        )
         ax.set_xlabel("Time index")
         ax.set_ylabel("Share intervened")
         ax.set_ylim(0.0, 1.0)
-        ax.set_title(
-            "Intervention share over time"
-            f" ({group_rows[0].get('experiment_name', '')})"
-        )
+        ax.set_title("")
         ax.grid(axis="y", alpha=0.25)
         ax.legend(loc="best")
         output_path = (
@@ -626,6 +647,7 @@ def write_posterior_predictive_plot_reports(
     plot_posterior_predictive: bool,
     plot_intervention_summaries: bool,
     output_dir_name: str = "",
+    pretty: bool = False,
 ) -> dict[str, object]:
     manifest_rows = read_csv_rows(manifest_path)
     if not manifest_rows:
@@ -648,10 +670,12 @@ def write_posterior_predictive_plot_reports(
         time_paths, path_messages = _write_posterior_predictive_time_plots(
             manifest_rows,
             output_dir_name=output_dir_name,
+            pretty=pretty,
         )
         unit_paths, unit_messages = _write_posterior_predictive_unit_plots(
             manifest_rows,
             output_dir_name=output_dir_name,
+            pretty=pretty,
         )
         outputs["posterior_predictive_time_plot_paths"] = time_paths
         outputs["posterior_predictive_unit_plot_paths"] = unit_paths
@@ -662,10 +686,12 @@ def write_posterior_predictive_plot_reports(
         time_paths, post_s_paths, path_messages = _write_intervention_summary_time_plots(
             manifest_rows,
             output_dir_name=output_dir_name,
+            pretty=pretty,
         )
         unit_paths, unit_messages = _write_intervention_summary_unit_plots(
             manifest_rows,
             output_dir_name=output_dir_name,
+            pretty=pretty,
         )
         outputs["counterfactual_summary_time_plot_paths"] = time_paths
         outputs["counterfactual_summary_unit_plot_paths"] = unit_paths
@@ -680,6 +706,7 @@ def write_posterior_predictive_plot_reports(
         paths, path_messages = _write_intervention_share_plots(
             manifest_rows,
             output_dir_name=output_dir_name,
+            pretty=pretty,
         )
         outputs["intervention_share_plot_paths"] = paths
         messages.extend(path_messages)
