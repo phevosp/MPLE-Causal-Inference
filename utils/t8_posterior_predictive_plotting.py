@@ -31,6 +31,7 @@ _ALL_INTERVENTION_COLOR = "#1f77b4"
 _NO_INTERVENTION_COLOR = "#ff7f0e"
 _FALLBACK_COLORS = list(plt.get_cmap("tab10").colors)
 _LEGEND_FONT_SIZE = 14
+_AXIS_LABEL_FONT_SIZE = 14
 
 
 def _summary_rows(csv_path: str | Path, *, kind: str) -> list[dict[str, str]]:
@@ -187,8 +188,8 @@ def _finalize_axis(
             linewidth=1.5,
             alpha=0.9,
         )
-    ax.set_xlabel(x_label)
-    ax.set_ylabel(y_label)
+    ax.set_xlabel(x_label, fontsize=_AXIS_LABEL_FONT_SIZE)
+    ax.set_ylabel(y_label, fontsize=_AXIS_LABEL_FONT_SIZE)
     ax.set_title("")
     ax.grid(axis="y", alpha=0.25)
     ax.legend(loc="best", fontsize=_LEGEND_FONT_SIZE)
