@@ -30,6 +30,7 @@ _FIT_NO_INTERFERENCE_COLOR = "#9B77BD"
 _ALL_INTERVENTION_COLOR = "#1f77b4"
 _NO_INTERVENTION_COLOR = "#ff7f0e"
 _FALLBACK_COLORS = list(plt.get_cmap("tab10").colors)
+_LEGEND_FONT_SIZE = 14
 
 
 def _summary_rows(csv_path: str | Path, *, kind: str) -> list[dict[str, str]]:
@@ -93,7 +94,9 @@ def _observed_time_mean(
     return time_index, observed, int(panel_context["s"])
 
 
-def _observed_unit_mean(panel_context: dict[str, object]) -> tuple[np.ndarray, np.ndarray]:
+def _observed_unit_mean(
+    panel_context: dict[str, object],
+) -> tuple[np.ndarray, np.ndarray]:
     observed = np.mean(np.asarray(panel_context["x"], dtype=float), axis=0)
     unit_index = np.arange(observed.shape[0], dtype=int)
     return unit_index, observed
@@ -188,7 +191,7 @@ def _finalize_axis(
     ax.set_ylabel(y_label)
     ax.set_title("")
     ax.grid(axis="y", alpha=0.25)
-    ax.legend(loc="best")
+    ax.legend(loc="best", fontsize=_LEGEND_FONT_SIZE)
 
 
 def _contains_xi_zero(*values: str) -> bool:
@@ -296,7 +299,10 @@ def _posterior_predictive_rows(
 ) -> dict[tuple[str, str], list[dict[str, str]]]:
     grouped: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
     for row in manifest_rows:
-        if str(row.get("target_intervention_source", "")).strip() != "observed_experiment":
+        if (
+            str(row.get("target_intervention_source", "")).strip()
+            != "observed_experiment"
+        ):
             continue
         if str(row.get("source_type", "")).strip() != "fit":
             continue
@@ -310,7 +316,10 @@ def _intervention_rows(
 ) -> dict[tuple[str, str, str], list[dict[str, str]]]:
     grouped: dict[tuple[str, str, str], list[dict[str, str]]] = defaultdict(list)
     for row in manifest_rows:
-        if str(row.get("target_intervention_source", "")).strip() != "saved_intervention":
+        if (
+            str(row.get("target_intervention_source", "")).strip()
+            != "saved_intervention"
+        ):
             continue
         if str(row.get("source_type", "")).strip() != "fit":
             continue
@@ -363,10 +372,14 @@ def _write_posterior_predictive_time_plots(
     for (experiment_root_text, run_slug), group_rows in sorted(grouped.items()):
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
-        time_index, observed_mean, intervention_start = _observed_time_mean(panel_context)
+        time_index, observed_mean, intervention_start = _observed_time_mean(
+            panel_context
+        )
         fig, ax = plt.subplots(figsize=(11, 6))
         _plot_observed_trajectory(ax, time_index, observed_mean)
-        for row in sorted(group_rows, key=lambda item: str(item.get("source_name", ""))):
+        for row in sorted(
+            group_rows, key=lambda item: str(item.get("source_name", ""))
+        ):
             _, output_root = _resolved_roots(row)
             series = _load_summary_series(
                 output_root / "posterior_predictive_time_summary.csv",
@@ -406,7 +419,9 @@ def _write_posterior_predictive_unit_plots(
 ) -> tuple[list[str], list[str]]:
     grouped = _posterior_predictive_rows(manifest_rows)
     if not grouped:
-        return [], ["Skipped posterior-predictive unit plots: no eligible fit rows found."]
+        return [], [
+            "Skipped posterior-predictive unit plots: no eligible fit rows found."
+        ]
 
     output_paths: list[str] = []
     for (experiment_root_text, run_slug), group_rows in sorted(grouped.items()):
@@ -418,7 +433,9 @@ def _write_posterior_predictive_unit_plots(
         observed_mean = _apply_unit_order(observed_mean, unit_order)
         fig, ax = plt.subplots(figsize=(11, 6))
         _plot_observed_trajectory(ax, unit_index, observed_mean)
-        for row in sorted(group_rows, key=lambda item: str(item.get("source_name", ""))):
+        for row in sorted(
+            group_rows, key=lambda item: str(item.get("source_name", ""))
+        ):
             _, output_root = _resolved_roots(row)
             series = _load_summary_series(
                 output_root / "posterior_predictive_unit_summary.csv",
@@ -458,11 +475,17 @@ def _write_intervention_summary_time_plots(
 ) -> tuple[list[str], list[str], list[str]]:
     grouped = _intervention_rows(manifest_rows)
     if not grouped:
-        return [], [], ["Skipped intervention-summary plots: no eligible fit rows found."]
+        return (
+            [],
+            [],
+            ["Skipped intervention-summary plots: no eligible fit rows found."],
+        )
 
     output_paths: list[str] = []
     post_s_output_paths: list[str] = []
-    for (experiment_root_text, run_slug, source_slug), group_rows in sorted(grouped.items()):
+    for (experiment_root_text, run_slug, source_slug), group_rows in sorted(
+        grouped.items()
+    ):
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
         time_index, observed_mean, _ = _observed_time_mean(panel_context)
@@ -546,10 +569,14 @@ def _write_intervention_summary_unit_plots(
 ) -> tuple[list[str], list[str]]:
     grouped = _intervention_rows(manifest_rows)
     if not grouped:
-        return [], ["Skipped intervention-summary unit plots: no eligible fit rows found."]
+        return [], [
+            "Skipped intervention-summary unit plots: no eligible fit rows found."
+        ]
 
     output_paths: list[str] = []
-    for (experiment_root_text, run_slug, source_slug), group_rows in sorted(grouped.items()):
+    for (experiment_root_text, run_slug, source_slug), group_rows in sorted(
+        grouped.items()
+    ):
         experiment_root = Path(experiment_root_text)
         panel_context = _load_observed_panel_context(experiment_root)
         unit_index, observed_mean = _observed_unit_mean(panel_context)
@@ -558,7 +585,9 @@ def _write_intervention_summary_unit_plots(
         observed_mean = _apply_unit_order(observed_mean, unit_order)
         fig, ax = plt.subplots(figsize=(11, 6))
         _plot_observed_trajectory(ax, unit_index, observed_mean)
-        for color_index, row in enumerate(sorted(group_rows, key=_counterfactual_group_sort_key)):
+        for color_index, row in enumerate(
+            sorted(group_rows, key=_counterfactual_group_sort_key)
+        ):
             _, output_root = _resolved_roots(row)
             series = _load_summary_series(
                 output_root / "counterfactual_unit_summary.csv",
@@ -631,7 +660,7 @@ def _write_intervention_share_plots(
         ax.set_ylim(0.0, 1.0)
         ax.set_title("")
         ax.grid(axis="y", alpha=0.25)
-        ax.legend(loc="best")
+        ax.legend(loc="best", fontsize=_LEGEND_FONT_SIZE)
         output_path = (
             _report_root(experiment_root, output_dir_name)
             / COUNTERFACTUAL_SUMMARY_ROOT_NAME
@@ -651,7 +680,9 @@ def write_posterior_predictive_plot_reports(
 ) -> dict[str, object]:
     manifest_rows = read_csv_rows(manifest_path)
     if not manifest_rows:
-        raise ValueError(f"No rows found in posterior-predictive manifest {manifest_path}.")
+        raise ValueError(
+            f"No rows found in posterior-predictive manifest {manifest_path}."
+        )
 
     outputs: dict[str, object] = {
         "manifest_path": str(Path(manifest_path).resolve()),
@@ -683,10 +714,12 @@ def write_posterior_predictive_plot_reports(
         messages.extend(path_messages)
         messages.extend(unit_messages)
     if plot_intervention_summaries:
-        time_paths, post_s_paths, path_messages = _write_intervention_summary_time_plots(
-            manifest_rows,
-            output_dir_name=output_dir_name,
-            pretty=pretty,
+        time_paths, post_s_paths, path_messages = (
+            _write_intervention_summary_time_plots(
+                manifest_rows,
+                output_dir_name=output_dir_name,
+                pretty=pretty,
+            )
         )
         unit_paths, unit_messages = _write_intervention_summary_unit_plots(
             manifest_rows,
