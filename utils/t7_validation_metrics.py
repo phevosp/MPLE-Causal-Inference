@@ -604,11 +604,127 @@ def baseline_persistence_expected_spin(
     return np.vstack([x_0, x[:-1, :]])
 
 
+def _magnetization_summary_from_prediction(
+    *,
+    observed_x: np.ndarray,
+    predicted_x: np.ndarray,
+    mask: np.ndarray,
+    observed_key: str,
+    predicted_key: str,
+    abs_diff_key: str,
+) -> dict[str, float | None]:
+    observed_mean = mean_on_mask(observed_x, mask)
+    predicted_mean = mean_on_mask(predicted_x, mask)
+    return {
+        observed_key: observed_mean,
+        predicted_key: predicted_mean,
+        abs_diff_key: (
+            None
+            if observed_mean is None or predicted_mean is None
+            else abs(float(observed_mean) - float(predicted_mean))
+        ),
+    }
+
+
+def _compute_test_predicted_panel_magnetization_metrics(
+    *,
+    panel_context: dict[str, object],
+    predicted_x: np.ndarray,
+    test_loss_mask: np.ndarray,
+) -> dict[str, float | None]:
+    observed_x = np.asarray(panel_context["x"], dtype=float)
+    predicted_x_array = np.asarray(predicted_x, dtype=float)
+    if observed_x.shape != predicted_x_array.shape:
+        raise ValueError(
+            f"predicted_x shape {predicted_x_array.shape} does not match x shape {observed_x.shape}."
+        )
+    masks = _test_metric_masks(
+        panel_context=panel_context,
+        test_loss_mask=test_loss_mask,
+    )
+    metrics = {}
+    metrics.update(
+        _magnetization_summary_from_prediction(
+            observed_x=observed_x,
+            predicted_x=predicted_x_array,
+            mask=masks["test"],
+            observed_key="test_observed_mean_magnetization",
+            predicted_key="test_predicted_mean_magnetization",
+            abs_diff_key="test_mean_magnetization_abs_diff",
+        )
+    )
+    metrics.update(
+        _magnetization_summary_from_prediction(
+            observed_x=observed_x,
+            predicted_x=predicted_x_array,
+            mask=masks["post_s_test"],
+            observed_key="post_s_test_observed_mean_magnetization",
+            predicted_key="post_s_test_predicted_mean_magnetization",
+            abs_diff_key="post_s_test_mean_magnetization_abs_diff",
+        )
+    )
+    for treatment_name in ("treated", "untreated"):
+        test_mask = masks[f"test_{treatment_name}"]
+        post_s_mask = masks[f"post_s_test_{treatment_name}"]
+        test_observed = mean_on_mask(observed_x, test_mask)
+        test_predicted = mean_on_mask(predicted_x_array, test_mask)
+        post_s_observed = mean_on_mask(observed_x, post_s_mask)
+        post_s_predicted = mean_on_mask(predicted_x_array, post_s_mask)
+        metrics[f"test_mean_magnetization_abs_diff_{treatment_name}"] = (
+            None
+            if test_observed is None or test_predicted is None
+            else abs(float(test_observed) - float(test_predicted))
+        )
+        metrics[f"post_s_test_mean_magnetization_abs_diff_{treatment_name}"] = (
+            None
+            if post_s_observed is None or post_s_predicted is None
+            else abs(float(post_s_observed) - float(post_s_predicted))
+        )
+    return metrics
+
+
+def _compute_full_panel_predicted_magnetization_metrics(
+    *,
+    panel_context: dict[str, object],
+    predicted_x: np.ndarray,
+    training_loss_mask: np.ndarray,
+    test_loss_mask: np.ndarray,
+) -> dict[str, float | int | None]:
+    observed_x = np.asarray(panel_context["x"], dtype=float)
+    predicted_x_array = np.asarray(predicted_x, dtype=float)
+    if observed_x.shape != predicted_x_array.shape:
+        raise ValueError(
+            f"predicted_x shape {predicted_x_array.shape} does not match x shape {observed_x.shape}."
+        )
+    bucket_masks = _full_panel_bucket_masks(
+        panel_context=panel_context,
+        training_loss_mask=training_loss_mask,
+        test_loss_mask=test_loss_mask,
+    )
+    metrics: dict[str, float | int | None] = {}
+    for bucket_name, bucket_mask in bucket_masks.items():
+        count = int(np.count_nonzero(bucket_mask))
+        metrics[f"full_panel_num_{bucket_name}_slots"] = count
+        metrics.update(
+            _magnetization_summary_from_prediction(
+                observed_x=observed_x,
+                predicted_x=predicted_x_array,
+                mask=bucket_mask,
+                observed_key=f"full_panel_{bucket_name}_observed_mean_magnetization",
+                predicted_key=f"full_panel_{bucket_name}_predicted_mean_magnetization",
+                abs_diff_key=f"full_panel_{bucket_name}_mean_magnetization_abs_diff",
+            )
+        )
+    return metrics
+
+
 def evaluate_test_baseline_metrics(
     *,
     panel_context: dict[str, object],
+    training_loss_mask: np.ndarray,
     test_loss_mask: np.ndarray,
 ) -> dict[str, dict[str, float | int | None]]:
+    training_mask = np.asarray(training_loss_mask, dtype=bool)
     baseline_surfaces = {
         "time_step_mean": baseline_time_step_mean_expected_spin(
             panel_context=panel_context
@@ -616,14 +732,30 @@ def evaluate_test_baseline_metrics(
         "unit_mean": baseline_unit_mean_expected_spin(panel_context=panel_context),
         "persistence": baseline_persistence_expected_spin(panel_context=panel_context),
     }
-    return {
-        baseline_name: _score_test_point_predictions(
+    baseline_metrics: dict[str, dict[str, float | int | None]] = {}
+    for baseline_name, predicted_x in baseline_surfaces.items():
+        metrics = _score_test_point_predictions(
             panel_context=panel_context,
-            h_x=_expected_spin_to_h_x(expected_spin),
+            h_x=_expected_spin_to_h_x(predicted_x),
             test_loss_mask=test_loss_mask,
         )
-        for baseline_name, expected_spin in baseline_surfaces.items()
-    }
+        metrics.update(
+            _compute_test_predicted_panel_magnetization_metrics(
+                panel_context=panel_context,
+                predicted_x=predicted_x,
+                test_loss_mask=test_loss_mask,
+            )
+        )
+        metrics.update(
+            _compute_full_panel_predicted_magnetization_metrics(
+                panel_context=panel_context,
+                predicted_x=predicted_x,
+                training_loss_mask=training_mask,
+                test_loss_mask=test_loss_mask,
+            )
+        )
+        baseline_metrics[baseline_name] = metrics
+    return baseline_metrics
 
 
 def evaluate_fold_metrics(

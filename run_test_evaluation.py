@@ -181,6 +181,7 @@ def _evaluate_manifest_row(
     panel_context = load_experiment_panel_context(resolved_experiment_root)
     baseline_metrics = evaluate_test_baseline_metrics(
         panel_context=panel_context,
+        training_loss_mask=split_artifacts["training_mask"],
         test_loss_mask=split_artifacts["test_mask"],
     )
     if baselines_only:

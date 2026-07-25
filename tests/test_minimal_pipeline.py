@@ -6924,10 +6924,12 @@ class PipelineStageRequestTests(unittest.TestCase):
             "s": 1,
             "e": 2,
         }
+        training_loss_mask = np.asarray([[False, False], [True, False]], dtype=bool)
         test_loss_mask = np.asarray([[True, True], [False, False]], dtype=bool)
 
         metrics = validation_metrics.evaluate_test_baseline_metrics(
             panel_context=panel_context,
+            training_loss_mask=training_loss_mask,
             test_loss_mask=test_loss_mask,
         )
 
@@ -6936,10 +6938,200 @@ class PipelineStageRequestTests(unittest.TestCase):
             self.assertIsNone(baseline_metrics["post_s_test_loss"])
             self.assertIsNone(baseline_metrics["post_s_test_brier_score"])
             self.assertIsNone(baseline_metrics["post_s_test_ece"])
+            self.assertIsNone(baseline_metrics["post_s_test_observed_mean_magnetization"])
+            self.assertIsNone(baseline_metrics["post_s_test_predicted_mean_magnetization"])
+            self.assertIsNone(baseline_metrics["post_s_test_mean_magnetization_abs_diff"])
             self.assertEqual(baseline_metrics["num_test_slots_untreated"], 0)
             self.assertIsNone(baseline_metrics["test_loss_untreated"])
             self.assertIsNone(baseline_metrics["test_brier_score_untreated"])
             self.assertIsNone(baseline_metrics["test_ece_untreated"])
+            self.assertIsNone(
+                baseline_metrics["test_mean_magnetization_abs_diff_untreated"]
+            )
+
+    def test_evaluate_test_baseline_metrics_reports_deterministic_magnetization_summaries(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], dtype=float),
+            "z": np.asarray([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0]], dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 3,
+        }
+        training_loss_mask = np.asarray(
+            [[True, False], [False, True], [False, False]],
+            dtype=bool,
+        )
+        test_loss_mask = np.asarray(
+            [[False, True], [True, False], [True, False]],
+            dtype=bool,
+        )
+
+        metrics = validation_metrics.evaluate_test_baseline_metrics(
+            panel_context=panel_context,
+            training_loss_mask=training_loss_mask,
+            test_loss_mask=test_loss_mask,
+        )
+        persistence = metrics["persistence"]
+
+        self.assertAlmostEqual(
+            float(persistence["test_observed_mean_magnetization"]),
+            -1.0 / 3.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["test_predicted_mean_magnetization"]),
+            1.0 / 3.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["test_mean_magnetization_abs_diff"]),
+            2.0 / 3.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["post_s_test_observed_mean_magnetization"]),
+            0.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["post_s_test_predicted_mean_magnetization"]),
+            1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["post_s_test_mean_magnetization_abs_diff"]),
+            1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["test_mean_magnetization_abs_diff_treated"]),
+            2.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["test_mean_magnetization_abs_diff_untreated"]),
+            0.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["post_s_test_mean_magnetization_abs_diff_treated"]),
+            2.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["post_s_test_mean_magnetization_abs_diff_untreated"]),
+            0.0,
+            places=12,
+        )
+
+    def test_evaluate_test_baseline_metrics_reports_full_panel_bucket_summaries(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], dtype=float),
+            "z": np.asarray([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0]], dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 3,
+        }
+        training_loss_mask = np.asarray(
+            [[True, False], [False, True], [False, False]],
+            dtype=bool,
+        )
+        test_loss_mask = np.asarray(
+            [[False, True], [True, False], [True, False]],
+            dtype=bool,
+        )
+
+        metrics = validation_metrics.evaluate_test_baseline_metrics(
+            panel_context=panel_context,
+            training_loss_mask=training_loss_mask,
+            test_loss_mask=test_loss_mask,
+        )
+        persistence = metrics["persistence"]
+
+        self.assertEqual(int(persistence["full_panel_num_all_slots"]), 6)
+        self.assertAlmostEqual(
+            float(persistence["full_panel_all_observed_mean_magnetization"]),
+            1.0 / 3.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_all_predicted_mean_magnetization"]),
+            1.0 / 3.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_all_mean_magnetization_abs_diff"]),
+            0.0,
+            places=12,
+        )
+        self.assertEqual(int(persistence["full_panel_num_training_slots"]), 2)
+        self.assertAlmostEqual(
+            float(persistence["full_panel_training_observed_mean_magnetization"]),
+            1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_training_predicted_mean_magnetization"]),
+            0.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_training_mean_magnetization_abs_diff"]),
+            1.0,
+            places=12,
+        )
+        self.assertEqual(int(persistence["full_panel_num_separator_slots"]), 1)
+        self.assertAlmostEqual(
+            float(persistence["full_panel_separator_observed_mean_magnetization"]),
+            1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_separator_predicted_mean_magnetization"]),
+            1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_separator_mean_magnetization_abs_diff"]),
+            0.0,
+            places=12,
+        )
+        self.assertEqual(int(persistence["full_panel_num_treated_test_slots"]), 1)
+        self.assertAlmostEqual(
+            float(persistence["full_panel_treated_test_observed_mean_magnetization"]),
+            -1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_treated_test_predicted_mean_magnetization"]),
+            1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_treated_test_mean_magnetization_abs_diff"]),
+            2.0,
+            places=12,
+        )
+        self.assertEqual(int(persistence["full_panel_num_untreated_test_slots"]), 2)
+        self.assertAlmostEqual(
+            float(persistence["full_panel_untreated_test_observed_mean_magnetization"]),
+            0.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_untreated_test_predicted_mean_magnetization"]),
+            0.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            float(persistence["full_panel_untreated_test_mean_magnetization_abs_diff"]),
+            0.0,
+            places=12,
+        )
 
     def test_evaluate_fold_metrics_conditions_on_separator_but_scores_validation_only(self) -> None:
         experiment_root = Path("unused-experiment-root")
@@ -13514,6 +13706,22 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
         self.assertIn("test_brier_score", payload["baselines"]["time_step_mean"])
         self.assertIn("post_s_test_ece", payload["baselines"]["unit_mean"])
         self.assertIn("test_loss_treated", payload["baselines"]["persistence"])
+        self.assertIn(
+            "test_predicted_mean_magnetization",
+            payload["baselines"]["time_step_mean"],
+        )
+        self.assertIn(
+            "post_s_test_predicted_mean_magnetization",
+            payload["baselines"]["unit_mean"],
+        )
+        self.assertIn(
+            "full_panel_all_predicted_mean_magnetization",
+            payload["baselines"]["persistence"],
+        )
+        self.assertIn(
+            "full_panel_separator_mean_magnetization_abs_diff",
+            payload["baselines"]["persistence"],
+        )
         self.assertEqual(payload["experiment_path"], str(experiment_root.resolve()))
 
     def test_run_test_evaluation_infers_test_train_cv_settings_from_train_fit_metadata(self) -> None:
@@ -13763,6 +13971,14 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
         self.assertEqual(
             set(refreshed_payload["baselines"].keys()),
             {"time_step_mean", "unit_mean", "persistence"},
+        )
+        self.assertIn(
+            "test_predicted_mean_magnetization",
+            refreshed_payload["baselines"]["time_step_mean"],
+        )
+        self.assertIn(
+            "full_panel_all_predicted_mean_magnetization",
+            refreshed_payload["baselines"]["persistence"],
         )
         self.assertNotIn("stale", refreshed_payload["baselines"])
 
