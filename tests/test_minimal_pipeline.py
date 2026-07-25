@@ -6797,37 +6797,88 @@ class PipelineStageRequestTests(unittest.TestCase):
 
     def test_baseline_expected_spin_surfaces_match_definitions(self) -> None:
         panel_context = {
-            "x": np.asarray([[1.0, -1.0, 1.0], [-1.0, -1.0, 1.0]], dtype=float),
-            "z": np.zeros((2, 3), dtype=float),
-            "x_0": np.asarray([1.0, 1.0, -1.0], dtype=float),
+            "x": np.asarray(
+                [
+                    [1.0, -1.0, 1.0],
+                    [-1.0, -1.0, 1.0],
+                    [1.0, 1.0, -1.0],
+                ],
+                dtype=float,
+            ),
+            "z": np.zeros((3, 3), dtype=float),
+            "x_0": np.asarray([-1.0, 1.0, -1.0], dtype=float),
             "s": 1,
-            "e": 2,
+            "e": 3,
         }
+        training_loss_mask = np.asarray(
+            [
+                [True, False, False],
+                [False, True, False],
+                [False, False, False],
+            ],
+            dtype=bool,
+        )
 
         np.testing.assert_allclose(
             validation_metrics.baseline_time_step_mean_expected_spin(
-                panel_context=panel_context
+                panel_context=panel_context,
+                training_loss_mask=training_loss_mask,
             ),
             np.asarray(
                 [
-                    [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0],
-                    [-1.0 / 3.0, -1.0 / 3.0, -1.0 / 3.0],
+                    [1.0, 1.0, 1.0],
+                    [-1.0, -1.0, -1.0],
+                    [0.0, 0.0, 0.0],
                 ],
                 dtype=float,
             ),
         )
         np.testing.assert_allclose(
             validation_metrics.baseline_unit_mean_expected_spin(
-                panel_context=panel_context
+                panel_context=panel_context,
+                training_loss_mask=training_loss_mask,
             ),
-            np.asarray([[0.0, -1.0, 1.0], [0.0, -1.0, 1.0]], dtype=float),
+            np.asarray(
+                [
+                    [1.0, -1.0, 0.0],
+                    [1.0, -1.0, 0.0],
+                    [1.0, -1.0, 0.0],
+                ],
+                dtype=float,
+            ),
         )
         np.testing.assert_allclose(
             validation_metrics.baseline_persistence_expected_spin(
-                panel_context=panel_context
+                panel_context=panel_context,
+                training_loss_mask=training_loss_mask,
             ),
-            np.asarray([[1.0, 1.0, -1.0], [1.0, -1.0, 1.0]], dtype=float),
+            np.asarray(
+                [
+                    [-1.0, 1.0, -1.0],
+                    [1.0, 1.0, -1.0],
+                    [1.0, -1.0, -1.0],
+                ],
+                dtype=float,
+            ),
         )
+
+    def test_evaluate_test_baseline_metrics_requires_nonempty_training_support(self) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float),
+            "z": np.zeros((2, 2), dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+        training_loss_mask = np.zeros((2, 2), dtype=bool)
+        test_loss_mask = np.asarray([[True, False], [False, True]], dtype=bool)
+
+        with self.assertRaisesRegex(ValueError, "contain at least one training slot"):
+            validation_metrics.evaluate_test_baseline_metrics(
+                panel_context=panel_context,
+                training_loss_mask=training_loss_mask,
+                test_loss_mask=test_loss_mask,
+            )
 
     def test_score_test_point_predictions_matches_bundle_metrics_for_known_h_x(
         self,

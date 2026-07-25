@@ -579,29 +579,82 @@ def _expected_spin_to_h_x(
     return np.arctanh(clipped)
 
 
+def _masked_training_means_with_fallback(
+    x: np.ndarray,
+    training_mask: np.ndarray,
+    *,
+    axis: int,
+) -> np.ndarray:
+    x_array = np.asarray(x, dtype=float)
+    mask_array = np.asarray(training_mask, dtype=bool)
+    if x_array.shape != mask_array.shape:
+        raise ValueError("training_loss_mask must match the panel shape.")
+    if int(np.count_nonzero(mask_array)) <= 0:
+        raise ValueError(
+            "Baseline evaluation requires training_loss_mask to contain at least one training slot."
+        )
+    fallback_mean = float(np.mean(x_array[mask_array]))
+    masked_values = np.where(mask_array, x_array, 0.0)
+    counts = np.sum(mask_array, axis=axis)
+    sums = np.sum(masked_values, axis=axis, dtype=float)
+    means = np.divide(
+        sums,
+        counts,
+        out=np.full_like(sums, fallback_mean, dtype=float),
+        where=counts > 0,
+    )
+    return np.asarray(means, dtype=float)
+
+
 def baseline_time_step_mean_expected_spin(
     *,
     panel_context: dict[str, object],
+    training_loss_mask: np.ndarray,
 ) -> np.ndarray:
     x = np.asarray(panel_context["x"], dtype=float)
-    return np.repeat(np.mean(x, axis=1, keepdims=True), x.shape[1], axis=1)
+    row_means = _masked_training_means_with_fallback(
+        x,
+        training_loss_mask,
+        axis=1,
+    ).reshape(-1, 1)
+    return np.repeat(row_means, x.shape[1], axis=1)
 
 
 def baseline_unit_mean_expected_spin(
     *,
     panel_context: dict[str, object],
+    training_loss_mask: np.ndarray,
 ) -> np.ndarray:
     x = np.asarray(panel_context["x"], dtype=float)
-    return np.repeat(np.mean(x, axis=0, keepdims=True), x.shape[0], axis=0)
+    column_means = _masked_training_means_with_fallback(
+        x,
+        training_loss_mask,
+        axis=0,
+    ).reshape(1, -1)
+    return np.repeat(column_means, x.shape[0], axis=0)
 
 
 def baseline_persistence_expected_spin(
     *,
     panel_context: dict[str, object],
+    training_loss_mask: np.ndarray,
 ) -> np.ndarray:
     x = np.asarray(panel_context["x"], dtype=float)
-    x_0 = np.asarray(panel_context["x_0"], dtype=float).reshape(1, -1)
-    return np.vstack([x_0, x[:-1, :]])
+    training_mask = np.asarray(training_loss_mask, dtype=bool)
+    if x.shape != training_mask.shape:
+        raise ValueError("training_loss_mask must match the panel shape.")
+    if int(np.count_nonzero(training_mask)) <= 0:
+        raise ValueError(
+            "Baseline evaluation requires training_loss_mask to contain at least one training slot."
+        )
+    carried_state = np.asarray(panel_context["x_0"], dtype=float).copy()
+    predicted_x = np.zeros_like(x, dtype=float)
+    for time_index in range(x.shape[0]):
+        predicted_x[time_index, :] = carried_state
+        observed_row = x[time_index, :]
+        row_training_mask = training_mask[time_index, :]
+        carried_state = np.where(row_training_mask, observed_row, carried_state)
+    return predicted_x
 
 
 def _magnetization_summary_from_prediction(
@@ -727,10 +780,17 @@ def evaluate_test_baseline_metrics(
     training_mask = np.asarray(training_loss_mask, dtype=bool)
     baseline_surfaces = {
         "time_step_mean": baseline_time_step_mean_expected_spin(
-            panel_context=panel_context
+            panel_context=panel_context,
+            training_loss_mask=training_mask,
         ),
-        "unit_mean": baseline_unit_mean_expected_spin(panel_context=panel_context),
-        "persistence": baseline_persistence_expected_spin(panel_context=panel_context),
+        "unit_mean": baseline_unit_mean_expected_spin(
+            panel_context=panel_context,
+            training_loss_mask=training_mask,
+        ),
+        "persistence": baseline_persistence_expected_spin(
+            panel_context=panel_context,
+            training_loss_mask=training_mask,
+        ),
     }
     baseline_metrics: dict[str, dict[str, float | int | None]] = {}
     for baseline_name, predicted_x in baseline_surfaces.items():
