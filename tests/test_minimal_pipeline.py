@@ -6795,6 +6795,152 @@ class PipelineStageRequestTests(unittest.TestCase):
             places=12,
         )
 
+    def test_baseline_expected_spin_surfaces_match_definitions(self) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0, 1.0], [-1.0, -1.0, 1.0]], dtype=float),
+            "z": np.zeros((2, 3), dtype=float),
+            "x_0": np.asarray([1.0, 1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+
+        np.testing.assert_allclose(
+            validation_metrics.baseline_time_step_mean_expected_spin(
+                panel_context=panel_context
+            ),
+            np.asarray(
+                [
+                    [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0],
+                    [-1.0 / 3.0, -1.0 / 3.0, -1.0 / 3.0],
+                ],
+                dtype=float,
+            ),
+        )
+        np.testing.assert_allclose(
+            validation_metrics.baseline_unit_mean_expected_spin(
+                panel_context=panel_context
+            ),
+            np.asarray([[0.0, -1.0, 1.0], [0.0, -1.0, 1.0]], dtype=float),
+        )
+        np.testing.assert_allclose(
+            validation_metrics.baseline_persistence_expected_spin(
+                panel_context=panel_context
+            ),
+            np.asarray([[1.0, 1.0, -1.0], [1.0, -1.0, 1.0]], dtype=float),
+        )
+
+    def test_score_test_point_predictions_matches_bundle_metrics_for_known_h_x(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], dtype=float),
+            "z": np.asarray([[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]], dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 3,
+        }
+        bundle = SimpleNamespace(
+            field_matrix=np.asarray([[0.1, -0.2], [0.3, 0.4], [-0.5, 0.2]], dtype=float),
+            beta=0.25,
+            xi=0.0,
+            eta=0.5,
+            gamma_matrix=np.zeros((2, 2), dtype=float),
+            beta_mask_pre_s=False,
+            beta_mask_post_e=False,
+        )
+        training_loss_mask = np.asarray(
+            [[True, False], [False, False], [False, False]],
+            dtype=bool,
+        )
+        test_loss_mask = np.asarray(
+            [[False, True], [False, False], [True, True]],
+            dtype=bool,
+        )
+
+        model_metrics = validation_metrics.evaluate_test_metrics(
+            panel_context=panel_context,
+            bundle=bundle,
+            training_loss_mask=training_loss_mask,
+            test_loss_mask=test_loss_mask,
+            sampling={"num_samples": 1, "gibbs_sweeps": 1, "seed": 0},
+        )
+        model_metrics.update(
+            validation_metrics.evaluate_test_metrics_by_treatment(
+                panel_context=panel_context,
+                bundle=bundle,
+                test_loss_mask=test_loss_mask,
+                sampling={"num_samples": 1, "gibbs_sweeps": 1, "seed": 0},
+            )
+        )
+        h_x = validation_metrics._compute_h_x_from_bundle(bundle, panel_context)
+        generic_metrics = validation_metrics._score_test_point_predictions(
+            panel_context=panel_context,
+            h_x=h_x,
+            test_loss_mask=test_loss_mask,
+        )
+
+        for key in (
+            "test_loss",
+            "test_brier_score",
+            "test_ece",
+            "num_test_slots",
+            "post_s_test_loss",
+            "post_s_test_brier_score",
+            "post_s_test_ece",
+            "num_post_s_test_slots",
+            "test_loss_treated",
+            "test_brier_score_treated",
+            "test_ece_treated",
+            "num_test_slots_treated",
+            "test_loss_untreated",
+            "test_brier_score_untreated",
+            "test_ece_untreated",
+            "num_test_slots_untreated",
+            "post_s_test_loss_treated",
+            "post_s_test_brier_score_treated",
+            "post_s_test_ece_treated",
+            "num_post_s_test_slots_treated",
+            "post_s_test_loss_untreated",
+            "post_s_test_brier_score_untreated",
+            "post_s_test_ece_untreated",
+            "num_post_s_test_slots_untreated",
+        ):
+            expected = model_metrics[key]
+            actual = generic_metrics[key]
+            if expected is None:
+                self.assertIsNone(actual, msg=key)
+            elif isinstance(expected, (int, np.integer)):
+                self.assertEqual(actual, expected, msg=key)
+            else:
+                self.assertAlmostEqual(float(actual), float(expected), places=12, msg=key)
+
+    def test_evaluate_test_baseline_metrics_preserves_empty_post_s_and_treatment_support(
+        self,
+    ) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [1.0, 1.0]], dtype=float),
+            "z": np.ones((2, 2), dtype=float),
+            "x_0": np.asarray([1.0, -1.0], dtype=float),
+            "s": 1,
+            "e": 2,
+        }
+        test_loss_mask = np.asarray([[True, True], [False, False]], dtype=bool)
+
+        metrics = validation_metrics.evaluate_test_baseline_metrics(
+            panel_context=panel_context,
+            test_loss_mask=test_loss_mask,
+        )
+
+        for baseline_metrics in metrics.values():
+            self.assertEqual(baseline_metrics["num_post_s_test_slots"], 0)
+            self.assertIsNone(baseline_metrics["post_s_test_loss"])
+            self.assertIsNone(baseline_metrics["post_s_test_brier_score"])
+            self.assertIsNone(baseline_metrics["post_s_test_ece"])
+            self.assertEqual(baseline_metrics["num_test_slots_untreated"], 0)
+            self.assertIsNone(baseline_metrics["test_loss_untreated"])
+            self.assertIsNone(baseline_metrics["test_brier_score_untreated"])
+            self.assertIsNone(baseline_metrics["test_ece_untreated"])
+
     def test_evaluate_fold_metrics_conditions_on_separator_but_scores_validation_only(self) -> None:
         experiment_root = Path("unused-experiment-root")
         fit_root = Path("unused-fit-root")
@@ -13360,6 +13506,14 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
             "full_panel_untreated_test_mean_magnetization_abs_diff",
         ):
             self.assertIn(key, payload)
+        self.assertIn("baselines", payload)
+        self.assertEqual(
+            set(payload["baselines"].keys()),
+            {"time_step_mean", "unit_mean", "persistence"},
+        )
+        self.assertIn("test_brier_score", payload["baselines"]["time_step_mean"])
+        self.assertIn("post_s_test_ece", payload["baselines"]["unit_mean"])
+        self.assertIn("test_loss_treated", payload["baselines"]["persistence"])
         self.assertEqual(payload["experiment_path"], str(experiment_root.resolve()))
 
     def test_run_test_evaluation_infers_test_train_cv_settings_from_train_fit_metadata(self) -> None:
@@ -13443,6 +13597,7 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
         self.assertEqual(int(payload["inner_num_folds"]), 3)
         self.assertIn("test_loss", payload)
         self.assertIn("test_brier_score", payload)
+        self.assertIn("baselines", payload)
 
     def test_run_test_evaluation_experiment_path_override_beats_stale_fit_metadata(self) -> None:
         experiment_root, _ = self._write_us_county_experiment()
@@ -13539,6 +13694,125 @@ class ValidationTestSplitArtifactTests(unittest.TestCase):
         self.assertEqual(results["num_evaluated_rows"], 0)
         self.assertEqual(results["num_skipped_rows"], 1)
         self.assertEqual(results["skipped_rows"][0]["split_kind"], "train_cv")
+
+    def test_run_test_evaluation_baselines_only_updates_existing_report_in_place(
+        self,
+    ) -> None:
+        experiment_root, _ = self._write_us_county_experiment()
+        fit_root = experiment_root / "fits" / "bundle_baseline_backfill"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_estimated_parameter_bundle(
+            fit_root / "estimated_parameter_bundle.npz",
+            beta=0.15,
+            xi=0.05,
+            eta=0.1,
+            latent_rank=0,
+            t_steps=10,
+            field_matrix=np.zeros((10, 100), dtype=float),
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {"estimation_params": {"fixed_scalar_params": {}, "beta_mask_pre_s": False}}
+            ),
+            fit_root / "fit_realized_config.yaml",
+        )
+        OmegaConf.save(
+            OmegaConf.create({"experiment_path": str(experiment_root.resolve())}),
+            fit_root / "fit_metadata.yaml",
+        )
+        uscounty_splits.build_validation_test_splits_for_experiment(
+            experiment_root,
+            outer_num_folds=2,
+            inner_num_folds=2,
+            overwrite=True,
+        )
+        fit_manifest_path = self._write_fit_manifest_rows(
+            [
+                {
+                    "fit_path": str(fit_root.resolve()),
+                    "experiment_path": str(experiment_root.resolve()),
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 2,
+                    "test_fold_id": 1,
+                    "num_folds": 2,
+                }
+            ]
+        )
+
+        results = run_test_evaluation(fit_manifest_path)
+        report_path = Path(results["evaluated_report_paths"][0])
+        original_payload = load_yaml_mapping(report_path)
+        mutated_payload = dict(original_payload)
+        mutated_payload["baselines"] = {"stale": {"value": 1}}
+        mutated_payload["custom_marker"] = "keep-me"
+        OmegaConf.save(OmegaConf.create(mutated_payload), report_path)
+
+        run_test_evaluation(fit_manifest_path, baselines_only=True)
+
+        refreshed_payload = load_yaml_mapping(report_path)
+        self.assertEqual(refreshed_payload["custom_marker"], "keep-me")
+        for key in (
+            "training_loss",
+            "num_training_slots",
+            "test_loss",
+            "test_brier_score",
+            "test_ece",
+            "num_test_slots",
+        ):
+            self.assertEqual(refreshed_payload[key], original_payload[key])
+        self.assertEqual(
+            set(refreshed_payload["baselines"].keys()),
+            {"time_step_mean", "unit_mean", "persistence"},
+        )
+        self.assertNotIn("stale", refreshed_payload["baselines"])
+
+    def test_run_test_evaluation_baselines_only_requires_existing_report(self) -> None:
+        experiment_root, _ = self._write_us_county_experiment()
+        fit_root = experiment_root / "fits" / "bundle_missing_backfill"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_estimated_parameter_bundle(
+            fit_root / "estimated_parameter_bundle.npz",
+            beta=0.05,
+            xi=0.0,
+            eta=0.0,
+            latent_rank=0,
+            t_steps=10,
+            field_matrix=np.zeros((10, 100), dtype=float),
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {"estimation_params": {"fixed_scalar_params": {}, "beta_mask_pre_s": False}}
+            ),
+            fit_root / "fit_realized_config.yaml",
+        )
+        OmegaConf.save(
+            OmegaConf.create({"experiment_path": str(experiment_root.resolve())}),
+            fit_root / "fit_metadata.yaml",
+        )
+        uscounty_splits.build_validation_test_splits_for_experiment(
+            experiment_root,
+            outer_num_folds=2,
+            inner_num_folds=2,
+            overwrite=True,
+        )
+        fit_manifest_path = self._write_fit_manifest_rows(
+            [
+                {
+                    "fit_path": str(fit_root.resolve()),
+                    "experiment_path": str(experiment_root.resolve()),
+                    "split_kind": "test_train_cv",
+                    "outer_num_folds": 2,
+                    "test_fold_id": 1,
+                    "num_folds": 2,
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            FileNotFoundError,
+            "Run the default test evaluation first",
+        ):
+            run_test_evaluation(fit_manifest_path, baselines_only=True)
 
 
 if __name__ == "__main__":

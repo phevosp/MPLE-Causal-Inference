@@ -13,6 +13,7 @@ from omegaconf import OmegaConf
 from utils.t0_config_utils import load_yaml_mapping
 from utils.t0_csv_utils import read_csv_rows
 from utils.t0_path_utils import io_path, path_exists
+from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
@@ -21,6 +22,7 @@ from utils.t6_split_management import (
 from utils.t7_validation_metrics import (
     DEFAULT_VALIDATION_SAMPLING,
     evaluate_saved_fit_test_metrics,
+    evaluate_test_baseline_metrics,
     resolve_validation_sampling,
 )
 
@@ -44,6 +46,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--seed",
         type=int,
         default=int(DEFAULT_VALIDATION_SAMPLING["seed"]),
+    )
+    parser.add_argument(
+        "--baselines_only",
+        action="store_true",
+        help="Recompute only baseline metrics and merge them into an existing test report.",
     )
     return parser.parse_args(argv)
 
@@ -140,6 +147,7 @@ def _evaluate_manifest_row(
     manifest_row: dict[str, str],
     *,
     sampling: dict[str, Any] | None = None,
+    baselines_only: bool = False,
 ) -> Path:
     fit_path = str(manifest_row.get("fit_path", "")).strip()
     if not fit_path:
@@ -165,17 +173,33 @@ def _evaluate_manifest_row(
         test_fold_id=int(split_settings["test_fold_id"]),
         inner_num_folds=int(split_settings["inner_num_folds"]),
     )
+    report_path = _default_output_path(
+        fit_root,
+        test_fold_id=int(split_settings["test_fold_id"]),
+        inner_num_folds=int(split_settings["inner_num_folds"]),
+    )
+    panel_context = load_experiment_panel_context(resolved_experiment_root)
+    baseline_metrics = evaluate_test_baseline_metrics(
+        panel_context=panel_context,
+        test_loss_mask=split_artifacts["test_mask"],
+    )
+    if baselines_only:
+        if not path_exists(report_path):
+            raise FileNotFoundError(
+                f"Cannot update baselines because {report_path} does not exist. "
+                "Run the default test evaluation first."
+            )
+        payload = load_yaml_mapping(report_path)
+        payload["baselines"] = baseline_metrics
+        OmegaConf.save(OmegaConf.create(payload), io_path(report_path))
+        return report_path
+
     metrics = evaluate_saved_fit_test_metrics(
         fit_root,
         resolved_experiment_root,
         training_loss_mask=split_artifacts["training_mask"],
         test_loss_mask=split_artifacts["test_mask"],
         sampling=resolved_sampling,
-    )
-    report_path = _default_output_path(
-        fit_root,
-        test_fold_id=int(split_settings["test_fold_id"]),
-        inner_num_folds=int(split_settings["inner_num_folds"]),
     )
     payload = {
         "fit_path": str(fit_root),
@@ -189,6 +213,7 @@ def _evaluate_manifest_row(
         "split_output_root": str(split_artifacts["output_root"]),
         "split_metadata": dict(split_artifacts["metadata"]),
         **metrics,
+        "baselines": baseline_metrics,
     }
     os.makedirs(io_path(report_path.parent), exist_ok=True)
     OmegaConf.save(OmegaConf.create(payload), io_path(report_path))
@@ -199,6 +224,7 @@ def run_test_evaluation(
     fit_manifest_path: str | Path,
     *,
     sampling: dict[str, Any] | None = None,
+    baselines_only: bool = False,
 ) -> dict[str, object]:
     manifest_rows = read_csv_rows(fit_manifest_path)
     if not manifest_rows:
@@ -222,7 +248,11 @@ def run_test_evaluation(
                 }
             )
             continue
-        report_path = _evaluate_manifest_row(manifest_row, sampling=sampling)
+        report_path = _evaluate_manifest_row(
+            manifest_row,
+            sampling=sampling,
+            baselines_only=baselines_only,
+        )
         evaluated_report_paths.append(str(report_path))
 
     return {
@@ -243,6 +273,7 @@ def main(argv: list[str] | None = None) -> None:
             "gibbs_sweeps": int(args.gibbs_sweeps),
             "seed": int(args.seed),
         },
+        baselines_only=bool(args.baselines_only),
     )
     for report_path in results["evaluated_report_paths"]:
         print(f"Test metrics report: {report_path}")
