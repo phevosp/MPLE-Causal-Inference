@@ -495,3 +495,79 @@ post_s_test_brier_score_untreated: 0.1872579754107106
 post_s_test_ece_untreated: 0.06827265396211686
 post_s_test_mean_magnetization_abs_diff_untreated: 0.07714723926380371
 num_post_s_test_slots_untreated: 11410
+baselines:
+  time_step_mean:
+    test_loss: 0.5215856156533862
+    test_brier_score: 0.17396576770822794
+    test_ece: 0.043517098708357495
+    num_test_slots: 55226
+    post_s_test_loss: 0.5741401233863062
+    post_s_test_brier_score: 0.19545499880151013
+    post_s_test_ece: 0.049591110387298305
+    num_post_s_test_slots: 31488
+    test_loss_treated: 0.5592391293366855
+    test_brier_score_treated: 0.1890936228998349
+    test_ece_treated: 0.06268606515544914
+    num_test_slots_treated: 20078
+    test_loss_untreated: 0.50007636199078
+    test_brier_score_untreated: 0.16532410739933176
+    test_ece_untreated: 0.05478587816536184
+    num_test_slots_untreated: 35148
+    post_s_test_loss_treated: 0.5592391293366855
+    post_s_test_brier_score_treated: 0.1890936228998349
+    post_s_test_ece_treated: 0.06268606515544914
+    num_post_s_test_slots_treated: 20078
+    post_s_test_loss_untreated: 0.600361171460652
+    post_s_test_brier_score_untreated: 0.2066490132935202
+    post_s_test_ece_untreated: 0.05142449463124756
+    num_post_s_test_slots_untreated: 11410
+  unit_mean:
+    test_loss: 0.5747966097035037
+    test_brier_score: 0.19642901822153455
+    test_ece: 0.018732512206758315
+    num_test_slots: 55226
+    post_s_test_loss: 0.6109593023723812
+    post_s_test_brier_score: 0.21215892368635408
+    post_s_test_ece: 0.020848245846588894
+    num_post_s_test_slots: 31488
+    test_loss_treated: 0.6265870921709537
+    test_brier_score_treated: 0.2190310642934898
+    test_ece_treated: 0.015385215052599233
+    num_test_slots_treated: 20078
+    test_loss_untreated: 0.5452117312756711
+    test_brier_score_untreated: 0.1835177891037265
+    test_ece_untreated: 0.0232027544890921
+    num_test_slots_untreated: 35148
+    post_s_test_loss_treated: 0.6265870921709537
+    post_s_test_brier_score_treated: 0.2190310642934898
+    post_s_test_ece_treated: 0.015385215052599233
+    num_post_s_test_slots_treated: 20078
+    post_s_test_loss_untreated: 0.5834593230931753
+    post_s_test_brier_score_untreated: 0.2000661244654889
+    post_s_test_ece_untreated: 0.039780512898677754
+    num_post_s_test_slots_untreated: 11410
+  persistence:
+    test_loss: 3.5285156082866367
+    test_brier_score: 0.24320042315238846
+    test_ece: 0.24320016635280473
+    num_test_slots: 55226
+    post_s_test_loss: 4.250583675340557
+    post_s_test_brier_score: 0.2929684570315
+    post_s_test_ece: 0.2929682499999998
+    num_post_s_test_slots: 31488
+    test_loss_treated: 4.113845786321171
+    test_brier_score_treated: 0.28354389416301523
+    test_ece_treated: 0.2835436777069427
+    num_test_slots_treated: 20078
+    test_loss_untreated: 3.194150656807822
+    test_brier_score_untreated: 0.22015455394357536
+    test_ece_untreated: 0.2201542740980993
+    num_test_slots_untreated: 35148
+    post_s_test_loss_treated: 4.113845786321171
+    post_s_test_brier_score_treated: 0.28354389416301523
+    post_s_test_ece_treated: 0.2835436777069427
+    num_post_s_test_slots_treated: 20078
+    post_s_test_loss_untreated: 4.491199217473002
+    post_s_test_brier_score_untreated: 0.3095527141106794
+    post_s_test_ece_untreated: 0.3095525236634529
+    num_post_s_test_slots_untreated: 11410
