@@ -60,6 +60,7 @@ from utils.t0_string_utils import slugify
 from utils.t5_parameter_bundles import (
     OutcomeParameterBundle,
     load_fit_parameter_bundle,
+    load_fit_treatment_field_artifacts,
     load_truth_parameter_bundle,
     save_estimated_parameter_bundle,
 )
@@ -85,9 +86,12 @@ from mple import (
 )
 from utils.t3_model_artifacts import (
     ModelArtifacts,
+    TreatmentFieldArtifacts,
     build_fit_model_artifacts,
+    load_treatment_field_artifacts,
     load_model_artifacts,
     save_model_artifacts,
+    save_treatment_field_artifacts,
 )
 from utils.t3_field_generation import (
     SpectralLowRankStructure,
@@ -103,6 +107,7 @@ from utils.t3_interaction_matrices import (
     interaction_matrix_infinity_norm,
 )
 from utils.t3_field_operations import (
+    compose_realized_treatment_field_matrix,
     compose_latent_field_matrix,
     latent_field_bound_norm,
     project_latent_field,
@@ -117,6 +122,7 @@ from utils.t2_normalization import normalize_matrix_max_abs
 from utils.t6_pipeline_spec_utils import (
     expand_named_entries,
     validate_cv_spec,
+    validate_fit_variant_dict,
     validate_fits_spec,
 )
 import utils.t6_split_engine as cv_folds
@@ -128,6 +134,7 @@ from utils.t8_posterior_predictive_sim import (
     compute_counterfactual_sample_summary,
     simulate_outcomes_for_bundle,
 )
+from utils.t8_fit_outputs import save_estimated_artifacts
 from utils.t8_posterior_predictive_reporting import (
     summarize_observed_mean_statistics,
     summarize_predictive_statistics,
@@ -305,6 +312,75 @@ class PipelineSpecUtilityTests(unittest.TestCase):
         self.assertEqual(entries[0]["optimizer"]["steps"], 20)
         self.assertEqual(entries[0]["optimizer"]["tol"], 1.0e-6)
         self.assertEqual(entries[0]["slug"], "rank_2")
+
+    def test_validate_fit_variant_dict_accepts_treatment_split_mode(self) -> None:
+        variant = {
+            "name": "treatment_split_rank_2",
+            "optimizer_mode": "alternating_treatment_split_latent_rank",
+            "latent_rank": 2,
+            "lambda_uv_ridge": 0.25,
+            "v_column_l2_max": 1.5,
+            "estimation": {
+                "fixed_scalar_params": {
+                    "beta": 0.0,
+                    "xi": 0.0,
+                    "eta": 0.0,
+                }
+            },
+        }
+
+        validate_fit_variant_dict(variant)
+        fit_config = build_fit_config(
+            {
+                **variant,
+                "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 3},
+                "B": 1.0,
+            },
+            {"N": 4, "T": 3, "s": 1, "e": 3},
+        )
+
+        self.assertEqual(
+            str(fit_config.global_params.optimizer_mode),
+            "alternating_treatment_split_latent_rank",
+        )
+        self.assertEqual(int(fit_config.global_params.latent_rank), 2)
+        self.assertAlmostEqual(float(fit_config.global_params.lambda_uv_ridge), 0.25)
+        self.assertAlmostEqual(float(fit_config.global_params.v_column_l2_max), 1.5)
+
+    def test_validate_fit_variant_dict_rejects_treatment_mode_missing_fixed_scalars(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(ValueError, "requires fixed_scalar_params"):
+            validate_fit_variant_dict(
+                {
+                    "name": "bad_treatment_shared",
+                    "optimizer_mode": "alternating_treatment_shared_unit_latent_rank",
+                    "latent_rank": 1,
+                    "lambda_uv_ridge": 0.1,
+                    "estimation": {"fixed_scalar_params": {"beta": 0.0}},
+                }
+            )
+
+    def test_validate_fit_variant_dict_rejects_treatment_mode_warm_start(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(ValueError, "warm_start_steps"):
+            validate_fit_variant_dict(
+                {
+                    "name": "bad_treatment_split",
+                    "optimizer_mode": "alternating_treatment_split_latent_rank",
+                    "latent_rank": 1,
+                    "lambda_uv_ridge": 0.1,
+                    "estimation": {
+                        "fixed_scalar_params": {
+                            "beta": 0.0,
+                            "xi": 0.0,
+                            "eta": 0.0,
+                        },
+                        "warm_start_steps": 5,
+                    },
+                }
+            )
 
 
 class MinimalPipelineTests(unittest.TestCase):
@@ -2904,6 +2980,308 @@ class MinimalPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "concurrent_latent_rank"):
             build_fit_model_artifacts(config, gamma)
 
+    def test_treatment_split_low_rank_reduces_penalized_loss_vs_zero_field(
+        self,
+    ) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+        )
+        fixed_scalar_params = {"beta": 0.0, "xi": 0.0, "eta": 0.0}
+        initial_loss = evaluate_mple_loss_from_parts(
+            x,
+            z,
+            x_0,
+            field_matrix=np.zeros_like(x, dtype=float),
+            beta=0.0,
+            xi=0.0,
+            eta=0.0,
+            interaction_effect_x=interaction_effect(x, gamma),
+            fixed_scalar_params=fixed_scalar_params,
+        )
+
+        theta_hat, _, result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=parameter_names(
+                artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=6,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.0,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+
+        theta_parts = unpack_theta(
+            theta_hat,
+            artifacts,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        self.assertLess(float(result["final_penalized_objective"]), initial_loss)
+        np.testing.assert_allclose(
+            theta_parts["field_matrix"],
+            result["realized_field_matrix"],
+        )
+
+    def test_treatment_shared_unit_low_rank_multistart_and_ridge_shrink_factors(
+        self,
+    ) -> None:
+        x = np.array(
+            [
+                [1.0, -1.0, 1.0],
+                [-1.0, 1.0, -1.0],
+                [1.0, 1.0, -1.0],
+            ],
+            dtype=float,
+        )
+        z = np.array(
+            [
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+            ],
+            dtype=float,
+        )
+        x_0 = np.array([1.0, -1.0, 1.0], dtype=float)
+        gamma = np.array(
+            [[0.0, 1.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+            dtype=float,
+        )
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=1,
+            optimizer_mode="alternating_treatment_shared_unit_latent_rank",
+        )
+        fixed_scalar_params = {"beta": 0.0, "xi": 0.0, "eta": 0.0}
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "s": 1,
+            "param_names": parameter_names(
+                artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            "artifacts": artifacts,
+            "interaction_effect_x": interaction_effect(x, gamma),
+            "steps": 8,
+            "tol": 1.0e-8,
+            "seed": 9,
+            "verbose_every": 0,
+            "n_starts": 2,
+            "fixed_scalar_params": fixed_scalar_params,
+        }
+
+        _, _, low_ridge_result = fit_mple(
+            **common_kwargs,
+            lambda_uv_ridge=0.0,
+        )
+        _, _, high_ridge_result = fit_mple(
+            **common_kwargs,
+            lambda_uv_ridge=0.5,
+        )
+
+        best_penalized = min(
+            float(row["final_penalized_objective"])
+            for row in low_ridge_result["start_summaries"]
+        )
+        self.assertAlmostEqual(
+            float(low_ridge_result["final_penalized_objective"]),
+            best_penalized,
+        )
+        self.assertIsNotNone(low_ridge_result.get("shared_node_factors"))
+        self.assertLessEqual(
+            float(np.linalg.norm(high_ridge_result["shared_node_factors"], ord="fro")),
+            float(np.linalg.norm(low_ridge_result["shared_node_factors"], ord="fro"))
+            + 1.0e-12,
+        )
+
+    def test_treatment_modes_reject_free_scalars_and_warm_start(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+        )
+
+        with self.assertRaisesRegex(ValueError, "require beta, xi, and eta to be fixed"):
+            fit_mple(
+                x,
+                z,
+                x_0=x_0,
+                s=1,
+                param_names=parameter_names(artifacts),
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect(x, gamma),
+                steps=4,
+                tol=1.0e-8,
+                seed=7,
+                verbose_every=0,
+                n_starts=1,
+                lambda_uv_ridge=0.0,
+                fixed_scalar_params={},
+            )
+
+        with self.assertRaisesRegex(ValueError, "do not support warm_start"):
+            fit_mple(
+                x,
+                z,
+                x_0=x_0,
+                s=1,
+                param_names=parameter_names(
+                    artifacts,
+                    fixed_scalar_params={"beta": 0.0, "xi": 0.0, "eta": 0.0},
+                ),
+                artifacts=artifacts,
+                interaction_effect_x=interaction_effect(x, gamma),
+                steps=4,
+                tol=1.0e-8,
+                seed=7,
+                verbose_every=0,
+                n_starts=1,
+                lambda_uv_ridge=0.0,
+                fixed_scalar_params={"beta": 0.0, "xi": 0.0, "eta": 0.0},
+                warm_start_fixed_scalars={"beta": 0.0},
+                warm_start_steps=2,
+            )
+
+    def test_treatment_artifacts_round_trip_and_zero_support_surface(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.ones_like(x, dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        fixed_scalar_params = {"beta": 0.0, "xi": 0.0, "eta": 0.0}
+        split_artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+        )
+        shared_artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_treatment_shared_unit_latent_rank",
+        )
+
+        split_theta, _, split_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=parameter_names(
+                split_artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            artifacts=split_artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=6,
+            tol=1.0e-8,
+            seed=5,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.1,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        shared_theta, _, shared_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=parameter_names(
+                shared_artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            artifacts=shared_artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=6,
+            tol=1.0e-8,
+            seed=6,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.1,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+
+        experiment_root = REPO_ROOT / "experiments" / f".tmp_treatment_artifacts_{uuid.uuid4().hex}"
+        split_root = experiment_root / "split"
+        shared_root = experiment_root / "shared"
+        split_root.mkdir(parents=True, exist_ok=False)
+        shared_root.mkdir(parents=True, exist_ok=False)
+        try:
+            save_model_artifacts(
+                experiment_root,
+                ModelArtifacts(
+                    gamma_matrix=gamma,
+                    t_steps=2,
+                    latent_rank=0,
+                    field_matrix=np.zeros_like(x, dtype=float),
+                ),
+            )
+            save_estimated_artifacts(
+                split_root,
+                split_theta,
+                split_result,
+                split_artifacts,
+                truth_context=None,
+                fixed_scalar_params=fixed_scalar_params,
+            )
+            save_estimated_artifacts(
+                shared_root,
+                shared_theta,
+                shared_result,
+                shared_artifacts,
+                truth_context=None,
+                fixed_scalar_params=fixed_scalar_params,
+            )
+
+            split_bundle = load_fit_parameter_bundle(split_root, experiment_root)
+            split_treatment = load_treatment_field_artifacts(
+                split_root / "estimated_treatment_field_artifacts.npz"
+            )
+            shared_treatment = load_treatment_field_artifacts(
+                shared_root / "estimated_treatment_field_artifacts.npz"
+            )
+        finally:
+            shutil.rmtree(experiment_root, ignore_errors=True)
+
+        expected_split_realized = compose_realized_treatment_field_matrix(
+            split_treatment.control_field_matrix,
+            split_treatment.treated_field_matrix,
+            z,
+        )
+        np.testing.assert_allclose(split_bundle.field_matrix, expected_split_realized)
+        np.testing.assert_allclose(
+            split_treatment.realized_field_matrix,
+            expected_split_realized,
+        )
+        self.assertTrue(np.allclose(split_treatment.control_field_matrix, 0.0))
+        self.assertIsNotNone(split_treatment.control_node_factors)
+        self.assertIsNotNone(split_treatment.treated_node_factors)
+        self.assertIsNone(split_treatment.shared_node_factors)
+        self.assertIsNotNone(shared_treatment.shared_node_factors)
+        self.assertIsNone(shared_treatment.control_node_factors)
+        self.assertIsNone(shared_treatment.treated_node_factors)
+
     def test_build_fit_config_allows_uv_ridge_for_concurrent_mode(self) -> None:
         variant = {
             "name": "concurrent_rank_2",
@@ -5331,6 +5709,86 @@ class PipelineStageRequestTests(unittest.TestCase):
         candidates = cv_runner.expand_search_candidates(searches[0])
 
         self.assertEqual(len(candidates), 4)
+
+    def test_run_cv_folds_supports_treatment_split_mode(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "treatment_split_cv",
+                    "optimizer_mode": "alternating_treatment_split_latent_rank",
+                    "latent_rank": 1,
+                    "lambda_uv_ridge": 0.1,
+                    "estimation": {
+                        "fixed_scalar_params": {
+                            "beta": 0.0,
+                            "xi": 0.0,
+                            "eta": 0.0,
+                        }
+                    },
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+
+        manifest_path = cv_runner.run_cv_folds(
+            generation_manifest,
+            cv_spec_path,
+            overwrite=True,
+        )
+
+        manifest_rows = read_csv_manifest(manifest_path)
+        output_root = self.root / "generated" / "exp_a" / "cv_runs" / "treatment_split_cv"
+        self.assertEqual(len(manifest_rows), 1)
+        self.assertEqual(manifest_rows[0]["status"], "completed")
+        self.assertTrue((output_root / "candidate_grid.csv").exists())
+        self.assertTrue((output_root / "fold_scores.csv").exists())
+        self.assertTrue((output_root / "candidate_scores.csv").exists())
+        self.assertTrue((output_root / "best_candidate.yaml").exists())
+
+    def test_run_train_fit_request_supports_treatment_shared_unit_mode(self) -> None:
+        generation_spec_path = self._write_generation_spec(
+            [{"name": "exp_a", "dimensions": {"T": 9}}]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        cv_folds.run_build_cv_folds(generation_manifest)
+        cv_spec_path = self._write_cv_spec(
+            [
+                {
+                    "name": "treatment_shared_unit_cv",
+                    "optimizer_mode": "alternating_treatment_shared_unit_latent_rank",
+                    "latent_rank": 1,
+                    "lambda_uv_ridge": 0.1,
+                    "estimation": {
+                        "fixed_scalar_params": {
+                            "beta": 0.0,
+                            "xi": 0.0,
+                            "eta": 0.0,
+                        }
+                    },
+                    "grid": {"optimizer": {"seed": [0]}},
+                }
+            ]
+        )
+        cv_runner.run_cv_folds(generation_manifest, cv_spec_path, overwrite=True)
+
+        row = run_train_fit_request(
+            generation_manifest,
+            cv_spec_path,
+            "treatment_shared_unit_cv",
+            "exp_a",
+            overwrite=True,
+        )
+
+        fit_root = Path(row["fit_path"])
+        self.assertTrue((fit_root / "mple_summary.csv").exists())
+        self.assertTrue((fit_root / "estimated_field_artifacts.npz").exists())
+        self.assertTrue((fit_root / "estimated_parameter_bundle.npz").exists())
+        self.assertTrue((fit_root / "estimated_treatment_field_artifacts.npz").exists())
 
     def test_materialize_fit_root_supports_loss_mask_path(self) -> None:
         generation_spec_path = self._write_generation_spec(["exp_a"])
@@ -9286,6 +9744,201 @@ class PosteriorPredictiveTests(unittest.TestCase):
                 ]
             )
 
+    def _write_generation_spec(
+        self,
+        experiments: list[dict[str, object] | str],
+    ) -> Path:
+        normalized_experiments: list[dict[str, object]] = []
+        for experiment in experiments:
+            if isinstance(experiment, str):
+                normalized_experiments.append({"name": experiment})
+            else:
+                normalized_experiments.append(dict(experiment))
+        spec_path = self.root / "generation_spec.yaml"
+        spec = {
+            "base": {
+                "experiment_root": f"{self.root.as_posix()}/generated",
+                "manifest_path": f"{self.root.as_posix()}/generated/generation_manifest.csv",
+                "dimensions": {"N": 6, "T": 4},
+                "generation": {"gibbs_sweeps": 1, "seed": 7},
+                "x0": {
+                    "generator": "bernoulli",
+                    "params": {"p": 0.5, "fixed_val": None},
+                },
+                "graph": {
+                    "source": "generated",
+                    "generator": "erdos_renyi",
+                    "params": {"p": 0.5},
+                    "artifact": {
+                        "gamma_path": None,
+                        "node_index_path": None,
+                        "artifact_dir": None,
+                        "network_name": None,
+                        "trim_scope": None,
+                    },
+                },
+                "intervention": {
+                    "source": "generated",
+                    "artifact": {
+                        "panel_path": None,
+                        "z0_path": None,
+                        "artifact_dir": None,
+                        "shared_panel_dir": None,
+                        "outcome_code": None,
+                        "intervention_code": None,
+                        "lag_code": None,
+                        "trim_scope": None,
+                    },
+                },
+                "truth": {
+                    "B": 1.0,
+                    "scalars": {
+                        "beta": 0.2,
+                        "xi": 0.1,
+                        "eta": 0.05,
+                    },
+                },
+            },
+            "experiments": normalized_experiments,
+        }
+        OmegaConf.save(OmegaConf.create(spec), spec_path)
+        return spec_path
+
+    def _write_fit_spec(self, variants: list[dict[str, object] | str]) -> Path:
+        normalized_variants: list[dict[str, object]] = []
+        for variant in variants:
+            if isinstance(variant, str):
+                normalized_variants.append({"name": variant})
+            else:
+                normalized_variants.append(dict(variant))
+        fits_spec_path = self.root / "fits_spec.yaml"
+        spec = {
+            "base": {
+                "fit_root_name": "fits",
+                "fit_manifest_path": f"{self.root.as_posix()}/generated/fit_manifest.csv",
+                "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+                "B": 1.0,
+                "latent_rank": 0,
+                "optimizer_mode": "no_external_field",
+                "lambda_nuclear": 0.0,
+                "lambda_frobenius": 0.0,
+                "lambda_uv_ridge": 0.0,
+                "estimation": {"fixed_scalar_params": {}},
+            },
+            "variants": normalized_variants,
+        }
+        OmegaConf.save(OmegaConf.create(spec), fits_spec_path)
+        return fits_spec_path
+
+    def _write_predictive_spec(
+        self,
+        *,
+        num_samples: int = 1,
+        gibbs_sweeps: int = 1,
+        seed: int = 0,
+    ) -> Path:
+        predictive_spec_path = self.root / "posterior_predictive_spec.yaml"
+        predictive_spec_path.write_text(
+            "\n".join(
+                [
+                    "base:",
+                    f"  num_samples: {int(num_samples)}",
+                    f"  gibbs_sweeps: {int(gibbs_sweeps)}",
+                    f"  seed: {int(seed)}",
+                    "runs:",
+                    "  - name: default",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return predictive_spec_path
+
+    def _write_default_intervention_library_spec(self) -> Path:
+        intervention_spec_path = self.root / "intervention_library_spec.yaml"
+        intervention_spec_path.write_text(
+            "\n".join(
+                [
+                    "interventions:",
+                    "  - name: all_intervention_from_s",
+                    "    source_kind: full_on",
+                    "    activation_scope: from_s",
+                    "  - name: no_intervention",
+                    "    source_kind: full_on",
+                    "    activation_scope: no_time",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return intervention_spec_path
+
+    def _prepare_counterfactual_fit_fixture(
+        self,
+        variant: dict[str, object],
+        *,
+        target_intervention_name: str,
+    ) -> tuple[Path, Path, Path, Path, Path, Path]:
+        generation_spec_path = self._write_generation_spec(["smoke_rank_0"])
+        fits_spec_path = self._write_fit_spec([variant])
+        predictive_spec_path = self._write_predictive_spec(num_samples=1)
+        intervention_spec_path = self._write_default_intervention_library_spec()
+        target_pairs_path = self._write_target_pairs(
+            [
+                {
+                    "experiment_name": "smoke_rank_0",
+                    "source_type": "fit",
+                    "variant_name": str(variant["name"]),
+                    "intervention_source": "saved_intervention",
+                    "intervention_name": target_intervention_name,
+                }
+            ]
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        run_intervention_library(
+            generation_manifest,
+            intervention_spec_path,
+            overwrite=True,
+        )
+        experiment_root = self.root / "generated" / "smoke_rank_0"
+        fit_root = Path(read_csv_manifest(fit_manifest)[0]["fit_path"])
+        return (
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_root,
+            fit_root,
+        )
+
+    def _overwrite_fit_treatment_artifact(
+        self,
+        fit_root: Path,
+        *,
+        optimizer_mode: str,
+        control_field_matrix: np.ndarray,
+        treated_field_matrix: np.ndarray,
+        realized_field_matrix: np.ndarray,
+    ) -> None:
+        save_treatment_field_artifacts(
+            fit_root / "estimated_treatment_field_artifacts.npz",
+            TreatmentFieldArtifacts(
+                optimizer_mode=optimizer_mode,
+                latent_rank=1,
+                control_field_matrix=np.asarray(control_field_matrix, dtype=float),
+                treated_field_matrix=np.asarray(treated_field_matrix, dtype=float),
+                realized_field_matrix=np.asarray(realized_field_matrix, dtype=float),
+                lambda_uv_ridge=0.1,
+                best_start=0,
+                n_starts=1,
+                final_mple_loss=0.0,
+                final_penalized_objective=0.0,
+                control_time_factors=np.zeros((realized_field_matrix.shape[0], 1), dtype=float),
+                treated_time_factors=np.zeros((realized_field_matrix.shape[0], 1), dtype=float),
+                shared_node_factors=np.zeros((realized_field_matrix.shape[1], 1), dtype=float),
+            ),
+        )
+
     def test_compute_panel_statistics_is_hand_checkable(self) -> None:
         x = np.ones((3, 2), dtype=float)
         z = np.array([[1.0, -1.0], [1.0, -1.0], [1.0, -1.0]], dtype=float)
@@ -9572,6 +10225,478 @@ class PosteriorPredictiveTests(unittest.TestCase):
         self.assertEqual(bundle.t_steps, 5)
         self.assertTrue(np.allclose(bundle.field_matrix, 3.0))
         self.assertTrue(np.array_equal(bundle.gamma_matrix, np.eye(2, dtype=float)))
+
+    def test_load_fit_treatment_field_artifacts_reads_saved_surfaces(self) -> None:
+        experiment_root = self.root / "exp_fit_treatment_bundle"
+        fit_root = experiment_root / "fits" / "treatment_split_rank_1"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        save_model_artifacts(
+            experiment_root,
+            ModelArtifacts(
+                gamma_matrix=np.eye(2, dtype=float),
+                t_steps=3,
+                latent_rank=0,
+                field_matrix=np.zeros((3, 2), dtype=float),
+            ),
+        )
+        save_estimated_parameter_bundle(
+            fit_root / "estimated_parameter_bundle.npz",
+            beta=0.0,
+            xi=0.0,
+            eta=0.0,
+            latent_rank=1,
+            t_steps=3,
+            field_matrix=np.full((3, 2), 0.5, dtype=float),
+        )
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "global_params": {
+                        "optimizer_mode": "alternating_treatment_split_latent_rank"
+                    },
+                    "estimation_params": {"fixed_scalar_params": {}},
+                }
+            ),
+            fit_root / "fit_realized_config.yaml",
+        )
+        save_treatment_field_artifacts(
+            fit_root / "estimated_treatment_field_artifacts.npz",
+            TreatmentFieldArtifacts(
+                optimizer_mode="alternating_treatment_split_latent_rank",
+                latent_rank=1,
+                control_field_matrix=np.zeros((3, 2), dtype=float),
+                treated_field_matrix=np.ones((3, 2), dtype=float),
+                realized_field_matrix=np.full((3, 2), 0.5, dtype=float),
+                lambda_uv_ridge=0.1,
+                best_start=0,
+                n_starts=1,
+                final_mple_loss=0.2,
+                final_penalized_objective=0.3,
+                control_node_factors=np.zeros((2, 1), dtype=float),
+                control_time_factors=np.zeros((3, 1), dtype=float),
+                treated_node_factors=np.ones((2, 1), dtype=float),
+                treated_time_factors=np.ones((3, 1), dtype=float),
+            ),
+        )
+
+        artifacts = load_fit_treatment_field_artifacts(fit_root)
+
+        self.assertIsNotNone(artifacts)
+        assert artifacts is not None
+        self.assertEqual(
+            artifacts.optimizer_mode,
+            "alternating_treatment_split_latent_rank",
+        )
+        np.testing.assert_allclose(artifacts.control_field_matrix, 0.0)
+        np.testing.assert_allclose(artifacts.treated_field_matrix, 1.0)
+        self.assertEqual(int(artifacts.best_start), 0)
+
+    def test_run_posterior_predictive_saved_intervention_uses_recomposed_split_field(
+        self,
+    ) -> None:
+        variant = {
+            "name": "treatment_split_rank_1",
+            "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "alternating_treatment_split_latent_rank",
+            "latent_rank": 1,
+            "lambda_uv_ridge": 0.1,
+            "estimation": {
+                "fixed_scalar_params": {
+                    "beta": 0.0,
+                    "xi": 0.0,
+                    "eta": 0.0,
+                }
+            },
+        }
+        (
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_root,
+            fit_root,
+        ) = self._prepare_counterfactual_fit_fixture(
+            variant,
+            target_intervention_name="all_intervention_from_s",
+        )
+        fit_bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+        intervention_context = resolve_intervention_context(
+            experiment_root,
+            intervention_source="saved_intervention",
+            intervention_name="all_intervention_from_s",
+        )
+        control_field_matrix = np.full_like(fit_bundle.field_matrix, -2.0)
+        treated_field_matrix = np.full_like(fit_bundle.field_matrix, 3.0)
+        self._overwrite_fit_treatment_artifact(
+            fit_root,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+            control_field_matrix=control_field_matrix,
+            treated_field_matrix=treated_field_matrix,
+            realized_field_matrix=fit_bundle.field_matrix,
+        )
+        expected_field_matrix = compose_realized_treatment_field_matrix(
+            control_field_matrix,
+            treated_field_matrix,
+            intervention_context.z,
+        )
+        captured: dict[str, np.ndarray | None] = {}
+
+        def _fake_simulate_outcomes_for_bundle(
+            bundle,
+            *,
+            x_0,
+            z,
+            gibbs_sweeps,
+            seed,
+            field_matrix=None,
+        ):
+            captured["bundle_field_matrix"] = np.asarray(bundle.field_matrix, dtype=float)
+            captured["field_matrix"] = (
+                None if field_matrix is None else np.asarray(field_matrix, dtype=float)
+            )
+            return np.ones_like(np.asarray(z, dtype=float))
+
+        with mock.patch.object(
+            posterior_predictive_runner,
+            "simulate_outcomes_for_bundle",
+            side_effect=_fake_simulate_outcomes_for_bundle,
+        ):
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="treatment_split_rank_1",
+                intervention_source="saved_intervention",
+                intervention_name="all_intervention_from_s",
+                run_name="default",
+                overwrite=True,
+            )
+
+        np.testing.assert_allclose(captured["field_matrix"], expected_field_matrix)
+        self.assertIsNotNone(captured["field_matrix"])
+
+    def test_run_posterior_predictive_saved_intervention_uses_recomposed_shared_unit_field(
+        self,
+    ) -> None:
+        variant = {
+            "name": "treatment_shared_unit_rank_1",
+            "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "alternating_treatment_shared_unit_latent_rank",
+            "latent_rank": 1,
+            "lambda_uv_ridge": 0.1,
+            "estimation": {
+                "fixed_scalar_params": {
+                    "beta": 0.0,
+                    "xi": 0.0,
+                    "eta": 0.0,
+                }
+            },
+        }
+        (
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_root,
+            fit_root,
+        ) = self._prepare_counterfactual_fit_fixture(
+            variant,
+            target_intervention_name="all_intervention_from_s",
+        )
+        fit_bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+        intervention_context = resolve_intervention_context(
+            experiment_root,
+            intervention_source="saved_intervention",
+            intervention_name="all_intervention_from_s",
+        )
+        control_field_matrix = np.full_like(fit_bundle.field_matrix, -1.5)
+        treated_field_matrix = np.full_like(fit_bundle.field_matrix, 2.5)
+        self._overwrite_fit_treatment_artifact(
+            fit_root,
+            optimizer_mode="alternating_treatment_shared_unit_latent_rank",
+            control_field_matrix=control_field_matrix,
+            treated_field_matrix=treated_field_matrix,
+            realized_field_matrix=fit_bundle.field_matrix,
+        )
+        expected_field_matrix = compose_realized_treatment_field_matrix(
+            control_field_matrix,
+            treated_field_matrix,
+            intervention_context.z,
+        )
+        captured: dict[str, np.ndarray | None] = {}
+
+        def _fake_simulate_outcomes_for_bundle(
+            bundle,
+            *,
+            x_0,
+            z,
+            gibbs_sweeps,
+            seed,
+            field_matrix=None,
+        ):
+            captured["field_matrix"] = (
+                None if field_matrix is None else np.asarray(field_matrix, dtype=float)
+            )
+            return np.ones_like(np.asarray(z, dtype=float))
+
+        with mock.patch.object(
+            posterior_predictive_runner,
+            "simulate_outcomes_for_bundle",
+            side_effect=_fake_simulate_outcomes_for_bundle,
+        ):
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="treatment_shared_unit_rank_1",
+                intervention_source="saved_intervention",
+                intervention_name="all_intervention_from_s",
+                run_name="default",
+                overwrite=True,
+            )
+
+        np.testing.assert_allclose(captured["field_matrix"], expected_field_matrix)
+        self.assertIsNotNone(captured["field_matrix"])
+
+    def test_run_posterior_predictive_observed_fit_treatment_mode_keeps_realized_field_path(
+        self,
+    ) -> None:
+        generation_spec_path = self._write_generation_spec(["smoke_rank_0"])
+        fits_spec_path = self._write_fit_spec(
+            [
+                {
+                    "name": "treatment_split_rank_1",
+                    "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+                    "optimizer_mode": "alternating_treatment_split_latent_rank",
+                    "latent_rank": 1,
+                    "lambda_uv_ridge": 0.1,
+                    "estimation": {
+                        "fixed_scalar_params": {
+                            "beta": 0.0,
+                            "xi": 0.0,
+                            "eta": 0.0,
+                        }
+                    },
+                }
+            ]
+        )
+        predictive_spec_path = self._write_predictive_spec(num_samples=1)
+        target_pairs_path = self._write_target_pairs(
+            [
+                {
+                    "experiment_name": "smoke_rank_0",
+                    "source_type": "fit",
+                    "variant_name": "treatment_split_rank_1",
+                    "intervention_source": "observed_experiment",
+                    "intervention_name": "",
+                }
+            ]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        fit_root = Path(read_csv_manifest(fit_manifest)[0]["fit_path"])
+        experiment_root = self.root / "generated" / "smoke_rank_0"
+        fit_bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+        self._overwrite_fit_treatment_artifact(
+            fit_root,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+            control_field_matrix=np.full_like(fit_bundle.field_matrix, -5.0),
+            treated_field_matrix=np.full_like(fit_bundle.field_matrix, 5.0),
+            realized_field_matrix=fit_bundle.field_matrix,
+        )
+        captured: dict[str, np.ndarray | None] = {}
+
+        def _fake_simulate_outcomes_for_bundle(
+            bundle,
+            *,
+            x_0,
+            z,
+            gibbs_sweeps,
+            seed,
+            field_matrix=None,
+        ):
+            captured["field_matrix"] = (
+                None if field_matrix is None else np.asarray(field_matrix, dtype=float)
+            )
+            return np.ones_like(np.asarray(z, dtype=float))
+
+        with mock.patch.object(
+            posterior_predictive_runner,
+            "simulate_outcomes_for_bundle",
+            side_effect=_fake_simulate_outcomes_for_bundle,
+        ):
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="treatment_split_rank_1",
+                intervention_source="observed_experiment",
+                intervention_name="",
+                run_name="default",
+                overwrite=True,
+            )
+
+        self.assertIsNone(captured["field_matrix"])
+
+    def test_run_posterior_predictive_saved_intervention_non_treatment_fit_uses_existing_path(
+        self,
+    ) -> None:
+        variant = {"name": "rank_0"}
+        (
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_root,
+            fit_root,
+        ) = self._prepare_counterfactual_fit_fixture(
+            variant,
+            target_intervention_name="no_intervention",
+        )
+        self.assertIsNone(load_fit_treatment_field_artifacts(fit_root))
+        captured: dict[str, np.ndarray | None] = {}
+
+        def _fake_simulate_outcomes_for_bundle(
+            bundle,
+            *,
+            x_0,
+            z,
+            gibbs_sweeps,
+            seed,
+            field_matrix=None,
+        ):
+            captured["field_matrix"] = (
+                None if field_matrix is None else np.asarray(field_matrix, dtype=float)
+            )
+            return np.ones_like(np.asarray(z, dtype=float))
+
+        with mock.patch.object(
+            posterior_predictive_runner,
+            "simulate_outcomes_for_bundle",
+            side_effect=_fake_simulate_outcomes_for_bundle,
+        ):
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="rank_0",
+                intervention_source="saved_intervention",
+                intervention_name="no_intervention",
+                run_name="default",
+                overwrite=True,
+            )
+
+        self.assertIsNone(captured["field_matrix"])
+        self.assertTrue((experiment_root / "counterfactual").exists())
+
+    def test_run_posterior_predictive_saved_intervention_treatment_mode_requires_artifact(
+        self,
+    ) -> None:
+        variant = {
+            "name": "treatment_split_rank_1",
+            "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "alternating_treatment_split_latent_rank",
+            "latent_rank": 1,
+            "lambda_uv_ridge": 0.1,
+            "estimation": {
+                "fixed_scalar_params": {
+                    "beta": 0.0,
+                    "xi": 0.0,
+                    "eta": 0.0,
+                }
+            },
+        }
+        (
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            _experiment_root,
+            fit_root,
+        ) = self._prepare_counterfactual_fit_fixture(
+            variant,
+            target_intervention_name="all_intervention_from_s",
+        )
+        os.remove(fit_root / "estimated_treatment_field_artifacts.npz")
+
+        with self.assertRaisesRegex(FileNotFoundError, "estimated_treatment_field_artifacts.npz"):
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="treatment_split_rank_1",
+                intervention_source="saved_intervention",
+                intervention_name="all_intervention_from_s",
+                run_name="default",
+                overwrite=True,
+            )
+
+    def test_run_posterior_predictive_saved_intervention_rejects_treatment_shape_mismatch(
+        self,
+    ) -> None:
+        variant = {
+            "name": "treatment_split_rank_1",
+            "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "alternating_treatment_split_latent_rank",
+            "latent_rank": 1,
+            "lambda_uv_ridge": 0.1,
+            "estimation": {
+                "fixed_scalar_params": {
+                    "beta": 0.0,
+                    "xi": 0.0,
+                    "eta": 0.0,
+                }
+            },
+        }
+        (
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_root,
+            fit_root,
+        ) = self._prepare_counterfactual_fit_fixture(
+            variant,
+            target_intervention_name="all_intervention_from_s",
+        )
+        fit_bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+        self._overwrite_fit_treatment_artifact(
+            fit_root,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+            control_field_matrix=np.zeros((fit_bundle.t_steps - 1, fit_bundle.field_matrix.shape[1]), dtype=float),
+            treated_field_matrix=np.ones((fit_bundle.t_steps - 1, fit_bundle.field_matrix.shape[1]), dtype=float),
+            realized_field_matrix=fit_bundle.field_matrix,
+        )
+
+        with self.assertRaisesRegex(ValueError, "must share a shape"):
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="treatment_split_rank_1",
+                intervention_source="saved_intervention",
+                intervention_name="all_intervention_from_s",
+                run_name="default",
+                overwrite=True,
+            )
 
     def test_build_manifest_row_matches_metadata_reconstruction_for_observed(
         self,

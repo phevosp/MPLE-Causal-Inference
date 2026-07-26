@@ -17,11 +17,15 @@ from utils.t3_interaction_matrices import compose_interaction_matrix
 from utils.t3_model_artifacts import (
     ModelArtifacts,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
+    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
+    TreatmentFieldArtifacts,
     load_model_artifacts,
     save_field_artifacts,
+    save_treatment_field_artifacts,
 )
 from utils.t4_parameter_packing import unpack_theta
 from utils.t4_scalar_parameters import scalar_parameter_names
@@ -233,6 +237,8 @@ def _merge_optimizer_metrics(
         )
     elif optimizer_mode in {
         OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
         OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     }:
         metrics.update(
@@ -299,12 +305,24 @@ def _log_optimizer_metrics(
         )
     elif optimizer_mode in {
         OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
         OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     }:
         optimizer_title = (
             "Concurrent low-rank optimizer diagnostics:"
             if optimizer_mode == OPTIMIZER_MODE_CONCURRENT_LATENT_RANK
-            else "Alternating low-rank optimizer diagnostics:"
+            else (
+                "Treatment-shared-unit alternating low-rank optimizer diagnostics:"
+                if optimizer_mode
+                == OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK
+                else (
+                    "Treatment-split alternating low-rank optimizer diagnostics:"
+                    if optimizer_mode
+                    == OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK
+                    else "Alternating low-rank optimizer diagnostics:"
+                )
+            )
         )
         logger.info(optimizer_title)
         logger.info("  penalized_objective: %.6f", metrics["penalized_objective"])
@@ -436,6 +454,7 @@ def log_field_diagnostics(
 def save_estimated_artifacts(
     data_folder: str | Path,
     est_theta: np.ndarray,
+    result: OptimizeResult,
     artifacts: ModelArtifacts,
     truth_context: dict[str, object] | None,
     fixed_scalar_params: dict[str, float] | None = None,
@@ -475,6 +494,57 @@ def save_estimated_artifacts(
         t_steps=int(est_artifacts.t_steps),
         field_matrix=np.asarray(est_artifacts.field_matrix, dtype=float),
     )
+    if artifacts.optimizer_mode in {
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
+    }:
+        save_treatment_field_artifacts(
+            output_root / "estimated_treatment_field_artifacts.npz",
+            TreatmentFieldArtifacts(
+                optimizer_mode=str(result["optimizer_mode"]),
+                latent_rank=int(artifacts.latent_rank),
+                control_field_matrix=np.asarray(
+                    result["control_field_matrix"],
+                    dtype=float,
+                ),
+                treated_field_matrix=np.asarray(
+                    result["treated_field_matrix"],
+                    dtype=float,
+                ),
+                realized_field_matrix=np.asarray(
+                    result["realized_field_matrix"],
+                    dtype=float,
+                ),
+                lambda_uv_ridge=float(result["lambda_uv_ridge"]),
+                best_start=int(result["best_start"]),
+                n_starts=int(result["n_starts"]),
+                final_mple_loss=float(result["final_mple_loss"]),
+                final_penalized_objective=float(result["final_penalized_objective"]),
+                control_node_factors=(
+                    None
+                    if "control_node_factors" not in result
+                    else np.asarray(result["control_node_factors"], dtype=float)
+                ),
+                control_time_factors=np.asarray(
+                    result["control_time_factors"],
+                    dtype=float,
+                ),
+                treated_node_factors=(
+                    None
+                    if "treated_node_factors" not in result
+                    else np.asarray(result["treated_node_factors"], dtype=float)
+                ),
+                treated_time_factors=np.asarray(
+                    result["treated_time_factors"],
+                    dtype=float,
+                ),
+                shared_node_factors=(
+                    None
+                    if "shared_node_factors" not in result
+                    else np.asarray(result["shared_node_factors"], dtype=float)
+                ),
+            ),
+        )
     if truth_context is None or truth_context.get("field_artifacts") is None:
         return
     save_field_artifacts(
@@ -566,6 +636,7 @@ def finalize_fit_outputs(
     save_estimated_artifacts(
         output_root,
         est_theta,
+        result,
         artifacts,
         truth_context=truth_context,
         fixed_scalar_params=fixed_scalar_params,

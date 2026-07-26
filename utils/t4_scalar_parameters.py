@@ -7,6 +7,7 @@ from utils.t3_model_artifacts import (
     DEFAULT_LATENT_RANK,
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
     OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
+    FULL_FIELD_SERIALIZER_OPTIMIZER_MODES,
     ModelArtifacts,
     SCALAR_PARAMETER_ORDER,
 )
@@ -64,7 +65,7 @@ def get_optimizer_mode(config) -> str:
 def uses_full_matrix_parameterization(
     artifacts: ModelArtifacts,
 ) -> bool:
-    return artifacts.optimizer_mode == "nuclear_norm"
+    return artifacts.optimizer_mode in FULL_FIELD_SERIALIZER_OPTIMIZER_MODES
 
 
 def get_B(config) -> float:

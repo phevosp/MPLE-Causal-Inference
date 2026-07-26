@@ -19,6 +19,7 @@ def simulate_outcomes_for_bundle(
     z: np.ndarray,
     gibbs_sweeps: int,
     seed: int,
+    field_matrix: np.ndarray | None = None,
 ) -> np.ndarray:
     """Simulate from the predictive model using the realized intervention panel.
 
@@ -27,10 +28,15 @@ def simulate_outcomes_for_bundle(
     """
     rng = np.random.default_rng(seed)
     interaction_matrix = compose_interaction_matrix(bundle.xi, bundle.gamma_matrix)
+    resolved_field_matrix = (
+        np.asarray(bundle.field_matrix, dtype=float)
+        if field_matrix is None
+        else np.asarray(field_matrix, dtype=float)
+    )
     return simulate_outcomes_given_fixed_interventions(
         x_0=np.asarray(x_0, dtype=float),
         z=np.asarray(z, dtype=float),
-        field_matrix=np.asarray(bundle.field_matrix, dtype=float),
+        field_matrix=resolved_field_matrix,
         interaction_matrix=interaction_matrix,
         beta=float(bundle.beta),
         eta=float(bundle.eta),

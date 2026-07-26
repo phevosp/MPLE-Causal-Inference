@@ -18,6 +18,7 @@ from utils.t4_scalar_parameters import (
     scalar_parameter_names,
     validate_fixed_scalar_params,
     free_scalar_parameter_names,
+    uses_full_matrix_parameterization,
 )
 
 
@@ -26,7 +27,7 @@ def parameter_names(
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> list[str]:
     n_nodes = artifacts.gamma_matrix.shape[0]
-    if artifacts.optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         field_keys = [
             f"F::time_{time_idx}::node_{node_idx}"
             for time_idx in range(artifacts.t_steps)
@@ -66,7 +67,7 @@ def unpack_theta(
     theta = np.asarray(theta, dtype=float)
     n_nodes = artifacts.gamma_matrix.shape[0]
     t_steps = artifacts.t_steps
-    if artifacts.optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         n_field = t_steps * n_nodes
         n_u = 0
         n_v = 0
@@ -80,7 +81,7 @@ def unpack_theta(
         raise ValueError(
             f"Theta length {len(theta)} does not match expected length {expected_length}."
         )
-    if artifacts.optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         field_matrix = theta[:n_field].reshape(t_steps, n_nodes)
         node_factors = np.zeros((n_nodes, 0), dtype=float)
         time_factors = np.zeros((t_steps, 0), dtype=float)
@@ -113,7 +114,7 @@ def pack_theta(
     artifacts: ModelArtifacts,
     fixed_scalar_params: dict[str, float] | None = None,
 ) -> np.ndarray:
-    if artifacts.optimizer_mode == OPTIMIZER_MODE_NUCLEAR_NORM:
+    if uses_full_matrix_parameterization(artifacts):
         if theta_parts.get("field_matrix") is None:
             raise ValueError("Full-matrix parameterization requires field_matrix.")
         field_block = np.asarray(theta_parts["field_matrix"], dtype=float).reshape(-1)

@@ -22,6 +22,8 @@ from utils.t3_model_artifacts import (
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     ModelArtifacts,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
+    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
     OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
@@ -41,6 +43,7 @@ from utils.t4_parameter_packing import (
 )
 from utils.t3_interaction_matrices import interaction_effect
 from utils.t3_field_operations import (
+    compose_realized_treatment_field_matrix,
     compose_field_matrix_from_theta,
     compose_latent_field_matrix,
 )
@@ -289,6 +292,61 @@ def _evaluate_factorized_loss_with_offset(
     time_gradient = (residual @ node_factors) / context.outcome_size
     node_gradient = (residual.T @ time_factors) / context.outcome_size
     return smooth_loss, residual, time_gradient, node_gradient
+
+
+def _treatment_active_masks(
+    context: _FitEvalContext,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Split the active loss mask into untreated and treated support."""
+    active_mask = (
+        np.ones_like(context.x, dtype=bool)
+        if context.loss_mask is None
+        else np.asarray(context.loss_mask, dtype=bool)
+    )
+    treated_mask = active_mask & (np.asarray(context.beta_feature, dtype=float) > 0.5)
+    control_mask = active_mask & ~treated_mask
+    return control_mask, treated_mask
+
+
+def _fixed_scalar_offset(
+    context: _FitEvalContext,
+) -> np.ndarray:
+    """Build the fit-time scalar offset matrix for modes with fixed scalars only."""
+    return _compute_h_x(
+        np.zeros_like(context.x, dtype=float),
+        context.fixed_scalar_params,
+        context,
+    )
+
+
+def _evaluate_treatment_surface_loss(
+    control_field_matrix: np.ndarray,
+    treated_field_matrix: np.ndarray,
+    context: _FitEvalContext,
+) -> tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate the treatment-split smooth loss and masked residual blocks."""
+    control_mask, treated_mask = _treatment_active_masks(context)
+    scalar_offset = _fixed_scalar_offset(context)
+    control_h = np.asarray(control_field_matrix, dtype=float) + scalar_offset
+    treated_h = np.asarray(treated_field_matrix, dtype=float) + scalar_offset
+    control_loss = np.logaddexp(control_h, -control_h) - context.x * control_h
+    treated_loss = np.logaddexp(treated_h, -treated_h) - context.x * treated_h
+    control_residual = np.tanh(control_h) - context.x
+    treated_residual = np.tanh(treated_h) - context.x
+    control_loss = control_loss * np.asarray(control_mask, dtype=float)
+    treated_loss = treated_loss * np.asarray(treated_mask, dtype=float)
+    control_residual = control_residual * np.asarray(control_mask, dtype=float)
+    treated_residual = treated_residual * np.asarray(treated_mask, dtype=float)
+    smooth_loss = float(
+        (control_loss.sum() + treated_loss.sum()) / context.outcome_size
+    )
+    return (
+        smooth_loss,
+        control_residual,
+        treated_residual,
+        control_mask,
+        treated_mask,
+    )
 
 
 def _project_node_factor_columns_to_l2_ball(
@@ -1626,6 +1684,547 @@ def _fit_mple_alternative_low_rank(
     return best_theta, best_mple_history, best_result
 
 
+def _fit_mple_treatment_low_rank(
+    x: np.ndarray,
+    z: np.ndarray,
+    x_0: np.ndarray,
+    artifacts: ModelArtifacts,
+    interaction_effect_x: np.ndarray,
+    steps: int,
+    seed: int,
+    verbose_every: int,
+    tol: float,
+    logger,
+    theta_init,
+    fixed_scalar_params: dict[str, float] | None,
+    n_starts: int,
+    lambda_uv_ridge: float,
+    v_column_l2_max: float | None,
+    shared_unit: bool,
+    s: int = 0,
+    e: int | None = None,
+    beta_mask_pre_s: bool = False,
+    beta_mask_post_e: bool = False,
+    loss_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, list[float], OptimizeResult]:
+    """Fit treatment-conditioned low-rank baselines with alternating L-BFGS-B blocks."""
+    if lambda_uv_ridge < 0.0:
+        raise ValueError("lambda_uv_ridge must be nonnegative.")
+    if v_column_l2_max is not None and float(v_column_l2_max) <= 0.0:
+        raise ValueError("v_column_l2_max must be positive.")
+    if theta_init is not None:
+        raise ValueError(
+            "theta_init is not supported for treatment-split low-rank modes because "
+            "their external theta schema only serializes the realized field_matrix."
+        )
+
+    context = _build_fit_eval_context(
+        x,
+        z,
+        x_0,
+        interaction_effect_x,
+        fixed_scalar_params,
+        s=s,
+        e=e,
+        beta_mask_pre_s=beta_mask_pre_s,
+        beta_mask_post_e=beta_mask_post_e,
+        loss_mask=loss_mask,
+    )
+    fixed = context.fixed_scalar_params
+    free_names = context.free_scalar_names
+    if free_names:
+        raise ValueError(
+            "Treatment-split low-rank modes require beta, xi, and eta to be fixed; "
+            f"free scalar parameters were requested for {free_names}."
+        )
+
+    rank = int(artifacts.latent_rank)
+    t_steps = int(artifacts.t_steps)
+    n_nodes = int(artifacts.gamma_matrix.shape[0])
+    if rank < 1 or rank > min(t_steps, n_nodes):
+        raise ValueError(
+            f"latent_rank={rank} must lie in [1, {min(t_steps, n_nodes)}] for "
+            "treatment-split low-rank optimization."
+        )
+
+    control_mask, treated_mask = _treatment_active_masks(context)
+    control_has_support = bool(np.any(control_mask))
+    treated_has_support = bool(np.any(treated_mask))
+    projected_v_column_l2_max = (
+        None if v_column_l2_max is None else float(v_column_l2_max)
+    )
+    n_starts = max(1, int(n_starts))
+    outer_iterations = max(1, int(steps))
+    block_options = {"maxiter": 1, "ftol": float(tol), "gtol": float(tol)}
+    optimizer_mode = (
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK
+        if shared_unit
+        else OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK
+    )
+    optimizer_name = (
+        "alternating_lbfgsb_treatment_shared_unit_low_rank"
+        if shared_unit
+        else "alternating_lbfgsb_treatment_split_low_rank"
+    )
+    mode_label = (
+        "Treatment-shared-unit alternating low-rank"
+        if shared_unit
+        else "Treatment-split alternating low-rank"
+    )
+
+    def _maybe_project_node_factors(node_factors: np.ndarray) -> np.ndarray:
+        if projected_v_column_l2_max is None:
+            return np.asarray(node_factors, dtype=float)
+        return _project_node_factor_columns_to_l2_ball(
+            np.asarray(node_factors, dtype=float),
+            projected_v_column_l2_max,
+        )
+
+    def _zero_time() -> np.ndarray:
+        return np.zeros((t_steps, rank), dtype=float)
+
+    def _zero_node() -> np.ndarray:
+        return np.zeros((n_nodes, rank), dtype=float)
+
+    def _field_from_factors(
+        time_factors: np.ndarray,
+        node_factors: np.ndarray,
+        has_support: bool,
+    ) -> np.ndarray:
+        if not has_support:
+            return np.zeros((t_steps, n_nodes), dtype=float)
+        return compose_latent_field_matrix(node_factors, time_factors)
+
+    def evaluate_state(
+        control_time_factors: np.ndarray,
+        control_node_factors: np.ndarray,
+        treated_time_factors: np.ndarray,
+        treated_node_factors: np.ndarray | None,
+        shared_node_factors: np.ndarray | None,
+    ) -> tuple[float, float, dict[str, np.ndarray], dict[str, object]]:
+        effective_control_node_factors = (
+            np.asarray(shared_node_factors, dtype=float)
+            if shared_unit
+            else np.asarray(control_node_factors, dtype=float)
+        )
+        effective_treated_node_factors = (
+            np.asarray(shared_node_factors, dtype=float)
+            if shared_unit
+            else np.asarray(treated_node_factors, dtype=float)
+        )
+        control_field_matrix = _field_from_factors(
+            np.asarray(control_time_factors, dtype=float),
+            effective_control_node_factors,
+            control_has_support,
+        )
+        treated_field_matrix = _field_from_factors(
+            np.asarray(treated_time_factors, dtype=float),
+            effective_treated_node_factors,
+            treated_has_support,
+        )
+        (
+            smooth_loss,
+            control_residual,
+            treated_residual,
+            _,
+            _,
+        ) = _evaluate_treatment_surface_loss(
+            control_field_matrix,
+            treated_field_matrix,
+            context,
+        )
+        ridge_scale = 2.0 * float(lambda_uv_ridge) / context.outcome_size
+        gradients: dict[str, np.ndarray] = {
+            "control_time_factors": np.zeros_like(control_time_factors, dtype=float),
+            "treated_time_factors": np.zeros_like(treated_time_factors, dtype=float),
+        }
+        factor_norm_sq = (
+            float(np.sum(np.asarray(control_time_factors, dtype=float) ** 2))
+            + float(np.sum(np.asarray(treated_time_factors, dtype=float) ** 2))
+        )
+        if shared_unit:
+            shared_node_factors = np.asarray(shared_node_factors, dtype=float)
+            factor_norm_sq += float(np.sum(shared_node_factors**2))
+            gradients["shared_node_factors"] = ridge_scale * shared_node_factors
+            if control_has_support:
+                gradients["control_time_factors"] = (
+                    control_residual @ shared_node_factors
+                ) / context.outcome_size + ridge_scale * np.asarray(
+                    control_time_factors,
+                    dtype=float,
+                )
+                gradients["shared_node_factors"] = gradients["shared_node_factors"] + (
+                    control_residual.T @ np.asarray(control_time_factors, dtype=float)
+                ) / context.outcome_size
+            if treated_has_support:
+                gradients["treated_time_factors"] = (
+                    treated_residual @ shared_node_factors
+                ) / context.outcome_size + ridge_scale * np.asarray(
+                    treated_time_factors,
+                    dtype=float,
+                )
+                gradients["shared_node_factors"] = gradients["shared_node_factors"] + (
+                    treated_residual.T @ np.asarray(treated_time_factors, dtype=float)
+                ) / context.outcome_size
+            u_frobenius_norm = float(np.linalg.norm(shared_node_factors, ord="fro"))
+        else:
+            control_node_factors = np.asarray(control_node_factors, dtype=float)
+            treated_node_factors = np.asarray(treated_node_factors, dtype=float)
+            factor_norm_sq += float(np.sum(control_node_factors**2))
+            factor_norm_sq += float(np.sum(treated_node_factors**2))
+            gradients["control_node_factors"] = ridge_scale * control_node_factors
+            gradients["treated_node_factors"] = ridge_scale * treated_node_factors
+            if control_has_support:
+                gradients["control_time_factors"] = (
+                    control_residual @ control_node_factors
+                ) / context.outcome_size + ridge_scale * np.asarray(
+                    control_time_factors,
+                    dtype=float,
+                )
+                gradients["control_node_factors"] = (
+                    gradients["control_node_factors"]
+                    + (control_residual.T @ np.asarray(control_time_factors, dtype=float))
+                    / context.outcome_size
+                )
+            if treated_has_support:
+                gradients["treated_time_factors"] = (
+                    treated_residual @ treated_node_factors
+                ) / context.outcome_size + ridge_scale * np.asarray(
+                    treated_time_factors,
+                    dtype=float,
+                )
+                gradients["treated_node_factors"] = (
+                    gradients["treated_node_factors"]
+                    + (treated_residual.T @ np.asarray(treated_time_factors, dtype=float))
+                    / context.outcome_size
+                )
+            u_frobenius_norm = float(
+                np.sqrt(
+                    np.sum(control_node_factors**2) + np.sum(treated_node_factors**2)
+                )
+            )
+        v_frobenius_norm = float(
+            np.sqrt(
+                np.sum(np.asarray(control_time_factors, dtype=float) ** 2)
+                + np.sum(np.asarray(treated_time_factors, dtype=float) ** 2)
+            )
+        )
+        realized_field_matrix = compose_realized_treatment_field_matrix(
+            control_field_matrix,
+            treated_field_matrix,
+            context.beta_feature,
+        )
+        ridge_penalty = float(lambda_uv_ridge) * factor_norm_sq / context.outcome_size
+        state_metadata: dict[str, object] = {
+            "control_field_matrix": control_field_matrix,
+            "treated_field_matrix": treated_field_matrix,
+            "realized_field_matrix": realized_field_matrix,
+            "u_frobenius_norm": u_frobenius_norm,
+            "v_frobenius_norm": v_frobenius_norm,
+        }
+        return smooth_loss + ridge_penalty, smooth_loss, gradients, state_metadata
+
+    def pack_state(
+        realized_field_matrix: np.ndarray,
+    ) -> np.ndarray:
+        return pack_theta(
+            {
+                "field_matrix": np.asarray(realized_field_matrix, dtype=float),
+                "beta": float(fixed["beta"]),
+                "xi": float(fixed["xi"]),
+                "eta": float(fixed["eta"]),
+            },
+            artifacts,
+            fixed_scalar_params=fixed,
+        )
+
+    def initial_state_for_start(
+        start_index: int,
+    ) -> dict[str, np.ndarray]:
+        rng = np.random.default_rng(int(seed) + start_index)
+        state: dict[str, np.ndarray] = {
+            "control_time_factors": (
+                rng.normal(0.0, 0.1, size=(t_steps, rank))
+                if control_has_support
+                else _zero_time()
+            ),
+            "treated_time_factors": (
+                rng.normal(0.0, 0.1, size=(t_steps, rank))
+                if treated_has_support
+                else _zero_time()
+            ),
+        }
+        if shared_unit:
+            shared_node_factors = _zero_node()
+            if control_has_support or treated_has_support:
+                shared_node_factors = _maybe_project_node_factors(
+                    rng.normal(0.0, 0.1, size=(n_nodes, rank))
+                )
+            state["shared_node_factors"] = shared_node_factors
+            state["control_node_factors"] = _zero_node()
+            state["treated_node_factors"] = _zero_node()
+        else:
+            state["control_node_factors"] = (
+                _maybe_project_node_factors(rng.normal(0.0, 0.1, size=(n_nodes, rank)))
+                if control_has_support
+                else _zero_node()
+            )
+            state["treated_node_factors"] = (
+                _maybe_project_node_factors(rng.normal(0.0, 0.1, size=(n_nodes, rank)))
+                if treated_has_support
+                else _zero_node()
+            )
+        return state
+
+    def update_block(
+        state: dict[str, np.ndarray],
+        block_name: str,
+    ) -> tuple[dict[str, np.ndarray], int]:
+        if block_name == "control_time_factors" and not control_has_support:
+            state[block_name] = _zero_time()
+            return state, 0
+        if block_name == "treated_time_factors" and not treated_has_support:
+            state[block_name] = _zero_time()
+            return state, 0
+        if block_name == "control_node_factors" and not control_has_support:
+            state[block_name] = _zero_node()
+            return state, 0
+        if block_name == "treated_node_factors" and not treated_has_support:
+            state[block_name] = _zero_node()
+            return state, 0
+
+        initial_block = np.asarray(state[block_name], dtype=float)
+        block_shape = initial_block.shape
+
+        def objective(flat_block: np.ndarray) -> tuple[float, np.ndarray]:
+            candidate_state = {
+                key: np.asarray(value, dtype=float).copy()
+                for key, value in state.items()
+            }
+            candidate_state[block_name] = np.asarray(flat_block, dtype=float).reshape(
+                block_shape
+            )
+            penalized_loss, _, gradients, _ = evaluate_state(
+                candidate_state["control_time_factors"],
+                candidate_state["control_node_factors"],
+                candidate_state["treated_time_factors"],
+                candidate_state.get("treated_node_factors"),
+                candidate_state.get("shared_node_factors"),
+            )
+            return float(penalized_loss), gradients[block_name].reshape(-1)
+
+        block_result = minimize(
+            objective,
+            initial_block.reshape(-1),
+            method="L-BFGS-B",
+            jac=True,
+            options=block_options,
+        )
+        updated_block = np.asarray(block_result.x, dtype=float).reshape(block_shape)
+        if block_name in {"control_node_factors", "treated_node_factors", "shared_node_factors"}:
+            updated_block = _maybe_project_node_factors(updated_block)
+        state[block_name] = updated_block
+        return state, int(getattr(block_result, "nfev", 0))
+
+    best_theta: np.ndarray | None = None
+    best_result: OptimizeResult | None = None
+    best_penalized_history: list[float] = []
+    best_mple_history: list[float] = []
+    best_start = 0
+    best_penalized_objective = np.inf
+    start_summaries: list[dict[str, object]] = []
+
+    block_order = (
+        ["control_time_factors", "treated_time_factors", "shared_node_factors"]
+        if shared_unit
+        else [
+            "control_time_factors",
+            "control_node_factors",
+            "treated_time_factors",
+            "treated_node_factors",
+        ]
+    )
+
+    for start_index in range(n_starts):
+        state = initial_state_for_start(start_index)
+        (
+            initial_penalized_objective,
+            initial_mple_loss,
+            _,
+            _,
+        ) = evaluate_state(
+            state["control_time_factors"],
+            state["control_node_factors"],
+            state["treated_time_factors"],
+            state.get("treated_node_factors"),
+            state.get("shared_node_factors"),
+        )
+        mple_history = [float(initial_mple_loss)]
+        penalized_history = [float(initial_penalized_objective)]
+        cost_evaluations = 1
+        iterations_completed = 0
+        converged = False
+        message = "STOP: TOTAL NO. OF OUTER ITERATIONS REACHED LIMIT"
+
+        if logger is not None:
+            logger.info(
+                "%s start %s/%s | seed=%s | initial_loss=%.6f | initial_penalized=%.6f",
+                mode_label,
+                start_index + 1,
+                n_starts,
+                int(seed) + start_index,
+                initial_mple_loss,
+                initial_penalized_objective,
+            )
+
+        for outer_index in range(outer_iterations):
+            for block_name in block_order:
+                state, block_evaluations = update_block(state, block_name)
+                cost_evaluations += int(block_evaluations)
+
+            (
+                penalized_loss,
+                smooth_loss,
+                _,
+                state_metadata,
+            ) = evaluate_state(
+                state["control_time_factors"],
+                state["control_node_factors"],
+                state["treated_time_factors"],
+                state.get("treated_node_factors"),
+                state.get("shared_node_factors"),
+            )
+            penalized_history.append(float(penalized_loss))
+            mple_history.append(float(smooth_loss))
+            iterations_completed = outer_index + 1
+
+            if verbose_every and outer_index % verbose_every == 0:
+                if logger is None:
+                    print(
+                        f"{mode_label} iter {outer_index} | Loss: {smooth_loss:.6f} | Penalized: {penalized_loss:.6f}"
+                    )
+                else:
+                    logger.info(
+                        "%s iter %s | Loss: %.6f | Penalized: %.6f",
+                        mode_label,
+                        outer_index,
+                        smooth_loss,
+                        penalized_loss,
+                    )
+
+            if len(penalized_history) >= 2:
+                improvement = abs(penalized_history[-2] - penalized_history[-1])
+                if improvement <= float(tol) * max(1.0, abs(penalized_history[-2])):
+                    converged = True
+                    message = "CONVERGED: alternating treatment objective tolerance reached"
+                    break
+
+        (
+            final_penalized_loss,
+            final_smooth_loss,
+            _,
+            state_metadata,
+        ) = evaluate_state(
+            state["control_time_factors"],
+            state["control_node_factors"],
+            state["treated_time_factors"],
+            state.get("treated_node_factors"),
+            state.get("shared_node_factors"),
+        )
+        theta_hat = pack_state(np.asarray(state_metadata["realized_field_matrix"], dtype=float))
+        start_summary = {
+            "start_index": start_index,
+            "seed": int(seed) + start_index,
+            "initialization_kind": "random",
+            "initial_mple_loss": float(initial_mple_loss),
+            "initial_penalized_objective": float(initial_penalized_objective),
+            "final_mple_loss": float(final_smooth_loss),
+            "final_penalized_objective": float(final_penalized_loss),
+            "iterations": int(iterations_completed),
+            "cost_evaluations": int(cost_evaluations),
+            "success": bool(converged),
+            "message": message,
+        }
+        start_summaries.append(start_summary)
+
+        if float(final_penalized_loss) < best_penalized_objective:
+            best_penalized_objective = float(final_penalized_loss)
+            best_start = start_index
+            best_theta = theta_hat
+            best_mple_history = list(mple_history)
+            best_penalized_history = list(penalized_history)
+            result_payload: dict[str, object] = {
+                "x": theta_hat,
+                "success": bool(converged),
+                "message": message,
+                "nit": int(iterations_completed),
+                "nfev": int(cost_evaluations),
+                "iterations": int(iterations_completed),
+                "cost_evaluations": int(cost_evaluations),
+                "optimizer_mode": optimizer_mode,
+                "optimizer": optimizer_name,
+                "lambda_uv_ridge": float(lambda_uv_ridge),
+                "final_mple_loss": float(final_smooth_loss),
+                "final_penalized_objective": float(final_penalized_loss),
+                "u_frobenius_norm": float(state_metadata["u_frobenius_norm"]),
+                "v_frobenius_norm": float(state_metadata["v_frobenius_norm"]),
+                "effective_rank": float(
+                    np.linalg.matrix_rank(
+                        np.asarray(state_metadata["realized_field_matrix"], dtype=float)
+                    )
+                ),
+                "mple_history": list(mple_history),
+                "penalized_history": list(penalized_history),
+                "best_start": int(start_index),
+                "n_starts": int(n_starts),
+                "start_summaries": start_summaries,
+                "control_field_matrix": np.asarray(
+                    state_metadata["control_field_matrix"],
+                    dtype=float,
+                ),
+                "treated_field_matrix": np.asarray(
+                    state_metadata["treated_field_matrix"],
+                    dtype=float,
+                ),
+                "realized_field_matrix": np.asarray(
+                    state_metadata["realized_field_matrix"],
+                    dtype=float,
+                ),
+                "control_time_factors": np.asarray(
+                    state["control_time_factors"],
+                    dtype=float,
+                ),
+                "treated_time_factors": np.asarray(
+                    state["treated_time_factors"],
+                    dtype=float,
+                ),
+            }
+            if shared_unit:
+                result_payload["shared_node_factors"] = np.asarray(
+                    state["shared_node_factors"],
+                    dtype=float,
+                )
+            else:
+                result_payload["control_node_factors"] = np.asarray(
+                    state["control_node_factors"],
+                    dtype=float,
+                )
+                result_payload["treated_node_factors"] = np.asarray(
+                    state["treated_node_factors"],
+                    dtype=float,
+                )
+            best_result = OptimizeResult(**result_payload)
+
+    if best_theta is None or best_result is None:
+        raise RuntimeError(
+            "Treatment-split low-rank optimizer did not produce a candidate solution."
+        )
+    best_result["start_summaries"] = start_summaries
+    best_result["best_start"] = int(best_start)
+    best_result["n_starts"] = int(n_starts)
+    return best_theta, best_mple_history, best_result
+
+
 def _fit_mple_concurrent_low_rank(
     x: np.ndarray,
     z: np.ndarray,
@@ -1982,12 +2581,29 @@ def fit_mple(
         bool(beta_mask_pre_s) or bool(beta_mask_post_e)
     ) and artifacts.optimizer_mode not in {
         OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
         OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     }:
         raise ValueError(
             "beta-gradient-only masking is only supported for "
-            "optimizer_mode in {'alternating_latent_rank', 'no_external_field'}; "
+            "optimizer_mode in {'alternating_latent_rank', "
+            "'alternating_treatment_split_latent_rank', "
+            "'alternating_treatment_shared_unit_latent_rank', "
+            "'no_external_field'}; "
             "the other optimizer modes are deprecated for masked-beta workflows."
+        )
+
+    if artifacts.optimizer_mode in {
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
+    } and (
+        warm_start_fixed_scalars
+        or int(warm_start_steps) > 0
+    ):
+        raise ValueError(
+            "Treatment-split low-rank modes do not support warm_start_fixed_scalars "
+            "or warm_start_steps."
         )
 
     if warm_start_fixed_scalars and int(warm_start_steps) > 0:
@@ -2103,6 +2719,57 @@ def fit_mple(
             n_starts=n_starts,
             lambda_uv_ridge=lambda_uv_ridge,
             v_column_l2_max=v_column_l2_max,
+            s=s,
+            e=e,
+            beta_mask_pre_s=beta_mask_pre_s,
+            beta_mask_post_e=beta_mask_post_e,
+            loss_mask=loss_mask,
+        )
+    if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK:
+        return _fit_mple_treatment_low_rank(
+            x,
+            z,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            steps=steps,
+            seed=seed,
+            verbose_every=verbose_every,
+            tol=tol,
+            logger=logger,
+            theta_init=theta_init,
+            fixed_scalar_params=fixed_scalar_params,
+            n_starts=n_starts,
+            lambda_uv_ridge=lambda_uv_ridge,
+            v_column_l2_max=v_column_l2_max,
+            shared_unit=False,
+            s=s,
+            e=e,
+            beta_mask_pre_s=beta_mask_pre_s,
+            beta_mask_post_e=beta_mask_post_e,
+            loss_mask=loss_mask,
+        )
+    if (
+        artifacts.optimizer_mode
+        == OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK
+    ):
+        return _fit_mple_treatment_low_rank(
+            x,
+            z,
+            x_0=x_0,
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect_x,
+            steps=steps,
+            seed=seed,
+            verbose_every=verbose_every,
+            tol=tol,
+            logger=logger,
+            theta_init=theta_init,
+            fixed_scalar_params=fixed_scalar_params,
+            n_starts=n_starts,
+            lambda_uv_ridge=lambda_uv_ridge,
+            v_column_l2_max=v_column_l2_max,
+            shared_unit=True,
             s=s,
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
@@ -2288,7 +2955,11 @@ def main() -> None:
         config.global_params.e,
     )
     if v_column_l2_max is not None:
-        if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_LATENT_RANK:
+        if artifacts.optimizer_mode in {
+            OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
+            OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+            OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
+        }:
             logger.info(
                 "Alternating V-column L2-ball constraint active with radius %s",
                 v_column_l2_max,

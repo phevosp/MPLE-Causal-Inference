@@ -30,8 +30,10 @@ from utils.t0_path_utils import io_path
 from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t5_parameter_bundles import (
     load_fit_parameter_bundle,
+    load_fit_treatment_field_artifacts,
     load_truth_parameter_bundle,
 )
+from utils.t3_field_operations import compose_realized_treatment_field_matrix
 from utils.t6_posterior_predictive_manifest import (
     POSTERIOR_PREDICTIVE_ROOT_NAME,
     index_generation_rows,
@@ -103,6 +105,26 @@ def _finalize_sample_summaries(
     }
 
 
+def _resolved_fit_simulation_field_matrix(
+    *,
+    fit_root: Path,
+    bundle,
+    intervention_source: str,
+    intervention_z: np.ndarray,
+) -> np.ndarray | None:
+    """Return an override field for fit-based saved-intervention simulation when needed."""
+    if str(intervention_source) != "saved_intervention":
+        return None
+    treatment_artifacts = load_fit_treatment_field_artifacts(fit_root)
+    if treatment_artifacts is None:
+        return None
+    return compose_realized_treatment_field_matrix(
+        treatment_artifacts.control_field_matrix,
+        treatment_artifacts.treated_field_matrix,
+        np.asarray(intervention_z, dtype=float),
+    )
+
+
 def _simulate_target(
     target: dict[str, object],
     run_spec: dict[str, object],
@@ -161,11 +183,13 @@ def _simulate_target(
     # - fit: estimated parameters loaded from a fit output directory
     if target["source_type"] == "truth":
         bundle = load_truth_parameter_bundle(experiment_root)
+        fit_root = None
     elif target["source_type"] == "truth_xi_zero":
         from dataclasses import replace
 
         bundle = load_truth_parameter_bundle(experiment_root)
         bundle = replace(bundle, xi=0.0)
+        fit_root = None
     else:
         fit_row = target["fit_row"]
         fit_root = Path(str(fit_row["fit_path"]))
@@ -209,12 +233,23 @@ def _simulate_target(
             run_spec=run_spec,
             sample_index=sample_index,
         )
+        fit_field_override = (
+            None
+            if fit_root is None
+            else _resolved_fit_simulation_field_matrix(
+                fit_root=fit_root,
+                bundle=bundle,
+                intervention_source=intervention_source,
+                intervention_z=intervention_context.z,
+            )
+        )
         sample_x = simulate_outcomes_for_bundle(
             bundle,
             x_0=panel_context["x_0"],
             z=intervention_context.z,
             gibbs_sweeps=gibbs_sweeps,
             seed=sample_seed,
+            field_matrix=fit_field_override,
         )
         if intervention_source == "observed_experiment":
             # Posterior predictive check: compare simulated panel-level

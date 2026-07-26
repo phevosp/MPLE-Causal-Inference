@@ -11,7 +11,13 @@ import numpy as np
 from utils.t0_path_utils import first_existing_path, io_path, path_exists
 from utils.t0_config_utils import load_yaml_config
 from utils.t1_matrix_io import load_gamma_matrix
-from utils.t3_model_artifacts import load_model_artifacts
+from utils.t3_model_artifacts import (
+    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
+    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+    TreatmentFieldArtifacts,
+    load_model_artifacts,
+    load_treatment_field_artifacts,
+)
 
 
 GENERATION_CONFIG_FILENAMES = (
@@ -81,6 +87,46 @@ def _fit_beta_mask_flag(fit_root: Path, key: str) -> bool:
     if estimation_params is None:
         return False
     return bool(estimation_params.get(str(key), False))
+
+
+def _fit_optimizer_mode(fit_root: Path) -> str | None:
+    config_path = fit_root / "fit_realized_config.yaml"
+    if not path_exists(config_path):
+        return None
+    config = load_yaml_config(config_path)
+    global_params = getattr(config, "global_params", None)
+    if global_params is None:
+        return None
+    optimizer_mode = global_params.get("optimizer_mode", None)
+    if optimizer_mode in (None, ""):
+        return None
+    return str(optimizer_mode)
+
+
+def load_fit_treatment_field_artifacts(
+    fit_root: str | Path,
+) -> TreatmentFieldArtifacts | None:
+    fit_path = Path(fit_root)
+    artifact_path = fit_path / "estimated_treatment_field_artifacts.npz"
+    optimizer_mode = _fit_optimizer_mode(fit_path)
+    treatment_modes = {
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
+        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
+    }
+    if not path_exists(artifact_path):
+        if optimizer_mode in treatment_modes:
+            raise FileNotFoundError(
+                f"Fit {fit_path} uses optimizer_mode={optimizer_mode!r} but is missing "
+                f"{artifact_path.name}."
+            )
+        return None
+    artifacts = load_treatment_field_artifacts(artifact_path)
+    if optimizer_mode is not None and str(artifacts.optimizer_mode) != optimizer_mode:
+        raise ValueError(
+            f"Treatment field artifact optimizer_mode={artifacts.optimizer_mode!r} does "
+            f"not match fit optimizer_mode={optimizer_mode!r} for {fit_path}."
+        )
+    return artifacts
 
 
 def _build_outcome_parameter_bundle(

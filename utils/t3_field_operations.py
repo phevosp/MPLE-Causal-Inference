@@ -11,6 +11,7 @@ from utils.t2_normalization import (
     normalize_matrix_by_max_abs_entry,
 )
 from utils.t3_model_artifacts import (
+    FULL_FIELD_SERIALIZER_OPTIMIZER_MODES,
     ModelArtifacts,
     SpectralLowRankStructure,
     _DEGENERACY_THRESHOLD,
@@ -77,11 +78,27 @@ def project_latent_field(
 def compose_field_matrix_from_theta(
     theta_parts: dict[str, object], artifacts: ModelArtifacts
 ) -> np.ndarray:
-    if artifacts.optimizer_mode == "nuclear_norm":
+    if artifacts.optimizer_mode in FULL_FIELD_SERIALIZER_OPTIMIZER_MODES:
         return np.asarray(theta_parts["field_matrix"], dtype=float)
     return compose_latent_field_matrix(
         theta_parts["node_factors"], theta_parts["time_factors"]
     )
+
+
+def compose_realized_treatment_field_matrix(
+    control_field_matrix: np.ndarray,
+    treated_field_matrix: np.ndarray,
+    treatment_matrix: np.ndarray,
+) -> np.ndarray:
+    """Merge untreated and treated surfaces slotwise under the observed treatment panel."""
+    control = np.asarray(control_field_matrix, dtype=float)
+    treated = np.asarray(treated_field_matrix, dtype=float)
+    treatment = np.asarray(treatment_matrix, dtype=float)
+    if control.shape != treated.shape or control.shape != treatment.shape:
+        raise ValueError(
+            "control_field_matrix, treated_field_matrix, and treatment_matrix must share a shape."
+        )
+    return np.where(treatment > 0.5, treated, control)
 
 
 def with_theta_field(
