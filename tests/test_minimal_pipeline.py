@@ -74,6 +74,7 @@ from utils.t6_fit_materialization import (
     materialize_fit_root,
 )
 from mple import (
+    _fit_mple_alternative_low_rank,
     _build_fit_eval_context,
     _compute_h_x,
     _evaluate_factorized_loss,
@@ -2701,6 +2702,71 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertIn("penalized_history", result)
         self.assertAlmostEqual(float(result["lambda_uv_ridge"]), 0.1)
 
+    def test_fit_mple_dispatcher_preserves_alternating_low_rank_behavior(self) -> None:
+        x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=2,
+            latent_rank=1,
+            optimizer_mode="alternating_latent_rank",
+        )
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "artifacts": artifacts,
+            "interaction_effect_x": interaction_effect(x, gamma),
+            "steps": 4,
+            "seed": 7,
+            "verbose_every": 0,
+            "tol": 1.0e-8,
+            "logger": None,
+            "theta_init": None,
+            "fixed_scalar_params": None,
+            "n_starts": 1,
+            "lambda_uv_ridge": 0.1,
+            "v_column_l2_max": 1.0,
+            "s": 1,
+            "e": None,
+            "beta_mask_pre_s": False,
+            "beta_mask_post_e": False,
+            "loss_mask": None,
+        }
+
+        direct_theta, direct_history, direct_result = _fit_mple_alternative_low_rank(
+            **common_kwargs,
+        )
+        dispatch_theta, dispatch_history, dispatch_result = fit_mple(
+            x,
+            z,
+            x_0=x_0,
+            s=1,
+            param_names=parameter_names(artifacts),
+            artifacts=artifacts,
+            interaction_effect_x=interaction_effect(x, gamma),
+            steps=4,
+            tol=1.0e-8,
+            seed=7,
+            verbose_every=0,
+            n_starts=1,
+            lambda_uv_ridge=0.1,
+            v_column_l2_max=1.0,
+        )
+
+        np.testing.assert_allclose(dispatch_theta, direct_theta)
+        np.testing.assert_allclose(dispatch_history, direct_history)
+        self.assertAlmostEqual(
+            float(dispatch_result["final_penalized_objective"]),
+            float(direct_result["final_penalized_objective"]),
+        )
+        self.assertAlmostEqual(
+            float(dispatch_result["final_mple_loss"]),
+            float(direct_result["final_mple_loss"]),
+        )
+
     def test_alternating_low_rank_penalized_history_decreases(self) -> None:
         x = np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
         z = np.array([[-1.0, -1.0], [1.0, -1.0]], dtype=float)
@@ -3105,10 +3171,211 @@ class MinimalPipelineTests(unittest.TestCase):
             best_penalized,
         )
         self.assertIsNotNone(low_ridge_result.get("shared_node_factors"))
+        low_total_factor_norm_sq = (
+            float(np.sum(np.asarray(low_ridge_result["shared_node_factors"], dtype=float) ** 2))
+            + float(np.sum(np.asarray(low_ridge_result["control_time_factors"], dtype=float) ** 2))
+            + float(np.sum(np.asarray(low_ridge_result["treated_time_factors"], dtype=float) ** 2))
+        )
+        high_total_factor_norm_sq = (
+            float(np.sum(np.asarray(high_ridge_result["shared_node_factors"], dtype=float) ** 2))
+            + float(np.sum(np.asarray(high_ridge_result["control_time_factors"], dtype=float) ** 2))
+            + float(np.sum(np.asarray(high_ridge_result["treated_time_factors"], dtype=float) ** 2))
+        )
         self.assertLessEqual(
-            float(np.linalg.norm(high_ridge_result["shared_node_factors"], ord="fro")),
-            float(np.linalg.norm(low_ridge_result["shared_node_factors"], ord="fro"))
-            + 1.0e-12,
+            high_total_factor_norm_sq,
+            low_total_factor_norm_sq + 1.0e-12,
+        )
+
+    def test_treatment_low_rank_enforces_v_column_l2_max_for_split_and_shared(self) -> None:
+        x = np.array(
+            [
+                [1.0, -1.0, 1.0],
+                [-1.0, 1.0, -1.0],
+                [1.0, 1.0, -1.0],
+            ],
+            dtype=float,
+        )
+        z = np.array(
+            [
+                [-1.0, 1.0, -1.0],
+                [1.0, -1.0, 1.0],
+                [-1.0, 1.0, 1.0],
+            ],
+            dtype=float,
+        )
+        x_0 = np.array([1.0, -1.0, 1.0], dtype=float)
+        gamma = np.array(
+            [[0.0, 1.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+            dtype=float,
+        )
+        fixed_scalar_params = {"beta": 0.0, "xi": 0.0, "eta": 0.0}
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "s": 1,
+            "interaction_effect_x": interaction_effect(x, gamma),
+            "steps": 6,
+            "tol": 1.0e-8,
+            "seed": 11,
+            "verbose_every": 0,
+            "n_starts": 1,
+            "lambda_uv_ridge": 0.1,
+            "v_column_l2_max": 0.35,
+            "fixed_scalar_params": fixed_scalar_params,
+        }
+
+        split_artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=2,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+        )
+        _, _, split_result = fit_mple(
+            param_names=parameter_names(
+                split_artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            artifacts=split_artifacts,
+            **common_kwargs,
+        )
+        self.assertTrue(
+            np.all(
+                np.linalg.norm(
+                    np.asarray(split_result["control_node_factors"], dtype=float),
+                    axis=0,
+                )
+                <= 0.35 + 1.0e-12
+            )
+        )
+        self.assertTrue(
+            np.all(
+                np.linalg.norm(
+                    np.asarray(split_result["treated_node_factors"], dtype=float),
+                    axis=0,
+                )
+                <= 0.35 + 1.0e-12
+            )
+        )
+
+        shared_artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=2,
+            optimizer_mode="alternating_treatment_shared_unit_latent_rank",
+        )
+        _, _, shared_result = fit_mple(
+            param_names=parameter_names(
+                shared_artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            artifacts=shared_artifacts,
+            **common_kwargs,
+        )
+        self.assertTrue(
+            np.all(
+                np.linalg.norm(
+                    np.asarray(shared_result["shared_node_factors"], dtype=float),
+                    axis=0,
+                )
+                <= 0.35 + 1.0e-12
+            )
+        )
+
+    def test_treatment_split_all_treated_matches_alternating_low_rank_active_branch(self) -> None:
+        x = np.array(
+            [
+                [1.0, -1.0],
+                [-1.0, 1.0],
+                [1.0, 1.0],
+            ],
+            dtype=float,
+        )
+        z = np.ones_like(x, dtype=float)
+        x_0 = np.array([1.0, -1.0], dtype=float)
+        gamma = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float)
+        fixed_scalar_params = {"beta": 0.0, "xi": 0.0, "eta": 0.0}
+        alt_artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=1,
+            optimizer_mode="alternating_latent_rank",
+        )
+        split_artifacts = ModelArtifacts(
+            gamma_matrix=gamma,
+            t_steps=3,
+            latent_rank=1,
+            optimizer_mode="alternating_treatment_split_latent_rank",
+        )
+        common_kwargs = {
+            "x": x,
+            "z": z,
+            "x_0": x_0,
+            "s": 1,
+            "steps": 5,
+            "tol": 1.0e-8,
+            "seed": 13,
+            "verbose_every": 0,
+            "n_starts": 1,
+            "lambda_uv_ridge": 0.2,
+            "v_column_l2_max": 0.4,
+            "interaction_effect_x": interaction_effect(x, gamma),
+        }
+
+        alt_theta, _, alt_result = fit_mple(
+            param_names=parameter_names(
+                alt_artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            artifacts=alt_artifacts,
+            fixed_scalar_params=fixed_scalar_params,
+            **common_kwargs,
+        )
+        split_theta, _, split_result = fit_mple(
+            param_names=parameter_names(
+                split_artifacts,
+                fixed_scalar_params=fixed_scalar_params,
+            ),
+            artifacts=split_artifacts,
+            fixed_scalar_params=fixed_scalar_params,
+            **common_kwargs,
+        )
+
+        alt_parts = unpack_theta(
+            alt_theta,
+            alt_artifacts,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        alt_field_matrix = compose_latent_field_matrix(
+            alt_parts["node_factors"],
+            alt_parts["time_factors"],
+        )
+        split_parts = unpack_theta(
+            split_theta,
+            split_artifacts,
+            fixed_scalar_params=fixed_scalar_params,
+        )
+        np.testing.assert_allclose(split_result["control_time_factors"], 0.0)
+        np.testing.assert_allclose(split_result["control_node_factors"], 0.0)
+        np.testing.assert_allclose(
+            split_result["treated_time_factors"],
+            alt_parts["time_factors"],
+        )
+        np.testing.assert_allclose(
+            split_result["treated_node_factors"],
+            alt_parts["node_factors"],
+        )
+        np.testing.assert_allclose(
+            split_result["treated_field_matrix"],
+            alt_field_matrix,
+        )
+        np.testing.assert_allclose(
+            split_parts["field_matrix"],
+            alt_field_matrix,
+        )
+        self.assertAlmostEqual(
+            float(split_result["final_penalized_objective"]),
+            float(alt_result["final_penalized_objective"]),
         )
 
     def test_treatment_modes_reject_free_scalars_and_warm_start(self) -> None:
@@ -3275,6 +3542,8 @@ class MinimalPipelineTests(unittest.TestCase):
             expected_split_realized,
         )
         self.assertTrue(np.allclose(split_treatment.control_field_matrix, 0.0))
+        self.assertTrue(np.allclose(split_result["control_time_factors"], 0.0))
+        self.assertTrue(np.allclose(split_result["control_node_factors"], 0.0))
         self.assertIsNotNone(split_treatment.control_node_factors)
         self.assertIsNotNone(split_treatment.treated_node_factors)
         self.assertIsNone(split_treatment.shared_node_factors)

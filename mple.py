@@ -371,6 +371,20 @@ def _project_node_factor_columns_to_l2_ball(
     return projected
 
 
+def _alternating_factor_step_size(
+    *,
+    outcome_size: float,
+    lambda_uv_ridge: float,
+    fixed_factor_blocks: list[np.ndarray],
+) -> float:
+    """Return the alternating-update step size from the paired factor blocks."""
+    spectral_sq = 0.0
+    for block in fixed_factor_blocks:
+        spectral_sq += float(np.linalg.norm(np.asarray(block, dtype=float), ord=2) ** 2)
+    lipschitz = (spectral_sq + 2.0 * float(lambda_uv_ridge)) / float(outcome_size)
+    return 1.0 if lipschitz <= 0.0 else 1.0 / lipschitz
+
+
 def _prox_threshold_field_matrix(
     field_matrix: np.ndarray,
     threshold: float,
@@ -1428,11 +1442,11 @@ def _fit_mple_alternative_low_rank(
         return np.asarray(step_sizes, dtype=float)
 
     def factor_step_size(fixed_factors: np.ndarray) -> float:
-        lipschitz = (
-            float(np.linalg.norm(fixed_factors, ord=2) ** 2)
-            + 2.0 * float(lambda_uv_ridge)
-        ) / context.outcome_size
-        return 1.0 if lipschitz <= 0.0 else 1.0 / lipschitz
+        return _alternating_factor_step_size(
+            outcome_size=context.outcome_size,
+            lambda_uv_ridge=lambda_uv_ridge,
+            fixed_factor_blocks=[np.asarray(fixed_factors, dtype=float)],
+        )
 
     scalar_lrs = scalar_step_sizes()
 
@@ -1707,7 +1721,7 @@ def _fit_mple_treatment_low_rank(
     beta_mask_post_e: bool = False,
     loss_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[float], OptimizeResult]:
-    """Fit treatment-conditioned low-rank baselines with alternating L-BFGS-B blocks."""
+    """Fit treatment-conditioned low-rank baselines with alternating gradient blocks."""
     if lambda_uv_ridge < 0.0:
         raise ValueError("lambda_uv_ridge must be nonnegative.")
     if v_column_l2_max is not None and float(v_column_l2_max) <= 0.0:
@@ -1755,16 +1769,16 @@ def _fit_mple_treatment_low_rank(
     )
     n_starts = max(1, int(n_starts))
     outer_iterations = max(1, int(steps))
-    block_options = {"maxiter": 1, "ftol": float(tol), "gtol": float(tol)}
+    inner_gradient_steps = 3
     optimizer_mode = (
         OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK
         if shared_unit
         else OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK
     )
     optimizer_name = (
-        "alternating_lbfgsb_treatment_shared_unit_low_rank"
+        "alternating_treatment_shared_unit_low_rank"
         if shared_unit
-        else "alternating_lbfgsb_treatment_split_low_rank"
+        else "alternating_treatment_split_low_rank"
     )
     mode_label = (
         "Treatment-shared-unit alternating low-rank"
@@ -1942,18 +1956,7 @@ def _fit_mple_treatment_low_rank(
         start_index: int,
     ) -> dict[str, np.ndarray]:
         rng = np.random.default_rng(int(seed) + start_index)
-        state: dict[str, np.ndarray] = {
-            "control_time_factors": (
-                rng.normal(0.0, 0.1, size=(t_steps, rank))
-                if control_has_support
-                else _zero_time()
-            ),
-            "treated_time_factors": (
-                rng.normal(0.0, 0.1, size=(t_steps, rank))
-                if treated_has_support
-                else _zero_time()
-            ),
-        }
+        state: dict[str, np.ndarray] = {}
         if shared_unit:
             shared_node_factors = _zero_node()
             if control_has_support or treated_has_support:
@@ -1961,6 +1964,16 @@ def _fit_mple_treatment_low_rank(
                     rng.normal(0.0, 0.1, size=(n_nodes, rank))
                 )
             state["shared_node_factors"] = shared_node_factors
+            state["control_time_factors"] = (
+                rng.normal(0.0, 0.1, size=(t_steps, rank))
+                if control_has_support
+                else _zero_time()
+            )
+            state["treated_time_factors"] = (
+                rng.normal(0.0, 0.1, size=(t_steps, rank))
+                if treated_has_support
+                else _zero_time()
+            )
             state["control_node_factors"] = _zero_node()
             state["treated_node_factors"] = _zero_node()
         else:
@@ -1969,62 +1982,31 @@ def _fit_mple_treatment_low_rank(
                 if control_has_support
                 else _zero_node()
             )
+            state["control_time_factors"] = (
+                rng.normal(0.0, 0.1, size=(t_steps, rank))
+                if control_has_support
+                else _zero_time()
+            )
             state["treated_node_factors"] = (
                 _maybe_project_node_factors(rng.normal(0.0, 0.1, size=(n_nodes, rank)))
                 if treated_has_support
                 else _zero_node()
             )
+            state["treated_time_factors"] = (
+                rng.normal(0.0, 0.1, size=(t_steps, rank))
+                if treated_has_support
+                else _zero_time()
+            )
         return state
 
-    def update_block(
-        state: dict[str, np.ndarray],
-        block_name: str,
-    ) -> tuple[dict[str, np.ndarray], int]:
-        if block_name == "control_time_factors" and not control_has_support:
-            state[block_name] = _zero_time()
-            return state, 0
-        if block_name == "treated_time_factors" and not treated_has_support:
-            state[block_name] = _zero_time()
-            return state, 0
-        if block_name == "control_node_factors" and not control_has_support:
-            state[block_name] = _zero_node()
-            return state, 0
-        if block_name == "treated_node_factors" and not treated_has_support:
-            state[block_name] = _zero_node()
-            return state, 0
-
-        initial_block = np.asarray(state[block_name], dtype=float)
-        block_shape = initial_block.shape
-
-        def objective(flat_block: np.ndarray) -> tuple[float, np.ndarray]:
-            candidate_state = {
-                key: np.asarray(value, dtype=float).copy()
-                for key, value in state.items()
-            }
-            candidate_state[block_name] = np.asarray(flat_block, dtype=float).reshape(
-                block_shape
-            )
-            penalized_loss, _, gradients, _ = evaluate_state(
-                candidate_state["control_time_factors"],
-                candidate_state["control_node_factors"],
-                candidate_state["treated_time_factors"],
-                candidate_state.get("treated_node_factors"),
-                candidate_state.get("shared_node_factors"),
-            )
-            return float(penalized_loss), gradients[block_name].reshape(-1)
-
-        block_result = minimize(
-            objective,
-            initial_block.reshape(-1),
-            method="L-BFGS-B",
-            jac=True,
-            options=block_options,
+    def factor_step_size(*fixed_factor_blocks: np.ndarray) -> float:
+        return _alternating_factor_step_size(
+            outcome_size=context.outcome_size,
+            lambda_uv_ridge=lambda_uv_ridge,
+            fixed_factor_blocks=[
+                np.asarray(block, dtype=float) for block in fixed_factor_blocks
+            ],
         )
-        updated_block = np.asarray(block_result.x, dtype=float).reshape(block_shape)
-        if block_name in {"control_node_factors", "treated_node_factors", "shared_node_factors"}:
-            updated_block = _maybe_project_node_factors(updated_block)
-        state[block_name] = updated_block
-        return state, int(getattr(block_result, "nfev", 0))
 
     best_theta: np.ndarray | None = None
     best_result: OptimizeResult | None = None
@@ -2033,17 +2015,6 @@ def _fit_mple_treatment_low_rank(
     best_start = 0
     best_penalized_objective = np.inf
     start_summaries: list[dict[str, object]] = []
-
-    block_order = (
-        ["control_time_factors", "treated_time_factors", "shared_node_factors"]
-        if shared_unit
-        else [
-            "control_time_factors",
-            "control_node_factors",
-            "treated_time_factors",
-            "treated_node_factors",
-        ]
-    )
 
     for start_index in range(n_starts):
         state = initial_state_for_start(start_index)
@@ -2078,9 +2049,129 @@ def _fit_mple_treatment_low_rank(
             )
 
         for outer_index in range(outer_iterations):
-            for block_name in block_order:
-                state, block_evaluations = update_block(state, block_name)
-                cost_evaluations += int(block_evaluations)
+            for _ in range(inner_gradient_steps):
+                if control_has_support:
+                    (
+                        _,
+                        _,
+                        gradients,
+                        _,
+                    ) = evaluate_state(
+                        state["control_time_factors"],
+                        state["control_node_factors"],
+                        state["treated_time_factors"],
+                        state.get("treated_node_factors"),
+                        state.get("shared_node_factors"),
+                    )
+                    control_node_factors = (
+                        state["shared_node_factors"]
+                        if shared_unit
+                        else state["control_node_factors"]
+                    )
+                    state["control_time_factors"] = (
+                        np.asarray(state["control_time_factors"], dtype=float)
+                        - factor_step_size(control_node_factors)
+                        * np.asarray(gradients["control_time_factors"], dtype=float)
+                    )
+                    cost_evaluations += 1
+                else:
+                    state["control_time_factors"] = _zero_time()
+                    if not shared_unit:
+                        state["control_node_factors"] = _zero_node()
+
+                if not shared_unit and control_has_support:
+                    (
+                        _,
+                        _,
+                        gradients,
+                        _,
+                    ) = evaluate_state(
+                        state["control_time_factors"],
+                        state["control_node_factors"],
+                        state["treated_time_factors"],
+                        state.get("treated_node_factors"),
+                        state.get("shared_node_factors"),
+                    )
+                    state["control_node_factors"] = _maybe_project_node_factors(
+                        np.asarray(state["control_node_factors"], dtype=float)
+                        - factor_step_size(state["control_time_factors"])
+                        * np.asarray(gradients["control_node_factors"], dtype=float)
+                    )
+                    cost_evaluations += 1
+
+                if treated_has_support:
+                    (
+                        _,
+                        _,
+                        gradients,
+                        _,
+                    ) = evaluate_state(
+                        state["control_time_factors"],
+                        state["control_node_factors"],
+                        state["treated_time_factors"],
+                        state.get("treated_node_factors"),
+                        state.get("shared_node_factors"),
+                    )
+                    treated_node_factors = (
+                        state["shared_node_factors"]
+                        if shared_unit
+                        else state["treated_node_factors"]
+                    )
+                    state["treated_time_factors"] = (
+                        np.asarray(state["treated_time_factors"], dtype=float)
+                        - factor_step_size(treated_node_factors)
+                        * np.asarray(gradients["treated_time_factors"], dtype=float)
+                    )
+                    cost_evaluations += 1
+                else:
+                    state["treated_time_factors"] = _zero_time()
+                    if not shared_unit:
+                        state["treated_node_factors"] = _zero_node()
+
+                if shared_unit:
+                    if control_has_support or treated_has_support:
+                        (
+                            _,
+                            _,
+                            gradients,
+                            _,
+                        ) = evaluate_state(
+                            state["control_time_factors"],
+                            state["control_node_factors"],
+                            state["treated_time_factors"],
+                            state.get("treated_node_factors"),
+                            state.get("shared_node_factors"),
+                        )
+                        state["shared_node_factors"] = _maybe_project_node_factors(
+                            np.asarray(state["shared_node_factors"], dtype=float)
+                            - factor_step_size(
+                                state["control_time_factors"],
+                                state["treated_time_factors"],
+                            )
+                            * np.asarray(gradients["shared_node_factors"], dtype=float)
+                        )
+                        cost_evaluations += 1
+                    else:
+                        state["shared_node_factors"] = _zero_node()
+                elif treated_has_support:
+                    (
+                        _,
+                        _,
+                        gradients,
+                        _,
+                    ) = evaluate_state(
+                        state["control_time_factors"],
+                        state["control_node_factors"],
+                        state["treated_time_factors"],
+                        state.get("treated_node_factors"),
+                        state.get("shared_node_factors"),
+                    )
+                    state["treated_node_factors"] = _maybe_project_node_factors(
+                        np.asarray(state["treated_node_factors"], dtype=float)
+                        - factor_step_size(state["treated_time_factors"])
+                        * np.asarray(gradients["treated_node_factors"], dtype=float)
+                    )
+                    cost_evaluations += 1
 
             (
                 penalized_loss,
