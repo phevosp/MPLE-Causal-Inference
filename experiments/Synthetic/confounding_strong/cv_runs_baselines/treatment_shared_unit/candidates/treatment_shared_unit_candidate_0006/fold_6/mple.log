@@ -1,0 +1,43 @@
+2026-07-26 05:43:46 | INFO | Loading data...
+2026-07-26 05:43:46 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong/panel_data.npz
+2026-07-26 05:43:46 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong/x_0.npy
+2026-07-26 05:43:46 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong/cv_runs_baselines/treatment_shared_unit/candidates/treatment_shared_unit_candidate_0006/fold_6/fit_realized_config.yaml
+2026-07-26 05:43:46 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong
+2026-07-26 05:43:46 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong
+2026-07-26 05:43:46 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong/cv_runs_baselines/treatment_shared_unit/candidates/treatment_shared_unit_candidate_0006/fold_6/loss_mask.npy
+2026-07-26 05:43:46 | INFO | Configured optimizer mode: alternating_treatment_shared_unit_latent_rank
+2026-07-26 05:43:46 | INFO | Configured latent rank: 1
+2026-07-26 05:43:46 | INFO | Using a fixed known graph with scalar xi.
+2026-07-26 05:43:46 | INFO | Fit-time hard bounds active: False
+2026-07-26 05:43:46 | INFO | Fixed scalar parameters: {'beta': 0.0, 'xi': 0.0, 'eta': 0.0}
+2026-07-26 05:43:46 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-07-26 05:43:46 | INFO | Beta-gradient mask before s: False with s=0
+2026-07-26 05:43:46 | INFO | Beta-gradient mask after e: False with e=11
+2026-07-26 05:43:46 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-07-26 05:43:46 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.5, v_column_l2_max=1.0, proximal_lr=1.0
+2026-07-26 05:43:46 | INFO | Treatment-shared-unit alternating low-rank start 1/1 | seed=0 | initial_loss=0.693128 | initial_penalized=0.693193
+2026-07-26 05:43:46 | INFO | Treatment-shared-unit alternating low-rank iter 0 | Loss: 0.691703 | Penalized: 0.691818
+2026-07-26 05:43:46 | INFO | Done fitting.
+2026-07-26 05:43:46 | INFO | Optimizer status: CONVERGED: alternating treatment objective tolerance reached
+2026-07-26 05:43:46 | INFO | Best optimizer start: 1 / 1
+2026-07-26 05:43:46 | INFO | Final Loss: 0.664179
+2026-07-26 05:43:46 | INFO | Estimated vs True Parameters:
+2026-07-26 05:43:46 | INFO |   beta: 0.0000 (True: -0.3000) | SQE: 0.090000
+2026-07-26 05:43:46 | INFO |   xi: 0.0000 (True: 0.8000) | SQE: 0.640000
+2026-07-26 05:43:46 | INFO |   eta: 0.0000 (True: 0.3000) | SQE: 0.090000
+2026-07-26 05:43:46 | INFO | Treatment-shared-unit alternating low-rank optimizer diagnostics:
+2026-07-26 05:43:46 | INFO |   penalized_objective: 0.676597
+2026-07-26 05:43:46 | INFO |   mple_loss_without_penalty: 0.664179
+2026-07-26 05:43:46 | INFO |   lambda_uv_ridge: 0.500000
+2026-07-26 05:43:46 | INFO |   u_frobenius_norm: 1.000000
+2026-07-26 05:43:46 | INFO |   v_frobenius_norm: 19.292246
+2026-07-26 05:43:46 | INFO |   effective_rank: 50.000000
+2026-07-26 05:43:46 | INFO | Field and interaction diagnostics:
+2026-07-26 05:43:46 | INFO |   field_rmse: 0.707134
+2026-07-26 05:43:46 | INFO |   interaction_fro_error: 2.834194
+2026-07-26 05:43:47 | INFO |   estimated_field_max_abs_entry: 0.444848
+2026-07-26 05:43:47 | INFO |   estimated_field_rank: 50.000000
+2026-07-26 05:43:47 | INFO |   true_field_max_abs_entry: 4.447602
+2026-07-26 05:43:47 | INFO |   true_field_rank: 3.000000
+2026-07-26 05:43:47 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong/cv_runs_baselines/treatment_shared_unit/candidates/treatment_shared_unit_candidate_0006/fold_6/mple_summary.csv
+2026-07-26 05:43:47 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong/cv_runs_baselines/treatment_shared_unit/candidates/treatment_shared_unit_candidate_0006/fold_6/mple.log

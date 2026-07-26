@@ -37,17 +37,3 @@ searches:
     grid:
       latent_rank: [1, 3, 5]
       lambda_uv_ridge: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]
-
-  - name: treatment_split_test_train
-    split_kind: test_train_cv
-    optimizer_mode: alternating_treatment_split_latent_rank
-    grid:
-      latent_rank: [1, 3, 5]
-      lambda_uv_ridge: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]
-
-  - name: treatment_shared_unit_test_train
-    split_kind: test_train_cv
-    optimizer_mode: alternating_treatment_shared_unit_latent_rank
-    grid:
-      latent_rank: [1, 3, 5]
-      lambda_uv_ridge: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]

@@ -1,0 +1,241 @@
+2026-07-26 06:48:24 | INFO | Loading data...
+2026-07-26 06:48:24 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_3/panel_data.npz
+2026-07-26 06:48:24 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_3/x_0.npy
+2026-07-26 06:48:24 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_3/fits_baselines/treatment_split_rank_1_uv_1_e2/fit_realized_config.yaml
+2026-07-26 06:48:24 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_3
+2026-07-26 06:48:24 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_3
+2026-07-26 06:48:24 | INFO | Configured optimizer mode: alternating_treatment_split_latent_rank
+2026-07-26 06:48:24 | INFO | Configured latent rank: 1
+2026-07-26 06:48:24 | INFO | Using a fixed known graph with scalar xi.
+2026-07-26 06:48:24 | INFO | Fit-time hard bounds active: False
+2026-07-26 06:48:24 | INFO | Fixed scalar parameters: {'beta': 0.0, 'xi': 0.0, 'eta': 0.0}
+2026-07-26 06:48:24 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-07-26 06:48:24 | INFO | Beta-gradient mask before s: False with s=0
+2026-07-26 06:48:24 | INFO | Beta-gradient mask after e: False with e=10
+2026-07-26 06:48:24 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-07-26 06:48:24 | INFO | Optimizer settings: steps=20000, tol=1e-09, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.01, v_column_l2_max=1.0, proximal_lr=1.0
+2026-07-26 06:48:24 | INFO | Treatment-split alternating low-rank start 1/1 | seed=0 | initial_loss=0.693131 | initial_penalized=0.693132
+2026-07-26 06:48:24 | INFO | Treatment-split alternating low-rank iter 0 | Loss: 0.691611 | Penalized: 0.691613
+2026-07-26 06:48:25 | INFO | Treatment-split alternating low-rank iter 100 | Loss: 0.610954 | Penalized: 0.616187
+2026-07-26 06:48:27 | INFO | Treatment-split alternating low-rank iter 200 | Loss: 0.610920 | Penalized: 0.616156
+2026-07-26 06:48:28 | INFO | Treatment-split alternating low-rank iter 300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:30 | INFO | Treatment-split alternating low-rank iter 400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:32 | INFO | Treatment-split alternating low-rank iter 500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:33 | INFO | Treatment-split alternating low-rank iter 600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:35 | INFO | Treatment-split alternating low-rank iter 700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:36 | INFO | Treatment-split alternating low-rank iter 800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:38 | INFO | Treatment-split alternating low-rank iter 900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:39 | INFO | Treatment-split alternating low-rank iter 1000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:41 | INFO | Treatment-split alternating low-rank iter 1100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:43 | INFO | Treatment-split alternating low-rank iter 1200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:44 | INFO | Treatment-split alternating low-rank iter 1300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:46 | INFO | Treatment-split alternating low-rank iter 1400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:47 | INFO | Treatment-split alternating low-rank iter 1500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:49 | INFO | Treatment-split alternating low-rank iter 1600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:50 | INFO | Treatment-split alternating low-rank iter 1700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:52 | INFO | Treatment-split alternating low-rank iter 1800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:54 | INFO | Treatment-split alternating low-rank iter 1900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:55 | INFO | Treatment-split alternating low-rank iter 2000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:57 | INFO | Treatment-split alternating low-rank iter 2100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:48:58 | INFO | Treatment-split alternating low-rank iter 2200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:00 | INFO | Treatment-split alternating low-rank iter 2300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:01 | INFO | Treatment-split alternating low-rank iter 2400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:03 | INFO | Treatment-split alternating low-rank iter 2500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:04 | INFO | Treatment-split alternating low-rank iter 2600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:06 | INFO | Treatment-split alternating low-rank iter 2700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:08 | INFO | Treatment-split alternating low-rank iter 2800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:09 | INFO | Treatment-split alternating low-rank iter 2900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:11 | INFO | Treatment-split alternating low-rank iter 3000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:12 | INFO | Treatment-split alternating low-rank iter 3100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:14 | INFO | Treatment-split alternating low-rank iter 3200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:15 | INFO | Treatment-split alternating low-rank iter 3300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:17 | INFO | Treatment-split alternating low-rank iter 3400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:19 | INFO | Treatment-split alternating low-rank iter 3500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:20 | INFO | Treatment-split alternating low-rank iter 3600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:22 | INFO | Treatment-split alternating low-rank iter 3700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:23 | INFO | Treatment-split alternating low-rank iter 3800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:25 | INFO | Treatment-split alternating low-rank iter 3900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:26 | INFO | Treatment-split alternating low-rank iter 4000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:28 | INFO | Treatment-split alternating low-rank iter 4100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:30 | INFO | Treatment-split alternating low-rank iter 4200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:31 | INFO | Treatment-split alternating low-rank iter 4300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:33 | INFO | Treatment-split alternating low-rank iter 4400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:34 | INFO | Treatment-split alternating low-rank iter 4500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:36 | INFO | Treatment-split alternating low-rank iter 4600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:37 | INFO | Treatment-split alternating low-rank iter 4700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:39 | INFO | Treatment-split alternating low-rank iter 4800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:40 | INFO | Treatment-split alternating low-rank iter 4900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:42 | INFO | Treatment-split alternating low-rank iter 5000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:44 | INFO | Treatment-split alternating low-rank iter 5100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:45 | INFO | Treatment-split alternating low-rank iter 5200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:47 | INFO | Treatment-split alternating low-rank iter 5300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:48 | INFO | Treatment-split alternating low-rank iter 5400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:50 | INFO | Treatment-split alternating low-rank iter 5500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:51 | INFO | Treatment-split alternating low-rank iter 5600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:53 | INFO | Treatment-split alternating low-rank iter 5700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:55 | INFO | Treatment-split alternating low-rank iter 5800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:56 | INFO | Treatment-split alternating low-rank iter 5900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:58 | INFO | Treatment-split alternating low-rank iter 6000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:49:59 | INFO | Treatment-split alternating low-rank iter 6100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:01 | INFO | Treatment-split alternating low-rank iter 6200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:02 | INFO | Treatment-split alternating low-rank iter 6300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:04 | INFO | Treatment-split alternating low-rank iter 6400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:06 | INFO | Treatment-split alternating low-rank iter 6500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:07 | INFO | Treatment-split alternating low-rank iter 6600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:09 | INFO | Treatment-split alternating low-rank iter 6700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:10 | INFO | Treatment-split alternating low-rank iter 6800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:12 | INFO | Treatment-split alternating low-rank iter 6900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:13 | INFO | Treatment-split alternating low-rank iter 7000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:15 | INFO | Treatment-split alternating low-rank iter 7100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:16 | INFO | Treatment-split alternating low-rank iter 7200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:18 | INFO | Treatment-split alternating low-rank iter 7300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:20 | INFO | Treatment-split alternating low-rank iter 7400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:21 | INFO | Treatment-split alternating low-rank iter 7500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:23 | INFO | Treatment-split alternating low-rank iter 7600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:24 | INFO | Treatment-split alternating low-rank iter 7700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:26 | INFO | Treatment-split alternating low-rank iter 7800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:27 | INFO | Treatment-split alternating low-rank iter 7900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:29 | INFO | Treatment-split alternating low-rank iter 8000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:31 | INFO | Treatment-split alternating low-rank iter 8100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:32 | INFO | Treatment-split alternating low-rank iter 8200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:34 | INFO | Treatment-split alternating low-rank iter 8300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:35 | INFO | Treatment-split alternating low-rank iter 8400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:37 | INFO | Treatment-split alternating low-rank iter 8500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:38 | INFO | Treatment-split alternating low-rank iter 8600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:40 | INFO | Treatment-split alternating low-rank iter 8700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:41 | INFO | Treatment-split alternating low-rank iter 8800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:43 | INFO | Treatment-split alternating low-rank iter 8900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:45 | INFO | Treatment-split alternating low-rank iter 9000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:46 | INFO | Treatment-split alternating low-rank iter 9100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:48 | INFO | Treatment-split alternating low-rank iter 9200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:49 | INFO | Treatment-split alternating low-rank iter 9300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:51 | INFO | Treatment-split alternating low-rank iter 9400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:52 | INFO | Treatment-split alternating low-rank iter 9500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:54 | INFO | Treatment-split alternating low-rank iter 9600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:56 | INFO | Treatment-split alternating low-rank iter 9700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:57 | INFO | Treatment-split alternating low-rank iter 9800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:50:59 | INFO | Treatment-split alternating low-rank iter 9900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:00 | INFO | Treatment-split alternating low-rank iter 10000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:02 | INFO | Treatment-split alternating low-rank iter 10100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:03 | INFO | Treatment-split alternating low-rank iter 10200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:05 | INFO | Treatment-split alternating low-rank iter 10300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:07 | INFO | Treatment-split alternating low-rank iter 10400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:08 | INFO | Treatment-split alternating low-rank iter 10500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:10 | INFO | Treatment-split alternating low-rank iter 10600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:11 | INFO | Treatment-split alternating low-rank iter 10700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:13 | INFO | Treatment-split alternating low-rank iter 10800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:14 | INFO | Treatment-split alternating low-rank iter 10900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:16 | INFO | Treatment-split alternating low-rank iter 11000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:17 | INFO | Treatment-split alternating low-rank iter 11100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:19 | INFO | Treatment-split alternating low-rank iter 11200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:21 | INFO | Treatment-split alternating low-rank iter 11300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:22 | INFO | Treatment-split alternating low-rank iter 11400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:24 | INFO | Treatment-split alternating low-rank iter 11500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:25 | INFO | Treatment-split alternating low-rank iter 11600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:27 | INFO | Treatment-split alternating low-rank iter 11700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:28 | INFO | Treatment-split alternating low-rank iter 11800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:30 | INFO | Treatment-split alternating low-rank iter 11900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:32 | INFO | Treatment-split alternating low-rank iter 12000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:33 | INFO | Treatment-split alternating low-rank iter 12100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:35 | INFO | Treatment-split alternating low-rank iter 12200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:36 | INFO | Treatment-split alternating low-rank iter 12300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:38 | INFO | Treatment-split alternating low-rank iter 12400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:39 | INFO | Treatment-split alternating low-rank iter 12500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:41 | INFO | Treatment-split alternating low-rank iter 12600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:42 | INFO | Treatment-split alternating low-rank iter 12700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:44 | INFO | Treatment-split alternating low-rank iter 12800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:46 | INFO | Treatment-split alternating low-rank iter 12900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:47 | INFO | Treatment-split alternating low-rank iter 13000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:49 | INFO | Treatment-split alternating low-rank iter 13100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:50 | INFO | Treatment-split alternating low-rank iter 13200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:52 | INFO | Treatment-split alternating low-rank iter 13300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:53 | INFO | Treatment-split alternating low-rank iter 13400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:55 | INFO | Treatment-split alternating low-rank iter 13500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:57 | INFO | Treatment-split alternating low-rank iter 13600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:51:58 | INFO | Treatment-split alternating low-rank iter 13700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:00 | INFO | Treatment-split alternating low-rank iter 13800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:01 | INFO | Treatment-split alternating low-rank iter 13900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:03 | INFO | Treatment-split alternating low-rank iter 14000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:04 | INFO | Treatment-split alternating low-rank iter 14100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:06 | INFO | Treatment-split alternating low-rank iter 14200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:08 | INFO | Treatment-split alternating low-rank iter 14300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:09 | INFO | Treatment-split alternating low-rank iter 14400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:11 | INFO | Treatment-split alternating low-rank iter 14500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:12 | INFO | Treatment-split alternating low-rank iter 14600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:14 | INFO | Treatment-split alternating low-rank iter 14700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:15 | INFO | Treatment-split alternating low-rank iter 14800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:17 | INFO | Treatment-split alternating low-rank iter 14900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:18 | INFO | Treatment-split alternating low-rank iter 15000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:20 | INFO | Treatment-split alternating low-rank iter 15100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:22 | INFO | Treatment-split alternating low-rank iter 15200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:23 | INFO | Treatment-split alternating low-rank iter 15300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:25 | INFO | Treatment-split alternating low-rank iter 15400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:26 | INFO | Treatment-split alternating low-rank iter 15500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:28 | INFO | Treatment-split alternating low-rank iter 15600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:29 | INFO | Treatment-split alternating low-rank iter 15700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:31 | INFO | Treatment-split alternating low-rank iter 15800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:33 | INFO | Treatment-split alternating low-rank iter 15900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:34 | INFO | Treatment-split alternating low-rank iter 16000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:36 | INFO | Treatment-split alternating low-rank iter 16100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:37 | INFO | Treatment-split alternating low-rank iter 16200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:39 | INFO | Treatment-split alternating low-rank iter 16300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:40 | INFO | Treatment-split alternating low-rank iter 16400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:42 | INFO | Treatment-split alternating low-rank iter 16500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:43 | INFO | Treatment-split alternating low-rank iter 16600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:45 | INFO | Treatment-split alternating low-rank iter 16700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:47 | INFO | Treatment-split alternating low-rank iter 16800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:48 | INFO | Treatment-split alternating low-rank iter 16900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:50 | INFO | Treatment-split alternating low-rank iter 17000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:51 | INFO | Treatment-split alternating low-rank iter 17100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:53 | INFO | Treatment-split alternating low-rank iter 17200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:54 | INFO | Treatment-split alternating low-rank iter 17300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:56 | INFO | Treatment-split alternating low-rank iter 17400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:58 | INFO | Treatment-split alternating low-rank iter 17500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:52:59 | INFO | Treatment-split alternating low-rank iter 17600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:01 | INFO | Treatment-split alternating low-rank iter 17700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:02 | INFO | Treatment-split alternating low-rank iter 17800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:04 | INFO | Treatment-split alternating low-rank iter 17900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:05 | INFO | Treatment-split alternating low-rank iter 18000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:07 | INFO | Treatment-split alternating low-rank iter 18100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:09 | INFO | Treatment-split alternating low-rank iter 18200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:10 | INFO | Treatment-split alternating low-rank iter 18300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:12 | INFO | Treatment-split alternating low-rank iter 18400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:13 | INFO | Treatment-split alternating low-rank iter 18500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:15 | INFO | Treatment-split alternating low-rank iter 18600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:16 | INFO | Treatment-split alternating low-rank iter 18700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:18 | INFO | Treatment-split alternating low-rank iter 18800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:20 | INFO | Treatment-split alternating low-rank iter 18900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:21 | INFO | Treatment-split alternating low-rank iter 19000 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:23 | INFO | Treatment-split alternating low-rank iter 19100 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:24 | INFO | Treatment-split alternating low-rank iter 19200 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:26 | INFO | Treatment-split alternating low-rank iter 19300 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:27 | INFO | Treatment-split alternating low-rank iter 19400 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:29 | INFO | Treatment-split alternating low-rank iter 19500 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:30 | INFO | Treatment-split alternating low-rank iter 19600 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:32 | INFO | Treatment-split alternating low-rank iter 19700 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:34 | INFO | Treatment-split alternating low-rank iter 19800 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:35 | INFO | Treatment-split alternating low-rank iter 19900 | Loss: 0.610912 | Penalized: 0.616150
+2026-07-26 06:53:37 | INFO | Done fitting.
+2026-07-26 06:53:37 | INFO | Optimizer status: STOP: TOTAL NO. OF OUTER ITERATIONS REACHED LIMIT
+2026-07-26 06:53:37 | INFO | Best optimizer start: 1 / 1
+2026-07-26 06:53:37 | INFO | Final Loss: 0.610918
+2026-07-26 06:53:37 | INFO | Estimated vs True Parameters:
+2026-07-26 06:53:37 | INFO |   beta: 0.0000 (True: -0.3000) | SQE: 0.090000
+2026-07-26 06:53:37 | INFO |   xi: 0.0000 (True: 0.8000) | SQE: 0.640000
+2026-07-26 06:53:37 | INFO |   eta: 0.0000 (True: 0.3000) | SQE: 0.090000
+2026-07-26 06:53:37 | INFO | Treatment-split alternating low-rank optimizer diagnostics:
+2026-07-26 06:53:37 | INFO |   penalized_objective: 0.616160
+2026-07-26 06:53:37 | INFO |   mple_loss_without_penalty: 0.610918
+2026-07-26 06:53:37 | INFO |   lambda_uv_ridge: 0.010000
+2026-07-26 06:53:37 | INFO |   u_frobenius_norm: 1.414214
+2026-07-26 06:53:37 | INFO |   v_frobenius_norm: 114.466272
+2026-07-26 06:53:37 | INFO |   effective_rank: 50.000000
+2026-07-26 06:53:37 | INFO | Field and interaction diagnostics:
+2026-07-26 06:53:37 | INFO |   field_rmse: 0.627453
+2026-07-26 06:53:37 | INFO |   interaction_fro_error: 2.057565
+2026-07-26 06:53:37 | INFO |   estimated_field_max_abs_entry: 4.830790
+2026-07-26 06:53:37 | INFO |   estimated_field_rank: 50.000000
+2026-07-26 06:53:37 | INFO |   true_field_max_abs_entry: 4.710734
+2026-07-26 06:53:37 | INFO |   true_field_rank: 3.000000
+2026-07-26 06:53:37 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_3/fits_baselines/treatment_split_rank_1_uv_1_e2/mple_summary.csv
+2026-07-26 06:53:37 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/Synthetic/confounding_strong_3/fits_baselines/treatment_split_rank_1_uv_1_e2/mple.log

@@ -1,0 +1,62 @@
+2026-07-26 06:08:17 | INFO | Loading data...
+2026-07-26 06:08:17 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/panel_data.npz
+2026-07-26 06:08:17 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/x_0.npy
+2026-07-26 06:08:17 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs_baselines/treatment_split/candidates/treatment_split_candidate_0013/fold_2/fit_realized_config.yaml
+2026-07-26 06:08:17 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference
+2026-07-26 06:08:17 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference
+2026-07-26 06:08:17 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs_baselines/treatment_split/candidates/treatment_split_candidate_0013/fold_2/loss_mask.npy
+2026-07-26 06:08:17 | INFO | Configured optimizer mode: alternating_treatment_split_latent_rank
+2026-07-26 06:08:17 | INFO | Configured latent rank: 5
+2026-07-26 06:08:17 | INFO | Using a fixed known graph with scalar xi.
+2026-07-26 06:08:17 | INFO | Fit-time hard bounds active: False
+2026-07-26 06:08:17 | INFO | Fixed scalar parameters: {'beta': 0.0, 'xi': 0.0, 'eta': 0.0}
+2026-07-26 06:08:17 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-07-26 06:08:17 | INFO | Beta-gradient mask before s: False with s=0
+2026-07-26 06:08:17 | INFO | Beta-gradient mask after e: False with e=11
+2026-07-26 06:08:17 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-07-26 06:08:17 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.001, v_column_l2_max=1.0, proximal_lr=1.0
+2026-07-26 06:08:17 | INFO | Treatment-split alternating low-rank start 1/1 | seed=0 | initial_loss=0.693151 | initial_penalized=0.693152
+2026-07-26 06:08:17 | INFO | Treatment-split alternating low-rank iter 0 | Loss: 0.674953 | Penalized: 0.674957
+2026-07-26 06:08:20 | INFO | Treatment-split alternating low-rank iter 100 | Loss: 0.266273 | Penalized: 0.290902
+2026-07-26 06:08:23 | INFO | Treatment-split alternating low-rank iter 200 | Loss: 0.260176 | Penalized: 0.288021
+2026-07-26 06:08:25 | INFO | Treatment-split alternating low-rank iter 300 | Loss: 0.257718 | Penalized: 0.286290
+2026-07-26 06:08:28 | INFO | Treatment-split alternating low-rank iter 400 | Loss: 0.255501 | Penalized: 0.284656
+2026-07-26 06:08:30 | INFO | Treatment-split alternating low-rank iter 500 | Loss: 0.253917 | Penalized: 0.283334
+2026-07-26 06:08:33 | INFO | Treatment-split alternating low-rank iter 600 | Loss: 0.253348 | Penalized: 0.282993
+2026-07-26 06:08:36 | INFO | Treatment-split alternating low-rank iter 700 | Loss: 0.252818 | Penalized: 0.282559
+2026-07-26 06:08:38 | INFO | Treatment-split alternating low-rank iter 800 | Loss: 0.252418 | Penalized: 0.282202
+2026-07-26 06:08:41 | INFO | Treatment-split alternating low-rank iter 900 | Loss: 0.252160 | Penalized: 0.282023
+2026-07-26 06:08:44 | INFO | Treatment-split alternating low-rank iter 1000 | Loss: 0.251989 | Penalized: 0.281905
+2026-07-26 06:08:47 | INFO | Treatment-split alternating low-rank iter 1100 | Loss: 0.251946 | Penalized: 0.281892
+2026-07-26 06:08:49 | INFO | Treatment-split alternating low-rank iter 1200 | Loss: 0.251966 | Penalized: 0.281950
+2026-07-26 06:08:52 | INFO | Treatment-split alternating low-rank iter 1300 | Loss: 0.251779 | Penalized: 0.281793
+2026-07-26 06:08:55 | INFO | Treatment-split alternating low-rank iter 1400 | Loss: 0.251629 | Penalized: 0.281644
+2026-07-26 06:08:57 | INFO | Treatment-split alternating low-rank iter 1500 | Loss: 0.251556 | Penalized: 0.281577
+2026-07-26 06:09:00 | INFO | Treatment-split alternating low-rank iter 1600 | Loss: 0.251597 | Penalized: 0.281608
+2026-07-26 06:09:03 | INFO | Treatment-split alternating low-rank iter 1700 | Loss: 0.251667 | Penalized: 0.281654
+2026-07-26 06:09:06 | INFO | Treatment-split alternating low-rank iter 1800 | Loss: 0.251441 | Penalized: 0.281422
+2026-07-26 06:09:08 | INFO | Treatment-split alternating low-rank iter 1900 | Loss: 0.251307 | Penalized: 0.281302
+2026-07-26 06:09:11 | INFO | Done fitting.
+2026-07-26 06:09:11 | INFO | Optimizer status: STOP: TOTAL NO. OF OUTER ITERATIONS REACHED LIMIT
+2026-07-26 06:09:11 | INFO | Best optimizer start: 1 / 1
+2026-07-26 06:09:11 | INFO | Final Loss: 0.252401
+2026-07-26 06:09:11 | INFO | Estimated vs True Parameters:
+2026-07-26 06:09:11 | INFO |   beta: 0.0000 (True: -0.3000) | SQE: 0.090000
+2026-07-26 06:09:11 | INFO |   xi: 0.0000 (True: 0.0000) | SQE: 0.000000
+2026-07-26 06:09:11 | INFO |   eta: 0.0000 (True: 0.3000) | SQE: 0.090000
+2026-07-26 06:09:11 | INFO | Treatment-split alternating low-rank optimizer diagnostics:
+2026-07-26 06:09:11 | INFO |   penalized_objective: 0.282399
+2026-07-26 06:09:11 | INFO |   mple_loss_without_penalty: 0.252401
+2026-07-26 06:09:11 | INFO |   lambda_uv_ridge: 0.001000
+2026-07-26 06:09:11 | INFO |   u_frobenius_norm: 3.162278
+2026-07-26 06:09:11 | INFO |   v_frobenius_norm: 670.789383
+2026-07-26 06:09:11 | INFO |   effective_rank: 50.000000
+2026-07-26 06:09:11 | INFO | Field and interaction diagnostics:
+2026-07-26 06:09:11 | INFO |   field_rmse: 2.645929
+2026-07-26 06:09:11 | INFO |   interaction_fro_error: 0.000000
+2026-07-26 06:09:11 | INFO |   estimated_field_max_abs_entry: 13.157126
+2026-07-26 06:09:11 | INFO |   estimated_field_rank: 50.000000
+2026-07-26 06:09:11 | INFO |   true_field_max_abs_entry: 4.447602
+2026-07-26 06:09:11 | INFO |   true_field_rank: 3.000000
+2026-07-26 06:09:11 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs_baselines/treatment_split/candidates/treatment_split_candidate_0013/fold_2/mple_summary.csv
+2026-07-26 06:09:11 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticNoInterference/synth_no_interference/cv_runs_baselines/treatment_split/candidates/treatment_split_candidate_0013/fold_2/mple.log

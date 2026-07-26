@@ -15,19 +15,19 @@ base:
   v_column_l2_max: 1.0
   estimation:
     fixed_scalar_params:
-      beta: -0.3
-      xi: 0.8
-      eta: 0.3
+      beta: 0.0
+      xi: 0.0
+      eta: 0.0
     beta_mask_pre_s: false
     beta_mask_post_e: false
 
 variants:
-  - name: treatment_split_rank_3_uv_5_e2
+  - name: treatment_split_rank_1_uv_1_e2
     optimizer_mode: alternating_treatment_split_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: .05
+    latent_rank: 1
+    lambda_uv_ridge: 0.01
 
-  - name: treatment_shared_unit_rank_3_uv_5_e2
+  - name: treatment_shared_unit_rank_3_uv_1_e1
     optimizer_mode: alternating_treatment_shared_unit_latent_rank
     latent_rank: 3
-    lambda_uv_ridge: .05
+    lambda_uv_ridge: 0.1
