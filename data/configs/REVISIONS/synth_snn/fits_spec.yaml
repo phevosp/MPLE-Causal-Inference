@@ -1,6 +1,6 @@
 base:
   fit_root_name: fits
-  fit_manifest_path: experiments/SyntheticSNN/fit_manifest.csv
+  fit_manifest_path: experiments/USCounty/fit_snn_train_test_manifest.csv
   optimizer:
     steps: 2000
     tol: 1.0e-6
@@ -19,18 +19,13 @@ base:
     beta_mask_post_e: false
 
 variants:
-  - name: alternating_rank_3_uv_1_e2
-    optimizer_mode: alternating_latent_rank
-    latent_rank: 3
-    lambda_uv_ridge: 0.1
-
-  - name: snn_8nn_u_mr1
+  - name: snn_8nn_u_mr2
     optimizer_mode: snn_treatment_split
     snn:
       n_neighbors: 8
       weights: uniform
       anchor_solver: bitset_exact
       random_splits: false
-      max_rank: 1
+      max_rank: 2
       linear_span_eps: 0.05
       subspace_eps: 0.05
