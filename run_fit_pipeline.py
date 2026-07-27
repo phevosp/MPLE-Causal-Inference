@@ -57,6 +57,7 @@ TRAIN_FIT_ROOT_NAME = "train_fits"
 TRAIN_FIT_MANIFEST_NAME = "train_fit_manifest.csv"
 TRAIN_FIT_SUMMARY_NAME = "train_fit_summary.csv"
 BEST_TRAIN_FIT_BY_EXPERIMENT_NAME = "best_train_fit_by_experiment.csv"
+SNN_TREATMENT_SPLIT_MODE = "snn_treatment_split"
 
 
 def _normalize_fit_mode(fit_mode: str) -> str:
@@ -670,6 +671,10 @@ def run_train_fit(
     search_name: str = "",
     overwrite: bool = False,
 ) -> Path:
+    if str(candidate.get("optimizer_mode", "")).strip() == SNN_TREATMENT_SPLIT_MODE:
+        raise ValueError(
+            "SNN v1 supports standard fits only and does not support --fit_mode=outer_masked."
+        )
     experiment_root = Path(experiment_row["experiment_path"]).resolve()
     output_root = (
         Path(fit_root).resolve()

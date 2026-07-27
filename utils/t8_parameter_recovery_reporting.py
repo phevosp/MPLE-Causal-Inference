@@ -218,6 +218,9 @@ def latent_diagnostics(folder: Path) -> dict[str, object]:
 
 def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | None:
     fit_root = Path(manifest_row["fit_path"]).resolve()
+    optimizer_mode = str(manifest_row.get("optimizer_mode", "no_external_field"))
+    if optimizer_mode == "snn_treatment_split":
+        return None
     summary_path = fit_root / "mple_summary.csv"
     if not summary_path.exists():
         return None
@@ -243,7 +246,7 @@ def _fit_row_from_manifest(manifest_row: dict[str, str]) -> dict[str, object] | 
         "N": manifest_row.get("N", ""),
         "T": manifest_row.get("T", ""),
         "s": manifest_row.get("s", ""),
-        "optimizer_mode": manifest_row.get("optimizer_mode", "no_external_field"),
+        "optimizer_mode": optimizer_mode,
         "latent_rank": (
             int(manifest_row["latent_rank"])
             if manifest_row.get("latent_rank") not in (None, "")
@@ -381,6 +384,15 @@ def write_fit_reports(
 ) -> dict[str, object]:
     rows = collect_fit_rows(manifest_path)
     if not rows:
+        manifest_rows = read_csv_rows(manifest_path)
+        if any(
+            str(row.get("optimizer_mode", "")).strip() == "snn_treatment_split"
+            for row in manifest_rows
+        ):
+            return {
+                "per_experiment": {},
+                "winners_csv": "",
+            }
         raise ValueError(f"No finished fits were found in manifest {manifest_path}.")
 
     ranked_groups, winners = group_and_rank_fit_rows(rows)

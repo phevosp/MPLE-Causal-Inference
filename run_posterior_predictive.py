@@ -29,7 +29,9 @@ from utils.t8_output_writers import (
 from utils.t0_path_utils import io_path
 from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t5_parameter_bundles import (
+    fit_optimizer_mode,
     load_fit_parameter_bundle,
+    load_fit_snn_counterfactual_artifacts,
     load_fit_treatment_field_artifacts,
     load_truth_parameter_bundle,
 )
@@ -125,6 +127,41 @@ def _resolved_fit_simulation_field_matrix(
     )
 
 
+def _prepare_output_root(output_root: Path, *, overwrite: bool) -> None:
+    """Create a clean output root once branch-specific validation has succeeded."""
+    if output_root.exists():
+        if overwrite:
+            shutil.rmtree(output_root)
+        else:
+            raise FileExistsError(
+                f"{output_root} already exists. Re-run with --overwrite to rebuild it."
+            )
+    output_root.mkdir(parents=True, exist_ok=False)
+
+
+def _build_snn_counterfactual_panel(
+    *,
+    treated_completed_matrix: np.ndarray,
+    untreated_completed_matrix: np.ndarray,
+    intervention_z: np.ndarray,
+) -> np.ndarray:
+    """Select the SNN potential-outcome surface implied by the counterfactual z panel."""
+    treated = np.asarray(treated_completed_matrix, dtype=float)
+    untreated = np.asarray(untreated_completed_matrix, dtype=float)
+    z = np.asarray(intervention_z, dtype=float)
+    if treated.shape != untreated.shape:
+        raise ValueError(
+            f"SNN treated and untreated completed matrices must share a shape, got "
+            f"{treated.shape} and {untreated.shape}."
+        )
+    if z.shape != treated.shape:
+        raise ValueError(
+            f"SNN counterfactual surface shape {treated.shape} does not match "
+            f"intervention panel shape {z.shape}."
+        )
+    return np.where(z > 0.0, treated, untreated)
+
+
 def _simulate_target(
     target: dict[str, object],
     run_spec: dict[str, object],
@@ -159,14 +196,6 @@ def _simulate_target(
             / intervention_slug
             / run_slug
         )
-    if output_root.exists():
-        if overwrite:
-            shutil.rmtree(output_root)
-        else:
-            raise FileExistsError(
-                f"{output_root} already exists. Re-run with --overwrite to rebuild it."
-            )
-    output_root.mkdir(parents=True, exist_ok=False)
 
     # Load the realized experiment panel once, then resolve the intervention
     # source against that panel so saved interventions can be shape-checked.
@@ -177,6 +206,8 @@ def _simulate_target(
         intervention_name=intervention_name,
         panel_context=panel_context,
     )
+    fit_root = None
+    snn_artifacts = None
     # Choose the parameter source:
     # - truth: exact generating parameters for synthetic/hybrid experiments
     # - truth_xi_zero: truth with graph interactions disabled
@@ -193,14 +224,96 @@ def _simulate_target(
     else:
         fit_row = target["fit_row"]
         fit_root = Path(str(fit_row["fit_path"]))
-        bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+        optimizer_mode = fit_optimizer_mode(fit_root)
+        if optimizer_mode == "snn_treatment_split":
+            if intervention_source != "saved_intervention":
+                raise ValueError(
+                    "SNN fits support saved_intervention counterfactual runs only and "
+                    "do not support observed_experiment posterior-predictive calibration."
+                )
+            snn_artifacts = load_fit_snn_counterfactual_artifacts(fit_root)
+            bundle = None
+        else:
+            bundle = load_fit_parameter_bundle(fit_root, experiment_root)
+    if snn_artifacts is not None:
+        _prepare_output_root(output_root, overwrite=overwrite)
+
+        sample_x = _build_snn_counterfactual_panel(
+            treated_completed_matrix=snn_artifacts.treated_completed_matrix,
+            untreated_completed_matrix=snn_artifacts.untreated_completed_matrix,
+            intervention_z=intervention_context.z,
+        )
+        counterfactual_sample_summaries = _empty_sample_summary_accumulator()
+        _append_sample_summary(
+            counterfactual_sample_summaries,
+            compute_counterfactual_sample_summary(
+                sample_x,
+                s=int(intervention_context.s),
+            ),
+        )
+        sample_summaries = _finalize_sample_summaries(counterfactual_sample_summaries)
+        write_counterfactual_summary_tables(
+            output_root,
+            sample_summaries=sample_summaries,
+        )
+        summary: dict[str, float | int | str] = {
+            "s": int(intervention_context.s),
+            "num_samples": 1,
+            "num_units": int(panel_context["N"]),
+        }
+        metadata = {
+            "experiment_name": experiment_row.get("experiment_name", ""),
+            "experiment_path": str(experiment_root),
+            "run_name": run_spec["name"],
+            "run_slug": run_slug,
+            "source_type": target["source_type"],
+            "source_name": target["source_name"],
+            "source_slug": source_slug,
+            "intervention_source": intervention_source,
+            "intervention_name": intervention_name,
+            "intervention_slug": intervention_slug,
+            "latent_rank": 0,
+            "num_samples": 1,
+            "gibbs_sweeps": 0,
+            "seed": 0,
+            "requested_num_samples": int(run_spec["num_samples"]),
+            "requested_gibbs_sweeps": int(run_spec["gibbs_sweeps"]),
+            "requested_seed": int(run_spec["seed"]),
+            "sampling_controls_used": False,
+            "execution_mode": "deterministic_snn_counterfactual",
+            "source_optimizer_mode": snn_artifacts.optimizer_mode,
+            "s": int(intervention_context.s),
+            "num_units": int(panel_context["N"]),
+            "num_time_steps": int(panel_context["T"]),
+            "summary": summary,
+        }
+        with open(
+            io_path(output_root / "counterfactual_metadata.yaml"),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            OmegaConf.save(OmegaConf.create(metadata), handle)
+        return build_manifest_row(
+            experiment_row=experiment_row,
+            panel_context=panel_context,
+            target=target,
+            run_spec=run_spec,
+            latent_rank=0,
+            num_samples=1,
+            gibbs_sweeps=0,
+            seed=0,
+            output_root=output_root,
+            summary=summary,
+        )
     # Posterior predictive draws must align with the experiment horizon because
     # all summaries and intervention panels are defined on that same T x N grid.
+    assert bundle is not None
     if int(bundle.t_steps) != int(panel_context["T"]):
         raise ValueError(
             f"Posterior-predictive source '{target['source_name']}' has t_steps={bundle.t_steps},"
             f" but experiment '{experiment_row.get('experiment_name', experiment_root.name)}' has T={panel_context['T']}."
         )
+    _prepare_output_root(output_root, overwrite=overwrite)
     num_samples = int(run_spec["num_samples"])
     gibbs_sweeps = int(run_spec["gibbs_sweeps"])
     seed = int(run_spec["seed"])

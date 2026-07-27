@@ -47,6 +47,22 @@ class OutcomeParameterBundle:
     gamma_matrix: object
 
 
+@dataclass(frozen=True)
+class SnnCounterfactualFitArtifacts:
+    """Completed treated/untreated SNN surfaces for deterministic counterfactuals."""
+
+    source_type: str
+    source_name: str
+    variant_name: str
+    optimizer_mode: str
+    latent_rank: int
+    t_steps: int
+    treated_completed_matrix: np.ndarray
+    untreated_completed_matrix: np.ndarray
+    treated_finite_mask: np.ndarray
+    untreated_finite_mask: np.ndarray
+
+
 def save_estimated_parameter_bundle(
     path: str | Path,
     *,
@@ -103,6 +119,11 @@ def _fit_optimizer_mode(fit_root: Path) -> str | None:
     return str(optimizer_mode)
 
 
+def fit_optimizer_mode(fit_root: str | Path) -> str | None:
+    """Return the realized optimizer mode for a fit root when available."""
+    return _fit_optimizer_mode(Path(fit_root))
+
+
 def load_fit_treatment_field_artifacts(
     fit_root: str | Path,
 ) -> TreatmentFieldArtifacts | None:
@@ -127,6 +148,70 @@ def load_fit_treatment_field_artifacts(
             f"not match fit optimizer_mode={optimizer_mode!r} for {fit_path}."
         )
     return artifacts
+
+
+def load_fit_snn_counterfactual_artifacts(
+    fit_root: str | Path,
+) -> SnnCounterfactualFitArtifacts:
+    """Load deterministic treated/untreated SNN surfaces for counterfactual use."""
+    fit_path = Path(fit_root)
+    optimizer_mode = _fit_optimizer_mode(fit_path)
+    if optimizer_mode != "snn_treatment_split":
+        raise ValueError(
+            f"Fit {fit_path} does not use optimizer_mode='snn_treatment_split'."
+        )
+
+    artifact_path = fit_path / "estimated_snn_artifacts.npz"
+    if not path_exists(artifact_path):
+        raise FileNotFoundError(
+            f"Fit {fit_path} uses optimizer_mode='snn_treatment_split' but is missing "
+            f"{artifact_path.name}."
+        )
+
+    with np.load(io_path(artifact_path), allow_pickle=False) as data:
+        treated_completed_matrix = np.asarray(
+            data["treated_completed_matrix"], dtype=float
+        )
+        untreated_completed_matrix = np.asarray(
+            data["untreated_completed_matrix"], dtype=float
+        )
+        treated_finite_mask = np.asarray(data["treated_finite_mask"], dtype=bool)
+        untreated_finite_mask = np.asarray(data["untreated_finite_mask"], dtype=bool)
+
+    if treated_completed_matrix.shape != untreated_completed_matrix.shape:
+        raise ValueError(
+            f"SNN completed matrices in {artifact_path} must share a shape, got "
+            f"{treated_completed_matrix.shape} and {untreated_completed_matrix.shape}."
+        )
+    if treated_finite_mask.shape != treated_completed_matrix.shape:
+        raise ValueError(
+            f"treated_finite_mask in {artifact_path} has shape {treated_finite_mask.shape}, "
+            f"expected {treated_completed_matrix.shape}."
+        )
+    if untreated_finite_mask.shape != untreated_completed_matrix.shape:
+        raise ValueError(
+            f"untreated_finite_mask in {artifact_path} has shape {untreated_finite_mask.shape}, "
+            f"expected {untreated_completed_matrix.shape}."
+        )
+
+    variant_name = fit_path.name
+    metadata_path = fit_path / "fit_metadata.yaml"
+    if path_exists(metadata_path):
+        metadata = load_yaml_config(metadata_path)
+        variant_name = str(metadata.get("variant_name", variant_name))
+
+    return SnnCounterfactualFitArtifacts(
+        source_type="fit",
+        source_name=fit_path.name,
+        variant_name=variant_name,
+        optimizer_mode=optimizer_mode,
+        latent_rank=0,
+        t_steps=int(treated_completed_matrix.shape[0]),
+        treated_completed_matrix=treated_completed_matrix,
+        untreated_completed_matrix=untreated_completed_matrix,
+        treated_finite_mask=treated_finite_mask,
+        untreated_finite_mask=untreated_finite_mask,
+    )
 
 
 def _build_outcome_parameter_bundle(

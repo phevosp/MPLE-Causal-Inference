@@ -82,6 +82,8 @@ def build_fit_config(
         },
         "optimizer_params": optimizer_config,
     }
+    if optimizer_mode == "snn_treatment_split":
+        config_dict["snn_params"] = dict(variant.get("snn", {}) or {})
     return OmegaConf.create(config_dict)
 
 
@@ -148,6 +150,8 @@ def build_fit_materialization_payloads(
         "fixed_scalar_params": fixed_scalar_params,
         **dims,
     }
+    if str(fit_config.global_params.optimizer_mode) == "snn_treatment_split":
+        fit_metadata["snn_params"] = dict(variant.get("snn", {}) or {})
     if extra_metadata:
         fit_metadata.update(extra_metadata)
     return fit_config, fit_metadata
@@ -178,10 +182,16 @@ def materialize_fit_root(
 
 
 def execute_fit_root(fit_root: str | Path) -> None:
+    fit_root_path = Path(fit_root)
+    fit_config = OmegaConf.load(io_path(fit_root_path / "fit_realized_config.yaml"))
+    optimizer_mode = str(fit_config.global_params.optimizer_mode)
+    worker_name = "mple.py"
+    if optimizer_mode == "snn_treatment_split":
+        worker_name = "snn_fit.py"
     command = [
         sys.executable,
-        str(REPO_ROOT / "mple.py"),
+        str(REPO_ROOT / worker_name),
         "--data_folder",
-        str(Path(fit_root)),
+        str(fit_root_path),
     ]
     subprocess.run(command, check=True, cwd=REPO_ROOT)

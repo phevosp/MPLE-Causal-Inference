@@ -60,6 +60,7 @@ from utils.t0_string_utils import slugify
 from utils.t5_parameter_bundles import (
     OutcomeParameterBundle,
     load_fit_parameter_bundle,
+    load_fit_snn_counterfactual_artifacts,
     load_fit_treatment_field_artifacts,
     load_truth_parameter_bundle,
     save_estimated_parameter_bundle,
@@ -171,6 +172,7 @@ from run_fit_pipeline import (
     refresh_train_fit_manifest,
     run_fit_request,
     run_fits,
+    run_train_fit,
     run_train_fit_request,
     train_fit_manifest_path_for_scope,
     write_train_fit_requests,
@@ -3732,6 +3734,52 @@ class MinimalPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "lambda_uv_ridge"):
             build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 3})
 
+    def test_validate_fit_variant_dict_allows_snn_surface_with_max_rank_precedence(self) -> None:
+        variant = {
+            "name": "snn_variant",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "snn_treatment_split",
+            "snn": {
+                "n_neighbors": 2,
+                "weights": "distance",
+                "random_splits": True,
+                "max_rank": 2,
+                "spectral_t": 0.9,
+                "linear_span_eps": 0.2,
+                "subspace_eps": 0.3,
+                "min_value": -1.0,
+                "max_value": 1.0,
+            },
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        validate_fit_variant_dict(variant)
+        fit_config = build_fit_config(variant, {"N": 4, "T": 3, "s": 1, "e": 3})
+        self.assertEqual(
+            OmegaConf.to_container(fit_config.snn_params, resolve=True),
+            variant["snn"],
+        )
+
+    def test_validate_fit_variant_dict_rejects_invalid_snn_bounds(self) -> None:
+        variant = {
+            "name": "snn_variant_bad_bounds",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "snn_treatment_split",
+            "snn": {
+                "n_neighbors": 1,
+                "weights": "uniform",
+                "random_splits": False,
+                "linear_span_eps": 0.1,
+                "subspace_eps": 0.1,
+                "min_value": 1.0,
+                "max_value": -1.0,
+            },
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "min_value"):
+            validate_fit_variant_dict(variant)
+
 
 class FitReportingTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -4059,6 +4107,37 @@ class FitReportingTests(unittest.TestCase):
         self.assertEqual(
             Path(fit_manifest), self.root / "generated" / "fit_manifest.csv"
         )
+
+    def test_write_fit_reports_raises_when_non_snn_manifest_has_no_reportable_rows(self) -> None:
+        experiment_root = self.root / "exp_missing"
+        fit_root = experiment_root / "fits" / "rank_0"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        manifest_path = self._write_manifest(
+            [
+                {
+                    "experiment_name": "exp_missing",
+                    "experiment_slug": "exp_missing",
+                    "descriptor": "exp_missing",
+                    "experiment_path": str(experiment_root.resolve()),
+                    "intervention_source": "generated",
+                    "graph_source": "generated",
+                    "variant_name": "rank_0",
+                    "variant_slug": "rank_0",
+                    "fit_path": str(fit_root.resolve()),
+                    "N": 5,
+                    "T": 4,
+                    "s": 1,
+                    "B": 1.0,
+                    "latent_rank": 0,
+                    "optimizer_mode": "no_external_field",
+                    "fixed_scalar_params": "{}",
+                    "status": "completed",
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "No finished fits were found"):
+            write_fit_reports(manifest_path)
 
 
 class TrialAggregationTests(unittest.TestCase):
@@ -5713,6 +5792,151 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertTrue(
             (self.root / "generated" / "best_fit_by_experiment.csv").exists()
         )
+
+    def test_run_fit_request_writes_snn_artifacts_and_preserves_sign_split(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a"])
+        fits_spec_path = self._write_fit_spec(
+            [
+                {
+                    "name": "snn_basic",
+                    "optimizer_mode": "snn_treatment_split",
+                    "snn": {
+                        "n_neighbors": 1,
+                        "weights": "uniform",
+                        "random_splits": False,
+                        "max_rank": 1,
+                        "linear_span_eps": 0.1,
+                        "subspace_eps": 0.1,
+                    },
+                }
+            ]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+
+        row = run_fit_request(
+            generation_manifest,
+            fits_spec_path,
+            "exp_a",
+            "snn_basic",
+            overwrite=True,
+        )
+
+        fit_root = Path(row["fit_path"])
+        self.assertTrue((fit_root / "estimated_snn_artifacts.npz").exists())
+        self.assertTrue((fit_root / "snn_summary.csv").exists())
+        self.assertTrue((fit_root / "snn.log").exists())
+
+        experiment_root = self.root / "generated" / "exp_a"
+        with np.load(experiment_root / "panel_data.npz", allow_pickle=False) as panel:
+            x = np.asarray(panel["x"], dtype=float)
+            z = np.asarray(panel["z"], dtype=float)
+        with np.load(fit_root / "estimated_snn_artifacts.npz", allow_pickle=False) as data:
+            treated_input = np.asarray(data["treated_input_matrix"], dtype=float)
+            untreated_input = np.asarray(data["untreated_input_matrix"], dtype=float)
+            treated_completed = np.asarray(data["treated_completed_matrix"], dtype=float)
+            untreated_completed = np.asarray(data["untreated_completed_matrix"], dtype=float)
+            treated_feasible = np.asarray(data["treated_feasible_mask"], dtype=float)
+            untreated_feasible = np.asarray(data["untreated_feasible_mask"], dtype=float)
+            self.assertEqual(str(np.asarray(data["weights"]).item()), "uniform")
+            self.assertEqual(int(np.asarray(data["n_neighbors"]).item()), 1)
+
+        np.testing.assert_array_equal(
+            np.isnan(treated_input),
+            np.asarray(z <= 0.0, dtype=bool),
+        )
+        np.testing.assert_array_equal(
+            np.isnan(untreated_input),
+            np.asarray(z >= 0.0, dtype=bool),
+        )
+        np.testing.assert_allclose(
+            treated_input[z > 0.0],
+            x[z > 0.0],
+        )
+        np.testing.assert_allclose(
+            untreated_input[z < 0.0],
+            x[z < 0.0],
+        )
+        np.testing.assert_allclose(
+            treated_completed[z > 0.0],
+            x[z > 0.0],
+        )
+        np.testing.assert_allclose(
+            untreated_completed[z < 0.0],
+            x[z < 0.0],
+        )
+        self.assertEqual(treated_feasible.shape, x.shape)
+        self.assertEqual(untreated_feasible.shape, x.shape)
+
+    def test_refresh_fit_manifest_allows_snn_only_manifest(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a"])
+        fits_spec_path = self._write_fit_spec(
+            [
+                {
+                    "name": "snn_basic",
+                    "optimizer_mode": "snn_treatment_split",
+                    "snn": {
+                        "n_neighbors": 1,
+                        "weights": "uniform",
+                        "random_splits": False,
+                        "max_rank": 1,
+                        "linear_span_eps": 0.1,
+                        "subspace_eps": 0.1,
+                    },
+                }
+            ]
+        )
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        run_fit_request(
+            generation_manifest,
+            fits_spec_path,
+            "exp_a",
+            "snn_basic",
+            overwrite=True,
+        )
+
+        fit_manifest = refresh_fit_manifest(generation_manifest, fits_spec_path)
+
+        rows = read_csv_manifest(fit_manifest)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["variant_slug"], "snn_basic")
+        self.assertEqual(rows[0]["optimizer_mode"], "snn_treatment_split")
+        self.assertFalse((self.root / "generated" / "exp_a" / "fit_summary.csv").exists())
+        self.assertFalse((self.root / "generated" / "best_fit_by_experiment.csv").exists())
+
+    def test_run_train_fit_rejects_snn_candidate(self) -> None:
+        generation_spec_path = self._write_generation_spec(["exp_a"])
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        experiment_row = read_csv_manifest(generation_manifest)[0]
+
+        candidate = {
+            "name": "snn_basic",
+            "slug": "snn_basic",
+            "optimizer_mode": "snn_treatment_split",
+            "_candidate_index": 0,
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+            "estimation": {"fixed_scalar_params": {}},
+            "snn": {
+                "n_neighbors": 1,
+                "weights": "uniform",
+                "random_splits": False,
+                "max_rank": 1,
+                "linear_span_eps": 0.1,
+                "subspace_eps": 0.1,
+            },
+        }
+
+        with self.assertRaisesRegex(ValueError, "standard fits only"):
+            run_train_fit(
+                experiment_row,
+                candidate=candidate,
+                best_candidate_path=self.root / "best_candidate.yaml",
+                search_slug="dummy_search",
+                split_kind="train_cv",
+                num_folds=5,
+                outer_num_folds=5,
+                test_fold_id=1,
+                overwrite=True,
+            )
 
     def test_write_train_fit_requests_writes_one_row_per_experiment_for_train_cv(self) -> None:
         generation_spec_path = self._write_generation_spec([{"name": "exp_a", "dimensions": {"T": 9}}])
@@ -10560,6 +10784,64 @@ class PosteriorPredictiveTests(unittest.TestCase):
         np.testing.assert_allclose(artifacts.treated_field_matrix, 1.0)
         self.assertEqual(int(artifacts.best_start), 0)
 
+    def test_load_fit_snn_counterfactual_artifacts_reads_saved_surfaces(self) -> None:
+        fit_root = self.root / "exp_fit_snn_bundle" / "fits" / "snn_variant"
+        fit_root.mkdir(parents=True, exist_ok=True)
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "global_params": {"optimizer_mode": "snn_treatment_split"},
+                    "snn_params": {
+                        "n_neighbors": 1,
+                        "weights": "uniform",
+                        "random_splits": False,
+                        "max_rank": 1,
+                        "linear_span_eps": 0.1,
+                        "subspace_eps": 0.1,
+                    },
+                }
+            ),
+            fit_root / "fit_realized_config.yaml",
+        )
+        OmegaConf.save(
+            OmegaConf.create({"variant_name": "snn_variant"}),
+            fit_root / "fit_metadata.yaml",
+        )
+        np.savez(
+            fit_root / "estimated_snn_artifacts.npz",
+            treated_completed_matrix=np.asarray([[1.0, np.nan], [0.5, -0.5]], dtype=float),
+            untreated_completed_matrix=np.asarray([[-1.0, 0.25], [np.nan, -0.25]], dtype=float),
+            treated_finite_mask=np.asarray([[True, False], [True, True]], dtype=bool),
+            untreated_finite_mask=np.asarray([[True, True], [False, True]], dtype=bool),
+        )
+
+        artifacts = load_fit_snn_counterfactual_artifacts(fit_root)
+
+        self.assertEqual(artifacts.source_type, "fit")
+        self.assertEqual(artifacts.source_name, "snn_variant")
+        self.assertEqual(artifacts.variant_name, "snn_variant")
+        self.assertEqual(artifacts.optimizer_mode, "snn_treatment_split")
+        self.assertEqual(artifacts.latent_rank, 0)
+        self.assertEqual(artifacts.t_steps, 2)
+        np.testing.assert_allclose(
+            artifacts.treated_completed_matrix,
+            np.asarray([[1.0, np.nan], [0.5, -0.5]], dtype=float),
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            artifacts.untreated_completed_matrix,
+            np.asarray([[-1.0, 0.25], [np.nan, -0.25]], dtype=float),
+            equal_nan=True,
+        )
+        np.testing.assert_array_equal(
+            artifacts.treated_finite_mask,
+            np.asarray([[True, False], [True, True]], dtype=bool),
+        )
+        np.testing.assert_array_equal(
+            artifacts.untreated_finite_mask,
+            np.asarray([[True, True], [False, True]], dtype=bool),
+        )
+
     def test_run_posterior_predictive_saved_intervention_uses_recomposed_split_field(
         self,
     ) -> None:
@@ -10646,6 +10928,313 @@ class PosteriorPredictiveTests(unittest.TestCase):
 
         np.testing.assert_allclose(captured["field_matrix"], expected_field_matrix)
         self.assertIsNotNone(captured["field_matrix"])
+
+    def test_run_posterior_predictive_saved_intervention_snn_uses_completed_surfaces(
+        self,
+    ) -> None:
+        variant = {
+            "name": "snn_variant",
+            "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "snn_treatment_split",
+            "snn": {
+                "n_neighbors": 1,
+                "weights": "uniform",
+                "random_splits": False,
+                "max_rank": 1,
+                "linear_span_eps": 0.1,
+                "subspace_eps": 0.1,
+            },
+            "estimation": {"fixed_scalar_params": {}},
+        }
+        generation_spec_path = self._write_generation_spec(["smoke_rank_0"])
+        fits_spec_path = self._write_fit_spec([variant])
+        predictive_spec_path = self._write_predictive_spec(
+            num_samples=4,
+            gibbs_sweeps=3,
+            seed=17,
+        )
+        intervention_spec_path = self._write_default_intervention_library_spec()
+        target_pairs_path = self._write_target_pairs(
+            [
+                {
+                    "experiment_name": "smoke_rank_0",
+                    "source_type": "fit",
+                    "variant_name": "snn_variant",
+                    "intervention_source": "saved_intervention",
+                    "intervention_name": "all_intervention_from_s",
+                },
+                {
+                    "experiment_name": "smoke_rank_0",
+                    "source_type": "fit",
+                    "variant_name": "snn_variant",
+                    "intervention_source": "saved_intervention",
+                    "intervention_name": "no_intervention",
+                },
+            ]
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        run_intervention_library(
+            generation_manifest,
+            intervention_spec_path,
+            overwrite=True,
+        )
+
+        experiment_root = self.root / "generated" / "smoke_rank_0"
+        fit_root = Path(read_csv_manifest(fit_manifest)[0]["fit_path"])
+        panel_context = load_experiment_panel_context(experiment_root)
+        treated_surface = np.arange(
+            int(panel_context["T"]) * int(panel_context["N"]),
+            dtype=float,
+        ).reshape(int(panel_context["T"]), int(panel_context["N"]))
+        untreated_surface = -treated_surface - 1.0
+        np.savez(
+            fit_root / "estimated_snn_artifacts.npz",
+            treated_completed_matrix=treated_surface,
+            untreated_completed_matrix=untreated_surface,
+            treated_finite_mask=np.ones_like(treated_surface, dtype=bool),
+            untreated_finite_mask=np.ones_like(untreated_surface, dtype=bool),
+        )
+        snn_artifacts = load_fit_snn_counterfactual_artifacts(fit_root)
+        intervention_context = resolve_intervention_context(
+            experiment_root,
+            intervention_source="saved_intervention",
+            intervention_name="all_intervention_from_s",
+        )
+        expected_panel = np.where(
+            np.asarray(intervention_context.z, dtype=float) > 0.0,
+            snn_artifacts.treated_completed_matrix,
+            snn_artifacts.untreated_completed_matrix,
+        )
+        real_summary_fn = posterior_predictive_runner.compute_counterfactual_sample_summary
+        captured: dict[str, np.ndarray] = {}
+
+        def _capturing_summary(x, *, s):
+            captured["x"] = np.asarray(x, dtype=float)
+            return real_summary_fn(x, s=s)
+
+        with mock.patch.object(
+            posterior_predictive_runner,
+            "compute_counterfactual_sample_summary",
+            side_effect=_capturing_summary,
+        ):
+            row = run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="snn_variant",
+                intervention_source="saved_intervention",
+                intervention_name="all_intervention_from_s",
+                run_name="default",
+                overwrite=True,
+            )
+
+        np.testing.assert_allclose(captured["x"], expected_panel, equal_nan=True)
+        output_root = Path(str(row["output_path"]))
+        with np.load(
+            io_path(output_root / "counterfactual_sample_summaries.npz"),
+            allow_pickle=False,
+        ) as data:
+            self.assertEqual(
+                np.asarray(data["overall_mean_magnetization"], dtype=float).shape,
+                (1,),
+            )
+            self.assertEqual(
+                np.asarray(data["post_intervention_mean_magnetization"], dtype=float).shape,
+                (1,),
+            )
+            self.assertEqual(
+                np.asarray(data["unit_mean_magnetization"], dtype=float).shape,
+                (1, int(intervention_context.z.shape[1])),
+            )
+            self.assertEqual(
+                np.asarray(data["time_mean_magnetization"], dtype=float).shape,
+                (1, int(intervention_context.z.shape[0])),
+            )
+
+        metadata = OmegaConf.to_container(
+            OmegaConf.load(io_path(output_root / "counterfactual_metadata.yaml")),
+            resolve=True,
+        )
+        self.assertIsInstance(metadata, dict)
+        self.assertEqual(int(metadata["num_samples"]), 1)
+        self.assertEqual(int(metadata["gibbs_sweeps"]), 0)
+        self.assertEqual(int(metadata["seed"]), 0)
+        self.assertFalse(bool(metadata["sampling_controls_used"]))
+        self.assertEqual(
+            str(metadata["execution_mode"]),
+            "deterministic_snn_counterfactual",
+        )
+
+        run_posterior_predictive(
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_name="smoke_rank_0",
+            source_type="fit",
+            variant_name="snn_variant",
+            intervention_source="saved_intervention",
+            intervention_name="no_intervention",
+            run_name="default",
+            overwrite=True,
+        )
+        report_outputs = refresh_and_write_posterior_predictive_reports(generation_manifest)
+        gte_report_csv = experiment_root / "counterfactual_summaries" / "gte_report.csv"
+        self.assertTrue(gte_report_csv.exists())
+        self.assertIn(str(experiment_root.resolve()), report_outputs["gte_reports"])
+        with gte_report_csv.open("r", encoding="utf-8", newline="") as handle:
+            gte_rows = list(csv.DictReader(handle))
+        snn_rows = [
+            row
+            for row in gte_rows
+            if row["source_slug"] == "fit_snn_variant"
+        ]
+        self.assertEqual(len(snn_rows), 1)
+        self.assertEqual(
+            snn_rows[0]["treated_intervention_slug"],
+            "all_intervention_from_s",
+        )
+        self.assertEqual(snn_rows[0]["control_intervention_slug"], "no_intervention")
+
+    def test_run_posterior_predictive_saved_intervention_snn_succeeds_without_overwrite(
+        self,
+    ) -> None:
+        variant = {
+            "name": "snn_variant",
+            "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "snn_treatment_split",
+            "snn": {
+                "n_neighbors": 1,
+                "weights": "uniform",
+                "random_splits": False,
+                "max_rank": 1,
+                "linear_span_eps": 0.1,
+                "subspace_eps": 0.1,
+            },
+            "estimation": {"fixed_scalar_params": {}},
+        }
+        generation_spec_path = self._write_generation_spec(["smoke_rank_0"])
+        fits_spec_path = self._write_fit_spec([variant])
+        predictive_spec_path = self._write_predictive_spec()
+        intervention_spec_path = self._write_default_intervention_library_spec()
+        target_pairs_path = self._write_target_pairs(
+            [
+                {
+                    "experiment_name": "smoke_rank_0",
+                    "source_type": "fit",
+                    "variant_name": "snn_variant",
+                    "intervention_source": "saved_intervention",
+                    "intervention_name": "all_intervention_from_s",
+                }
+            ]
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        run_intervention_library(
+            generation_manifest,
+            intervention_spec_path,
+            overwrite=True,
+        )
+
+        experiment_root = self.root / "generated" / "smoke_rank_0"
+        fit_root = Path(read_csv_manifest(fit_manifest)[0]["fit_path"])
+        panel_context = load_experiment_panel_context(experiment_root)
+        treated_surface = np.ones(
+            (int(panel_context["T"]), int(panel_context["N"])),
+            dtype=float,
+        )
+        untreated_surface = -np.ones_like(treated_surface, dtype=float)
+        np.savez(
+            fit_root / "estimated_snn_artifacts.npz",
+            treated_completed_matrix=treated_surface,
+            untreated_completed_matrix=untreated_surface,
+            treated_finite_mask=np.ones_like(treated_surface, dtype=bool),
+            untreated_finite_mask=np.ones_like(untreated_surface, dtype=bool),
+        )
+
+        row = run_posterior_predictive(
+            generation_manifest,
+            fit_manifest,
+            target_pairs_path,
+            predictive_spec_path,
+            experiment_name="smoke_rank_0",
+            source_type="fit",
+            variant_name="snn_variant",
+            intervention_source="saved_intervention",
+            intervention_name="all_intervention_from_s",
+            run_name="default",
+            overwrite=False,
+        )
+
+        output_root = Path(str(row["output_path"]))
+        self.assertTrue(output_root.exists())
+        self.assertTrue((output_root / "counterfactual_metadata.yaml").exists())
+
+    def test_run_posterior_predictive_observed_intervention_rejects_snn_fit(self) -> None:
+        variant = {
+            "name": "snn_variant",
+            "optimizer": {"steps": 3, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "snn_treatment_split",
+            "snn": {
+                "n_neighbors": 1,
+                "weights": "uniform",
+                "random_splits": False,
+                "max_rank": 1,
+                "linear_span_eps": 0.1,
+                "subspace_eps": 0.1,
+            },
+            "estimation": {"fixed_scalar_params": {}},
+        }
+        generation_spec_path = self._write_generation_spec(["smoke_rank_0"])
+        fits_spec_path = self._write_fit_spec([variant])
+        predictive_spec_path = self._write_predictive_spec()
+        target_pairs_path = self._write_target_pairs(
+            [
+                {
+                    "experiment_name": "smoke_rank_0",
+                    "source_type": "fit",
+                    "variant_name": "snn_variant",
+                    "intervention_source": "observed_experiment",
+                    "intervention_name": "",
+                }
+            ]
+        )
+
+        generation_manifest = run_generation(generation_spec_path, overwrite=True)
+        fit_manifest = run_fits(generation_manifest, fits_spec_path, overwrite=True)
+        output_root = (
+            self.root
+            / "generated"
+            / "smoke_rank_0"
+            / "posterior_predictive"
+            / "fit_snn_variant"
+            / "default"
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "saved_intervention counterfactual runs only",
+        ):
+            run_posterior_predictive(
+                generation_manifest,
+                fit_manifest,
+                target_pairs_path,
+                predictive_spec_path,
+                experiment_name="smoke_rank_0",
+                source_type="fit",
+                variant_name="snn_variant",
+                intervention_source="observed_experiment",
+                intervention_name="",
+                run_name="default",
+                overwrite=True,
+            )
+        self.assertFalse(output_root.exists())
 
     def test_run_posterior_predictive_saved_intervention_uses_recomposed_shared_unit_field(
         self,

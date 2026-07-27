@@ -47,8 +47,59 @@ _VALID_OPTIMIZER_MODES = frozenset(
         "concurrent_latent_rank",
         "alternating_treatment_split_latent_rank",
         "alternating_treatment_shared_unit_latent_rank",
+        "snn_treatment_split",
     }
 )
+
+
+def _validate_snn_variant_dict(variant: dict[str, Any]) -> None:
+    name = str(variant.get("name", "<unnamed>"))
+    snn = variant.get("snn")
+    if not isinstance(snn, dict):
+        raise ValueError(
+            f"Variant '{name}': optimizer_mode='snn_treatment_split' requires an 'snn' mapping."
+        )
+    n_neighbors = int(snn.get("n_neighbors", 0))
+    if n_neighbors < 1:
+        raise ValueError(
+            f"Variant '{name}': snn.n_neighbors must be >= 1 (got {n_neighbors})."
+        )
+    weights = str(snn.get("weights", ""))
+    if weights not in {"uniform", "distance"}:
+        raise ValueError(
+            f"Variant '{name}': snn.weights must be 'uniform' or 'distance' (got {weights!r})."
+        )
+    random_splits = snn.get("random_splits", False)
+    if not isinstance(random_splits, bool):
+        raise ValueError(
+            f"Variant '{name}': snn.random_splits must be boolean."
+        )
+    if snn.get("max_rank", None) is not None and int(snn["max_rank"]) < 1:
+        raise ValueError(
+            f"Variant '{name}': snn.max_rank must be >= 1 when provided."
+        )
+    if snn.get("spectral_t", None) is not None:
+        spectral_t = float(snn["spectral_t"])
+        if spectral_t <= 0.0 or spectral_t > 1.0:
+            raise ValueError(
+                f"Variant '{name}': snn.spectral_t must lie in (0, 1] when provided."
+            )
+    linear_span_eps = float(snn.get("linear_span_eps", 0.1))
+    if linear_span_eps < 0.0:
+        raise ValueError(
+            f"Variant '{name}': snn.linear_span_eps must be nonnegative."
+        )
+    subspace_eps = float(snn.get("subspace_eps", 0.1))
+    if subspace_eps < 0.0:
+        raise ValueError(
+            f"Variant '{name}': snn.subspace_eps must be nonnegative."
+        )
+    min_value = snn.get("min_value", None)
+    max_value = snn.get("max_value", None)
+    if min_value is not None and max_value is not None and float(min_value) > float(max_value):
+        raise ValueError(
+            f"Variant '{name}': snn.min_value must be <= snn.max_value."
+        )
 
 
 def validate_fit_variant_dict(variant: dict[str, Any]) -> None:
@@ -69,6 +120,12 @@ def validate_fit_variant_dict(variant: dict[str, Any]) -> None:
     } and rank <= 0:
         raise ValueError(
             f"Variant '{name}': latent_rank must be >= 1 for optimizer_mode='{mode}' (got {rank})."
+        )
+    if mode == "snn_treatment_split":
+        _validate_snn_variant_dict(variant)
+    elif variant.get("snn", None) is not None:
+        raise ValueError(
+            f"Variant '{name}': 'snn' is only valid for optimizer_mode='snn_treatment_split'."
         )
     estimation = variant.get("estimation", {}) or {}
     if not isinstance(estimation, dict):
