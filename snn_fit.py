@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -78,10 +79,44 @@ def _run_completion(
     matrix: np.ndarray,
     *,
     snn_params: dict[str, Any],
+    logger: logging.Logger,
+    label: str,
 ) -> tuple[np.ndarray, np.ndarray]:
+    num_target_missing = int(np.count_nonzero(np.isnan(np.asarray(matrix, dtype=float))))
+    logger.info(
+        "Starting %s completion for %s target-missing entries.",
+        label,
+        num_target_missing,
+    )
+
+    def _progress_callback(completed: int, total: int, elapsed_sec: float) -> None:
+        if total <= 0:
+            logger.info("%s completion has no missing entries.", label)
+            return
+        if completed <= 0:
+            logger.info("%s completion progress: 0/%s (0.0%%)", label, total)
+            return
+        rate = float(elapsed_sec) / float(completed)
+        remaining = max(0, int(total) - int(completed))
+        eta_sec = rate * float(remaining)
+        eta_text = "unknown" if not math.isfinite(eta_sec) else f"{eta_sec:.1f}s"
+        logger.info(
+            "%s completion progress: %s/%s (%.1f%%) elapsed=%.1fs eta=%s",
+            label,
+            completed,
+            total,
+            100.0 * float(completed) / float(total),
+            elapsed_sec,
+            eta_text,
+        )
+
     model = SyntheticNearestNeighbors(verbose=False, **snn_params)
-    completed = np.asarray(model.fit_transform(matrix), dtype=float)
+    completed = np.asarray(
+        model.fit_transform(matrix, progress_callback=_progress_callback),
+        dtype=float,
+    )
     feasible = np.asarray(model.feasible, dtype=float)
+    logger.info("%s completion finished.", label)
     return completed, feasible
 
 
@@ -133,10 +168,14 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
     treated_completed, treated_feasible = _run_completion(
         treated_input,
         snn_params=snn_params,
+        logger=logger,
+        label="treated",
     )
     untreated_completed, untreated_feasible = _run_completion(
         untreated_input,
         snn_params=snn_params,
+        logger=logger,
+        label="untreated",
     )
 
     treated_stats = _completion_stats(treated_input, treated_completed)

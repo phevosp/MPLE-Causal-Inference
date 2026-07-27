@@ -3,6 +3,7 @@ Synthetic Nearest Neighbors algorithm
 """
 
 import sys
+import time
 import warnings
 import random
 import numpy as np
@@ -341,7 +342,14 @@ class SyntheticNearestNeighbors:
             feasible = all(feasible)
         return (pred, feasible)
 
-    def fit_transform(self, X, covariates=None, test_set=None):
+    def fit_transform(
+        self,
+        X,
+        covariates=None,
+        test_set=None,
+        progress_callback=None,
+        progress_every=None,
+    ):
         """
         complete missing entries in matrix
         """
@@ -360,6 +368,12 @@ class SyntheticNearestNeighbors:
         std_matrix = np.zeros(X.shape)
         self.feasible = np.empty(X.shape)
         self.feasible.fill(np.nan)
+        if progress_every is None:
+            progress_every = max(1, min(250, max(1, num_missing // 20)))
+        progress_every = max(1, int(progress_every))
+        started_at = time.perf_counter()
+        if progress_callback is not None:
+            progress_callback(0, int(num_missing), 0.0)
 
         # complete missing entries
         for i, missing_pair in enumerate(missing_set):
@@ -375,6 +389,15 @@ class SyntheticNearestNeighbors:
             missing_row, missing_col = missing_pair
             X_imputed[missing_row, missing_col] = pred
             self.feasible[missing_row, missing_col] = feasible
+            completed = i + 1
+            if progress_callback is not None and (
+                completed == num_missing or completed % progress_every == 0
+            ):
+                progress_callback(
+                    int(completed),
+                    int(num_missing),
+                    float(time.perf_counter() - started_at),
+                )
 
         if self.verbose:
             print("[SNN] complete")
