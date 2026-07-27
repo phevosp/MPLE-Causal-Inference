@@ -1,0 +1,32 @@
+variant_name: snn_8nn_u_mr1
+variant_slug: snn_8nn_u_mr1
+fits_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/SNN/fits_spec.yaml
+experiment_name: no_interference_confounding_beta_015
+experiment_slug: no_interference_confounding_beta_015
+descriptor: no_interference_confounding_beta_015
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/no_interference_confounding_beta_015
+intervention_source: generated
+graph_source: generated
+field_mode: confounded_low_rank
+model_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/no_interference_confounding_beta_015
+truth_artifact_dir: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/no_interference_confounding_beta_015
+panel_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/no_interference_confounding_beta_015/panel_data.npz
+x0_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/no_interference_confounding_beta_015/x_0.npy
+latent_rank: 0
+optimizer_mode: snn_treatment_split
+lambda_nuclear: 0.0
+lambda_frobenius: 0.0
+lambda_uv_ridge: 0.0
+fixed_scalar_params: {}
+'N': 500
+T: 50
+s: 0
+e: 12
+snn_params:
+  n_neighbors: 8
+  weights: uniform
+  anchor_solver: bitset_exact
+  random_splits: false
+  max_rank: 1
+  linear_span_eps: 0.05
+  subspace_eps: 0.05
