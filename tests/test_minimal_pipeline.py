@@ -131,6 +131,7 @@ import utils.t6_split_engine as cv_folds
 import run_posterior_predictive as posterior_predictive_runner
 import run_cv_folds as cv_runner
 import utils.t7_validation_metrics as validation_metrics
+from utils.t8_snn_core import SyntheticNearestNeighbors
 from utils.t8_posterior_predictive_sim import (
     compute_panel_statistics,
     compute_counterfactual_sample_summary,
@@ -3742,6 +3743,7 @@ class MinimalPipelineTests(unittest.TestCase):
             "snn": {
                 "n_neighbors": 2,
                 "weights": "distance",
+                "anchor_solver": "bitset_exact",
                 "random_splits": True,
                 "max_rank": 2,
                 "spectral_t": 0.9,
@@ -3779,6 +3781,83 @@ class MinimalPipelineTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "min_value"):
             validate_fit_variant_dict(variant)
+
+    def test_validate_fit_variant_dict_rejects_invalid_snn_anchor_solver(self) -> None:
+        variant = {
+            "name": "snn_variant_bad_anchor_solver",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "snn_treatment_split",
+            "snn": {
+                "n_neighbors": 1,
+                "weights": "uniform",
+                "anchor_solver": "greedy_magic",
+                "random_splits": False,
+                "linear_span_eps": 0.1,
+                "subspace_eps": 0.1,
+            },
+            "estimation": {"fixed_scalar_params": {}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "anchor_solver"):
+            validate_fit_variant_dict(variant)
+
+    def test_snn_bitset_exact_matches_networkx_on_unique_anchor_case(self) -> None:
+        X = np.asarray(
+            [
+                [1.0, np.nan, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, np.nan, 1.0],
+                [np.nan, 1.0, 1.0, np.nan],
+            ],
+            dtype=float,
+        )
+        missing_pair = np.asarray([0, 1], dtype=int)
+
+        networkx_model = SyntheticNearestNeighbors(
+            n_neighbors=1,
+            weights="uniform",
+            anchor_solver="networkx",
+            random_splits=False,
+            max_rank=1,
+            linear_span_eps=0.1,
+            subspace_eps=0.1,
+            verbose=False,
+        )
+        bitset_model = SyntheticNearestNeighbors(
+            n_neighbors=1,
+            weights="uniform",
+            anchor_solver="bitset_exact",
+            random_splits=False,
+            max_rank=1,
+            linear_span_eps=0.1,
+            subspace_eps=0.1,
+            verbose=False,
+        )
+
+        networkx_anchor_rows, networkx_anchor_cols = networkx_model._find_anchors(
+            X,
+            missing_pair=missing_pair,
+        )
+        bitset_anchor_rows, bitset_anchor_cols = bitset_model._find_anchors(
+            X,
+            missing_pair=missing_pair,
+        )
+        np.testing.assert_array_equal(bitset_anchor_rows, networkx_anchor_rows)
+        np.testing.assert_array_equal(bitset_anchor_cols, networkx_anchor_cols)
+
+        networkx_completed = networkx_model.fit_transform(
+            X.copy(),
+            test_set=np.asarray([missing_pair], dtype=int),
+        )
+        bitset_completed = bitset_model.fit_transform(
+            X.copy(),
+            test_set=np.asarray([missing_pair], dtype=int),
+        )
+        np.testing.assert_allclose(bitset_completed, networkx_completed, equal_nan=True)
+        np.testing.assert_array_equal(
+            np.asarray(bitset_model.feasible, dtype=float),
+            np.asarray(networkx_model.feasible, dtype=float),
+        )
 
 
 class FitReportingTests(unittest.TestCase):

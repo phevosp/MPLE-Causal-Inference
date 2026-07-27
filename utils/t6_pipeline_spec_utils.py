@@ -69,6 +69,12 @@ def _validate_snn_variant_dict(variant: dict[str, Any]) -> None:
         raise ValueError(
             f"Variant '{name}': snn.weights must be 'uniform' or 'distance' (got {weights!r})."
         )
+    anchor_solver = str(snn.get("anchor_solver", "networkx"))
+    if anchor_solver not in {"networkx", "bitset_exact"}:
+        raise ValueError(
+            f"Variant '{name}': snn.anchor_solver must be 'networkx' or "
+            f"'bitset_exact' (got {anchor_solver!r})."
+        )
     random_splits = snn.get("random_splits", False)
     if not isinstance(random_splits, bool):
         raise ValueError(

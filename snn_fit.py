@@ -42,6 +42,7 @@ def _snn_params_from_config(config: object) -> dict[str, Any]:
     return {
         "n_neighbors": int(params.get("n_neighbors", 1)),
         "weights": str(params.get("weights", "uniform")),
+        "anchor_solver": str(params.get("anchor_solver", "networkx")),
         "random_splits": bool(params.get("random_splits", False)),
         "max_rank": (
             None if params.get("max_rank", None) is None else int(params["max_rank"])
@@ -212,6 +213,7 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         untreated_feasible_mask=np.asarray(untreated_feasible, dtype=float),
         n_neighbors=np.asarray(int(snn_params["n_neighbors"]), dtype=int),
         weights=np.asarray(str(snn_params["weights"])),
+        anchor_solver=np.asarray(str(snn_params["anchor_solver"])),
         random_splits=np.asarray(bool(snn_params["random_splits"]), dtype=bool),
         max_rank=np.asarray(_optional_scalar(snn_params["max_rank"]), dtype=float),
         spectral_t=np.asarray(_optional_scalar(snn_params["spectral_t"]), dtype=float),
@@ -234,6 +236,7 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
     summary_rows = [
         {"name": "n_neighbors", "value": int(snn_params["n_neighbors"])},
         {"name": "weights", "value": str(snn_params["weights"])},
+        {"name": "anchor_solver", "value": str(snn_params["anchor_solver"])},
         {"name": "random_splits", "value": bool(snn_params["random_splits"])},
         {"name": "max_rank", "value": "" if snn_params["max_rank"] is None else int(snn_params["max_rank"])},
         {"name": "spectral_t", "value": "" if snn_params["spectral_t"] is None else float(snn_params["spectral_t"])},

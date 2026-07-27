@@ -27,6 +27,15 @@ def _graph_from_numpy_array(A):
     return nx.from_numpy_matrix(A)
 
 
+def _iter_set_bit_indices(mask):
+    """Yield the zero-based positions of set bits in ascending order."""
+    current = int(mask)
+    while current:
+        lsb = current & -current
+        yield lsb.bit_length() - 1
+        current ^= lsb
+
+
 class SyntheticNearestNeighbors:
     """
     Impute missing entries in a matrix via SNN algorithm
@@ -36,6 +45,7 @@ class SyntheticNearestNeighbors:
         self,
         n_neighbors=1,
         weights="uniform",
+        anchor_solver="networkx",
         random_splits=False,
         max_rank=None,
         spectral_t=None,
@@ -85,6 +95,7 @@ class SyntheticNearestNeighbors:
         """
         self.n_neighbors = n_neighbors
         self.weights = weights
+        self.anchor_solver = anchor_solver
         self.random_splits = random_splits
         self.max_rank = max_rank
         self.spectral_t = spectral_t
@@ -152,26 +163,44 @@ class SyntheticNearestNeighbors:
         m, n = divmod(len(arr), k)
         return (arr[i * m + min(i, n) : (i + 1) * m + min(i + 1, n)] for i in range(k))
 
-    def _find_anchors(self, X, missing_pair):
+    def _check_anchor_solver(self, anchor_solver):
         """
-        find model learning submatrix by reducing to max biclique problem
+        validate anchor search backend
+        """
+        if anchor_solver not in ("networkx", "bitset_exact"):
+            raise ValueError(
+                "anchor_solver not recognized: should be 'networkx' or 'bitset_exact'"
+            )
+        return anchor_solver
+
+    def _find_anchor_candidates(self, X, missing_pair):
+        """
+        build the candidate anchor rectangle for a missing entry
         """
         missing_row, missing_col = missing_pair
         obs_rows = np.argwhere(~np.isnan(X[:, missing_col])).flatten()
         obs_cols = np.argwhere(~np.isnan(X[missing_row, :])).flatten()
+        B = np.asarray(X[obs_rows][:, obs_cols], dtype=float)
+        return obs_rows, obs_cols, B
 
-        # dennis: make sure (i,j) not in (obs_rows, obs_cols)
-
-        # create bipartite incidence matrix
-        B = X[obs_rows]
-        B = B[:, obs_cols]
+    def _find_anchors_networkx(self, obs_rows, obs_cols, B):
+        """
+        find model learning submatrix by reducing to max biclique problem
+        using the existing NetworkX-based maximal-clique search
+        """
         if not np.any(np.isnan(B)):  # check if fully connected already
             return (obs_rows, obs_cols)
-        B[np.isnan(B)] = 0
+        B_work = B.copy()
+        B_work[np.isnan(B_work)] = 0
 
         # bipartite graph
-        n_rows, n_cols = B.shape
-        A = np.block([[np.ones((n_rows, n_rows)), B], [B.T, np.ones((n_cols, n_cols))]])
+        n_rows, n_cols = B_work.shape
+        A = np.block(
+            [
+                [np.ones((n_rows, n_rows)), B_work],
+                [B_work.T, np.ones((n_cols, n_cols))],
+            ]
+        )
         G = _graph_from_numpy_array(A)
 
         # find max clique that yields the most square (nxn) matrix
@@ -193,6 +222,136 @@ class SyntheticNearestNeighbors:
         anchor_rows = obs_rows[max_clique_rows_idx]
         anchor_cols = obs_cols[max_clique_cols_idx]
         return (anchor_rows, anchor_cols)
+
+    def _find_anchors_bitset_exact(self, obs_rows, obs_cols, B):
+        """
+        find the exact best anchor rectangle with a bitset Bron-Kerbosch search
+        on the same clique formulation used by the NetworkX backend
+        """
+        if not np.any(np.isnan(B)):
+            return (obs_rows, obs_cols)
+
+        B_work = np.asarray(B, dtype=float).copy()
+        B_work[np.isnan(B_work)] = 0
+        B_bool = np.asarray(B_work != 0, dtype=bool)
+        n_rows, n_cols = B_bool.shape
+        if n_rows == 0 or n_cols == 0:
+            return (
+                np.asarray([], dtype=obs_rows.dtype),
+                np.asarray([], dtype=obs_cols.dtype),
+            )
+
+        n_vertices = n_rows + n_cols
+        all_rows_mask = (1 << n_rows) - 1
+        all_cols_mask = ((1 << n_cols) - 1) << n_rows
+        adjacency = [0] * n_vertices
+
+        for row_idx in range(n_rows):
+            cross_mask = 0
+            for col_idx in np.flatnonzero(B_bool[row_idx]):
+                cross_mask |= 1 << (n_rows + int(col_idx))
+            adjacency[row_idx] = (all_rows_mask ^ (1 << row_idx)) | cross_mask
+
+        for col_idx in range(n_cols):
+            cross_mask = 0
+            for row_idx in np.flatnonzero(B_bool[:, col_idx]):
+                cross_mask |= 1 << int(row_idx)
+            adjacency[n_rows + col_idx] = (
+                all_cols_mask ^ (1 << (n_rows + col_idx))
+            ) | cross_mask
+
+        best_clique_mask = 0
+        best_d = 0
+
+        def _count_rows(mask):
+            return int((mask & all_rows_mask).bit_count())
+
+        def _count_cols(mask):
+            return int((mask & all_cols_mask).bit_count())
+
+        def _upper_bound(row_count, col_count, candidate_mask):
+            return min(
+                row_count + _count_rows(candidate_mask),
+                col_count + _count_cols(candidate_mask),
+            )
+
+        def _choose_pivot(candidate_mask, excluded_mask):
+            pivot_vertices = candidate_mask | excluded_mask
+            best_vertex = None
+            best_score = -1
+            for vertex in _iter_set_bit_indices(pivot_vertices):
+                score = int((candidate_mask & adjacency[vertex]).bit_count())
+                if score > best_score:
+                    best_score = score
+                    best_vertex = int(vertex)
+            return best_vertex
+
+        def _search(clique_mask, candidate_mask, excluded_mask, row_count, col_count):
+            nonlocal best_clique_mask, best_d
+            if _upper_bound(row_count, col_count, candidate_mask) < best_d:
+                return
+            if candidate_mask == 0 and excluded_mask == 0:
+                d_value = min(row_count, col_count)
+                if d_value > best_d:
+                    best_d = d_value
+                    best_clique_mask = clique_mask
+                return
+
+            pivot = _choose_pivot(candidate_mask, excluded_mask)
+            pivot_neighbors = 0 if pivot is None else adjacency[pivot]
+            branch_mask = candidate_mask & ~pivot_neighbors
+            while branch_mask:
+                lsb = branch_mask & -branch_mask
+                vertex = lsb.bit_length() - 1
+                vertex_mask = 1 << vertex
+                _search(
+                    clique_mask | vertex_mask,
+                    candidate_mask & adjacency[vertex],
+                    excluded_mask & adjacency[vertex],
+                    row_count + int(vertex < n_rows),
+                    col_count + int(vertex >= n_rows),
+                )
+                candidate_mask &= ~vertex_mask
+                excluded_mask |= vertex_mask
+                branch_mask &= ~vertex_mask
+                if _upper_bound(row_count, col_count, candidate_mask) < best_d:
+                    break
+
+        _search(
+            clique_mask=0,
+            candidate_mask=(1 << n_vertices) - 1,
+            excluded_mask=0,
+            row_count=0,
+            col_count=0,
+        )
+
+        if best_d <= 0:
+            return (
+                np.asarray([], dtype=obs_rows.dtype),
+                np.asarray([], dtype=obs_cols.dtype),
+            )
+
+        row_indices = [
+            int(vertex) for vertex in _iter_set_bit_indices(best_clique_mask & all_rows_mask)
+        ]
+        col_indices = [
+            int(vertex - n_rows)
+            for vertex in _iter_set_bit_indices(best_clique_mask & all_cols_mask)
+        ]
+        return (obs_rows[row_indices], obs_cols[col_indices])
+
+    def _find_anchors(self, X, missing_pair):
+        """
+        find model learning submatrix by reducing to max biclique problem
+        """
+        obs_rows, obs_cols, B = self._find_anchor_candidates(X, missing_pair)
+        if self.anchor_solver == "networkx":
+            return self._find_anchors_networkx(obs_rows, obs_cols, B)
+        if self.anchor_solver == "bitset_exact":
+            return self._find_anchors_bitset_exact(obs_rows, obs_cols, B)
+        raise ValueError(
+            "anchor_solver not recognized: should be 'networkx' or 'bitset_exact'"
+        )
 
     def _spectral_rank(self, s):
         """
@@ -362,6 +521,7 @@ class SyntheticNearestNeighbors:
 
         # check weights
         self.weights = self._check_weights(self.weights)
+        self.anchor_solver = self._check_anchor_solver(self.anchor_solver)
 
         # initialize
         X_imputed = X.copy()
