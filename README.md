@@ -144,6 +144,12 @@ Two important limitations are easy to miss:
 - `run_fit_pipeline.py --fit_mode outer_masked` does not support `snn_treatment_split`.
 - SNN fits are excluded from the standard parameter-recovery fit reports because they do not produce MPLE parameter bundles.
 
+There is also a direct held-out retraining mode for fit-spec-driven experiments:
+
+- `run_fit_pipeline.py --fit_mode masked_standard` reads explicit variants from `--fits_spec_path`, applies a saved `test_train_cv` outer training mask, and writes train-fit outputs under `train_fits/<scope_slug>/...`.
+- `--scope_slug` is required in `masked_standard` mode and namespaces the request CSV, refreshed train-fit manifest, and output directories.
+- This path does not use `best_candidate.yaml`, `--cv_spec_path`, or `--search_slug`.
+
 ### Posterior Predictive
 
 Posterior-predictive work uses two pieces:
@@ -202,7 +208,15 @@ Each `test_metrics.yaml` report now contains:
 - full-panel regeneration diagnostics bucketed by training, separator, test, treated-test, and untreated-test support
 - a `baselines` block with the same test-style metrics for the simple `time_step_mean`, `unit_mean`, and `persistence` predictors
 
-If you only want to refresh the baseline comparison block for existing reports, `run_test_evaluation.py --baselines_only` recomputes just that section and merges it into the saved YAML. SNN fits are not part of this held-out retraining path because `--fit_mode outer_masked` rejects `snn_treatment_split`.
+If you only want to refresh the baseline comparison block for existing reports, `run_test_evaluation.py --baselines_only` recomputes just that section and merges it into the saved YAML.
+
+Direct held-out evaluation without CV is also supported:
+
+1. Build the `test_train_cv` split bundle with `build_splits.py`. This still uses the existing CV-spec schema as a split driver, but no CV scoring is required.
+2. Run `run_fit_pipeline.py --fit_mode masked_standard` with a fit spec and `--scope_slug ...` to refit explicit variants on the outer training support only.
+3. Run `run_test_evaluation.py` on the resulting `train_fit_manifest__<scope_slug>.csv`.
+
+For SNN fits in this direct path, held-out evaluation is deterministic: the evaluator recomposes the saved treated and untreated completed surfaces against the realized intervention panel and reports deterministic loss, calibration, and magnetization summaries instead of Gibbs-sampled diagnostics.
 
 ## Example Experiments
 
@@ -354,4 +368,44 @@ pixi run python -u run_posterior_predictive.py \
   --intervention_source saved_intervention \
   --intervention_name no_intervention \
   --run_name default
+```
+
+### 5. Small Synthetic Direct Train/Test Evaluation For MPLE And SNN
+
+This workflow uses committed specs under `data/configs/REVISIONS/synth_direct_eval/` and does not run CV. The split builder still reads a CV-style split-driver spec, but only to materialize the saved `test_train_cv` masks.
+
+```bash
+pixi run python -u run_generation_pipeline.py \
+  --spec_path data/configs/REVISIONS/synth_direct_eval/generation_spec.yaml
+
+pixi run python -u build_splits.py \
+  --generation_manifest_path experiments/SyntheticDirectEval/generation_manifest.csv \
+  --cv_spec_path data/configs/REVISIONS/synth_direct_eval/split_cv_spec.yaml \
+  --overwrite
+
+pixi run python -u run_fit_pipeline.py \
+  --fit_mode masked_standard \
+  --manifest_path experiments/SyntheticDirectEval/generation_manifest.csv \
+  --fits_spec_path data/configs/REVISIONS/synth_direct_eval/mple_fits_spec.yaml \
+  --scope_slug small_mple \
+  --split_kind test_train_cv \
+  --num_folds 2 \
+  --outer_num_folds 2 \
+  --test_fold_id 1
+
+pixi run python -u run_test_evaluation.py \
+  --fit_manifest_path experiments/SyntheticDirectEval/train_fit_manifest__small_mple.csv
+
+pixi run python -u run_fit_pipeline.py \
+  --fit_mode masked_standard \
+  --manifest_path experiments/SyntheticDirectEval/generation_manifest.csv \
+  --fits_spec_path data/configs/REVISIONS/synth_direct_eval/snn_fits_spec.yaml \
+  --scope_slug small_snn \
+  --split_kind test_train_cv \
+  --num_folds 2 \
+  --outer_num_folds 2 \
+  --test_fold_id 1
+
+pixi run python -u run_test_evaluation.py \
+  --fit_manifest_path experiments/SyntheticDirectEval/train_fit_manifest__small_snn.csv
 ```

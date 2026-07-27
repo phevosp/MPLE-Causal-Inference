@@ -1,0 +1,28 @@
+base:
+  fit_root_name: fits_snn
+  fit_manifest_path: experiments/SyntheticDirectEval/fit_manifest_snn.csv
+  optimizer:
+    steps: 1
+    tol: 1.0e-6
+    seed: 0
+    n_starts: 1
+    proximal_lr: 1.0
+  latent_rank: 0
+  optimizer_mode: snn_treatment_split
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.0
+  estimation:
+    fixed_scalar_params: {}
+    beta_mask_pre_s: false
+    beta_mask_post_e: false
+
+variants:
+  - name: snn_4nn_mr3_1_e1
+    snn:
+      n_neighbors: 4
+      weights: uniform
+      random_splits: false
+      max_rank: 3
+      linear_span_eps: 0.1
+      subspace_eps: 0.1

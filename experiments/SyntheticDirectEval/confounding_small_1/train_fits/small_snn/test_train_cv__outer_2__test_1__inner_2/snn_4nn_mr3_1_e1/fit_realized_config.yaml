@@ -1,0 +1,36 @@
+global_params:
+  'N': 200
+  T: 20
+  s: 0
+  e: 7
+  latent_rank: 0
+  optimizer_mode: snn_treatment_split
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.0
+  v_column_l2_max: null
+estimation_params:
+  fixed_scalar_params: {}
+  warm_start_fixed_scalars: {}
+  warm_start_steps: 0
+  beta_mask_pre_s: false
+  beta_mask_post_e: false
+optimizer_params:
+  steps: 1
+  tol: 1.0e-06
+  seed: 0
+  n_starts: 1
+  proximal_lr: 1.0
+snn_params:
+  n_neighbors: 4
+  weights: uniform
+  random_splits: false
+  max_rank: 3
+  linear_span_eps: 0.1
+  subspace_eps: 0.1
+input_artifacts:
+  model_artifact_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1
+  truth_artifact_dir: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1
+  panel_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\panel_data.npz
+  x0_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\x_0.npy
+  loss_mask_path: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\train_fits\small_snn\test_train_cv__outer_2__test_1__inner_2\snn_4nn_mr3_1_e1\loss_mask.npy

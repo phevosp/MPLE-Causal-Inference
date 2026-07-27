@@ -1,0 +1,43 @@
+2026-07-27 17:59:00 | INFO | Loading data...
+2026-07-27 17:59:00 | INFO | Using panel artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\panel_data.npz
+2026-07-27 17:59:00 | INFO | Using x_0 artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\x_0.npy
+2026-07-27 17:59:00 | INFO | Using fit config: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\train_fits\small_mple\test_train_cv__outer_2__test_1__inner_2\alternating_rank_2_uv_5_e2\fit_realized_config.yaml
+2026-07-27 17:59:00 | INFO | Using model artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1
+2026-07-27 17:59:00 | INFO | Using truth artifact directory: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1
+2026-07-27 17:59:00 | INFO | Using loss mask artifact: C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\train_fits\small_mple\test_train_cv__outer_2__test_1__inner_2\alternating_rank_2_uv_5_e2\loss_mask.npy
+2026-07-27 17:59:00 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-07-27 17:59:00 | INFO | Configured latent rank: 2
+2026-07-27 17:59:00 | INFO | Using a fixed known graph with scalar xi.
+2026-07-27 17:59:00 | INFO | Fit-time hard bounds active: False
+2026-07-27 17:59:00 | INFO | Fixed scalar parameters: {}
+2026-07-27 17:59:00 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-07-27 17:59:00 | INFO | Beta-gradient mask before s: False with s=0
+2026-07-27 17:59:00 | INFO | Beta-gradient mask after e: False with e=7
+2026-07-27 17:59:00 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-07-27 17:59:00 | INFO | Optimizer settings: steps=100, tol=1e-06, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.05, v_column_l2_max=1.0, proximal_lr=1.0
+2026-07-27 17:59:00 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.690922 | initial_penalized=0.691053
+2026-07-27 17:59:00 | INFO | Alternating low-rank iter 0 | Loss: 0.518462 | Penalized: 0.530297
+2026-07-27 17:59:00 | INFO | Done fitting.
+2026-07-27 17:59:00 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-07-27 17:59:00 | INFO | Best optimizer start: 1 / 1
+2026-07-27 17:59:00 | INFO | Final Loss: 0.427517
+2026-07-27 17:59:00 | INFO | Estimated vs True Parameters:
+2026-07-27 17:59:00 | INFO |   beta: -0.2479 (True: -0.3000) | SQE: 0.002715
+2026-07-27 17:59:00 | INFO |   xi: 1.0310 (True: 0.8000) | SQE: 0.053380
+2026-07-27 17:59:00 | INFO |   eta: 0.3506 (True: 0.3000) | SQE: 0.002558
+2026-07-27 17:59:00 | INFO | Alternating low-rank optimizer diagnostics:
+2026-07-27 17:59:00 | INFO |   penalized_objective: 0.474453
+2026-07-27 17:59:00 | INFO |   mple_loss_without_penalty: 0.427517
+2026-07-27 17:59:00 | INFO |   lambda_uv_ridge: 0.050000
+2026-07-27 17:59:00 | INFO |   u_frobenius_norm: 29.829041
+2026-07-27 17:59:00 | INFO |   v_frobenius_norm: 1.414214
+2026-07-27 17:59:00 | INFO |   effective_rank: 2.000000
+2026-07-27 17:59:00 | INFO | Field and interaction diagnostics:
+2026-07-27 17:59:00 | INFO |   field_rmse: 0.801891
+2026-07-27 17:59:00 | INFO |   interaction_fro_error: 0.556019
+2026-07-27 17:59:00 | INFO |   estimated_field_max_abs_entry: 2.419060
+2026-07-27 17:59:00 | INFO |   estimated_field_rank: 2.000000
+2026-07-27 17:59:00 | INFO |   true_field_max_abs_entry: 3.976343
+2026-07-27 17:59:00 | INFO |   true_field_rank: 2.000000
+2026-07-27 17:59:00 | INFO | Saved summary table to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\train_fits\small_mple\test_train_cv__outer_2__test_1__inner_2\alternating_rank_2_uv_5_e2\mple_summary.csv
+2026-07-27 17:59:00 | INFO | Log saved to C:\Users\phevo\Documents\MIT\Code\MPLE-Causal-Inference\experiments\SyntheticDirectEval\confounding_small_1\train_fits\small_mple\test_train_cv__outer_2__test_1__inner_2\alternating_rank_2_uv_5_e2\mple.log

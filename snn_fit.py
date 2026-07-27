@@ -69,11 +69,29 @@ def _build_treatment_split_matrices(
 ) -> tuple[np.ndarray, np.ndarray]:
     treated_input = np.where(np.asarray(z, dtype=float) > 0.0, np.asarray(x, dtype=float), np.nan)
     untreated_input = np.where(
-        np.asarray(z, dtype=float) < 0.0,
+        np.asarray(z, dtype=float) <= 0.0,
         np.asarray(x, dtype=float),
         np.nan,
     )
     return treated_input, untreated_input
+
+
+def _load_optional_loss_mask(config: object, x_shape: tuple[int, ...]) -> tuple[np.ndarray | None, int]:
+    input_artifacts = getattr(config, "input_artifacts", None)
+    if input_artifacts is None:
+        return None, int(np.prod(np.asarray(x_shape, dtype=int)))
+    loss_mask_path = getattr(input_artifacts, "loss_mask_path", None)
+    if loss_mask_path in (None, ""):
+        return None, int(np.prod(np.asarray(x_shape, dtype=int)))
+    resolved_path = Path(str(loss_mask_path))
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"loss_mask.npy does not exist at {resolved_path}.")
+    loss_mask = np.asarray(np.load(io_path(resolved_path)), dtype=bool)
+    if tuple(loss_mask.shape) != tuple(x_shape):
+        raise ValueError(
+            f"loss_mask shape {loss_mask.shape} does not match panel shape {x_shape}."
+        )
+    return loss_mask, int(np.count_nonzero(loss_mask))
 
 
 def _run_completion(
@@ -162,8 +180,14 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         z = np.asarray(panel["z"], dtype=float)
     if x.shape != z.shape:
         raise ValueError(f"x shape {x.shape} does not match z shape {z.shape}.")
+    loss_mask, num_training_slots = _load_optional_loss_mask(config, tuple(x.shape))
+    used_loss_mask = loss_mask is not None
+    if loss_mask is not None:
+        x = np.where(loss_mask, x, np.nan)
 
     logger.info("Loaded panel with shape T=%s, N=%s", x.shape[0], x.shape[1])
+    if used_loss_mask:
+        logger.info("Loaded loss mask with %s active training slots.", num_training_slots)
 
     treated_input, untreated_input = _build_treatment_split_matrices(x, z)
     treated_completed, treated_feasible = _run_completion(
@@ -221,6 +245,8 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         subspace_eps=np.asarray(float(snn_params["subspace_eps"]), dtype=float),
         min_value=np.asarray(_optional_scalar(snn_params["min_value"]), dtype=float),
         max_value=np.asarray(_optional_scalar(snn_params["max_value"]), dtype=float),
+        used_loss_mask=np.asarray(bool(used_loss_mask), dtype=bool),
+        num_training_slots=np.asarray(int(num_training_slots), dtype=int),
         treated_num_observed=np.asarray(treated_stats["num_observed"], dtype=int),
         treated_num_target_missing=np.asarray(treated_stats["num_target_missing"], dtype=int),
         treated_num_completed=np.asarray(treated_stats["num_completed"], dtype=int),
@@ -244,6 +270,8 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         {"name": "subspace_eps", "value": float(snn_params["subspace_eps"])},
         {"name": "min_value", "value": "" if snn_params["min_value"] is None else float(snn_params["min_value"])},
         {"name": "max_value", "value": "" if snn_params["max_value"] is None else float(snn_params["max_value"])},
+        {"name": "used_loss_mask", "value": bool(used_loss_mask)},
+        {"name": "num_training_slots", "value": int(num_training_slots)},
         {"name": "treated_num_observed", "value": treated_stats["num_observed"]},
         {"name": "treated_num_target_missing", "value": treated_stats["num_target_missing"]},
         {"name": "treated_num_completed", "value": treated_stats["num_completed"]},
