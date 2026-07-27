@@ -91,8 +91,36 @@ pixi run python data/USCountyVaccination/create_us_county_vaccination_experiment
   --overwrite
 ```
 
+### Downstream Shared-Pipeline Steps
+
+Once `experiments/USCounty/generation_manifest.csv` exists, the committed downstream workflow uses the same shared runners as the synthetic and hybrid families:
+
+```bash
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/USCounty/generation_manifest.csv \
+  --fits_spec_path data/configs/REVISIONS/uscounty/fits_spec.yaml
+
+pixi run python -u run_intervention_library.py \
+  --generation_manifest_path experiments/USCounty/generation_manifest.csv \
+  --spec_path data/configs/REVISIONS/uscounty/intervention_library_spec.yaml \
+  --overwrite
+
+pixi run python -u run_posterior_predictive.py \
+  --generation_manifest_path experiments/USCounty/generation_manifest.csv \
+  --fit_manifest_path experiments/USCounty/fit_manifest.csv \
+  --target_pairs_path data/configs/REVISIONS/uscounty/posterior_predictive_target_pairs.csv \
+  --spec_path data/configs/posterior_predictive_spec.yaml \
+  --experiment_name outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01 \
+  --source_type fit \
+  --variant_name alternating_rank_5_uv_5_e2 \
+  --intervention_source observed_experiment \
+  --run_name default
+```
+
 ## Notes
 
 - US-county experiments set `has_truth: false`, so `source_type=truth` posterior-predictive targets are intentionally unsupported.
 - Each experiment root includes a zero `field_artifacts.npz` compatibility artifact so the shared loaders can treat real-data and synthetic roots uniformly.
 - Downstream fitting, intervention-library construction, posterior predictive simulation, split construction, CV, and test evaluation all use the same shared runners as the synthetic and hybrid workflows (see [README.md](../../README.md)).
+- Held-out `run_test_evaluation.py` reports now include a `baselines` block that scores `time_step_mean`, `unit_mean`, and `persistence` predictors alongside the saved fit. Re-run `run_test_evaluation.py --baselines_only` if you only want to refresh those baseline comparisons.
+- SNN fits can be materialized against US-county experiments through the shared fit runner, but they are limited to `saved_intervention` counterfactuals and are not part of the `--fit_mode outer_masked` held-out-test path.

@@ -19,7 +19,7 @@ In practice, the codebase supports:
 
 - synthetic data generation from YAML specs in `data/configs/`
 - hybrid data generation that mixes generated and fixed graph or intervention artifacts
-- fixed-hyperparameter MPLE fits from a generation manifest plus a fit spec
+- fixed-hyperparameter fits from a generation manifest plus a fit spec, including standard MPLE variants, treatment-conditioned low-rank baselines, and SNN treatment-split completion
 - posterior-predictive and counterfactual simulation, including saved intervention scenarios
 - split-bundle construction and cross-validation for hyperparameter selection
 - outer-masked retraining and evaluation on unseen test sets
@@ -49,6 +49,33 @@ pixi run python -u run_posterior_predictive.py \
 
 Outputs land in `experiments/Quickstart/`. Once this works, move to the larger synthetic, hybrid, or US-county experiment families below.
 
+### SNN Quickstart
+
+For a minimal SNN example, use the short spec files `data/configs/quickstart_snn_fits_spec.yaml` and `data/configs/quickstart_snn_posterior_predictive_spec.yaml`. SNN fits currently support only `saved_intervention` counterfactual runs, so build the intervention library first and then choose a saved intervention target from `data/configs/quickstart_snn_posterior_predictive_target_pairs.csv`.
+
+```bash
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/Quickstart/generation_manifest.csv \
+  --fits_spec_path data/configs/quickstart_snn_fits_spec.yaml
+
+pixi run python -u run_intervention_library.py \
+  --generation_manifest_path experiments/Quickstart/generation_manifest.csv \
+  --spec_path data/configs/intervention_library_spec.yaml \
+  --overwrite
+
+pixi run python -u run_posterior_predictive.py \
+  --generation_manifest_path experiments/Quickstart/generation_manifest.csv \
+  --fit_manifest_path experiments/Quickstart/fit_manifest_snn.csv \
+  --target_pairs_path data/configs/quickstart_snn_posterior_predictive_target_pairs.csv \
+  --spec_path data/configs/quickstart_snn_posterior_predictive_spec.yaml \
+  --experiment_name Quickstart \
+  --source_type fit \
+  --variant_name snn_1nn \
+  --intervention_source saved_intervention \
+  --intervention_name no_intervention \
+  --run_name default
+```
+
 ## Environment
 
 The project is configured with `pixi.toml` and currently targets `win-64`.
@@ -73,11 +100,11 @@ The shell wrappers in the repo are `bash` scripts. On Windows they are intended 
 | --- | --- | --- |
 | Generation | `run_generation_pipeline.py` / `submit_generation_jobs.sh` | Materialize synthetic or hybrid experiments from YAML specs. |
 | Real-World Data | `data/USCountyVaccination/load_raw_data.py`, `data/USCountyVaccination/preprocess_us_county_vaccination_data.py`, `data/USCountyVaccination/create_us_county_vaccination_experiments.py` | Stage raw US county inputs into shared-pipeline experiment roots and a compatible generation manifest. |
-| Fits | `run_fit_pipeline.py` / `submit_fit_jobs.sh` | Run standard fixed-hyperparameter MPLE fits for every `(experiment, variant)` pair. |
+| Fits | `run_fit_pipeline.py` / `submit_fit_jobs.sh` | Run standard MPLE fits, treatment-conditioned low-rank baselines, or SNN treatment-split fits for every `(experiment, variant)` pair. |
 | Posterior Predictive | `run_intervention_library.py`, `run_posterior_predictive.py` / `submit_posterior_predictive_jobs.sh` | Build reusable intervention scenarios and run observed-intervention posterior predictive or saved-intervention counterfactual simulations. |
 | Split Bundle Construction | `build_splits.py` | Build the `splits/train_cv/...` and `splits/test_train_cv/...` bundles consumed by CV and held-out test evaluation. |
 | CV | `run_cv_folds.py` / `submit_cv_jobs.sh` | Score hyperparameter candidates over saved split bundles and write `best_candidate.yaml` selections for each search. |
-| Test Set Evaluation | `run_fit_pipeline.py --fit_mode outer_masked`, `run_test_evaluation.py` / `submit_fit_jobs.sh`, `submit_test_evaluation_jobs.sh` | Refit the best `test_train_cv` candidates on training support only, then evaluate the resulting train fits on unseen test support. |
+| Test Set Evaluation | `run_fit_pipeline.py --fit_mode outer_masked`, `run_test_evaluation.py` / `submit_fit_jobs.sh`, `submit_test_evaluation_jobs.sh` | Refit the best `test_train_cv` candidates on training support only, then evaluate the resulting train fits on unseen test support alongside simple prediction baselines. |
 
 ## Workflow Details
 
@@ -106,6 +133,17 @@ Once materialized, those experiment roots can flow through the same fit, interve
 
 This is the right path when you already know which hyperparameters or MPLE variants you want to compare and do not need model selection first.
 
+The current fit families are:
+
+- Standard MPLE variants: `no_external_field`, `nuclear_norm`, `exact_rank_manifold`, `alternating_latent_rank`, and `concurrent_latent_rank`.
+- Treatment-conditioned low-rank baselines: `alternating_treatment_split_latent_rank` and `alternating_treatment_shared_unit_latent_rank`. These require `estimation.fixed_scalar_params` to fix `beta`, `xi`, and `eta`, and the committed revision examples live in `data/configs/REVISIONS/synth/*baselines*` and `data/configs/REVISIONS/synth_no_interference/*baselines*`.
+- SNN treatment-split completion: `snn_treatment_split`. This uses an `snn:` mapping instead of MPLE optimizer parameters, dispatches to `snn_fit.py`, and writes `estimated_snn_artifacts.npz`, `snn_summary.csv`, and `snn.log`.
+
+Two important limitations are easy to miss:
+
+- `run_fit_pipeline.py --fit_mode outer_masked` does not support `snn_treatment_split`.
+- SNN fits are excluded from the standard parameter-recovery fit reports because they do not produce MPLE parameter bundles.
+
 ### Posterior Predictive
 
 Posterior-predictive work uses two pieces:
@@ -114,6 +152,12 @@ Posterior-predictive work uses two pieces:
 - `run_posterior_predictive.py` to simulate outcomes under truth parameters or saved fit bundles
 
 The `run_posterior_predictive.py` command supports two intervention sources: `observed_experiment` to use the realized interventions from the experiment, and `saved_intervention` to use the saved panels from the intervention library. The former is for goodness-of-fit checks against observed outcomes, while the latter is for counterfactual simulations under hypothetical scenarios generated by `run_intervention_library.py`. The target list comes from a `posterior_predictive_target_pairs.csv` file, while shared simulation settings come from `data/configs/posterior_predictive_spec.yaml`.
+
+Support depends on the parameter source:
+
+- `source_type=truth` and ordinary MPLE `source_type=fit` targets support both `observed_experiment` and `saved_intervention`.
+- Treatment-conditioned low-rank baseline fits also run through `source_type=fit`, but `saved_intervention` is the natural path because the code recomposes control and treated field surfaces against the requested intervention panel.
+- SNN fits only support `saved_intervention`. They do not run Gibbs sampling, they emit a deterministic counterfactual panel built from saved treated and untreated completed matrices, and `observed_experiment` requests are rejected.
 
 ### Split Bundle Construction
 
@@ -135,6 +179,11 @@ These bundles capture the outer active/test masks and the inner training/separat
 
 The `best_candidate.yaml` file is consumed directly by the held-out test evaluation workflow (see below). For the standard pipeline, the hyperparameters of the best candidate are manually copied into a fit spec that is then used to run the final fits for posterior-predictive simulation. For a more automated workflow, the fit pipeline could be extended to read the CV search results directly and run the winning candidates without an intermediate fit spec.
 
+The July 2026 baseline work added separate committed CV specs for the synthetic families:
+
+- `data/configs/REVISIONS/synth/cv_spec_baselines.yaml`
+- `data/configs/REVISIONS/synth_no_interference/cv_spec_baselines.yaml`
+
 ### Test Set Evaluation
 
 Held-out testing is a four-step chain:
@@ -145,6 +194,15 @@ Held-out testing is a four-step chain:
 4. Run `run_test_evaluation.py` on that train-fit manifest to score the saved fits on the unseen test support.
 
 This separates hyperparameter selection from final test scoring and keeps the held-out test units out of both candidate selection and retraining.
+
+Each `test_metrics.yaml` report now contains:
+
+- the saved fit's deterministic point-prediction losses and calibration metrics on full, post-`s`, treated, and untreated test support
+- sampled magnetization diagnostics for the fit
+- full-panel regeneration diagnostics bucketed by training, separator, test, treated-test, and untreated-test support
+- a `baselines` block with the same test-style metrics for the simple `time_step_mean`, `unit_mean`, and `persistence` predictors
+
+If you only want to refresh the baseline comparison block for existing reports, `run_test_evaluation.py --baselines_only` recomputes just that section and merges it into the saved YAML. SNN fits are not part of this held-out retraining path because `--fit_mode outer_masked` rejects `snn_treatment_split`.
 
 ## Example Experiments
 
@@ -257,4 +315,43 @@ pixi run python -u run_fit_pipeline.py \
 
 pixi run python -u run_test_evaluation.py \
   --fit_manifest_path experiments/Synthetic/train_fit_manifest__default_test_train.csv
+```
+
+### 4. Synthetic Baseline Fits And Counterfactuals
+
+The committed synthetic baseline configs run the treatment-conditioned low-rank baselines introduced in late July 2026.
+
+```bash
+pixi run python -u run_generation_pipeline.py \
+  --spec_path data/configs/REVISIONS/synth/generation_spec.yaml
+
+pixi run python -u build_splits.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --cv_spec_path data/configs/REVISIONS/synth/cv_spec_baselines.yaml \
+  --overwrite
+
+pixi run python -u run_cv_folds.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --cv_spec_path data/configs/REVISIONS/synth/cv_spec_baselines.yaml
+
+pixi run python -u run_fit_pipeline.py \
+  --manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --fits_spec_path data/configs/REVISIONS/synth/fits_spec_baselines.yaml
+
+pixi run python -u run_intervention_library.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --spec_path data/configs/REVISIONS/synth/intervention_library_spec.yaml \
+  --overwrite
+
+pixi run python -u run_posterior_predictive.py \
+  --generation_manifest_path experiments/Synthetic/generation_manifest_x10.csv \
+  --fit_manifest_path experiments/Synthetic/fit_manifest_baselines_x10.csv \
+  --target_pairs_path data/configs/REVISIONS/synth/posterior_predictive_target_pairs_baselines.csv \
+  --spec_path data/configs/posterior_predictive_spec.yaml \
+  --experiment_name confounding_strong_1 \
+  --source_type fit \
+  --variant_name treatment_split_rank_1_uv_1_e2 \
+  --intervention_source saved_intervention \
+  --intervention_name no_intervention \
+  --run_name default
 ```
