@@ -1,0 +1,27 @@
+experiment_name: no_interference_confounding_beta_020
+experiment_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNNConfoundingXi08BetaGridLarge/no_interference_confounding_beta_020
+run_name: default
+run_slug: default
+source_type: fit
+source_name: snn_8nn_u_mr1
+source_slug: fit_snn_8nn_u_mr1
+intervention_source: saved_intervention
+intervention_name: all_intervention_from_s
+intervention_slug: all_intervention_from_s
+latent_rank: 0
+num_samples: 1
+gibbs_sweeps: 0
+seed: 0
+requested_num_samples: 8
+requested_gibbs_sweeps: 100
+requested_seed: 0
+sampling_controls_used: false
+execution_mode: deterministic_snn_counterfactual
+source_optimizer_mode: snn_treatment_split
+s: 0
+num_units: 500
+num_time_steps: 50
+summary:
+  s: 0
+  num_samples: 1
+  num_units: 500
