@@ -14,9 +14,7 @@ from utils.t2_summary_statistics import mean_on_mask, time_window_mask
 from utils.t3_interaction_matrices import compose_interaction_matrix, interaction_effect, interaction_term
 from utils.t5_parameter_bundles import (
     OutcomeParameterBundle,
-    fit_optimizer_mode,
     load_fit_parameter_bundle,
-    load_fit_snn_counterfactual_artifacts,
 )
 from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t7_cv_aggregation import candidate_score_sort_key
@@ -584,27 +582,6 @@ def _expected_spin_to_h_x(
     return np.arctanh(clipped)
 
 
-def _reconstruct_snn_predicted_panel(
-    fit_root: str | Path,
-    panel_context: dict[str, object],
-) -> np.ndarray:
-    z = np.asarray(panel_context["z"], dtype=float)
-    snn_artifacts = load_fit_snn_counterfactual_artifacts(fit_root)
-    treated = np.asarray(snn_artifacts.treated_completed_matrix, dtype=float)
-    untreated = np.asarray(snn_artifacts.untreated_completed_matrix, dtype=float)
-    if treated.shape != z.shape or untreated.shape != z.shape:
-        raise ValueError(
-            f"SNN completed matrices for {fit_root} must match panel shape {z.shape}, got "
-            f"{treated.shape} and {untreated.shape}."
-        )
-    predicted_x = np.where(z > 0.0, treated, untreated)
-    if not np.all(np.isfinite(predicted_x)):
-        raise ValueError(
-            f"SNN predicted panel for {fit_root} contains non-finite entries after realized treatment recomposition."
-        )
-    return np.asarray(predicted_x, dtype=float)
-
-
 def _masked_training_means_with_fallback(
     x: np.ndarray,
     training_mask: np.ndarray,
@@ -1163,31 +1140,6 @@ def evaluate_saved_fit_test_metrics(
     sampling: dict[str, Any] | None = None,
 ) -> dict[str, float | int | None]:
     panel_context = load_experiment_panel_context(experiment_root)
-    optimizer_mode = fit_optimizer_mode(fit_root)
-    if optimizer_mode == "snn_treatment_split":
-        predicted_x = _reconstruct_snn_predicted_panel(fit_root, panel_context)
-        metrics = _score_test_point_predictions(
-            panel_context=panel_context,
-            h_x=_expected_spin_to_h_x(predicted_x),
-            test_loss_mask=test_loss_mask,
-        )
-        metrics.update(
-            _compute_test_predicted_panel_magnetization_metrics(
-                panel_context=panel_context,
-                predicted_x=predicted_x,
-                test_loss_mask=test_loss_mask,
-            )
-        )
-        metrics.update(
-            _compute_full_panel_predicted_magnetization_metrics(
-                panel_context=panel_context,
-                predicted_x=predicted_x,
-                training_loss_mask=training_loss_mask,
-                test_loss_mask=test_loss_mask,
-            )
-        )
-        metrics["evaluation_backend"] = "deterministic_snn"
-        return metrics
     bundle = load_fit_parameter_bundle(fit_root, experiment_root)
     metrics = evaluate_test_metrics(
         panel_context=panel_context,
@@ -1203,5 +1155,4 @@ def evaluate_saved_fit_test_metrics(
         sampling=sampling,
     )
     metrics.update(stratified_metrics)
-    metrics["evaluation_backend"] = "mple_sampling"
     return metrics

@@ -37,7 +37,6 @@ GENERATION_MANIFEST_PATH="${GENERATION_MANIFEST_PATH:-experiments/SyntheticHybri
 FITS_SPEC_PATH="${FITS_SPEC_PATH:-data/configs/fits_spec.yaml}"
 CV_SPEC_PATH="${CV_SPEC_PATH:-}"
 SEARCH_SLUG="${SEARCH_SLUG:-}"
-SCOPE_SLUG="${SCOPE_SLUG:-}"
 FIT_MODE="${FIT_MODE:-standard}"
 SPLIT_KIND="${SPLIT_KIND:-}"
 NUM_FOLDS="${NUM_FOLDS:-}"
@@ -47,14 +46,14 @@ FIT_OVERWRITE="${FIT_OVERWRITE:-false}"
 
 EXPERIMENT_SLUG="${1:?missing experiment_slug}"
 VARIANT_SLUG="${2:-}"
-POSITIONAL_SCOPE_OR_SEARCH_SLUG="${3:-}"
+POSITIONAL_SEARCH_SLUG="${3:-}"
 
-if [[ "${FIT_MODE}" != "standard" && "${FIT_MODE}" != "outer_masked" && "${FIT_MODE}" != "masked_standard" ]]; then
-  echo "FIT_MODE must be 'standard', 'outer_masked', or 'masked_standard', got '${FIT_MODE}'." >&2
+if [[ "${FIT_MODE}" != "standard" && "${FIT_MODE}" != "outer_masked" ]]; then
+  echo "FIT_MODE must be 'standard' or 'outer_masked', got '${FIT_MODE}'." >&2
   exit 1
 fi
 
-if [[ ( "${FIT_MODE}" == "standard" || "${FIT_MODE}" == "masked_standard" ) && -z "${VARIANT_SLUG}" ]]; then
+if [[ "${FIT_MODE}" == "standard" && -z "${VARIANT_SLUG}" ]]; then
   echo "missing variant_slug" >&2
   exit 1
 fi
@@ -64,19 +63,11 @@ if [[ "${FIT_MODE}" == "outer_masked" ]]; then
     echo "CV_SPEC_PATH is required when FIT_MODE=outer_masked." >&2
     exit 1
   fi
-  if [[ -n "${POSITIONAL_SCOPE_OR_SEARCH_SLUG}" ]]; then
-    SEARCH_SLUG="${POSITIONAL_SCOPE_OR_SEARCH_SLUG}"
+  if [[ -n "${POSITIONAL_SEARCH_SLUG}" ]]; then
+    SEARCH_SLUG="${POSITIONAL_SEARCH_SLUG}"
   fi
   if [[ -z "${SEARCH_SLUG}" ]]; then
     echo "SEARCH_SLUG is required when FIT_MODE=outer_masked." >&2
-    exit 1
-  fi
-elif [[ "${FIT_MODE}" == "masked_standard" ]]; then
-  if [[ -n "${POSITIONAL_SCOPE_OR_SEARCH_SLUG}" ]]; then
-    SCOPE_SLUG="${POSITIONAL_SCOPE_OR_SEARCH_SLUG}"
-  fi
-  if [[ -z "${SCOPE_SLUG}" ]]; then
-    echo "SCOPE_SLUG is required when FIT_MODE=masked_standard." >&2
     exit 1
   fi
 fi
@@ -116,7 +107,7 @@ if [[ "${FIT_MODE}" == "standard" ]]; then
     --experiment_slug "${EXPERIMENT_SLUG}" \
     --variant_slug "${VARIANT_SLUG}" \
     "${OVERWRITE_FLAG[@]}"
-elif [[ "${FIT_MODE}" == "outer_masked" ]]; then
+else
   variant_args=()
   if [[ -n "${VARIANT_SLUG}" ]]; then
     variant_args=(--variant_slug "${VARIANT_SLUG}")
@@ -129,17 +120,6 @@ elif [[ "${FIT_MODE}" == "outer_masked" ]]; then
     --run_request \
     --experiment_slug "${EXPERIMENT_SLUG}" \
     "${variant_args[@]}" \
-    "${split_args[@]}" \
-    "${OVERWRITE_FLAG[@]}"
-else
-  pixi run python -u run_fit_pipeline.py \
-    --fit_mode masked_standard \
-    --manifest_path "${GENERATION_MANIFEST_PATH}" \
-    --fits_spec_path "${FITS_SPEC_PATH}" \
-    --scope_slug "${SCOPE_SLUG}" \
-    --run_request \
-    --experiment_slug "${EXPERIMENT_SLUG}" \
-    --variant_slug "${VARIANT_SLUG}" \
     "${split_args[@]}" \
     "${OVERWRITE_FLAG[@]}"
 fi

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import warnings
 
 from utils.t0_config_utils import (
     deep_merge_mappings,
@@ -115,6 +116,17 @@ def validate_fit_variant_dict(variant: dict[str, Any]) -> None:
         raise ValueError(
             f"Variant '{name}': optimizer_mode '{mode}' is not valid. "
             f"Must be one of: {sorted(_VALID_OPTIMIZER_MODES)}."
+        )
+    if mode in {
+        "alternating_treatment_split_latent_rank",
+        "alternating_treatment_shared_unit_latent_rank",
+    }:
+        warnings.warn(
+            f"Variant '{name}': optimizer_mode='{mode}' is deprecated and retained "
+            "only for backward compatibility; prefer "
+            "'alternating_latent_rank' for primary workflows.",
+            UserWarning,
+            stacklevel=2,
         )
     rank = int(variant.get("latent_rank", 0))
     if mode in {

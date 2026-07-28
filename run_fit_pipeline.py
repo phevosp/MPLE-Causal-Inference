@@ -51,10 +51,7 @@ from utils.t8_parameter_recovery_reporting import write_fit_reports
 FIT_REQUESTS_NAME = "fit_requests.csv"
 FIT_MODE_STANDARD = "standard"
 FIT_MODE_OUTER_MASKED = "outer_masked"
-FIT_MODE_MASKED_STANDARD = "masked_standard"
-VALID_FIT_MODES = frozenset(
-    {FIT_MODE_STANDARD, FIT_MODE_OUTER_MASKED, FIT_MODE_MASKED_STANDARD}
-)
+VALID_FIT_MODES = frozenset({FIT_MODE_STANDARD, FIT_MODE_OUTER_MASKED})
 DEFAULT_TRAIN_NUM_FOLDS = 5
 TRAIN_FIT_ROOT_NAME = "train_fits"
 TRAIN_FIT_MANIFEST_NAME = "train_fit_manifest.csv"
@@ -151,13 +148,6 @@ def _requested_train_fit_search_slugs(
     if normalized:
         return [str(load_search_from_spec(cv_spec_path, normalized)["slug"])]
     return [str(search["slug"]) for search in _expand_train_fit_searches(cv_spec_path)]
-
-
-def _normalize_scope_slug(scope_slug: str) -> str:
-    normalized = str(scope_slug).strip()
-    if not normalized:
-        raise ValueError("scope_slug must be a non-empty string.")
-    return normalized
 
 
 def _fit_request_row(
@@ -370,49 +360,6 @@ def _train_fit_request_row(
     return row
 
 
-def _direct_train_fit_request_row(
-    experiment_row: dict[str, str],
-    *,
-    scope_slug: str,
-    variant: dict[str, Any],
-    generation_manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    split_kind: str,
-    num_folds: int,
-    outer_num_folds: int,
-    test_fold_id: int,
-) -> dict[str, object]:
-    normalized_scope_slug = _normalize_scope_slug(scope_slug)
-    fit_path = _train_fit_output_root(
-        experiment_row["experiment_path"],
-        search_slug=normalized_scope_slug,
-        split_kind=str(split_kind),
-        num_folds=int(num_folds),
-        outer_num_folds=int(outer_num_folds),
-        test_fold_id=int(test_fold_id),
-        candidate_slug=str(variant["slug"]),
-    )
-    row: dict[str, object] = {
-        "generation_manifest_path": path_text(generation_manifest_path),
-        "fits_spec_path": path_text(fits_spec_path),
-        "search_name": normalized_scope_slug,
-        "search_slug": normalized_scope_slug,
-        "best_candidate_path": "",
-        "cv_spec_path": "",
-        "split_kind": str(split_kind),
-        "num_folds": int(num_folds),
-        "experiment_name": experiment_row.get("experiment_name", ""),
-        "experiment_slug": experiment_row.get("experiment_slug", ""),
-        "variant_name": str(variant["name"]),
-        "variant_slug": str(variant["slug"]),
-        "fit_path": path_text(fit_path),
-    }
-    if str(split_kind) == "test_train_cv":
-        row["outer_num_folds"] = int(outer_num_folds)
-        row["test_fold_id"] = int(test_fold_id)
-    return row
-
-
 def _planned_train_fit_request_rows(
     manifest_path: str | Path,
     cv_spec_path: str | Path,
@@ -461,75 +408,6 @@ def _planned_train_fit_request_rows(
             )
         )
     return search, request_rows
-
-
-def _resolve_direct_masked_split_settings(
-    *,
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-) -> dict[str, int | str]:
-    resolved_split_kind = normalize_split_kind(split_kind or "test_train_cv")
-    resolved_num_folds = (
-        int(num_folds) if num_folds is not None else int(DEFAULT_TRAIN_NUM_FOLDS)
-    )
-    resolved_outer_num_folds = (
-        int(outer_num_folds)
-        if outer_num_folds is not None
-        else int(DEFAULT_OUTER_NUM_FOLDS)
-    )
-    resolved_test_fold_id = (
-        int(test_fold_id) if test_fold_id is not None else int(DEFAULT_TEST_FOLD_ID)
-    )
-    return {
-        "split_kind": resolved_split_kind,
-        "num_folds": resolved_num_folds,
-        "outer_num_folds": resolved_outer_num_folds,
-        "test_fold_id": resolved_test_fold_id,
-    }
-
-
-def _planned_direct_train_fit_request_rows(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    scope_slug: str,
-    *,
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-) -> tuple[str, list[dict[str, object]]]:
-    generation_rows = read_csv_rows(manifest_path)
-    if not generation_rows:
-        raise ValueError(
-            f"No experiments found in generation manifest {manifest_path}."
-        )
-    normalized_scope_slug = _normalize_scope_slug(scope_slug)
-    split_settings = _resolve_direct_masked_split_settings(
-        split_kind=split_kind,
-        num_folds=num_folds,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-    )
-    variants = _expand_fit_variants(fits_spec_path)
-    request_rows: list[dict[str, object]] = []
-    for experiment_row in generation_rows:
-        for variant in variants:
-            request_rows.append(
-                _direct_train_fit_request_row(
-                    experiment_row,
-                    scope_slug=normalized_scope_slug,
-                    variant=variant,
-                    generation_manifest_path=manifest_path,
-                    fits_spec_path=fits_spec_path,
-                    split_kind=str(split_settings["split_kind"]),
-                    num_folds=int(split_settings["num_folds"]),
-                    outer_num_folds=int(split_settings["outer_num_folds"]),
-                    test_fold_id=int(split_settings["test_fold_id"]),
-                )
-            )
-    return normalized_scope_slug, request_rows
 
 
 def _select_request_row(
@@ -672,30 +550,6 @@ def write_train_fit_requests(
     return request_path
 
 
-def write_direct_train_fit_requests(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    scope_slug: str,
-    *,
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-) -> Path:
-    normalized_scope_slug, request_rows = _planned_direct_train_fit_request_rows(
-        manifest_path,
-        fits_spec_path,
-        scope_slug,
-        split_kind=split_kind,
-        num_folds=num_folds,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-    )
-    request_path = _train_fit_requests_path(manifest_path, normalized_scope_slug)
-    write_csv_rows(request_path, request_rows)
-    return request_path
-
-
 def write_train_fit_requests_for_scope(
     manifest_path: str | Path,
     cv_spec_path: str | Path,
@@ -777,53 +631,6 @@ def collect_train_fit_request_rows(
     ):
         request_rows.extend(read_csv_rows(request_path))
     return request_rows
-
-
-def _ensure_direct_train_fit_request_path(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    scope_slug: str,
-    *,
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-) -> Path:
-    normalized_scope_slug = _normalize_scope_slug(scope_slug)
-    request_path = _train_fit_requests_path(manifest_path, normalized_scope_slug)
-    if not request_path.exists():
-        write_direct_train_fit_requests(
-            manifest_path,
-            fits_spec_path,
-            normalized_scope_slug,
-            split_kind=split_kind,
-            num_folds=num_folds,
-            outer_num_folds=outer_num_folds,
-            test_fold_id=test_fold_id,
-        )
-    return request_path
-
-
-def collect_direct_train_fit_request_rows(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    scope_slug: str,
-    *,
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-) -> list[dict[str, str]]:
-    request_path = _ensure_direct_train_fit_request_path(
-        manifest_path,
-        fits_spec_path,
-        scope_slug,
-        split_kind=split_kind,
-        num_folds=num_folds,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-    )
-    return read_csv_rows(request_path)
 
 
 def run_fit_variant(
@@ -1021,37 +828,6 @@ def _run_train_fit_from_request_row(
     return _manifest_row_from_completed_fit(request_row)
 
 
-def _run_direct_train_fit_from_request_row(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    request_row: dict[str, str],
-    *,
-    overwrite: bool = False,
-) -> dict[str, object]:
-    experiment_row = _select_generation_row(manifest_path, request_row["experiment_slug"])
-    variant = _select_fit_variant(fits_spec_path, request_row["variant_slug"])
-    _run_masked_fit(
-        experiment_row,
-        candidate=variant,
-        search_slug=request_row["search_slug"],
-        split_kind=request_row["split_kind"],
-        num_folds=int(request_row["num_folds"]),
-        outer_num_folds=int(request_row.get("outer_num_folds", DEFAULT_OUTER_NUM_FOLDS)),
-        test_fold_id=int(request_row.get("test_fold_id", DEFAULT_TEST_FOLD_ID)),
-        fit_root=request_row["fit_path"],
-        extra_metadata={
-            "execution_mode": "train_fit_direct",
-            "search_name": request_row.get("search_name", request_row["search_slug"]),
-            "search_slug": request_row["search_slug"],
-            "best_candidate_path": "",
-            "cv_spec_path": "",
-            "fits_spec_path": path_text(fits_spec_path),
-        },
-        overwrite=overwrite,
-    )
-    return _manifest_row_from_completed_fit(request_row)
-
-
 def run_train_fit_request(
     manifest_path: str | Path,
     cv_spec_path: str | Path,
@@ -1082,41 +858,6 @@ def run_train_fit_request(
     return _run_train_fit_from_request_row(
         manifest_path,
         cv_spec_path,
-        request_row,
-        overwrite=overwrite,
-    )
-
-
-def run_direct_train_fit_request(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    scope_slug: str,
-    experiment_slug: str,
-    *,
-    variant_slug: str = "",
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-    overwrite: bool = False,
-) -> dict[str, object]:
-    request_rows = collect_direct_train_fit_request_rows(
-        manifest_path,
-        fits_spec_path,
-        scope_slug,
-        split_kind=split_kind,
-        num_folds=num_folds,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-    )
-    request_row = _select_request_row(
-        request_rows,
-        experiment_slug=experiment_slug,
-        variant_slug=variant_slug,
-    )
-    return _run_direct_train_fit_from_request_row(
-        manifest_path,
-        fits_spec_path,
         request_row,
         overwrite=overwrite,
     )
@@ -1169,45 +910,6 @@ def refresh_train_fit_manifest(
     write_csv_rows(train_fit_manifest_path, fit_rows)
     per_experiment_filename, winners_filename = _train_fit_report_filenames(
         normalized_search_slug or None
-    )
-    write_fit_reports(
-        train_fit_manifest_path,
-        per_experiment_filename=per_experiment_filename,
-        winners_filename=winners_filename,
-    )
-    return train_fit_manifest_path
-
-
-def refresh_direct_train_fit_manifest(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    scope_slug: str,
-    *,
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-) -> Path:
-    normalized_scope_slug = _normalize_scope_slug(scope_slug)
-    request_rows = collect_direct_train_fit_request_rows(
-        manifest_path,
-        fits_spec_path,
-        normalized_scope_slug,
-        split_kind=split_kind,
-        num_folds=num_folds,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-    )
-    fit_rows = [
-        _manifest_row_from_completed_fit(request_row) for request_row in request_rows
-    ]
-    train_fit_manifest_path = _train_fit_manifest_path(
-        manifest_path,
-        normalized_scope_slug,
-    )
-    write_csv_rows(train_fit_manifest_path, fit_rows)
-    per_experiment_filename, winners_filename = _train_fit_report_filenames(
-        normalized_scope_slug
     )
     write_fit_reports(
         train_fit_manifest_path,
@@ -1300,56 +1002,6 @@ def run_train_fits(
     return train_fit_manifest_path
 
 
-def run_direct_train_fits(
-    manifest_path: str | Path,
-    fits_spec_path: str | Path,
-    scope_slug: str,
-    *,
-    split_kind: str | None = None,
-    num_folds: int | None = None,
-    outer_num_folds: int | None = None,
-    test_fold_id: int | None = None,
-    overwrite: bool = False,
-) -> Path:
-    normalized_scope_slug = _normalize_scope_slug(scope_slug)
-    request_path = write_direct_train_fit_requests(
-        manifest_path,
-        fits_spec_path,
-        normalized_scope_slug,
-        split_kind=split_kind,
-        num_folds=num_folds,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-    )
-    request_rows = read_csv_rows(request_path)
-    print(f"Loaded {len(request_rows)} train-fit request(s) from {request_path}.")
-    for request_row in request_rows:
-        experiment_name = request_row.get(
-            "experiment_name", request_row["experiment_slug"]
-        )
-        variant_name = request_row.get("variant_name", request_row["variant_slug"])
-        print(
-            f"Running direct train fit '{variant_name}' for experiment '{experiment_name}'..."
-        )
-        _run_direct_train_fit_from_request_row(
-            manifest_path,
-            fits_spec_path,
-            request_row,
-            overwrite=overwrite,
-        )
-    train_fit_manifest_path = refresh_direct_train_fit_manifest(
-        manifest_path,
-        fits_spec_path,
-        normalized_scope_slug,
-        split_kind=split_kind,
-        num_folds=num_folds,
-        outer_num_folds=outer_num_folds,
-        test_fold_id=test_fold_id,
-    )
-    print(f"Wrote train-fit manifest to {train_fit_manifest_path}.")
-    return train_fit_manifest_path
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run MPLE fits over a generation manifest."
@@ -1379,16 +1031,10 @@ def main() -> None:
         help="CV search slug used in outer_masked mode.",
     )
     parser.add_argument(
-        "--scope_slug",
-        type=str,
-        default="",
-        help="Direct masked-fit scope slug used in masked_standard mode.",
-    )
-    parser.add_argument(
         "--fit_mode",
         type=str,
         default=FIT_MODE_STANDARD,
-        help="Fit execution mode: standard, outer_masked, or masked_standard.",
+        help="Fit execution mode: standard or outer_masked.",
     )
     parser.add_argument("--split_kind", type=str, default="")
     parser.add_argument("--num_folds", type=int, default=None)
@@ -1425,14 +1071,11 @@ def main() -> None:
 
     fit_mode = _normalize_fit_mode(args.fit_mode)
     normalized_search_slug = str(args.search_slug).strip()
-    normalized_scope_slug = str(args.scope_slug).strip()
     if fit_mode == FIT_MODE_OUTER_MASKED:
         if not str(args.cv_spec_path).strip():
             raise ValueError("--cv_spec_path is required when --fit_mode=outer_masked.")
         if args.run_request and not normalized_search_slug:
             raise ValueError("--search_slug is required when --fit_mode=outer_masked.")
-    if fit_mode == FIT_MODE_MASKED_STANDARD and not normalized_scope_slug:
-        raise ValueError("--scope_slug is required when --fit_mode=masked_standard.")
 
     if args.dry_run:
         generation_rows = read_csv_rows(args.manifest_path)
@@ -1474,23 +1117,6 @@ def main() -> None:
                 print(
                     f"  {row.get('experiment_name', '?')} / {row['search_slug']} / {row['variant_name']} / {row['split_kind']}"
                 )
-        else:
-            _, request_rows = _planned_direct_train_fit_request_rows(
-                args.manifest_path,
-                args.fits_spec_path,
-                normalized_scope_slug,
-                split_kind=args.split_kind or None,
-                num_folds=args.num_folds,
-                outer_num_folds=args.outer_num_folds,
-                test_fold_id=args.test_fold_id,
-            )
-            print(
-                f"Dry run: {len(request_rows)} direct train fit(s) planned for scope '{normalized_scope_slug}'."
-            )
-            for row in request_rows:
-                print(
-                    f"  {row.get('experiment_name', '?')} / {row['search_slug']} / {row['variant_name']} / {row['split_kind']}"
-                )
         return
 
     if args.write_requests:
@@ -1509,17 +1135,6 @@ def main() -> None:
             )
             for request_path in request_paths:
                 print(f"Train-fit requests: {request_path}")
-        else:
-            request_path = write_direct_train_fit_requests(
-                args.manifest_path,
-                args.fits_spec_path,
-                normalized_scope_slug,
-                split_kind=args.split_kind or None,
-                num_folds=args.num_folds,
-                outer_num_folds=args.outer_num_folds,
-                test_fold_id=args.test_fold_id,
-            )
-            print(f"Train-fit requests: {request_path}")
         return
 
     if args.run_request:
@@ -1550,19 +1165,6 @@ def main() -> None:
                 test_fold_id=args.test_fold_id,
                 overwrite=args.overwrite,
             )
-        else:
-            row = run_direct_train_fit_request(
-                args.manifest_path,
-                args.fits_spec_path,
-                normalized_scope_slug,
-                args.experiment_slug.strip(),
-                variant_slug=args.variant_slug.strip(),
-                split_kind=args.split_kind or None,
-                num_folds=args.num_folds,
-                outer_num_folds=args.outer_num_folds,
-                test_fold_id=args.test_fold_id,
-                overwrite=args.overwrite,
-            )
         print(f"Completed fit: {row['fit_path']}")
         return
 
@@ -1584,17 +1186,6 @@ def main() -> None:
                 test_fold_id=args.test_fold_id,
             )
             print(f"Train-fit manifest: {fit_manifest_path}")
-        else:
-            fit_manifest_path = refresh_direct_train_fit_manifest(
-                args.manifest_path,
-                args.fits_spec_path,
-                normalized_scope_slug,
-                split_kind=args.split_kind or None,
-                num_folds=args.num_folds,
-                outer_num_folds=args.outer_num_folds,
-                test_fold_id=args.test_fold_id,
-            )
-            print(f"Train-fit manifest: {fit_manifest_path}")
         return
 
     if fit_mode == FIT_MODE_STANDARD:
@@ -1609,18 +1200,6 @@ def main() -> None:
             args.manifest_path,
             args.cv_spec_path,
             normalized_search_slug or None,
-            split_kind=args.split_kind or None,
-            num_folds=args.num_folds,
-            outer_num_folds=args.outer_num_folds,
-            test_fold_id=args.test_fold_id,
-            overwrite=args.overwrite,
-        )
-        print(f"Train-fit manifest: {fit_manifest_path}")
-    else:
-        fit_manifest_path = run_direct_train_fits(
-            args.manifest_path,
-            args.fits_spec_path,
-            normalized_scope_slug,
             split_kind=args.split_kind or None,
             num_folds=args.num_folds,
             outer_num_folds=args.outer_num_folds,
