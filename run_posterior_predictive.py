@@ -32,10 +32,8 @@ from utils.t5_parameter_bundles import (
     fit_optimizer_mode,
     load_fit_parameter_bundle,
     load_fit_snn_counterfactual_artifacts,
-    load_fit_treatment_field_artifacts,
     load_truth_parameter_bundle,
 )
-from utils.t3_field_operations import compose_realized_treatment_field_matrix
 from utils.t6_posterior_predictive_manifest import (
     POSTERIOR_PREDICTIVE_ROOT_NAME,
     index_generation_rows,
@@ -105,26 +103,6 @@ def _finalize_sample_summaries(
         key: np.asarray(values, dtype=float)
         for key, values in accumulator.items()
     }
-
-
-def _resolved_fit_simulation_field_matrix(
-    *,
-    fit_root: Path,
-    bundle,
-    intervention_source: str,
-    intervention_z: np.ndarray,
-) -> np.ndarray | None:
-    """Return an override field for fit-based saved-intervention simulation when needed."""
-    if str(intervention_source) != "saved_intervention":
-        return None
-    treatment_artifacts = load_fit_treatment_field_artifacts(fit_root)
-    if treatment_artifacts is None:
-        return None
-    return compose_realized_treatment_field_matrix(
-        treatment_artifacts.control_field_matrix,
-        treatment_artifacts.treated_field_matrix,
-        np.asarray(intervention_z, dtype=float),
-    )
 
 
 def _prepare_output_root(output_root: Path, *, overwrite: bool) -> None:
@@ -346,16 +324,7 @@ def _simulate_target(
             run_spec=run_spec,
             sample_index=sample_index,
         )
-        fit_field_override = (
-            None
-            if fit_root is None
-            else _resolved_fit_simulation_field_matrix(
-                fit_root=fit_root,
-                bundle=bundle,
-                intervention_source=intervention_source,
-                intervention_z=intervention_context.z,
-            )
-        )
+        fit_field_override = None
         sample_x = simulate_outcomes_for_bundle(
             bundle,
             x_0=panel_context["x_0"],

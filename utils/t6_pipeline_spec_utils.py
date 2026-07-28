@@ -46,8 +46,6 @@ _VALID_OPTIMIZER_MODES = frozenset(
         "exact_rank_manifold",
         "alternating_latent_rank",
         "concurrent_latent_rank",
-        "alternating_treatment_split_latent_rank",
-        "alternating_treatment_shared_unit_latent_rank",
         "snn_treatment_split",
     }
 )
@@ -118,8 +116,10 @@ def validate_fit_variant_dict(variant: dict[str, Any]) -> None:
             f"Must be one of: {sorted(_VALID_OPTIMIZER_MODES)}."
         )
     if mode in {
-        "alternating_treatment_split_latent_rank",
-        "alternating_treatment_shared_unit_latent_rank",
+        "no_external_field",
+        "nuclear_norm",
+        "exact_rank_manifold",
+        "concurrent_latent_rank",
     }:
         warnings.warn(
             f"Variant '{name}': optimizer_mode='{mode}' is deprecated and retained "
@@ -133,8 +133,6 @@ def validate_fit_variant_dict(variant: dict[str, Any]) -> None:
         "exact_rank_manifold",
         "alternating_latent_rank",
         "concurrent_latent_rank",
-        "alternating_treatment_split_latent_rank",
-        "alternating_treatment_shared_unit_latent_rank",
     } and rank <= 0:
         raise ValueError(
             f"Variant '{name}': latent_rank must be >= 1 for optimizer_mode='{mode}' (got {rank})."
@@ -185,40 +183,13 @@ def validate_fit_variant_dict(variant: dict[str, Any]) -> None:
         not in {
             "alternating_latent_rank",
             "concurrent_latent_rank",
-            "alternating_treatment_split_latent_rank",
-            "alternating_treatment_shared_unit_latent_rank",
         }
         and float(variant.get("lambda_uv_ridge", 0.0)) != 0.0
     ):
         raise ValueError(
             f"Variant '{name}': lambda_uv_ridge is only valid for optimizer_mode="
-            "'alternating_latent_rank', 'concurrent_latent_rank', "
-            "'alternating_treatment_split_latent_rank', or "
-            "'alternating_treatment_shared_unit_latent_rank'."
+            "'alternating_latent_rank' or 'concurrent_latent_rank'."
         )
-    if mode in {
-        "alternating_treatment_split_latent_rank",
-        "alternating_treatment_shared_unit_latent_rank",
-    }:
-        missing_scalars = sorted(
-            {"beta", "xi", "eta"} - {str(key) for key in fixed_scalar_params}
-        )
-        if missing_scalars:
-            raise ValueError(
-                f"Variant '{name}': optimizer_mode='{mode}' requires fixed_scalar_params "
-                f"for beta, xi, and eta; missing {missing_scalars}."
-            )
-        warm_start_fixed_scalars = estimation.get("warm_start_fixed_scalars", {}) or {}
-        if warm_start_fixed_scalars:
-            raise ValueError(
-                f"Variant '{name}': optimizer_mode='{mode}' does not support "
-                "warm_start_fixed_scalars."
-            )
-        if int(estimation.get("warm_start_steps", 0)) > 0:
-            raise ValueError(
-                f"Variant '{name}': optimizer_mode='{mode}' does not support "
-                "warm_start_steps."
-            )
 
 
 def validate_fits_spec(spec_path: str | Path) -> None:

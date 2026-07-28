@@ -22,8 +22,6 @@ from utils.t3_model_artifacts import (
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
     ModelArtifacts,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
     OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
@@ -43,7 +41,6 @@ from utils.t4_parameter_packing import (
 )
 from utils.t3_interaction_matrices import interaction_effect
 from utils.t3_field_operations import (
-    compose_realized_treatment_field_matrix,
     compose_field_matrix_from_theta,
     compose_latent_field_matrix,
 )
@@ -292,61 +289,6 @@ def _evaluate_factorized_loss_with_offset(
     time_gradient = (residual @ node_factors) / context.outcome_size
     node_gradient = (residual.T @ time_factors) / context.outcome_size
     return smooth_loss, residual, time_gradient, node_gradient
-
-
-def _treatment_active_masks(
-    context: _FitEvalContext,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Split the active loss mask into untreated and treated support."""
-    active_mask = (
-        np.ones_like(context.x, dtype=bool)
-        if context.loss_mask is None
-        else np.asarray(context.loss_mask, dtype=bool)
-    )
-    treated_mask = active_mask & (np.asarray(context.beta_feature, dtype=float) > 0.5)
-    control_mask = active_mask & ~treated_mask
-    return control_mask, treated_mask
-
-
-def _fixed_scalar_offset(
-    context: _FitEvalContext,
-) -> np.ndarray:
-    """Build the fit-time scalar offset matrix for modes with fixed scalars only."""
-    return _compute_h_x(
-        np.zeros_like(context.x, dtype=float),
-        context.fixed_scalar_params,
-        context,
-    )
-
-
-def _evaluate_treatment_surface_loss(
-    control_field_matrix: np.ndarray,
-    treated_field_matrix: np.ndarray,
-    context: _FitEvalContext,
-) -> tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Evaluate the treatment-split smooth loss and masked residual blocks."""
-    control_mask, treated_mask = _treatment_active_masks(context)
-    scalar_offset = _fixed_scalar_offset(context)
-    control_h = np.asarray(control_field_matrix, dtype=float) + scalar_offset
-    treated_h = np.asarray(treated_field_matrix, dtype=float) + scalar_offset
-    control_loss = np.logaddexp(control_h, -control_h) - context.x * control_h
-    treated_loss = np.logaddexp(treated_h, -treated_h) - context.x * treated_h
-    control_residual = np.tanh(control_h) - context.x
-    treated_residual = np.tanh(treated_h) - context.x
-    control_loss = control_loss * np.asarray(control_mask, dtype=float)
-    treated_loss = treated_loss * np.asarray(treated_mask, dtype=float)
-    control_residual = control_residual * np.asarray(control_mask, dtype=float)
-    treated_residual = treated_residual * np.asarray(treated_mask, dtype=float)
-    smooth_loss = float(
-        (control_loss.sum() + treated_loss.sum()) / context.outcome_size
-    )
-    return (
-        smooth_loss,
-        control_residual,
-        treated_residual,
-        control_mask,
-        treated_mask,
-    )
 
 
 def _project_node_factor_columns_to_l2_ball(
@@ -2672,29 +2614,21 @@ def fit_mple(
         bool(beta_mask_pre_s) or bool(beta_mask_post_e)
     ) and artifacts.optimizer_mode not in {
         OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
-        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
-        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
         OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     }:
         raise ValueError(
             "beta-gradient-only masking is only supported for "
-            "optimizer_mode in {'alternating_latent_rank', "
-            "'alternating_treatment_split_latent_rank', "
-            "'alternating_treatment_shared_unit_latent_rank', "
-            "'no_external_field'}; "
+            "optimizer_mode in {'alternating_latent_rank', 'no_external_field'}; "
             "the other optimizer modes are deprecated for masked-beta workflows."
         )
 
     if artifacts.optimizer_mode in {
-        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
-        OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
-    } and (
-        warm_start_fixed_scalars
-        or int(warm_start_steps) > 0
-    ):
+        "alternating_treatment_split_latent_rank",
+        "alternating_treatment_shared_unit_latent_rank",
+    }:
         raise ValueError(
-            "Treatment-split low-rank modes do not support warm_start_fixed_scalars "
-            "or warm_start_steps."
+            "Treatment-specific MPLE optimizer modes are no longer supported. "
+            "Use 'alternating_latent_rank' or 'snn_treatment_split' instead."
         )
 
     if warm_start_fixed_scalars and int(warm_start_steps) > 0:
@@ -2810,57 +2744,6 @@ def fit_mple(
             n_starts=n_starts,
             lambda_uv_ridge=lambda_uv_ridge,
             v_column_l2_max=v_column_l2_max,
-            s=s,
-            e=e,
-            beta_mask_pre_s=beta_mask_pre_s,
-            beta_mask_post_e=beta_mask_post_e,
-            loss_mask=loss_mask,
-        )
-    if artifacts.optimizer_mode == OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK:
-        return _fit_mple_treatment_low_rank(
-            x,
-            z,
-            x_0=x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            steps=steps,
-            seed=seed,
-            verbose_every=verbose_every,
-            tol=tol,
-            logger=logger,
-            theta_init=theta_init,
-            fixed_scalar_params=fixed_scalar_params,
-            n_starts=n_starts,
-            lambda_uv_ridge=lambda_uv_ridge,
-            v_column_l2_max=v_column_l2_max,
-            shared_unit=False,
-            s=s,
-            e=e,
-            beta_mask_pre_s=beta_mask_pre_s,
-            beta_mask_post_e=beta_mask_post_e,
-            loss_mask=loss_mask,
-        )
-    if (
-        artifacts.optimizer_mode
-        == OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK
-    ):
-        return _fit_mple_treatment_low_rank(
-            x,
-            z,
-            x_0=x_0,
-            artifacts=artifacts,
-            interaction_effect_x=interaction_effect_x,
-            steps=steps,
-            seed=seed,
-            verbose_every=verbose_every,
-            tol=tol,
-            logger=logger,
-            theta_init=theta_init,
-            fixed_scalar_params=fixed_scalar_params,
-            n_starts=n_starts,
-            lambda_uv_ridge=lambda_uv_ridge,
-            v_column_l2_max=v_column_l2_max,
-            shared_unit=True,
             s=s,
             e=e,
             beta_mask_pre_s=beta_mask_pre_s,
@@ -3048,8 +2931,6 @@ def main() -> None:
     if v_column_l2_max is not None:
         if artifacts.optimizer_mode in {
             OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
-            OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
-            OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
         }:
             logger.info(
                 "Alternating V-column L2-ball constraint active with radius %s",

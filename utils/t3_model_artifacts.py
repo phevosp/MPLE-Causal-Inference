@@ -27,32 +27,20 @@ OPTIMIZER_MODE_NUCLEAR_NORM = "nuclear_norm"
 OPTIMIZER_MODE_EXACT_RANK_MANIFOLD = "exact_rank_manifold"
 OPTIMIZER_MODE_ALTERNATING_LATENT_RANK = "alternating_latent_rank"
 OPTIMIZER_MODE_CONCURRENT_LATENT_RANK = "concurrent_latent_rank"
-OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK = (
-    "alternating_treatment_split_latent_rank"
-)
-OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK = (
-    "alternating_treatment_shared_unit_latent_rank"
-)
 VALID_OPTIMIZER_MODES = {
     OPTIMIZER_MODE_NO_EXTERNAL_FIELD,
     OPTIMIZER_MODE_NUCLEAR_NORM,
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
 }
 FULL_FIELD_SERIALIZER_OPTIMIZER_MODES = {
     OPTIMIZER_MODE_NUCLEAR_NORM,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
 }
 LOW_RANK_OPTIMIZER_MODES = {
     OPTIMIZER_MODE_EXACT_RANK_MANIFOLD,
     OPTIMIZER_MODE_ALTERNATING_LATENT_RANK,
     OPTIMIZER_MODE_CONCURRENT_LATENT_RANK,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SPLIT_LATENT_RANK,
-    OPTIMIZER_MODE_ALTERNATING_TREATMENT_SHARED_UNIT_LATENT_RANK,
 }
 
 
@@ -109,27 +97,6 @@ class SyntheticFieldBuildResult:
     confounded_layout: ConfoundedFieldLayout | None = None
 
 
-@dataclass(frozen=True)
-class TreatmentFieldArtifacts:
-    """Supplemental treatment-specific fit artifacts for treatment-split baselines."""
-
-    optimizer_mode: str
-    latent_rank: int
-    control_field_matrix: np.ndarray
-    treated_field_matrix: np.ndarray
-    realized_field_matrix: np.ndarray
-    lambda_uv_ridge: float
-    best_start: int
-    n_starts: int
-    final_mple_loss: float
-    final_penalized_objective: float
-    control_node_factors: np.ndarray | None = None
-    control_time_factors: np.ndarray | None = None
-    treated_node_factors: np.ndarray | None = None
-    treated_time_factors: np.ndarray | None = None
-    shared_node_factors: np.ndarray | None = None
-
-
 def build_fit_model_artifacts(config, gamma_matrix) -> ModelArtifacts:
     from utils.t2_normalization import (
         normalize_known_graph,
@@ -180,73 +147,6 @@ def load_field_artifacts(path: str | Path) -> dict[str, object]:
             if key in data:
                 result[key] = data[key]
     return result
-
-
-def save_treatment_field_artifacts(
-    path: str | Path,
-    artifacts: TreatmentFieldArtifacts,
-) -> None:
-    payload: dict[str, np.ndarray] = {
-        "optimizer_mode": np.asarray(str(artifacts.optimizer_mode)),
-        "latent_rank": np.asarray(int(artifacts.latent_rank), dtype=int),
-        "control_field_matrix": np.asarray(artifacts.control_field_matrix, dtype=float),
-        "treated_field_matrix": np.asarray(artifacts.treated_field_matrix, dtype=float),
-        "realized_field_matrix": np.asarray(
-            artifacts.realized_field_matrix,
-            dtype=float,
-        ),
-        "lambda_uv_ridge": np.asarray(float(artifacts.lambda_uv_ridge), dtype=float),
-        "best_start": np.asarray(int(artifacts.best_start), dtype=int),
-        "n_starts": np.asarray(int(artifacts.n_starts), dtype=int),
-        "final_mple_loss": np.asarray(float(artifacts.final_mple_loss), dtype=float),
-        "final_penalized_objective": np.asarray(
-            float(artifacts.final_penalized_objective),
-            dtype=float,
-        ),
-    }
-    optional_arrays = {
-        "control_node_factors": artifacts.control_node_factors,
-        "control_time_factors": artifacts.control_time_factors,
-        "treated_node_factors": artifacts.treated_node_factors,
-        "treated_time_factors": artifacts.treated_time_factors,
-        "shared_node_factors": artifacts.shared_node_factors,
-    }
-    for key, value in optional_arrays.items():
-        if value is not None:
-            payload[key] = np.asarray(value, dtype=float)
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(io_path(target), **payload)
-
-
-def load_treatment_field_artifacts(
-    path: str | Path,
-) -> TreatmentFieldArtifacts:
-    with np.load(Path(path), allow_pickle=False) as data:
-        def _optional_array(key: str) -> np.ndarray | None:
-            return np.asarray(data[key], dtype=float) if key in data else None
-
-        return TreatmentFieldArtifacts(
-            optimizer_mode=str(np.asarray(data["optimizer_mode"]).item()),
-            latent_rank=int(np.asarray(data["latent_rank"]).item()),
-            control_field_matrix=np.asarray(data["control_field_matrix"], dtype=float),
-            treated_field_matrix=np.asarray(data["treated_field_matrix"], dtype=float),
-            realized_field_matrix=np.asarray(data["realized_field_matrix"], dtype=float),
-            lambda_uv_ridge=float(np.asarray(data["lambda_uv_ridge"]).item()),
-            best_start=int(np.asarray(data["best_start"]).item()),
-            n_starts=int(np.asarray(data["n_starts"]).item()),
-            final_mple_loss=float(np.asarray(data["final_mple_loss"]).item()),
-            final_penalized_objective=float(
-                np.asarray(data["final_penalized_objective"]).item()
-            ),
-            control_node_factors=_optional_array("control_node_factors"),
-            control_time_factors=_optional_array("control_time_factors"),
-            treated_node_factors=_optional_array("treated_node_factors"),
-            treated_time_factors=_optional_array("treated_time_factors"),
-            shared_node_factors=_optional_array("shared_node_factors"),
-        )
-
-
 def save_model_artifacts(data_folder: str | Path, artifacts: ModelArtifacts) -> None:
     data_path = Path(data_folder)
     data_path.mkdir(parents=True, exist_ok=True)
