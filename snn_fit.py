@@ -43,6 +43,16 @@ def _snn_params_from_config(config: object) -> dict[str, Any]:
         "n_neighbors": int(params.get("n_neighbors", 1)),
         "weights": str(params.get("weights", "uniform")),
         "anchor_solver": str(params.get("anchor_solver", "networkx")),
+        "anchor_max_rows": (
+            None
+            if params.get("anchor_max_rows", None) is None
+            else int(params["anchor_max_rows"])
+        ),
+        "anchor_max_cols": (
+            None
+            if params.get("anchor_max_cols", None) is None
+            else int(params["anchor_max_cols"])
+        ),
         "random_splits": bool(params.get("random_splits", False)),
         "max_rank": (
             None if params.get("max_rank", None) is None else int(params["max_rank"])
@@ -82,7 +92,7 @@ def _run_completion(
     snn_params: dict[str, Any],
     logger: logging.Logger,
     label: str,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
     num_target_missing = int(np.count_nonzero(np.isnan(np.asarray(matrix, dtype=float))))
     logger.info(
         "Starting %s completion for %s target-missing entries.",
@@ -118,7 +128,7 @@ def _run_completion(
     )
     feasible = np.asarray(model.feasible, dtype=float)
     logger.info("%s completion finished.", label)
-    return completed, feasible
+    return completed, feasible, dict(model.anchor_diagnostics)
 
 
 def _optional_scalar(value: Any) -> float:
@@ -166,13 +176,13 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
     logger.info("Loaded panel with shape T=%s, N=%s", x.shape[0], x.shape[1])
 
     treated_input, untreated_input = _build_treatment_split_matrices(x, z)
-    treated_completed, treated_feasible = _run_completion(
+    treated_completed, treated_feasible, treated_anchor_diagnostics = _run_completion(
         treated_input,
         snn_params=snn_params,
         logger=logger,
         label="treated",
     )
-    untreated_completed, untreated_feasible = _run_completion(
+    untreated_completed, untreated_feasible, untreated_anchor_diagnostics = _run_completion(
         untreated_input,
         snn_params=snn_params,
         logger=logger,
@@ -214,6 +224,8 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         n_neighbors=np.asarray(int(snn_params["n_neighbors"]), dtype=int),
         weights=np.asarray(str(snn_params["weights"])),
         anchor_solver=np.asarray(str(snn_params["anchor_solver"])),
+        anchor_max_rows=np.asarray(_optional_scalar(snn_params["anchor_max_rows"]), dtype=float),
+        anchor_max_cols=np.asarray(_optional_scalar(snn_params["anchor_max_cols"]), dtype=float),
         random_splits=np.asarray(bool(snn_params["random_splits"]), dtype=bool),
         max_rank=np.asarray(_optional_scalar(snn_params["max_rank"]), dtype=float),
         spectral_t=np.asarray(_optional_scalar(snn_params["spectral_t"]), dtype=float),
@@ -231,12 +243,46 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         ),
         untreated_num_completed=np.asarray(untreated_stats["num_completed"], dtype=int),
         untreated_num_failed=np.asarray(untreated_stats["num_failed"], dtype=int),
+        treated_anchor_row_cap_hits=np.asarray(treated_anchor_diagnostics["row_cap_hits"], dtype=int),
+        treated_anchor_col_cap_hits=np.asarray(treated_anchor_diagnostics["col_cap_hits"], dtype=int),
+        treated_mean_selected_anchor_rows=np.asarray(
+            _completion_rate(
+                treated_anchor_diagnostics["selected_row_total"],
+                treated_anchor_diagnostics["num_targets"],
+            ),
+            dtype=float,
+        ),
+        treated_mean_selected_anchor_cols=np.asarray(
+            _completion_rate(
+                treated_anchor_diagnostics["selected_col_total"],
+                treated_anchor_diagnostics["num_targets"],
+            ),
+            dtype=float,
+        ),
+        untreated_anchor_row_cap_hits=np.asarray(untreated_anchor_diagnostics["row_cap_hits"], dtype=int),
+        untreated_anchor_col_cap_hits=np.asarray(untreated_anchor_diagnostics["col_cap_hits"], dtype=int),
+        untreated_mean_selected_anchor_rows=np.asarray(
+            _completion_rate(
+                untreated_anchor_diagnostics["selected_row_total"],
+                untreated_anchor_diagnostics["num_targets"],
+            ),
+            dtype=float,
+        ),
+        untreated_mean_selected_anchor_cols=np.asarray(
+            _completion_rate(
+                untreated_anchor_diagnostics["selected_col_total"],
+                untreated_anchor_diagnostics["num_targets"],
+            ),
+            dtype=float,
+        ),
     )
 
     summary_rows = [
         {"name": "n_neighbors", "value": int(snn_params["n_neighbors"])},
         {"name": "weights", "value": str(snn_params["weights"])},
         {"name": "anchor_solver", "value": str(snn_params["anchor_solver"])},
+        {"name": "anchor_max_rows", "value": "" if snn_params["anchor_max_rows"] is None else int(snn_params["anchor_max_rows"])},
+        {"name": "anchor_max_cols", "value": "" if snn_params["anchor_max_cols"] is None else int(snn_params["anchor_max_cols"])},
         {"name": "random_splits", "value": bool(snn_params["random_splits"])},
         {"name": "max_rank", "value": "" if snn_params["max_rank"] is None else int(snn_params["max_rank"])},
         {"name": "spectral_t", "value": "" if snn_params["spectral_t"] is None else float(snn_params["spectral_t"])},
@@ -252,6 +298,14 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         {"name": "untreated_num_target_missing", "value": untreated_stats["num_target_missing"]},
         {"name": "untreated_num_completed", "value": untreated_stats["num_completed"]},
         {"name": "untreated_num_failed", "value": untreated_stats["num_failed"]},
+        {"name": "treated_anchor_row_cap_hits", "value": treated_anchor_diagnostics["row_cap_hits"]},
+        {"name": "treated_anchor_col_cap_hits", "value": treated_anchor_diagnostics["col_cap_hits"]},
+        {"name": "treated_mean_selected_anchor_rows", "value": _completion_rate(treated_anchor_diagnostics["selected_row_total"], treated_anchor_diagnostics["num_targets"])},
+        {"name": "treated_mean_selected_anchor_cols", "value": _completion_rate(treated_anchor_diagnostics["selected_col_total"], treated_anchor_diagnostics["num_targets"])},
+        {"name": "untreated_anchor_row_cap_hits", "value": untreated_anchor_diagnostics["row_cap_hits"]},
+        {"name": "untreated_anchor_col_cap_hits", "value": untreated_anchor_diagnostics["col_cap_hits"]},
+        {"name": "untreated_mean_selected_anchor_rows", "value": _completion_rate(untreated_anchor_diagnostics["selected_row_total"], untreated_anchor_diagnostics["num_targets"])},
+        {"name": "untreated_mean_selected_anchor_cols", "value": _completion_rate(untreated_anchor_diagnostics["selected_col_total"], untreated_anchor_diagnostics["num_targets"])},
         {
             "name": "treated_completion_rate",
             "value": _completion_rate(

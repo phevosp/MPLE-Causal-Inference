@@ -3273,6 +3273,40 @@ class MinimalPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "anchor_solver"):
             validate_fit_variant_dict(variant)
 
+    def test_validate_fit_variant_dict_requires_bounded_greedy_limits(self) -> None:
+        variant = {
+            "name": "snn_bounded_greedy",
+            "optimizer": {"steps": 5, "tol": 1.0e-6, "seed": 0},
+            "optimizer_mode": "snn_treatment_split",
+            "snn": {
+                "n_neighbors": 1,
+                "weights": "uniform",
+                "anchor_solver": "bounded_greedy",
+                "anchor_max_rows": 32,
+                "anchor_max_cols": 8,
+                "random_splits": False,
+                "linear_span_eps": 0.1,
+                "subspace_eps": 0.1,
+            },
+            "estimation": {"fixed_scalar_params": {}},
+        }
+        validate_fit_variant_dict(variant)
+
+        missing_limit = {**variant, "snn": dict(variant["snn"])}
+        del missing_limit["snn"]["anchor_max_rows"]
+        with self.assertRaisesRegex(ValueError, "anchor_max_rows"):
+            validate_fit_variant_dict(missing_limit)
+
+        invalid_limit = {**variant, "snn": dict(variant["snn"])}
+        invalid_limit["snn"]["anchor_max_cols"] = 0
+        with self.assertRaisesRegex(ValueError, "anchor_max_cols"):
+            validate_fit_variant_dict(invalid_limit)
+
+        misplaced_limit = {**variant, "snn": dict(variant["snn"])}
+        misplaced_limit["snn"]["anchor_solver"] = "bitset_exact"
+        with self.assertRaisesRegex(ValueError, "only valid"):
+            validate_fit_variant_dict(misplaced_limit)
+
     def test_snn_bitset_exact_matches_networkx_on_unique_anchor_case(self) -> None:
         X = np.asarray(
             [
@@ -3330,6 +3364,62 @@ class MinimalPipelineTests(unittest.TestCase):
             np.asarray(bitset_model.feasible, dtype=float),
             np.asarray(networkx_model.feasible, dtype=float),
         )
+
+    def test_snn_bounded_greedy_returns_deterministic_complete_anchor(self) -> None:
+        X = np.asarray(
+            [
+                [0.0, np.nan, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ],
+            dtype=float,
+        )
+        model = SyntheticNearestNeighbors(
+            n_neighbors=1,
+            weights="uniform",
+            anchor_solver="bounded_greedy",
+            anchor_max_rows=2,
+            anchor_max_cols=1,
+            random_splits=False,
+            max_rank=1,
+            verbose=False,
+        )
+
+        first_rows, first_cols = model._find_anchors(
+            X, missing_pair=np.asarray([0, 1], dtype=int)
+        )
+        second_rows, second_cols = model._find_anchors(
+            X, missing_pair=np.asarray([0, 1], dtype=int)
+        )
+
+        self.assertEqual(len(first_rows), 2)
+        self.assertEqual(len(first_cols), 1)
+        np.testing.assert_array_equal(first_rows, second_rows)
+        np.testing.assert_array_equal(first_cols, second_cols)
+        self.assertTrue(np.all(~np.isnan(X[np.ix_(first_rows, first_cols)])))
+
+    def test_snn_bounded_greedy_handles_large_candidate_matrix_without_recursion(self) -> None:
+        X = np.zeros((3000, 100), dtype=float)
+        X[0, 0] = np.nan
+        model = SyntheticNearestNeighbors(
+            n_neighbors=1,
+            weights="uniform",
+            anchor_solver="bounded_greedy",
+            anchor_max_rows=256,
+            anchor_max_cols=64,
+            random_splits=False,
+            max_rank=1,
+            verbose=False,
+        )
+
+        anchor_rows, anchor_cols = model._find_anchors(
+            X, missing_pair=np.asarray([0, 0], dtype=int)
+        )
+
+        self.assertEqual(len(anchor_rows), 256)
+        self.assertEqual(len(anchor_cols), 64)
+        self.assertTrue(np.all(~np.isnan(X[np.ix_(anchor_rows, anchor_cols)])))
 
 
 class FitReportingTests(unittest.TestCase):
@@ -5359,6 +5449,9 @@ class PipelineStageRequestTests(unittest.TestCase):
                     "snn": {
                         "n_neighbors": 1,
                         "weights": "uniform",
+                        "anchor_solver": "bounded_greedy",
+                        "anchor_max_rows": 3,
+                        "anchor_max_cols": 3,
                         "random_splits": False,
                         "max_rank": 1,
                         "linear_span_eps": 0.1,
@@ -5395,6 +5488,11 @@ class PipelineStageRequestTests(unittest.TestCase):
             untreated_feasible = np.asarray(data["untreated_feasible_mask"], dtype=float)
             self.assertEqual(str(np.asarray(data["weights"]).item()), "uniform")
             self.assertEqual(int(np.asarray(data["n_neighbors"]).item()), 1)
+            self.assertEqual(str(np.asarray(data["anchor_solver"]).item()), "bounded_greedy")
+            self.assertEqual(int(np.asarray(data["anchor_max_rows"]).item()), 3)
+            self.assertEqual(int(np.asarray(data["anchor_max_cols"]).item()), 3)
+            self.assertIn("treated_anchor_row_cap_hits", data.files)
+            self.assertIn("untreated_mean_selected_anchor_cols", data.files)
 
         np.testing.assert_array_equal(
             np.isnan(treated_input),

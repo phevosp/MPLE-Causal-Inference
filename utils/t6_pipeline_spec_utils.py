@@ -69,10 +69,32 @@ def _validate_snn_variant_dict(variant: dict[str, Any]) -> None:
             f"Variant '{name}': snn.weights must be 'uniform' or 'distance' (got {weights!r})."
         )
     anchor_solver = str(snn.get("anchor_solver", "networkx"))
-    if anchor_solver not in {"networkx", "bitset_exact"}:
+    if anchor_solver not in {"networkx", "bitset_exact", "bounded_greedy"}:
         raise ValueError(
-            f"Variant '{name}': snn.anchor_solver must be 'networkx' or "
-            f"'bitset_exact' (got {anchor_solver!r})."
+            f"Variant '{name}': snn.anchor_solver must be 'networkx', "
+            f"'bitset_exact', or 'bounded_greedy' (got {anchor_solver!r})."
+        )
+    anchor_limits = ("anchor_max_rows", "anchor_max_cols")
+    if anchor_solver == "bounded_greedy":
+        for key in anchor_limits:
+            if key not in snn:
+                raise ValueError(
+                    f"Variant '{name}': snn.{key} is required for "
+                    "anchor_solver='bounded_greedy'."
+                )
+            value = snn[key]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 1
+            ):
+                raise ValueError(
+                    f"Variant '{name}': snn.{key} must be a positive integer."
+                )
+    elif any(key in snn for key in anchor_limits):
+        raise ValueError(
+            f"Variant '{name}': snn.anchor_max_rows and snn.anchor_max_cols are "
+            "only valid with anchor_solver='bounded_greedy'."
         )
     random_splits = snn.get("random_splits", False)
     if not isinstance(random_splits, bool):

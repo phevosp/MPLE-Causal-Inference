@@ -54,6 +54,8 @@ class SyntheticNearestNeighbors:
         min_value=None,
         max_value=None,
         verbose=True,
+        anchor_max_rows=None,
+        anchor_max_cols=None,
     ):
         """
         Parameters
@@ -65,6 +67,12 @@ class SyntheticNearestNeighbors:
         Weight function used in prediction. Possible values:
         (a) 'uniform': each synthetic neighbor is weighted equally
         (b) 'distance': weigh points inversely with distance (as per train error)
+
+        anchor_solver : str
+        Anchor-search backend. 'bounded_greedy' uses bounded approximate search.
+
+        anchor_max_rows, anchor_max_cols : int
+        Required candidate-pool limits for anchor_solver='bounded_greedy'.
 
         random_splits : bool
         Randomize donors prior to splitting
@@ -96,6 +104,8 @@ class SyntheticNearestNeighbors:
         self.n_neighbors = n_neighbors
         self.weights = weights
         self.anchor_solver = anchor_solver
+        self.anchor_max_rows = anchor_max_rows
+        self.anchor_max_cols = anchor_max_cols
         self.random_splits = random_splits
         self.max_rank = max_rank
         self.spectral_t = spectral_t
@@ -167,11 +177,37 @@ class SyntheticNearestNeighbors:
         """
         validate anchor search backend
         """
-        if anchor_solver not in ("networkx", "bitset_exact"):
+        if anchor_solver not in ("networkx", "bitset_exact", "bounded_greedy"):
             raise ValueError(
-                "anchor_solver not recognized: should be 'networkx' or 'bitset_exact'"
+                "anchor_solver not recognized: should be 'networkx', 'bitset_exact', or "
+                "'bounded_greedy'"
             )
         return anchor_solver
+
+    def _check_anchor_limits(self):
+        """Validate limits used only by the bounded greedy anchor solver."""
+        limits = (self.anchor_max_rows, self.anchor_max_cols)
+        if self.anchor_solver == "bounded_greedy":
+            if any(limit is None for limit in limits):
+                raise ValueError(
+                    "bounded_greedy requires anchor_max_rows and anchor_max_cols"
+                )
+            if any(
+                isinstance(limit, bool)
+                or not isinstance(limit, (int, np.integer))
+                or int(limit) < 1
+                for limit in limits
+            ):
+                raise ValueError(
+                    "anchor_max_rows and anchor_max_cols must be positive integers"
+                )
+            self.anchor_max_rows = int(self.anchor_max_rows)
+            self.anchor_max_cols = int(self.anchor_max_cols)
+        elif any(limit is not None for limit in limits):
+            raise ValueError(
+                "anchor_max_rows and anchor_max_cols are only valid with "
+                "anchor_solver='bounded_greedy'"
+            )
 
     def _find_anchor_candidates(self, X, missing_pair):
         """
@@ -340,6 +376,83 @@ class SyntheticNearestNeighbors:
         ]
         return (obs_rows[row_indices], obs_cols[col_indices])
 
+    def _find_anchors_bounded_greedy(self, obs_rows, obs_cols, B):
+        """Find an approximate complete anchor rectangle without clique search."""
+        observed = ~np.isnan(np.asarray(B, dtype=float))
+        if observed.size == 0:
+            return (
+                np.asarray([], dtype=obs_rows.dtype),
+                np.asarray([], dtype=obs_cols.dtype),
+            )
+
+        row_order = np.argsort(-observed.sum(axis=1), kind="stable")
+        col_order = np.argsort(-observed.sum(axis=0), kind="stable")
+        row_indices = row_order[: self.anchor_max_rows]
+        col_indices = col_order[: self.anchor_max_cols]
+        bounded_observed = observed[np.ix_(row_indices, col_indices)]
+
+        best_rows = np.asarray([], dtype=int)
+        best_cols = np.asarray([], dtype=int)
+        best_score = (0, 0, 0, 0)
+
+        def consider(rows, cols):
+            nonlocal best_rows, best_cols, best_score
+            score = (
+                min(len(rows), len(cols)),
+                len(rows) * len(cols),
+                len(rows),
+                len(cols),
+            )
+            if score > best_score:
+                best_rows = np.asarray(rows, dtype=int)
+                best_cols = np.asarray(cols, dtype=int)
+                best_score = score
+
+        # Grow a complete rectangle in each direction; the two passes reduce
+        # sensitivity to whether rows or columns have the denser coverage.
+        valid_rows = np.ones(bounded_observed.shape[0], dtype=bool)
+        selected_cols = []
+        for col_idx in np.argsort(-bounded_observed.sum(axis=0), kind="stable"):
+            proposed_rows = valid_rows & bounded_observed[:, col_idx]
+            if not np.any(proposed_rows):
+                continue
+            valid_rows = proposed_rows
+            selected_cols.append(int(col_idx))
+            consider(np.flatnonzero(valid_rows), selected_cols)
+
+        valid_cols = np.ones(bounded_observed.shape[1], dtype=bool)
+        selected_rows = []
+        for row_idx in np.argsort(-bounded_observed.sum(axis=1), kind="stable"):
+            proposed_cols = valid_cols & bounded_observed[row_idx, :]
+            if not np.any(proposed_cols):
+                continue
+            valid_cols = proposed_cols
+            selected_rows.append(int(row_idx))
+            consider(selected_rows, np.flatnonzero(valid_cols))
+
+        if best_score[0] <= 0:
+            return (
+                np.asarray([], dtype=obs_rows.dtype),
+                np.asarray([], dtype=obs_cols.dtype),
+            )
+        return (
+            obs_rows[row_indices[best_rows]],
+            obs_cols[col_indices[best_cols]],
+        )
+
+    def _record_bounded_anchor_diagnostics(
+        self, obs_rows, obs_cols, anchor_rows, anchor_cols
+    ):
+        """Accumulate bounded-solver diagnostics for the current completion run."""
+        diagnostics = getattr(self, "anchor_diagnostics", None)
+        if diagnostics is None:
+            return
+        diagnostics["num_targets"] += 1
+        diagnostics["row_cap_hits"] += int(len(obs_rows) > self.anchor_max_rows)
+        diagnostics["col_cap_hits"] += int(len(obs_cols) > self.anchor_max_cols)
+        diagnostics["selected_row_total"] += int(len(anchor_rows))
+        diagnostics["selected_col_total"] += int(len(anchor_cols))
+
     def _find_anchors(self, X, missing_pair):
         """
         find model learning submatrix by reducing to max biclique problem
@@ -349,8 +462,17 @@ class SyntheticNearestNeighbors:
             return self._find_anchors_networkx(obs_rows, obs_cols, B)
         if self.anchor_solver == "bitset_exact":
             return self._find_anchors_bitset_exact(obs_rows, obs_cols, B)
+        if self.anchor_solver == "bounded_greedy":
+            anchor_rows, anchor_cols = self._find_anchors_bounded_greedy(
+                obs_rows, obs_cols, B
+            )
+            self._record_bounded_anchor_diagnostics(
+                obs_rows, obs_cols, anchor_rows, anchor_cols
+            )
+            return anchor_rows, anchor_cols
         raise ValueError(
-            "anchor_solver not recognized: should be 'networkx' or 'bitset_exact'"
+            "anchor_solver not recognized: should be 'networkx', 'bitset_exact', or "
+            "'bounded_greedy'"
         )
 
     def _spectral_rank(self, s):
@@ -522,12 +644,20 @@ class SyntheticNearestNeighbors:
         # check weights
         self.weights = self._check_weights(self.weights)
         self.anchor_solver = self._check_anchor_solver(self.anchor_solver)
+        self._check_anchor_limits()
 
         # initialize
         X_imputed = X.copy()
         std_matrix = np.zeros(X.shape)
         self.feasible = np.empty(X.shape)
         self.feasible.fill(np.nan)
+        self.anchor_diagnostics = {
+            "num_targets": 0,
+            "row_cap_hits": 0,
+            "col_cap_hits": 0,
+            "selected_row_total": 0,
+            "selected_col_total": 0,
+        }
         if progress_every is None:
             progress_every = max(1, min(250, max(1, num_missing // 20)))
         progress_every = max(1, int(progress_every))
