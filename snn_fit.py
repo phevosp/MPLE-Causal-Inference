@@ -150,11 +150,24 @@ def _optional_scalar(value: Any) -> float:
 def _completion_stats(
     input_matrix: np.ndarray,
     completed_matrix: np.ndarray,
+    *,
+    scope_mask: np.ndarray | None = None,
 ) -> dict[str, int]:
-    target_missing_mask = np.isnan(np.asarray(input_matrix, dtype=float))
-    completed_mask = np.isfinite(np.asarray(completed_matrix, dtype=float)) & target_missing_mask
+    input_values = np.asarray(input_matrix, dtype=float)
+    completed_values = np.asarray(completed_matrix, dtype=float)
+    if input_values.shape != completed_values.shape:
+        raise ValueError("input_matrix and completed_matrix must have matching shapes.")
+    if scope_mask is None:
+        scoped_mask = np.ones(input_values.shape, dtype=bool)
+    else:
+        scoped_mask = np.asarray(scope_mask, dtype=bool)
+        if scoped_mask.shape != input_values.shape:
+            raise ValueError("scope_mask must match the input matrix shape.")
+
+    target_missing_mask = np.isnan(input_values) & scoped_mask
+    completed_mask = np.isfinite(completed_values) & target_missing_mask
     return {
-        "num_observed": int(np.count_nonzero(~target_missing_mask)),
+        "num_observed": int(np.count_nonzero(~np.isnan(input_values) & scoped_mask)),
         "num_target_missing": int(np.count_nonzero(target_missing_mask)),
         "num_completed": int(np.count_nonzero(completed_mask)),
         "num_failed": int(np.count_nonzero(target_missing_mask) - np.count_nonzero(completed_mask)),
@@ -218,6 +231,14 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
 
     treated_stats = _completion_stats(treated_input, treated_completed)
     untreated_stats = _completion_stats(untreated_input, untreated_completed)
+    post_s_mask = np.zeros(x.shape, dtype=bool)
+    post_s_mask[int(config.global_params.s) :, :] = True
+    treated_post_s_stats = _completion_stats(
+        treated_input, treated_completed, scope_mask=post_s_mask
+    )
+    untreated_post_s_stats = _completion_stats(
+        untreated_input, untreated_completed, scope_mask=post_s_mask
+    )
     total_target_missing = (
         treated_stats["num_target_missing"] + untreated_stats["num_target_missing"]
     )
@@ -236,6 +257,20 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         untreated_stats["num_target_missing"],
         untreated_stats["num_completed"],
         untreated_stats["num_failed"],
+    )
+    logger.info(
+        "Post-s treated stats: observed=%s target_missing=%s completed=%s failed=%s",
+        treated_post_s_stats["num_observed"],
+        treated_post_s_stats["num_target_missing"],
+        treated_post_s_stats["num_completed"],
+        treated_post_s_stats["num_failed"],
+    )
+    logger.info(
+        "Post-s untreated stats: observed=%s target_missing=%s completed=%s failed=%s",
+        untreated_post_s_stats["num_observed"],
+        untreated_post_s_stats["num_target_missing"],
+        untreated_post_s_stats["num_completed"],
+        untreated_post_s_stats["num_failed"],
     )
 
     np.savez(
@@ -275,6 +310,38 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         ),
         untreated_num_completed=np.asarray(untreated_stats["num_completed"], dtype=int),
         untreated_num_failed=np.asarray(untreated_stats["num_failed"], dtype=int),
+        treated_post_s_num_observed=np.asarray(treated_post_s_stats["num_observed"], dtype=int),
+        treated_post_s_num_target_missing=np.asarray(
+            treated_post_s_stats["num_target_missing"], dtype=int
+        ),
+        treated_post_s_num_completed=np.asarray(treated_post_s_stats["num_completed"], dtype=int),
+        treated_post_s_num_failed=np.asarray(treated_post_s_stats["num_failed"], dtype=int),
+        treated_post_s_completion_rate=np.asarray(
+            _completion_rate(
+                treated_post_s_stats["num_completed"],
+                treated_post_s_stats["num_target_missing"],
+            ),
+            dtype=float,
+        ),
+        untreated_post_s_num_observed=np.asarray(
+            untreated_post_s_stats["num_observed"], dtype=int
+        ),
+        untreated_post_s_num_target_missing=np.asarray(
+            untreated_post_s_stats["num_target_missing"], dtype=int
+        ),
+        untreated_post_s_num_completed=np.asarray(
+            untreated_post_s_stats["num_completed"], dtype=int
+        ),
+        untreated_post_s_num_failed=np.asarray(
+            untreated_post_s_stats["num_failed"], dtype=int
+        ),
+        untreated_post_s_completion_rate=np.asarray(
+            _completion_rate(
+                untreated_post_s_stats["num_completed"],
+                untreated_post_s_stats["num_target_missing"],
+            ),
+            dtype=float,
+        ),
         treated_anchor_row_cap_hits=np.asarray(treated_anchor_diagnostics["row_cap_hits"], dtype=int),
         treated_anchor_col_cap_hits=np.asarray(treated_anchor_diagnostics["col_cap_hits"], dtype=int),
         treated_mean_selected_anchor_rows=np.asarray(
@@ -330,6 +397,14 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         {"name": "untreated_num_target_missing", "value": untreated_stats["num_target_missing"]},
         {"name": "untreated_num_completed", "value": untreated_stats["num_completed"]},
         {"name": "untreated_num_failed", "value": untreated_stats["num_failed"]},
+        {"name": "treated_post_s_num_observed", "value": treated_post_s_stats["num_observed"]},
+        {"name": "treated_post_s_num_target_missing", "value": treated_post_s_stats["num_target_missing"]},
+        {"name": "treated_post_s_num_completed", "value": treated_post_s_stats["num_completed"]},
+        {"name": "treated_post_s_num_failed", "value": treated_post_s_stats["num_failed"]},
+        {"name": "untreated_post_s_num_observed", "value": untreated_post_s_stats["num_observed"]},
+        {"name": "untreated_post_s_num_target_missing", "value": untreated_post_s_stats["num_target_missing"]},
+        {"name": "untreated_post_s_num_completed", "value": untreated_post_s_stats["num_completed"]},
+        {"name": "untreated_post_s_num_failed", "value": untreated_post_s_stats["num_failed"]},
         {"name": "treated_anchor_row_cap_hits", "value": treated_anchor_diagnostics["row_cap_hits"]},
         {"name": "treated_anchor_col_cap_hits", "value": treated_anchor_diagnostics["col_cap_hits"]},
         {"name": "treated_mean_selected_anchor_rows", "value": _completion_rate(treated_anchor_diagnostics["selected_row_total"], treated_anchor_diagnostics["num_targets"])},
@@ -348,6 +423,20 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
             "name": "untreated_completion_rate",
             "value": _completion_rate(
                 untreated_stats["num_completed"], untreated_stats["num_target_missing"]
+            ),
+        },
+        {
+            "name": "treated_post_s_completion_rate",
+            "value": _completion_rate(
+                treated_post_s_stats["num_completed"],
+                treated_post_s_stats["num_target_missing"],
+            ),
+        },
+        {
+            "name": "untreated_post_s_completion_rate",
+            "value": _completion_rate(
+                untreated_post_s_stats["num_completed"],
+                untreated_post_s_stats["num_target_missing"],
             ),
         },
         {

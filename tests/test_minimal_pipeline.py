@@ -5579,6 +5579,107 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertEqual(treated_feasible.shape, x.shape)
         self.assertEqual(untreated_feasible.shape, x.shape)
 
+        fit_config = OmegaConf.load(fit_root / "fit_realized_config.yaml")
+        self.assertEqual(int(fit_config.global_params.s), 0)
+        post_s_mask = np.zeros(x.shape, dtype=bool)
+        post_s_mask[int(fit_config.global_params.s) :, :] = True
+        summary = {
+            row["name"]: row["value"]
+            for row in read_csv_manifest(fit_root / "snn_summary.csv")
+        }
+        with np.load(fit_root / "estimated_snn_artifacts.npz", allow_pickle=False) as data:
+            post_s_artifacts = {
+                f"{treatment_name}_post_s_{stat_name}": np.asarray(
+                    data[f"{treatment_name}_post_s_{stat_name}"]
+                ).item()
+                for treatment_name in ("treated", "untreated")
+                for stat_name in (
+                    "num_observed",
+                    "num_target_missing",
+                    "num_completed",
+                    "num_failed",
+                    "completion_rate",
+                )
+            }
+        for treatment_name, input_matrix, completed_matrix in (
+            ("treated", treated_input, treated_completed),
+            ("untreated", untreated_input, untreated_completed),
+        ):
+            target_missing = np.isnan(input_matrix) & post_s_mask
+            completed = np.isfinite(completed_matrix) & target_missing
+            expected_stats = {
+                "num_observed": int(np.count_nonzero(~np.isnan(input_matrix) & post_s_mask)),
+                "num_target_missing": int(np.count_nonzero(target_missing)),
+                "num_completed": int(np.count_nonzero(completed)),
+                "num_failed": int(np.count_nonzero(target_missing) - np.count_nonzero(completed)),
+            }
+            for stat_name, expected_value in expected_stats.items():
+                key = f"{treatment_name}_post_s_{stat_name}"
+                self.assertEqual(int(post_s_artifacts[key]), expected_value)
+                self.assertEqual(int(summary[key]), expected_value)
+
+            rate_key = f"{treatment_name}_post_s_completion_rate"
+            expected_rate = (
+                np.nan
+                if expected_stats["num_target_missing"] == 0
+                else expected_stats["num_completed"] / expected_stats["num_target_missing"]
+            )
+            actual_rate = float(post_s_artifacts[rate_key])
+            if np.isnan(expected_rate):
+                self.assertTrue(np.isnan(actual_rate))
+                self.assertTrue(np.isnan(float(summary[rate_key])))
+            else:
+                self.assertEqual(actual_rate, expected_rate)
+                self.assertEqual(float(summary[rate_key]), expected_rate)
+
+        fit_config.global_params.s = int(x.shape[0])
+        OmegaConf.save(fit_config, fit_root / "fit_realized_config.yaml")
+        execute_fit_root(fit_root)
+        with np.load(fit_root / "estimated_snn_artifacts.npz", allow_pickle=False) as data:
+            boundary_summary = {
+                row["name"]: row["value"]
+                for row in read_csv_manifest(fit_root / "snn_summary.csv")
+            }
+            for treatment_name in ("treated", "untreated"):
+                self.assertEqual(
+                    int(np.asarray(data[f"{treatment_name}_post_s_num_observed"]).item()),
+                    0,
+                )
+                self.assertEqual(
+                    int(
+                        np.asarray(
+                            data[f"{treatment_name}_post_s_num_target_missing"]
+                        ).item()
+                    ),
+                    0,
+                )
+                self.assertEqual(
+                    int(np.asarray(data[f"{treatment_name}_post_s_num_completed"]).item()),
+                    0,
+                )
+                self.assertEqual(
+                    int(np.asarray(data[f"{treatment_name}_post_s_num_failed"]).item()),
+                    0,
+                )
+                self.assertTrue(
+                    np.isnan(
+                        float(
+                            np.asarray(
+                                data[f"{treatment_name}_post_s_completion_rate"]
+                            ).item()
+                        )
+                    )
+                )
+                self.assertTrue(
+                    np.isnan(
+                        float(
+                            boundary_summary[
+                                f"{treatment_name}_post_s_completion_rate"
+                            ]
+                        )
+                    )
+                )
+
     def test_refresh_fit_manifest_allows_snn_only_manifest(self) -> None:
         generation_spec_path = self._write_generation_spec(["exp_a"])
         fits_spec_path = self._write_fit_spec(
