@@ -3421,6 +3421,64 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(len(anchor_cols), 64)
         self.assertTrue(np.all(~np.isnan(X[np.ix_(anchor_rows, anchor_cols)])))
 
+    def test_snn_recovery_metrics_use_aggregate_magnetization_and_require_coverage(self) -> None:
+        x = np.asarray([[1.0, -1.0], [1.0, -1.0]], dtype=float)
+        prediction = np.asarray([[0.5, -0.5], [1.0, -1.0]], dtype=float)
+        mask = np.ones(x.shape, dtype=bool)
+
+        metrics = validation_metrics._snn_recovery_metrics(
+            x=x, prediction=prediction, mask=mask, prefix="validation"
+        )
+
+        self.assertEqual(metrics["validation_observed_mean_magnetization"], 0.0)
+        self.assertEqual(metrics["validation_reconstructed_mean_magnetization"], 0.0)
+        self.assertEqual(metrics["validation_reconstruction_loss"], 0.0)
+        self.assertEqual(metrics["validation_coverage"], 1.0)
+        self.assertTrue(metrics["validation_complete_coverage"])
+
+        prediction[0, 0] = np.nan
+        incomplete = validation_metrics._snn_recovery_metrics(
+            x=x, prediction=prediction, mask=mask, prefix="validation"
+        )
+        self.assertEqual(incomplete["num_finite_validation_predictions"], 3)
+        self.assertEqual(incomplete["validation_coverage"], 0.75)
+        self.assertFalse(incomplete["validation_complete_coverage"])
+        self.assertIsNone(incomplete["validation_reconstruction_loss"])
+
+    def test_snn_treatment_split_honors_training_mask(self) -> None:
+        from snn_fit import _build_treatment_split_matrices
+
+        x = np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float)
+        z = np.asarray([[1.0, -1.0], [1.0, -1.0]], dtype=float)
+        training_mask = np.asarray([[True, True], [False, False]], dtype=bool)
+
+        treated, untreated = _build_treatment_split_matrices(
+            x, z, training_mask=training_mask
+        )
+
+        self.assertEqual(treated[0, 0], 1.0)
+        self.assertTrue(np.isnan(treated[0, 1]))
+        self.assertTrue(np.isnan(treated[1, 0]))
+        self.assertEqual(untreated[0, 1], -1.0)
+        self.assertTrue(np.isnan(untreated[0, 0]))
+        self.assertTrue(np.isnan(untreated[1, 1]))
+
+    def test_snn_candidate_score_sort_key_uses_reconstruction_loss(self) -> None:
+        rows = [
+            {
+                "optimizer_mode": "snn_treatment_split",
+                "weighted_mean_validation_reconstruction_loss": 0.2,
+                "candidate_index": 0,
+            },
+            {
+                "optimizer_mode": "snn_treatment_split",
+                "weighted_mean_validation_reconstruction_loss": 0.1,
+                "candidate_index": 1,
+            },
+        ]
+        ordered = sorted(rows, key=validation_metrics.candidate_score_sort_key)
+        self.assertEqual([row["candidate_index"] for row in ordered], [1, 0])
+
 
 class FitReportingTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -5557,7 +5615,7 @@ class PipelineStageRequestTests(unittest.TestCase):
         self.assertFalse((self.root / "generated" / "exp_a" / "fit_summary.csv").exists())
         self.assertFalse((self.root / "generated" / "best_fit_by_experiment.csv").exists())
 
-    def test_run_train_fit_rejects_snn_candidate(self) -> None:
+    def test_run_train_fit_snn_candidate_requires_outer_split_artifact(self) -> None:
         generation_spec_path = self._write_generation_spec(["exp_a"])
         generation_manifest = run_generation(generation_spec_path, overwrite=True)
         experiment_row = read_csv_manifest(generation_manifest)[0]
@@ -5579,7 +5637,7 @@ class PipelineStageRequestTests(unittest.TestCase):
             },
         }
 
-        with self.assertRaisesRegex(ValueError, "standard fits only"):
+        with self.assertRaisesRegex(FileNotFoundError, "Missing outer split artifact"):
             run_train_fit(
                 experiment_row,
                 candidate=candidate,
@@ -10029,6 +10087,22 @@ class PosteriorPredictiveTests(unittest.TestCase):
         )
         self.assertTrue(np.allclose(summary["unit_mean_magnetization"], np.mean(x, axis=0)))
         self.assertTrue(np.allclose(summary["time_mean_magnetization"], np.mean(x, axis=1)))
+
+    def test_compute_counterfactual_sample_summary_ignores_nan_predictions(self) -> None:
+        x = np.asarray(
+            [[1.0, np.nan], [-1.0, 1.0], [np.nan, -1.0]], dtype=float
+        )
+
+        summary = compute_counterfactual_sample_summary(x, s=1)
+
+        self.assertAlmostEqual(summary["overall_mean_magnetization"], 0.0)
+        self.assertAlmostEqual(summary["post_intervention_mean_magnetization"], -1.0 / 3.0)
+        np.testing.assert_allclose(
+            summary["unit_mean_magnetization"], np.asarray([0.0, 0.0])
+        )
+        np.testing.assert_allclose(
+            summary["time_mean_magnetization"], np.asarray([1.0, 0.0, -1.0])
+        )
 
     def test_summarize_observed_mean_statistics_reports_aggregate_errors(self) -> None:
         observed_summary = compute_counterfactual_sample_summary(

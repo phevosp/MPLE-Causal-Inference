@@ -14,6 +14,7 @@ from utils.t2_summary_statistics import mean_on_mask, time_window_mask
 from utils.t3_interaction_matrices import compose_interaction_matrix, interaction_effect, interaction_term
 from utils.t5_parameter_bundles import (
     OutcomeParameterBundle,
+    load_fit_snn_counterfactual_artifacts,
     load_fit_parameter_bundle,
 )
 from utils.t5_experiment_context import load_experiment_panel_context
@@ -951,6 +952,106 @@ def evaluate_test_metrics(
         validation_loss_mask=test_loss_mask,
         validation_sampling=sampling,
     )
+
+
+def _snn_realized_prediction(fit_root: str | Path, panel_context: dict[str, object]) -> np.ndarray:
+    """Select the realized-treatment prediction from saved SNN surfaces."""
+    artifacts = load_fit_snn_counterfactual_artifacts(fit_root)
+    z = np.asarray(panel_context["z"], dtype=float)
+    if z.shape != artifacts.treated_completed_matrix.shape:
+        raise ValueError("SNN completed surfaces do not match the realized intervention panel.")
+    return np.where(
+        z > 0.0,
+        np.asarray(artifacts.treated_completed_matrix, dtype=float),
+        np.asarray(artifacts.untreated_completed_matrix, dtype=float),
+    )
+
+
+def _snn_recovery_metrics(
+    *,
+    x: np.ndarray,
+    prediction: np.ndarray,
+    mask: np.ndarray,
+    prefix: str,
+) -> dict[str, float | int | bool | None]:
+    """Score aggregate magnetization recovery from direct SNN predictions."""
+    scored_mask = np.asarray(mask, dtype=bool)
+    required = int(np.count_nonzero(scored_mask))
+    finite_mask = scored_mask & np.isfinite(np.asarray(prediction, dtype=float))
+    finite = int(np.count_nonzero(finite_mask))
+    coverage = None if required <= 0 else float(finite) / float(required)
+    complete = bool(required == finite)
+    observed_mean = None
+    reconstructed_mean = None
+    reconstruction_loss = None
+    if required > 0 and complete:
+        observed_mean = float(np.mean(np.asarray(x, dtype=float)[scored_mask]))
+        reconstructed_mean = float(np.mean(np.asarray(prediction, dtype=float)[scored_mask]))
+        reconstruction_loss = abs(reconstructed_mean - observed_mean)
+    return {
+        f"num_{prefix}_slots": required,
+        f"num_finite_{prefix}_predictions": finite,
+        f"{prefix}_coverage": coverage,
+        f"{prefix}_complete_coverage": complete,
+        f"{prefix}_observed_mean_magnetization": observed_mean,
+        f"{prefix}_reconstructed_mean_magnetization": reconstructed_mean,
+        f"{prefix}_reconstruction_loss": reconstruction_loss,
+    }
+
+
+def evaluate_saved_snn_fold_metrics(
+    fit_root: str | Path,
+    experiment_root: str | Path,
+    *,
+    validation_loss_mask: np.ndarray,
+) -> dict[str, float | int | bool | None]:
+    """Evaluate direct SNN recovery on one validation fold."""
+    panel_context = load_experiment_panel_context(experiment_root)
+    x = np.asarray(panel_context["x"], dtype=float)
+    validation_mask = np.asarray(validation_loss_mask, dtype=bool)
+    prediction = _snn_realized_prediction(fit_root, panel_context)
+    post_s_mask = validation_mask & time_window_mask(
+        t_steps=x.shape[0], n_nodes=x.shape[1], start_t=int(panel_context["s"])
+    )
+    metrics = _snn_recovery_metrics(
+        x=x, prediction=prediction, mask=validation_mask, prefix="validation"
+    )
+    metrics.update(
+        _snn_recovery_metrics(
+            x=x, prediction=prediction, mask=post_s_mask, prefix="post_s_validation"
+        )
+    )
+    return metrics
+
+
+def evaluate_saved_snn_test_metrics(
+    fit_root: str | Path,
+    experiment_root: str | Path,
+    *,
+    test_loss_mask: np.ndarray,
+) -> dict[str, float | int | bool | None]:
+    """Evaluate direct SNN recovery on held-out test support."""
+    panel_context = load_experiment_panel_context(experiment_root)
+    x = np.asarray(panel_context["x"], dtype=float)
+    z = np.asarray(panel_context["z"], dtype=float)
+    test_mask = np.asarray(test_loss_mask, dtype=bool)
+    prediction = _snn_realized_prediction(fit_root, panel_context)
+    post_s_window = time_window_mask(
+        t_steps=x.shape[0], n_nodes=x.shape[1], start_t=int(panel_context["s"])
+    )
+    masks = {
+        "test": test_mask,
+        "post_s_test": test_mask & post_s_window,
+        "test_treated": test_mask & (z > 0.0),
+        "test_untreated": test_mask & (z <= 0.0),
+        "post_s_test_treated": test_mask & post_s_window & (z > 0.0),
+        "post_s_test_untreated": test_mask & post_s_window & (z <= 0.0),
+    }
+    metrics: dict[str, float | int | bool | None] = {}
+    for prefix, mask in masks.items():
+        metrics.update(_snn_recovery_metrics(x=x, prediction=prediction, mask=mask, prefix=prefix))
+    metrics["status"] = "completed" if metrics["test_complete_coverage"] else "failed_incomplete_coverage"
+    return metrics
     h_x = _compute_h_x_from_bundle(bundle, panel_context)
     deterministic_metrics = _score_test_point_predictions(
         panel_context=panel_context,

@@ -94,10 +94,20 @@ def compute_counterfactual_sample_summary(
 ) -> dict[str, np.ndarray | float]:
     """Compute draw-level mean magnetization summaries for one simulated panel."""
     x = np.asarray(x, dtype=float)
-    post_value = float(np.mean(x[int(s) :, :])) if int(s) < x.shape[0] else math.nan
+    def finite_mean(values: np.ndarray, axis: int | None = None):
+        finite = np.isfinite(values)
+        counts = np.sum(finite, axis=axis)
+        totals = np.sum(np.where(finite, values, 0.0), axis=axis)
+        if axis is None:
+            return math.nan if int(counts) == 0 else float(totals / counts)
+        result = np.full(np.asarray(counts).shape, math.nan, dtype=float)
+        np.divide(totals, counts, out=result, where=np.asarray(counts) > 0)
+        return result
+
+    post_value = finite_mean(x[int(s) :, :]) if int(s) < x.shape[0] else math.nan
     return {
-        "overall_mean_magnetization": float(np.mean(x)),
+        "overall_mean_magnetization": finite_mean(x),
         "post_intervention_mean_magnetization": post_value,
-        "unit_mean_magnetization": np.mean(x, axis=0),
-        "time_mean_magnetization": np.mean(x, axis=1),
+        "unit_mean_magnetization": finite_mean(x, axis=0),
+        "time_mean_magnetization": finite_mean(x, axis=1),
     }

@@ -14,6 +14,7 @@ from utils.t0_config_utils import load_yaml_mapping
 from utils.t0_csv_utils import read_csv_rows
 from utils.t0_path_utils import io_path, path_exists
 from utils.t5_experiment_context import load_experiment_panel_context
+from utils.t5_parameter_bundles import fit_optimizer_mode
 from utils.t6_split_management import (
     DEFAULT_OUTER_NUM_FOLDS,
     DEFAULT_TEST_FOLD_ID,
@@ -22,6 +23,7 @@ from utils.t6_split_management import (
 from utils.t7_validation_metrics import (
     DEFAULT_VALIDATION_SAMPLING,
     evaluate_saved_fit_test_metrics,
+    evaluate_saved_snn_test_metrics,
     evaluate_test_baseline_metrics,
     resolve_validation_sampling,
 )
@@ -195,13 +197,21 @@ def _evaluate_manifest_row(
         OmegaConf.save(OmegaConf.create(payload), io_path(report_path))
         return report_path
 
-    metrics = evaluate_saved_fit_test_metrics(
-        fit_root,
-        resolved_experiment_root,
-        training_loss_mask=split_artifacts["training_mask"],
-        test_loss_mask=split_artifacts["test_mask"],
-        sampling=resolved_sampling,
-    )
+    optimizer_mode = fit_optimizer_mode(fit_root)
+    if optimizer_mode == "snn_treatment_split":
+        metrics = evaluate_saved_snn_test_metrics(
+            fit_root,
+            resolved_experiment_root,
+            test_loss_mask=split_artifacts["test_mask"],
+        )
+    else:
+        metrics = evaluate_saved_fit_test_metrics(
+            fit_root,
+            resolved_experiment_root,
+            training_loss_mask=split_artifacts["training_mask"],
+            test_loss_mask=split_artifacts["test_mask"],
+            sampling=resolved_sampling,
+        )
     payload = {
         "fit_path": str(fit_root),
         "fit_name": fit_root.name,
@@ -213,6 +223,7 @@ def _evaluate_manifest_row(
         "sampling": dict(resolved_sampling),
         "split_output_root": str(split_artifacts["output_root"]),
         "split_metadata": dict(split_artifacts["metadata"]),
+        "optimizer_mode": optimizer_mode or "",
         **metrics,
         "baselines": baseline_metrics,
     }

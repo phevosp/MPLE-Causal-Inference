@@ -753,10 +753,6 @@ def run_train_fit(
     search_name: str = "",
     overwrite: bool = False,
 ) -> Path:
-    if str(candidate.get("optimizer_mode", "")).strip() == SNN_TREATMENT_SPLIT_MODE:
-        raise ValueError(
-            "SNN v1 supports standard fits only and does not support --fit_mode=outer_masked."
-        )
     return _run_masked_fit(
         experiment_row,
         candidate=candidate,

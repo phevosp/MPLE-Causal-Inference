@@ -44,6 +44,7 @@ from utils.t7_cv_aggregation import (
 )
 from utils.t7_validation_metrics import (
     evaluate_saved_fit_fold_metrics,
+    evaluate_saved_snn_fold_metrics,
     resolve_validation_sampling,
 )
 
@@ -78,6 +79,16 @@ AGGREGATED_METRIC_KEYS = (
     "mean_fold_post_s_validation_mean_magnetization_abs_diff",
     "standard_error_fold_post_s_validation_mean_magnetization_abs_diff",
     "total_post_s_validation_slots",
+    "weighted_mean_validation_reconstruction_loss",
+    "mean_fold_validation_reconstruction_loss",
+    "standard_error_fold_validation_reconstruction_loss",
+    "weighted_mean_post_s_validation_reconstruction_loss",
+    "mean_fold_post_s_validation_reconstruction_loss",
+    "standard_error_fold_post_s_validation_reconstruction_loss",
+    "weighted_mean_validation_observed_magnetization",
+    "weighted_mean_validation_reconstructed_magnetization",
+    "weighted_mean_post_s_validation_observed_magnetization",
+    "weighted_mean_post_s_validation_reconstructed_magnetization",
 )
 FOLD_METRIC_KEYS = (
     "fit_loss",
@@ -395,6 +406,7 @@ def _cv_request_row(
         "candidate_name": candidate["name"],
         "candidate_slug": candidate["slug"],
         "candidate_index": int(candidate["_candidate_index"]),
+        "optimizer_mode": str(candidate.get("optimizer_mode", "")),
         "cv_fold_id": int(fold_id),
         "fit_path": str(fit_root.resolve()),
     }
@@ -625,6 +637,18 @@ def _select_best_candidate_within_standard_error(
     ]
     if not completed_pairs:
         raise RuntimeError("No completed candidate score rows are available.")
+
+    if all(
+        str(candidate.get("optimizer_mode", "")) == "snn_treatment_split"
+        for candidate, _ in completed_pairs
+    ):
+        return min(
+            completed_pairs,
+            key=lambda pair: (
+                float(pair[1]["weighted_mean_validation_reconstruction_loss"]),
+                int(pair[0]["_candidate_index"]),
+            ),
+        )
 
     winner_mag_diff_mean_key = WINNER_MAG_DIFF_MEAN_KEY
     winner_mag_diff_se_key = WINNER_MAG_DIFF_SE_KEY
@@ -1017,6 +1041,15 @@ def _evaluate_and_store_fold_metrics(
     validation_loss_mask: np.ndarray,
     validation_sampling: dict[str, Any],
 ) -> None:
+    if str(row.get("optimizer_mode", "")) == "snn_treatment_split":
+        metrics = evaluate_saved_snn_fold_metrics(
+            fit_root, experiment_root, validation_loss_mask=validation_loss_mask
+        )
+        row.update(metrics)
+        row["status"] = (
+            "completed" if bool(metrics["validation_complete_coverage"]) else "failed"
+        )
+        return
     metrics = evaluate_saved_fit_fold_metrics(
         fit_root,
         experiment_root,

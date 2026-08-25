@@ -76,11 +76,23 @@ def _snn_params_from_config(config: object) -> dict[str, Any]:
 def _build_treatment_split_matrices(
     x: np.ndarray,
     z: np.ndarray,
+    training_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    treated_input = np.where(np.asarray(z, dtype=float) > 0.0, np.asarray(x, dtype=float), np.nan)
+    x_array = np.asarray(x, dtype=float)
+    z_array = np.asarray(z, dtype=float)
+    observed_mask = (
+        np.ones(x_array.shape, dtype=bool)
+        if training_mask is None
+        else np.asarray(training_mask, dtype=bool)
+    )
+    if observed_mask.shape != x_array.shape:
+        raise ValueError(
+            f"training mask shape {observed_mask.shape} does not match x shape {x_array.shape}."
+        )
+    treated_input = np.where((z_array > 0.0) & observed_mask, x_array, np.nan)
     untreated_input = np.where(
-        np.asarray(z, dtype=float) <= 0.0,
-        np.asarray(x, dtype=float),
+        (z_array <= 0.0) & observed_mask,
+        x_array,
         np.nan,
     )
     return treated_input, untreated_input
@@ -173,9 +185,24 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
     if x.shape != z.shape:
         raise ValueError(f"x shape {x.shape} does not match z shape {z.shape}.")
 
+    loss_mask_path = config.input_artifacts.get("loss_mask_path", None)
+    training_mask = None
+    if loss_mask_path not in (None, ""):
+        mask_path = Path(str(loss_mask_path))
+        if not mask_path.exists():
+            raise FileNotFoundError(f"loss_mask.npy does not exist at {mask_path}.")
+        training_mask = np.asarray(np.load(io_path(mask_path), allow_pickle=False), dtype=bool)
+        if training_mask.shape != x.shape:
+            raise ValueError(
+                f"loss_mask shape {training_mask.shape} does not match panel shape {x.shape}."
+            )
+        logger.info("Applying training loss mask with %s observed entries.", int(training_mask.sum()))
+
     logger.info("Loaded panel with shape T=%s, N=%s", x.shape[0], x.shape[1])
 
-    treated_input, untreated_input = _build_treatment_split_matrices(x, z)
+    treated_input, untreated_input = _build_treatment_split_matrices(
+        x, z, training_mask=training_mask
+    )
     treated_completed, treated_feasible, treated_anchor_diagnostics = _run_completion(
         treated_input,
         snn_params=snn_params,
@@ -221,6 +248,11 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
         untreated_finite_mask=np.asarray(np.isfinite(untreated_completed), dtype=bool),
         treated_feasible_mask=np.asarray(treated_feasible, dtype=float),
         untreated_feasible_mask=np.asarray(untreated_feasible, dtype=float),
+        training_loss_mask=np.asarray(
+            np.ones(x.shape, dtype=bool) if training_mask is None else training_mask,
+            dtype=bool,
+        ),
+        uses_training_loss_mask=np.asarray(training_mask is not None, dtype=bool),
         n_neighbors=np.asarray(int(snn_params["n_neighbors"]), dtype=int),
         weights=np.asarray(str(snn_params["weights"])),
         anchor_solver=np.asarray(str(snn_params["anchor_solver"])),
@@ -322,6 +354,7 @@ def run_snn_fit(data_folder: str | Path) -> dict[str, Any]:
             "name": "overall_completion_rate",
             "value": _completion_rate(total_completed, total_target_missing),
         },
+        {"name": "uses_training_loss_mask", "value": training_mask is not None},
         {"name": "status", "value": "completed"},
     ]
     write_csv_rows(fit_root / "snn_summary.csv", summary_rows, columns=["name", "value"])

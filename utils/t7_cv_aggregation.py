@@ -31,6 +31,16 @@ def _blank_aggregate_metrics() -> dict[str, object]:
         "mean_fold_post_s_validation_mean_magnetization_abs_diff": "",
         "standard_error_fold_post_s_validation_mean_magnetization_abs_diff": "",
         "total_post_s_validation_slots": "",
+        "weighted_mean_validation_reconstruction_loss": "",
+        "mean_fold_validation_reconstruction_loss": "",
+        "standard_error_fold_validation_reconstruction_loss": "",
+        "weighted_mean_post_s_validation_reconstruction_loss": "",
+        "mean_fold_post_s_validation_reconstruction_loss": "",
+        "standard_error_fold_post_s_validation_reconstruction_loss": "",
+        "weighted_mean_validation_observed_magnetization": "",
+        "weighted_mean_validation_reconstructed_magnetization": "",
+        "weighted_mean_post_s_validation_observed_magnetization": "",
+        "weighted_mean_post_s_validation_reconstructed_magnetization": "",
     }
 
 
@@ -78,6 +88,7 @@ def build_candidate_score_row(
         "candidate_name": candidate["name"],
         "candidate_slug": candidate["slug"],
         "candidate_index": int(candidate["_candidate_index"]),
+        "optimizer_mode": str(candidate.get("optimizer_mode", "")),
     }
     if len(success_rows) != int(expected_num_folds):
         return {
@@ -86,6 +97,66 @@ def build_candidate_score_row(
             "num_completed_folds": int(len(success_rows)),
             **_blank_aggregate_metrics(),
         }
+
+    if str(candidate.get("optimizer_mode", "")) == "snn_treatment_split":
+        weighted_loss, mean_loss = _weighted_and_mean(
+            success_rows,
+            value_key="validation_reconstruction_loss",
+            weight_key="num_validation_slots",
+        )
+        _, standard_error = _mean_and_standard_error(
+            success_rows, value_key="validation_reconstruction_loss"
+        )
+        aggregated = {
+            **base_row,
+            "status": "completed",
+            "num_completed_folds": int(len(success_rows)),
+            **_blank_aggregate_metrics(),
+            "weighted_mean_validation_reconstruction_loss": weighted_loss,
+            "mean_fold_validation_reconstruction_loss": mean_loss,
+            "standard_error_fold_validation_reconstruction_loss": standard_error,
+            "total_validation_slots": int(
+                np.sum([int(row["num_validation_slots"]) for row in success_rows])
+            ),
+        }
+        for output_key, value_key in (
+            ("weighted_mean_validation_observed_magnetization", "validation_observed_mean_magnetization"),
+            ("weighted_mean_validation_reconstructed_magnetization", "validation_reconstructed_mean_magnetization"),
+        ):
+            aggregated[output_key] = _weighted_and_mean(
+                success_rows, value_key=value_key, weight_key="num_validation_slots"
+            )[0]
+        post_s_rows = [
+            row
+            for row in success_rows
+            if int(row.get("num_post_s_validation_slots", 0)) > 0
+        ]
+        if post_s_rows:
+            weighted_post_loss, mean_post_loss = _weighted_and_mean(
+                post_s_rows,
+                value_key="post_s_validation_reconstruction_loss",
+                weight_key="num_post_s_validation_slots",
+            )
+            _, post_standard_error = _mean_and_standard_error(
+                post_s_rows, value_key="post_s_validation_reconstruction_loss"
+            )
+            aggregated.update(
+                {
+                    "weighted_mean_post_s_validation_reconstruction_loss": weighted_post_loss,
+                    "mean_fold_post_s_validation_reconstruction_loss": mean_post_loss,
+                    "standard_error_fold_post_s_validation_reconstruction_loss": post_standard_error,
+                }
+            )
+            for output_key, value_key in (
+                ("weighted_mean_post_s_validation_observed_magnetization", "post_s_validation_observed_mean_magnetization"),
+                ("weighted_mean_post_s_validation_reconstructed_magnetization", "post_s_validation_reconstructed_mean_magnetization"),
+            ):
+                aggregated[output_key] = _weighted_and_mean(
+                    post_s_rows,
+                    value_key=value_key,
+                    weight_key="num_post_s_validation_slots",
+                )[0]
+        return aggregated
 
     weighted_validation_loss, mean_validation_loss = _weighted_and_mean(
         success_rows,
@@ -138,6 +209,18 @@ def build_candidate_score_row(
                 )
             )
         ),
+        **{
+            key: value
+            for key, value in _blank_aggregate_metrics().items()
+            if "reconstruction" in key
+            or key
+            in {
+                "weighted_mean_validation_observed_magnetization",
+                "weighted_mean_validation_reconstructed_magnetization",
+                "weighted_mean_post_s_validation_observed_magnetization",
+                "weighted_mean_post_s_validation_reconstructed_magnetization",
+            }
+        },
     }
 
     post_s_rows = [
@@ -219,7 +302,12 @@ def build_candidate_score_row(
     return aggregated
 
 
-def candidate_score_sort_key(row: dict[str, object]) -> tuple[float, float, float, int]:
+def candidate_score_sort_key(row: dict[str, object]) -> tuple[float, ...]:
+    if str(row.get("optimizer_mode", "")) == "snn_treatment_split":
+        return (
+            float(row["weighted_mean_validation_reconstruction_loss"]),
+            int(row["candidate_index"]),
+        )
     mag_diff = row.get(
         "weighted_mean_post_s_validation_mean_magnetization_abs_diff", ""
     )
