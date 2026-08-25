@@ -3421,7 +3421,7 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(len(anchor_cols), 64)
         self.assertTrue(np.all(~np.isnan(X[np.ix_(anchor_rows, anchor_cols)])))
 
-    def test_snn_recovery_metrics_use_aggregate_magnetization_and_require_coverage(self) -> None:
+    def test_snn_recovery_metrics_use_finite_prediction_support(self) -> None:
         x = np.asarray([[1.0, -1.0], [1.0, -1.0]], dtype=float)
         prediction = np.asarray([[0.5, -0.5], [1.0, -1.0]], dtype=float)
         mask = np.ones(x.shape, dtype=bool)
@@ -3443,7 +3443,74 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(incomplete["num_finite_validation_predictions"], 3)
         self.assertEqual(incomplete["validation_coverage"], 0.75)
         self.assertFalse(incomplete["validation_complete_coverage"])
-        self.assertIsNone(incomplete["validation_reconstruction_loss"])
+        self.assertEqual(
+            incomplete["validation_observed_mean_magnetization"],
+            -1.0 / 3.0,
+        )
+        self.assertEqual(
+            incomplete["validation_reconstructed_mean_magnetization"],
+            -1.0 / 6.0,
+        )
+        self.assertEqual(incomplete["validation_reconstruction_loss"], 1.0 / 6.0)
+
+    def test_snn_cv_fold_retains_partial_finite_predictions(self) -> None:
+        row = {"optimizer_mode": "snn_treatment_split"}
+        with mock.patch.object(
+            cv_runner,
+            "evaluate_saved_snn_fold_metrics",
+            return_value={
+                "num_finite_validation_predictions": 3,
+                "validation_complete_coverage": False,
+                "validation_reconstruction_loss": 0.25,
+            },
+        ):
+            cv_runner._evaluate_and_store_fold_metrics(
+                row,
+                fit_root=REPO_ROOT,
+                experiment_root=REPO_ROOT,
+                training_loss_mask=np.ones((1, 1), dtype=bool),
+                validation_loss_mask=np.ones((1, 1), dtype=bool),
+                validation_sampling={},
+            )
+
+        self.assertEqual(row["status"], "completed")
+        self.assertEqual(row["validation_reconstruction_loss"], 0.25)
+
+    def test_snn_cv_aggregation_weights_partial_folds_by_finite_predictions(self) -> None:
+        from utils.t7_cv_aggregation import build_candidate_score_row
+
+        score = build_candidate_score_row(
+            experiment_row={},
+            search={"name": "search", "slug": "search"},
+            candidate={
+                "name": "snn",
+                "slug": "snn",
+                "_candidate_index": 0,
+                "optimizer_mode": "snn_treatment_split",
+            },
+            fold_rows=[
+                {
+                    "status": "completed",
+                    "num_validation_slots": 4,
+                    "num_finite_validation_predictions": 1,
+                    "validation_reconstruction_loss": 0.4,
+                    "validation_observed_mean_magnetization": 0.0,
+                    "validation_reconstructed_mean_magnetization": 0.4,
+                },
+                {
+                    "status": "completed",
+                    "num_validation_slots": 4,
+                    "num_finite_validation_predictions": 3,
+                    "validation_reconstruction_loss": 0.2,
+                    "validation_observed_mean_magnetization": 0.0,
+                    "validation_reconstructed_mean_magnetization": 0.2,
+                },
+            ],
+            expected_num_folds=2,
+        )
+
+        self.assertEqual(score["status"], "completed")
+        self.assertEqual(score["weighted_mean_validation_reconstruction_loss"], 0.25)
 
     def test_snn_treatment_split_honors_training_mask(self) -> None:
         from snn_fit import _build_treatment_split_matrices

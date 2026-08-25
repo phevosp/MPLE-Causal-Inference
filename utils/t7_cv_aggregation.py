@@ -102,7 +102,7 @@ def build_candidate_score_row(
         weighted_loss, mean_loss = _weighted_and_mean(
             success_rows,
             value_key="validation_reconstruction_loss",
-            weight_key="num_validation_slots",
+            weight_key="num_finite_validation_predictions",
         )
         _, standard_error = _mean_and_standard_error(
             success_rows, value_key="validation_reconstruction_loss"
@@ -124,18 +124,20 @@ def build_candidate_score_row(
             ("weighted_mean_validation_reconstructed_magnetization", "validation_reconstructed_mean_magnetization"),
         ):
             aggregated[output_key] = _weighted_and_mean(
-                success_rows, value_key=value_key, weight_key="num_validation_slots"
+                success_rows,
+                value_key=value_key,
+                weight_key="num_finite_validation_predictions",
             )[0]
         post_s_rows = [
             row
             for row in success_rows
-            if int(row.get("num_post_s_validation_slots", 0)) > 0
+            if int(row.get("num_finite_post_s_validation_predictions", 0)) > 0
         ]
         if post_s_rows:
             weighted_post_loss, mean_post_loss = _weighted_and_mean(
                 post_s_rows,
                 value_key="post_s_validation_reconstruction_loss",
-                weight_key="num_post_s_validation_slots",
+                weight_key="num_finite_post_s_validation_predictions",
             )
             _, post_standard_error = _mean_and_standard_error(
                 post_s_rows, value_key="post_s_validation_reconstruction_loss"
@@ -154,7 +156,7 @@ def build_candidate_score_row(
                 aggregated[output_key] = _weighted_and_mean(
                     post_s_rows,
                     value_key=value_key,
-                    weight_key="num_post_s_validation_slots",
+                    weight_key="num_finite_post_s_validation_predictions",
                 )[0]
         return aggregated
 

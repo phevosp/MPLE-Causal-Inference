@@ -1047,7 +1047,9 @@ def _evaluate_and_store_fold_metrics(
         )
         row.update(metrics)
         row["status"] = (
-            "completed" if bool(metrics["validation_complete_coverage"]) else "failed"
+            "completed"
+            if int(metrics["num_finite_validation_predictions"]) > 0
+            else "failed"
         )
         return
     metrics = evaluate_saved_fit_fold_metrics(

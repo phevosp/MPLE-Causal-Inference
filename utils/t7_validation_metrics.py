@@ -984,9 +984,11 @@ def _snn_recovery_metrics(
     observed_mean = None
     reconstructed_mean = None
     reconstruction_loss = None
-    if required > 0 and complete:
-        observed_mean = float(np.mean(np.asarray(x, dtype=float)[scored_mask]))
-        reconstructed_mean = float(np.mean(np.asarray(prediction, dtype=float)[scored_mask]))
+    if finite > 0:
+        observed_values = np.asarray(x, dtype=float)[finite_mask]
+        reconstructed_values = np.asarray(prediction, dtype=float)[finite_mask]
+        observed_mean = float(np.mean(observed_values))
+        reconstructed_mean = float(np.mean(reconstructed_values))
         reconstruction_loss = abs(reconstructed_mean - observed_mean)
     return {
         f"num_{prefix}_slots": required,
