@@ -3454,15 +3454,22 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(incomplete["validation_reconstruction_loss"], 1.0 / 6.0)
 
     def test_snn_cv_fold_retains_partial_finite_predictions(self) -> None:
-        row = {"optimizer_mode": "snn_treatment_split"}
-        with mock.patch.object(
-            cv_runner,
-            "evaluate_saved_snn_fold_metrics",
-            return_value={
-                "num_finite_validation_predictions": 3,
-                "validation_complete_coverage": False,
-                "validation_reconstruction_loss": 0.25,
-            },
+        row = {}
+        with (
+            mock.patch.object(
+                cv_runner,
+                "fit_optimizer_mode",
+                return_value="snn_treatment_split",
+            ),
+            mock.patch.object(
+                cv_runner,
+                "evaluate_saved_snn_fold_metrics",
+                return_value={
+                    "num_finite_validation_predictions": 3,
+                    "validation_complete_coverage": False,
+                    "validation_reconstruction_loss": 0.25,
+                },
+            ),
         ):
             cv_runner._evaluate_and_store_fold_metrics(
                 row,
@@ -3474,7 +3481,35 @@ class MinimalPipelineTests(unittest.TestCase):
             )
 
         self.assertEqual(row["status"], "completed")
+        self.assertEqual(row["optimizer_mode"], "snn_treatment_split")
         self.assertEqual(row["validation_reconstruction_loss"], 0.25)
+
+    def test_load_scored_candidates_recovers_snn_mode_from_realized_config(self) -> None:
+        temp_root = REPO_ROOT / "experiments" / f".tmp_snn_score_mode_{uuid.uuid4().hex}"
+        try:
+            fit_root = temp_root / "legacy_snn_fold"
+            fit_root.mkdir(parents=True, exist_ok=True)
+            OmegaConf.save(
+                OmegaConf.create(
+                    {"global_params": {"optimizer_mode": "snn_treatment_split"}}
+                ),
+                fit_root / "fit_realized_config.yaml",
+            )
+            candidates = cv_runner._load_scored_candidates(
+                temp_root / "missing_score_root",
+                [
+                    {
+                        "candidate_name": "snn__candidate_0001",
+                        "candidate_slug": "snn_candidate_0001",
+                        "candidate_index": "1",
+                        "fit_path": str(fit_root),
+                    }
+                ],
+            )
+
+            self.assertEqual(candidates[0]["optimizer_mode"], "snn_treatment_split")
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
 
     def test_completed_fold_artifact_error_accepts_snn_completed_fold(self) -> None:
         temp_root = REPO_ROOT / "experiments" / f".tmp_snn_completed_fold_{uuid.uuid4().hex}"

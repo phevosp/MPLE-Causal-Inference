@@ -18,6 +18,7 @@ from utils.t0_string_utils import slugify
 from utils.t1_matrix_io import save_loss_mask
 from utils.t0_path_utils import io_path
 from utils.t5_parameter_bundles import (
+    fit_optimizer_mode,
     load_fit_parameter_bundle,
     load_fit_snn_counterfactual_artifacts,
 )
@@ -484,6 +485,7 @@ def _candidate_grid_row(
         "candidate_name": candidate["name"],
         "candidate_slug": candidate["slug"],
         "candidate_index": int(candidate["_candidate_index"]),
+        "optimizer_mode": str(candidate.get("optimizer_mode", "")),
     }
     for key, value in sorted(candidate["_flat_params"].items()):
         row[key] = value
@@ -497,11 +499,15 @@ def _load_scored_candidates(
     candidate_map: dict[str, dict[str, Any]] = {}
     for row in request_rows:
         candidate_slug = str(row["candidate_slug"])
+        optimizer_mode = str(row.get("optimizer_mode", "")).strip()
+        if not optimizer_mode and row.get("fit_path"):
+            optimizer_mode = str(fit_optimizer_mode(row["fit_path"]) or "")
         candidate_map[candidate_slug] = {
             "name": row["candidate_name"],
             "slug": candidate_slug,
             "_candidate_index": int(row["candidate_index"]),
             "_flat_params": {},
+            "optimizer_mode": optimizer_mode,
         }
 
     candidate_grid_path = Path(output_root) / "candidate_grid.csv"
@@ -516,6 +522,7 @@ def _load_scored_candidates(
             "candidate_name",
             "candidate_slug",
             "candidate_index",
+            "optimizer_mode",
         }
         for row in read_csv_rows(candidate_grid_path):
             candidate_slug = str(row["candidate_slug"])
@@ -526,8 +533,11 @@ def _load_scored_candidates(
                     "slug": candidate_slug,
                     "_candidate_index": int(row["candidate_index"]),
                     "_flat_params": {},
+                    "optimizer_mode": str(row.get("optimizer_mode", "")),
                 },
             )
+            if row.get("optimizer_mode"):
+                candidate["optimizer_mode"] = str(row["optimizer_mode"])
             candidate["_flat_params"] = {
                 key: _parse_manifest_scalar(value)
                 for key, value in row.items()
@@ -832,6 +842,8 @@ def _persisted_fold_score_matches_expected_row(
     if str(observed_row.get("status", "")).strip().lower() != "completed":
         return False
     for key, expected_value in expected_row.items():
+        if key == "optimizer_mode" and key not in observed_row:
+            continue
         if key not in observed_row:
             return False
         if key == "fit_path":
@@ -1044,6 +1056,7 @@ def _fit_metric_row(
         "candidate_name": candidate["name"],
         "candidate_slug": candidate["slug"],
         "candidate_index": int(candidate["_candidate_index"]),
+        "optimizer_mode": str(candidate.get("optimizer_mode", "")),
         "cv_fold_id": int(fold_id),
         "num_training_slots": int(num_training_slots),
         "num_validation_slots": int(num_validation_slots),
@@ -1061,7 +1074,10 @@ def _evaluate_and_store_fold_metrics(
     validation_loss_mask: np.ndarray,
     validation_sampling: dict[str, Any],
 ) -> None:
-    if str(row.get("optimizer_mode", "")) == "snn_treatment_split":
+    realized_optimizer_mode = fit_optimizer_mode(fit_root)
+    optimizer_mode = str(realized_optimizer_mode or row.get("optimizer_mode", ""))
+    row["optimizer_mode"] = optimizer_mode
+    if optimizer_mode == "snn_treatment_split":
         metrics = evaluate_saved_snn_fold_metrics(
             fit_root, experiment_root, validation_loss_mask=validation_loss_mask
         )
