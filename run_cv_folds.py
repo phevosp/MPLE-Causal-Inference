@@ -17,7 +17,10 @@ from utils.t0_csv_utils import read_csv_rows, write_csv_rows
 from utils.t0_string_utils import slugify
 from utils.t1_matrix_io import save_loss_mask
 from utils.t0_path_utils import io_path
-from utils.t5_parameter_bundles import load_fit_parameter_bundle
+from utils.t5_parameter_bundles import (
+    load_fit_parameter_bundle,
+    load_fit_snn_counterfactual_artifacts,
+)
 from utils.t5_experiment_context import load_experiment_panel_context
 from utils.t6_pipeline_spec_utils import (
     expand_named_entries,
@@ -898,20 +901,37 @@ def _completed_fold_artifact_error(
     *,
     experiment_root: Path,
 ) -> str | None:
-    required_paths = [
+    shared_required_paths = [
         fold_root / "fit_realized_config.yaml",
         fold_root / "fit_metadata.yaml",
         fold_root / "loss_mask.npy",
-        fold_root / "mple_summary.csv",
     ]
-    for required_path in required_paths:
+    for required_path in shared_required_paths:
         if not required_path.exists():
             return f"missing required artifact {required_path.name}"
     try:
-        load_yaml_mapping(fold_root / "fit_realized_config.yaml")
+        realized_config = load_yaml_mapping(fold_root / "fit_realized_config.yaml")
         load_yaml_mapping(fold_root / "fit_metadata.yaml")
         np.load(io_path(fold_root / "loss_mask.npy"), allow_pickle=False)
-        load_fit_parameter_bundle(fold_root, experiment_root)
+    except Exception as exc:  # noqa: BLE001
+        return f"unreadable completed-fold artifacts: {exc}"
+
+    optimizer_mode = str(
+        (realized_config.get("global_params", {}) or {}).get("optimizer_mode", "")
+    ).strip()
+    summary_path = (
+        fold_root / "snn_summary.csv"
+        if optimizer_mode == "snn_treatment_split"
+        else fold_root / "mple_summary.csv"
+    )
+    if not summary_path.exists():
+        return f"missing required artifact {summary_path.name}"
+
+    try:
+        if optimizer_mode == "snn_treatment_split":
+            load_fit_snn_counterfactual_artifacts(fold_root)
+        else:
+            load_fit_parameter_bundle(fold_root, experiment_root)
     except Exception as exc:  # noqa: BLE001
         return f"unreadable completed-fold artifacts: {exc}"
     return None

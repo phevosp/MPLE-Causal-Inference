@@ -3476,6 +3476,50 @@ class MinimalPipelineTests(unittest.TestCase):
         self.assertEqual(row["status"], "completed")
         self.assertEqual(row["validation_reconstruction_loss"], 0.25)
 
+    def test_completed_fold_artifact_error_accepts_snn_completed_fold(self) -> None:
+        temp_root = REPO_ROOT / "experiments" / f".tmp_snn_completed_fold_{uuid.uuid4().hex}"
+        fold_root = temp_root / "fold_1"
+        experiment_root = temp_root / "experiment"
+        fold_root.mkdir(parents=True, exist_ok=False)
+        experiment_root.mkdir(parents=True, exist_ok=False)
+        try:
+            OmegaConf.save(
+                OmegaConf.create(
+                    {
+                        "global_params": {
+                            "optimizer_mode": "snn_treatment_split",
+                        }
+                    }
+                ),
+                fold_root / "fit_realized_config.yaml",
+            )
+            OmegaConf.save(
+                OmegaConf.create({"variant_name": "snn_basic"}),
+                fold_root / "fit_metadata.yaml",
+            )
+            np.save(fold_root / "loss_mask.npy", np.ones((1, 1), dtype=bool))
+            np.savez(
+                fold_root / "estimated_snn_artifacts.npz",
+                treated_completed_matrix=np.ones((1, 1), dtype=float),
+                untreated_completed_matrix=-np.ones((1, 1), dtype=float),
+                treated_finite_mask=np.ones((1, 1), dtype=bool),
+                untreated_finite_mask=np.ones((1, 1), dtype=bool),
+            )
+            write_csv_rows(
+                fold_root / "snn_summary.csv",
+                [{"name": "status", "value": "completed"}],
+                columns=["name", "value"],
+            )
+
+            self.assertIsNone(
+                cv_runner._completed_fold_artifact_error(
+                    fold_root,
+                    experiment_root=experiment_root,
+                )
+            )
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
     def test_snn_cv_aggregation_weights_partial_folds_by_finite_predictions(self) -> None:
         from utils.t7_cv_aggregation import build_candidate_score_row
 
