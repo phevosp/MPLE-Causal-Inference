@@ -1,0 +1,113 @@
+2026-08-24 18:29:00 | INFO | Starting SNN fit in /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_010_xi_080/fits/snn_8nn_u_mr2
+2026-08-24 18:29:00 | INFO | Resolved SNN parameters: {'n_neighbors': 8, 'weights': 'uniform', 'anchor_solver': 'bitset_exact', 'anchor_max_rows': None, 'anchor_max_cols': None, 'random_splits': False, 'max_rank': 2, 'spectral_t': None, 'linear_span_eps': 0.05, 'subspace_eps': 0.05, 'min_value': None, 'max_value': None}
+2026-08-24 18:29:00 | INFO | Loaded panel with shape T=50, N=500
+2026-08-24 18:29:00 | INFO | Starting treated completion for 12555 target-missing entries.
+2026-08-24 18:29:00 | INFO | treated completion progress: 0/12555 (0.0%)
+2026-08-24 18:30:22 | INFO | treated completion progress: 250/12555 (2.0%) elapsed=82.0s eta=4038.1s
+2026-08-24 18:31:38 | INFO | treated completion progress: 500/12555 (4.0%) elapsed=157.7s eta=3801.5s
+2026-08-24 18:32:56 | INFO | treated completion progress: 750/12555 (6.0%) elapsed=235.7s eta=3709.6s
+2026-08-24 18:34:16 | INFO | treated completion progress: 1000/12555 (8.0%) elapsed=315.6s eta=3647.2s
+2026-08-24 18:35:24 | INFO | treated completion progress: 1250/12555 (10.0%) elapsed=383.7s eta=3470.3s
+2026-08-24 18:36:37 | INFO | treated completion progress: 1500/12555 (11.9%) elapsed=456.5s eta=3364.5s
+2026-08-24 18:38:00 | INFO | treated completion progress: 1750/12555 (13.9%) elapsed=539.9s eta=3333.6s
+2026-08-24 18:39:17 | INFO | treated completion progress: 2000/12555 (15.9%) elapsed=616.2s eta=3252.1s
+2026-08-24 18:40:34 | INFO | treated completion progress: 2250/12555 (17.9%) elapsed=694.0s eta=3178.6s
+2026-08-24 18:41:51 | INFO | treated completion progress: 2500/12555 (19.9%) elapsed=770.9s eta=3100.6s
+2026-08-24 18:43:16 | INFO | treated completion progress: 2750/12555 (21.9%) elapsed=855.4s eta=3049.8s
+2026-08-24 18:44:34 | INFO | treated completion progress: 3000/12555 (23.9%) elapsed=933.1s eta=2972.0s
+2026-08-24 18:45:53 | INFO | treated completion progress: 3250/12555 (25.9%) elapsed=1012.4s eta=2898.5s
+2026-08-24 18:47:18 | INFO | treated completion progress: 3500/12555 (27.9%) elapsed=1097.2s eta=2838.7s
+2026-08-24 18:48:38 | INFO | treated completion progress: 3750/12555 (29.9%) elapsed=1177.9s eta=2765.8s
+2026-08-24 18:49:59 | INFO | treated completion progress: 4000/12555 (31.9%) elapsed=1259.0s eta=2692.6s
+2026-08-24 18:51:17 | INFO | treated completion progress: 4250/12555 (33.9%) elapsed=1336.8s eta=2612.2s
+2026-08-24 18:52:38 | INFO | treated completion progress: 4500/12555 (35.8%) elapsed=1417.5s eta=2537.4s
+2026-08-24 18:53:54 | INFO | treated completion progress: 4750/12555 (37.8%) elapsed=1493.3s eta=2453.7s
+2026-08-24 18:55:11 | INFO | treated completion progress: 5000/12555 (39.8%) elapsed=1570.7s eta=2373.3s
+2026-08-24 18:56:27 | INFO | treated completion progress: 5250/12555 (41.8%) elapsed=1646.1s eta=2290.4s
+2026-08-24 18:57:49 | INFO | treated completion progress: 5500/12555 (43.8%) elapsed=1729.0s eta=2217.8s
+2026-08-24 18:58:59 | INFO | treated completion progress: 5750/12555 (45.8%) elapsed=1799.0s eta=2129.1s
+2026-08-24 19:00:16 | INFO | treated completion progress: 6000/12555 (47.8%) elapsed=1875.8s eta=2049.3s
+2026-08-24 19:01:37 | INFO | treated completion progress: 6250/12555 (49.8%) elapsed=1956.4s eta=1973.6s
+2026-08-24 19:03:04 | INFO | treated completion progress: 6500/12555 (51.8%) elapsed=2043.4s eta=1903.5s
+2026-08-24 19:04:22 | INFO | treated completion progress: 6750/12555 (53.8%) elapsed=2122.0s eta=1824.9s
+2026-08-24 19:05:28 | INFO | treated completion progress: 7000/12555 (55.8%) elapsed=2187.9s eta=1736.2s
+2026-08-24 19:06:49 | INFO | treated completion progress: 7250/12555 (57.7%) elapsed=2269.1s eta=1660.3s
+2026-08-24 19:08:04 | INFO | treated completion progress: 7500/12555 (59.7%) elapsed=2343.3s eta=1579.4s
+2026-08-24 19:09:14 | INFO | treated completion progress: 7750/12555 (61.7%) elapsed=2413.5s eta=1496.4s
+2026-08-24 19:10:28 | INFO | treated completion progress: 8000/12555 (63.7%) elapsed=2487.7s eta=1416.5s
+2026-08-24 19:11:43 | INFO | treated completion progress: 8250/12555 (65.7%) elapsed=2562.9s eta=1337.4s
+2026-08-24 19:12:51 | INFO | treated completion progress: 8500/12555 (67.7%) elapsed=2630.9s eta=1255.1s
+2026-08-24 19:14:11 | INFO | treated completion progress: 8750/12555 (69.7%) elapsed=2710.9s eta=1178.8s
+2026-08-24 19:15:34 | INFO | treated completion progress: 9000/12555 (71.7%) elapsed=2793.6s eta=1103.5s
+2026-08-24 19:16:49 | INFO | treated completion progress: 9250/12555 (73.7%) elapsed=2868.4s eta=1024.9s
+2026-08-24 19:18:11 | INFO | treated completion progress: 9500/12555 (75.7%) elapsed=2950.3s eta=948.8s
+2026-08-24 19:19:38 | INFO | treated completion progress: 9750/12555 (77.7%) elapsed=3038.0s eta=874.0s
+2026-08-24 19:21:02 | INFO | treated completion progress: 10000/12555 (79.6%) elapsed=3121.9s eta=797.7s
+2026-08-24 19:22:21 | INFO | treated completion progress: 10250/12555 (81.6%) elapsed=3200.3s eta=719.7s
+2026-08-24 19:23:36 | INFO | treated completion progress: 10500/12555 (83.6%) elapsed=3275.2s eta=641.0s
+2026-08-24 19:24:52 | INFO | treated completion progress: 10750/12555 (85.6%) elapsed=3351.2s eta=562.7s
+2026-08-24 19:26:09 | INFO | treated completion progress: 11000/12555 (87.6%) elapsed=3428.1s eta=484.6s
+2026-08-24 19:27:24 | INFO | treated completion progress: 11250/12555 (89.6%) elapsed=3503.9s eta=406.5s
+2026-08-24 19:28:41 | INFO | treated completion progress: 11500/12555 (91.6%) elapsed=3581.0s eta=328.5s
+2026-08-24 19:29:57 | INFO | treated completion progress: 11750/12555 (93.6%) elapsed=3656.2s eta=250.5s
+2026-08-24 19:31:09 | INFO | treated completion progress: 12000/12555 (95.6%) elapsed=3728.9s eta=172.5s
+2026-08-24 19:32:29 | INFO | treated completion progress: 12250/12555 (97.6%) elapsed=3808.9s eta=94.8s
+2026-08-24 19:33:48 | INFO | treated completion progress: 12500/12555 (99.6%) elapsed=3888.0s eta=17.1s
+2026-08-24 19:34:05 | INFO | treated completion progress: 12555/12555 (100.0%) elapsed=3904.4s eta=0.0s
+2026-08-24 19:34:05 | INFO | treated completion finished.
+2026-08-24 19:34:05 | INFO | Starting untreated completion for 12445 target-missing entries.
+2026-08-24 19:34:05 | INFO | untreated completion progress: 0/12445 (0.0%)
+2026-08-24 19:35:30 | INFO | untreated completion progress: 250/12445 (2.0%) elapsed=85.1s eta=4149.8s
+2026-08-24 19:36:54 | INFO | untreated completion progress: 500/12445 (4.0%) elapsed=169.1s eta=4038.9s
+2026-08-24 19:38:21 | INFO | untreated completion progress: 750/12445 (6.0%) elapsed=256.3s eta=3996.1s
+2026-08-24 19:39:47 | INFO | untreated completion progress: 1000/12445 (8.0%) elapsed=342.2s eta=3916.9s
+2026-08-24 19:41:24 | INFO | untreated completion progress: 1250/12445 (10.0%) elapsed=439.5s eta=3936.4s
+2026-08-24 19:42:51 | INFO | untreated completion progress: 1500/12445 (12.1%) elapsed=526.5s eta=3841.6s
+2026-08-24 19:44:05 | INFO | untreated completion progress: 1750/12445 (14.1%) elapsed=600.6s eta=3670.7s
+2026-08-24 19:45:38 | INFO | untreated completion progress: 2000/12445 (16.1%) elapsed=692.7s eta=3617.7s
+2026-08-24 19:47:10 | INFO | untreated completion progress: 2250/12445 (18.1%) elapsed=784.9s eta=3556.3s
+2026-08-24 19:48:37 | INFO | untreated completion progress: 2500/12445 (20.1%) elapsed=872.3s eta=3469.9s
+2026-08-24 19:49:50 | INFO | untreated completion progress: 2750/12445 (22.1%) elapsed=945.1s eta=3331.9s
+2026-08-24 19:51:20 | INFO | untreated completion progress: 3000/12445 (24.1%) elapsed=1035.7s eta=3260.7s
+2026-08-24 19:52:45 | INFO | untreated completion progress: 3250/12445 (26.1%) elapsed=1120.0s eta=3168.9s
+2026-08-24 19:54:00 | INFO | untreated completion progress: 3500/12445 (28.1%) elapsed=1195.4s eta=3055.1s
+2026-08-24 19:55:23 | INFO | untreated completion progress: 3750/12445 (30.1%) elapsed=1278.1s eta=2963.6s
+2026-08-24 19:56:49 | INFO | untreated completion progress: 4000/12445 (32.1%) elapsed=1364.6s eta=2881.0s
+2026-08-24 19:58:21 | INFO | untreated completion progress: 4250/12445 (34.2%) elapsed=1456.5s eta=2808.5s
+2026-08-24 19:59:44 | INFO | untreated completion progress: 4500/12445 (36.2%) elapsed=1539.1s eta=2717.3s
+2026-08-24 20:01:14 | INFO | untreated completion progress: 4750/12445 (38.2%) elapsed=1629.6s eta=2640.0s
+2026-08-24 20:02:32 | INFO | untreated completion progress: 5000/12445 (40.2%) elapsed=1707.3s eta=2542.1s
+2026-08-24 20:03:56 | INFO | untreated completion progress: 5250/12445 (42.2%) elapsed=1791.4s eta=2455.1s
+2026-08-24 20:05:13 | INFO | untreated completion progress: 5500/12445 (44.2%) elapsed=1868.3s eta=2359.2s
+2026-08-24 20:06:50 | INFO | untreated completion progress: 5750/12445 (46.2%) elapsed=1965.1s eta=2288.0s
+2026-08-24 20:08:18 | INFO | untreated completion progress: 6000/12445 (48.2%) elapsed=2052.9s eta=2205.2s
+2026-08-24 20:09:37 | INFO | untreated completion progress: 6250/12445 (50.2%) elapsed=2132.5s eta=2113.7s
+2026-08-24 20:10:54 | INFO | untreated completion progress: 6500/12445 (52.2%) elapsed=2209.6s eta=2020.9s
+2026-08-24 20:12:16 | INFO | untreated completion progress: 6750/12445 (54.2%) elapsed=2291.5s eta=1933.4s
+2026-08-24 20:13:54 | INFO | untreated completion progress: 7000/12445 (56.2%) elapsed=2388.7s eta=1858.1s
+2026-08-24 20:15:14 | INFO | untreated completion progress: 7250/12445 (58.3%) elapsed=2469.2s eta=1769.3s
+2026-08-24 20:16:43 | INFO | untreated completion progress: 7500/12445 (60.3%) elapsed=2558.0s eta=1686.6s
+2026-08-24 20:18:20 | INFO | untreated completion progress: 7750/12445 (62.3%) elapsed=2655.3s eta=1608.6s
+2026-08-24 20:19:49 | INFO | untreated completion progress: 8000/12445 (64.3%) elapsed=2744.3s eta=1524.8s
+2026-08-24 20:21:19 | INFO | untreated completion progress: 8250/12445 (66.3%) elapsed=2834.1s eta=1441.1s
+2026-08-24 20:22:50 | INFO | untreated completion progress: 8500/12445 (68.3%) elapsed=2924.8s eta=1357.4s
+2026-08-24 20:24:10 | INFO | untreated completion progress: 8750/12445 (70.3%) elapsed=3005.3s eta=1269.1s
+2026-08-24 20:25:37 | INFO | untreated completion progress: 9000/12445 (72.3%) elapsed=3092.2s eta=1183.6s
+2026-08-24 20:27:04 | INFO | untreated completion progress: 9250/12445 (74.3%) elapsed=3179.5s eta=1098.2s
+2026-08-24 20:28:21 | INFO | untreated completion progress: 9500/12445 (76.3%) elapsed=3256.4s eta=1009.5s
+2026-08-24 20:29:38 | INFO | untreated completion progress: 9750/12445 (78.3%) elapsed=3332.8s eta=921.2s
+2026-08-24 20:30:57 | INFO | untreated completion progress: 10000/12445 (80.4%) elapsed=3412.6s eta=834.4s
+2026-08-24 20:32:28 | INFO | untreated completion progress: 10250/12445 (82.4%) elapsed=3502.8s eta=750.1s
+2026-08-24 20:34:03 | INFO | untreated completion progress: 10500/12445 (84.4%) elapsed=3598.3s eta=666.6s
+2026-08-24 20:35:34 | INFO | untreated completion progress: 10750/12445 (86.4%) elapsed=3689.3s eta=581.7s
+2026-08-24 20:36:59 | INFO | untreated completion progress: 11000/12445 (88.4%) elapsed=3774.5s eta=495.8s
+2026-08-24 20:38:26 | INFO | untreated completion progress: 11250/12445 (90.4%) elapsed=3861.2s eta=410.1s
+2026-08-24 20:39:50 | INFO | untreated completion progress: 11500/12445 (92.4%) elapsed=3945.3s eta=324.2s
+2026-08-24 20:41:21 | INFO | untreated completion progress: 11750/12445 (94.4%) elapsed=4035.9s eta=238.7s
+2026-08-24 20:42:55 | INFO | untreated completion progress: 12000/12445 (96.4%) elapsed=4130.5s eta=153.2s
+2026-08-24 20:44:21 | INFO | untreated completion progress: 12250/12445 (98.4%) elapsed=4216.4s eta=67.1s
+2026-08-24 20:45:26 | INFO | untreated completion progress: 12445/12445 (100.0%) elapsed=4280.8s eta=0.0s
+2026-08-24 20:45:26 | INFO | untreated completion finished.
+2026-08-24 20:45:26 | INFO | Treated stats: observed=12445 target_missing=12555 completed=12554 failed=1
+2026-08-24 20:45:26 | INFO | Untreated stats: observed=12555 target_missing=12445 completed=12444 failed=1
+2026-08-24 20:45:26 | INFO | Completed SNN fit successfully.
