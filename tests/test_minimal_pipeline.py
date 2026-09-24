@@ -7563,6 +7563,57 @@ class PipelineStageRequestTests(unittest.TestCase):
         )
         self.assertAlmostEqual(actual, expected, places=12)
 
+    def test_full_panel_regeneration_reports_marginal_test_brier_scores(self) -> None:
+        panel_context = {
+            "x": np.asarray([[1.0, -1.0], [-1.0, 1.0]], dtype=float),
+            "z": np.asarray([[1.0, 0.0], [1.0, 0.0]], dtype=float),
+            "x_0": np.asarray([-1.0, 1.0], dtype=float),
+            "s": 1,
+        }
+        training_mask = np.asarray([[False, False], [False, True]], dtype=bool)
+        test_mask = np.asarray([[True, True], [True, False]], dtype=bool)
+        sampled_panels = [
+            np.asarray([[1.0, 1.0], [-1.0, -1.0]], dtype=float),
+            np.asarray([[-1.0, 1.0], [1.0, 1.0]], dtype=float),
+        ]
+
+        with mock.patch.object(
+            validation_metrics,
+            "_sample_full_panel_bank",
+            return_value=sampled_panels,
+        ) as sample_bank:
+            metrics = validation_metrics._compute_full_panel_regeneration_magnetization_metrics(
+                panel_context=panel_context,
+                bundle=mock.Mock(),
+                training_loss_mask=training_mask,
+                test_loss_mask=test_mask,
+            )
+
+        sample_bank.assert_called_once()
+        self.assertAlmostEqual(metrics["test_marginal_brier_score"], 0.5)
+        self.assertAlmostEqual(metrics["post_s_test_marginal_brier_score"], 0.25)
+        self.assertAlmostEqual(metrics["test_marginal_brier_score_treated"], 0.25)
+        self.assertAlmostEqual(metrics["test_marginal_brier_score_untreated"], 1.0)
+        self.assertAlmostEqual(
+            metrics["post_s_test_marginal_brier_score_treated"], 0.25
+        )
+        self.assertIsNone(metrics["post_s_test_marginal_brier_score_untreated"])
+
+    def test_marginal_brier_averages_probabilities_before_squaring(self) -> None:
+        observed_x = np.asarray([[1.0]], dtype=float)
+        sampled_panels = [
+            np.asarray([[1.0]], dtype=float),
+            np.asarray([[-1.0]], dtype=float),
+        ]
+
+        score = validation_metrics._marginal_brier_score_from_samples(
+            observed_x=observed_x,
+            sampled_panels=sampled_panels,
+            mask=np.asarray([[True]], dtype=bool),
+        )
+
+        self.assertAlmostEqual(score, 0.25)
+
     def test_validation_expected_calibration_error_matches_hand_computation(self) -> None:
         x = np.asarray([[-1.0, 1.0], [-1.0, 1.0]], dtype=float)
         predicted_positive = np.asarray([[0.05, 0.15], [0.75, 0.95]], dtype=float)

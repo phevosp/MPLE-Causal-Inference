@@ -334,6 +334,27 @@ def _sample_full_panel_bank(
     return sampled_panels
 
 
+def _marginal_brier_score_from_samples(
+    *,
+    observed_x: np.ndarray,
+    sampled_panels: list[np.ndarray],
+    mask: np.ndarray,
+) -> float | None:
+    observed_x_array = np.asarray(observed_x, dtype=float)
+    mask_array = np.asarray(mask, dtype=bool)
+    if observed_x_array.shape != mask_array.shape:
+        raise ValueError("Marginal Brier mask must match the observed panel shape.")
+    if not np.any(mask_array) or not sampled_panels:
+        return None
+    sampled_array = np.asarray(sampled_panels, dtype=float)
+    if sampled_array.shape[1:] != observed_x_array.shape:
+        raise ValueError("Sampled panels must match the observed panel shape.")
+    observed_positive = (observed_x_array + 1.0) / 2.0
+    marginal_positive = np.mean((sampled_array + 1.0) / 2.0, axis=0)
+    squared_error = (observed_positive - marginal_positive) ** 2
+    return float(np.mean(squared_error[mask_array]))
+
+
 def _full_panel_bucket_masks(
     *,
     panel_context: dict[str, object],
@@ -413,6 +434,20 @@ def _compute_full_panel_regeneration_magnetization_metrics(
             None
             if observed_mean is None or sampled_mean is None
             else abs(float(observed_mean) - float(sampled_mean))
+        )
+    marginal_brier_buckets = {
+        "test_marginal_brier_score": "test",
+        "post_s_test_marginal_brier_score": "test_post_s",
+        "test_marginal_brier_score_treated": "treated_test",
+        "test_marginal_brier_score_untreated": "untreated_test",
+        "post_s_test_marginal_brier_score_treated": "treated_test_post_s",
+        "post_s_test_marginal_brier_score_untreated": "untreated_test_post_s",
+    }
+    for metric_name, bucket_name in marginal_brier_buckets.items():
+        metrics[metric_name] = _marginal_brier_score_from_samples(
+            observed_x=x,
+            sampled_panels=sampled_panels,
+            mask=bucket_masks[bucket_name],
         )
     return metrics
 
