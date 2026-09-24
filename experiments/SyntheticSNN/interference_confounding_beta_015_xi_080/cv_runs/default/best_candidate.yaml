@@ -1,0 +1,71 @@
+experiment_name: interference_confounding_beta_015_xi_080
+experiment_slug: interference_confounding_beta_015_xi_080
+execution_mode: cv
+cv_spec_path: /orcd/home/002/phevosp/MPLE-Causal-Inference/data/configs/REVISIONS/snn_synth/cv_spec.yaml
+search_name: default
+search_slug: default
+split_kind: train_cv
+outer_num_folds: 6
+test_fold_id: 1
+candidate_name: default__candidate_0004
+candidate_slug: default_candidate_0004
+candidate_index: 4
+candidate_config:
+  cv_root_name: cv_runs
+  cv_manifest_path: experiments/SyntheticSNN/cv_manifest.csv
+  num_folds: 7
+  outer_num_folds: 6
+  optimizer:
+    steps: 2000
+    tol: 1.0e-07
+    seed: 0
+    n_starts: 1
+    proximal_lr: 1.0
+  latent_rank: 3
+  optimizer_mode: alternating_latent_rank
+  lambda_nuclear: 0.0
+  lambda_frobenius: 0.0
+  lambda_uv_ridge: 0.05
+  v_column_l2_max: 1.0
+  estimation:
+    fixed_scalar_params: {}
+    beta_mask_pre_s: true
+    beta_mask_post_e: true
+  name: default__candidate_0004
+  split_kind: train_cv
+  slug: default_candidate_0004
+  test_fold_id: 1
+hyperparameters:
+  lambda_uv_ridge: 0.05
+weighted_mean_validation_loss: 0.5833830249935036
+mean_fold_validation_loss: 0.583384512553099
+weighted_mean_validation_brier_score: 0.20001108369761944
+mean_fold_validation_brier_score: 0.2000117786009242
+standard_error_fold_validation_brier_score: 0.0014424871884079384
+weighted_mean_validation_ece: 0.028959860511132744
+mean_fold_validation_ece: 0.028961245581664
+weighted_mean_validation_mean_magnetization_abs_diff: 0.01597727272727273
+mean_fold_validation_mean_magnetization_abs_diff: 0.01598115899382671
+standard_error_fold_validation_mean_magnetization_abs_diff: 0.0035793010694199767
+total_validation_slots: 22000
+weighted_mean_post_s_validation_loss: 0.5833830249935036
+mean_fold_post_s_validation_loss: 0.583384512553099
+weighted_mean_post_s_validation_brier_score: 0.20001108369761944
+mean_fold_post_s_validation_brier_score: 0.2000117786009242
+standard_error_fold_post_s_validation_brier_score: 0.0014424871884079384
+weighted_mean_post_s_validation_ece: 0.028959860511132744
+mean_fold_post_s_validation_ece: 0.028961245581664
+weighted_mean_post_s_validation_mean_magnetization_abs_diff: 0.01597727272727273
+mean_fold_post_s_validation_mean_magnetization_abs_diff: 0.01598115899382671
+standard_error_fold_post_s_validation_mean_magnetization_abs_diff: 0.0035793010694199767
+total_post_s_validation_slots: 22000
+weighted_mean_validation_reconstruction_loss: ''
+mean_fold_validation_reconstruction_loss: ''
+standard_error_fold_validation_reconstruction_loss: ''
+weighted_mean_post_s_validation_reconstruction_loss: ''
+mean_fold_post_s_validation_reconstruction_loss: ''
+standard_error_fold_post_s_validation_reconstruction_loss: ''
+weighted_mean_validation_observed_magnetization: ''
+weighted_mean_validation_reconstructed_magnetization: ''
+weighted_mean_post_s_validation_observed_magnetization: ''
+weighted_mean_post_s_validation_reconstructed_magnetization: ''

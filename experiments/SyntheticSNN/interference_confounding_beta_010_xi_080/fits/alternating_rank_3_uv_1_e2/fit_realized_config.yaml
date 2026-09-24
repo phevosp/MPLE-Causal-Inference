@@ -7,7 +7,7 @@ global_params:
   optimizer_mode: alternating_latent_rank
   lambda_nuclear: 0.0
   lambda_frobenius: 0.0
-  lambda_uv_ridge: 0.1
+  lambda_uv_ridge: 0.01
   v_column_l2_max: 1.0
 estimation_params:
   fixed_scalar_params: {}

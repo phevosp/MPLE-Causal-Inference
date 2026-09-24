@@ -1,0 +1,46 @@
+2026-08-27 10:27:15 | INFO | Loading data...
+2026-08-27 10:27:15 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080/panel_data.npz
+2026-08-27 10:27:15 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080/x_0.npy
+2026-08-27 10:27:15 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080/cv_runs/default/candidates/default_candidate_0004/fold_4/fit_realized_config.yaml
+2026-08-27 10:27:15 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080
+2026-08-27 10:27:15 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080
+2026-08-27 10:27:15 | INFO | Using loss mask artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080/cv_runs/default/candidates/default_candidate_0004/fold_4/loss_mask.npy
+2026-08-27 10:27:15 | INFO | Configured optimizer mode: alternating_latent_rank
+2026-08-27 10:27:15 | INFO | Configured latent rank: 3
+2026-08-27 10:27:15 | INFO | Using a fixed known graph with scalar xi.
+2026-08-27 10:27:15 | INFO | Fit-time hard bounds active: False
+2026-08-27 10:27:15 | INFO | Fixed scalar parameters: {}
+2026-08-27 10:27:15 | INFO | Warm-start fixed scalars: {} for 0 steps
+2026-08-27 10:27:15 | INFO | Beta-gradient mask before s: True with s=0
+2026-08-27 10:27:15 | INFO | Beta-gradient mask after e: True with e=12
+2026-08-27 10:27:15 | INFO | Alternating V-column L2-ball constraint active with radius 1.0
+2026-08-27 10:27:15 | INFO | Optimizer settings: steps=2000, tol=1e-07, n_starts=1, seed=0, lambda_nuclear=0.0, lambda_frobenius=0.0, lambda_uv_ridge=0.05, v_column_l2_max=1.0, proximal_lr=1.0
+2026-08-27 10:27:15 | INFO | Alternating low-rank start 1/1 | seed=0 | initial_loss=0.745162 | initial_penalized=0.745177
+2026-08-27 10:27:15 | INFO | Alternating low-rank iter 0 | Loss: 0.556864 | Penalized: 0.565258
+2026-08-27 10:27:16 | INFO | Alternating low-rank iter 100 | Loss: 0.493668 | Penalized: 0.522857
+2026-08-27 10:27:18 | INFO | Alternating low-rank iter 200 | Loss: 0.493641 | Penalized: 0.522815
+2026-08-27 10:27:19 | INFO | Alternating low-rank iter 300 | Loss: 0.493626 | Penalized: 0.522794
+2026-08-27 10:27:20 | INFO | Done fitting.
+2026-08-27 10:27:20 | INFO | Optimizer status: CONVERGED: alternating objective tolerance reached
+2026-08-27 10:27:20 | INFO | Best optimizer start: 1 / 1
+2026-08-27 10:27:20 | INFO | Final Loss: 0.493621
+2026-08-27 10:27:20 | INFO | Estimated vs True Parameters:
+2026-08-27 10:27:20 | INFO |   beta: 0.1588 (True: 0.1500) | SQE: 0.000078
+2026-08-27 10:27:20 | INFO |   xi: 0.9344 (True: 0.8000) | SQE: 0.018064
+2026-08-27 10:27:20 | INFO |   eta: 0.0957 (True: 0.1000) | SQE: 0.000019
+2026-08-27 10:27:20 | INFO | Alternating low-rank optimizer diagnostics:
+2026-08-27 10:27:20 | INFO |   penalized_objective: 0.522789
+2026-08-27 10:27:20 | INFO |   mple_loss_without_penalty: 0.493621
+2026-08-27 10:27:20 | INFO |   lambda_uv_ridge: 0.050000
+2026-08-27 10:27:20 | INFO |   u_frobenius_norm: 92.087982
+2026-08-27 10:27:20 | INFO |   v_frobenius_norm: 1.732051
+2026-08-27 10:27:20 | INFO |   effective_rank: 3.000000
+2026-08-27 10:27:20 | INFO | Field and interaction diagnostics:
+2026-08-27 10:27:20 | INFO |   field_rmse: 0.442963
+2026-08-27 10:27:20 | INFO |   interaction_fro_error: 0.573513
+2026-08-27 10:27:20 | INFO |   estimated_field_max_abs_entry: 2.355025
+2026-08-27 10:27:20 | INFO |   estimated_field_rank: 3.000000
+2026-08-27 10:27:20 | INFO |   true_field_max_abs_entry: 5.073226
+2026-08-27 10:27:20 | INFO |   true_field_rank: 3.000000
+2026-08-27 10:27:20 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080/cv_runs/default/candidates/default_candidate_0004/fold_4/mple_summary.csv
+2026-08-27 10:27:20 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/SyntheticSNN/interference_confounding_beta_015_xi_080/cv_runs/default/candidates/default_candidate_0004/fold_4/mple.log
