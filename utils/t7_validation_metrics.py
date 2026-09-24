@@ -11,7 +11,11 @@ from scipy import sparse
 from data.synthetic_data_generation import spin_sample_from_field
 from utils.t0_path_utils import io_path
 from utils.t2_summary_statistics import mean_on_mask, time_window_mask
-from utils.t3_interaction_matrices import compose_interaction_matrix, interaction_effect, interaction_term
+from utils.t3_interaction_matrices import (
+    compose_interaction_matrix,
+    interaction_effect,
+    interaction_term,
+)
 from utils.t5_parameter_bundles import (
     OutcomeParameterBundle,
     load_fit_snn_counterfactual_artifacts,
@@ -42,6 +46,7 @@ POST_S_VALIDATION_METRIC_SPECS = (
     ("post_s_validation_mean_magnetization_abs_diff", "num_post_s_validation_slots"),
 )
 
+
 def resolve_validation_sampling(config: dict[str, Any] | None) -> dict[str, int]:
     resolved = dict(DEFAULT_VALIDATION_SAMPLING)
     if config:
@@ -53,8 +58,6 @@ def resolve_validation_sampling(config: dict[str, Any] | None) -> dict[str, int]
         "gibbs_sweeps": int(resolved["gibbs_sweeps"]),
         "seed": int(resolved["seed"]),
     }
-
-
 
 
 def validation_brier_score(
@@ -113,8 +116,6 @@ def validation_expected_calibration_error(
         mean_predicted_probability = float(np.mean(predicted_positive[in_bin]))
         ece += bin_fraction * abs(empirical_rate - mean_predicted_probability)
     return float(ece)
-
-
 
 
 def _interaction_column(interaction_matrix, column_index: int) -> np.ndarray:
@@ -418,12 +419,15 @@ def _compute_full_panel_regeneration_magnetization_metrics(
         sample_means = [
             float(sample_mean)
             for sample_mean in (
-                mean_on_mask(sampled_panel, bucket_mask) for sampled_panel in sampled_panels
+                mean_on_mask(sampled_panel, bucket_mask)
+                for sampled_panel in sampled_panels
             )
             if sample_mean is not None
         ]
         sampled_mean = (
-            float(np.mean(np.asarray(sample_means, dtype=float))) if sample_means else None
+            float(np.mean(np.asarray(sample_means, dtype=float)))
+            if sample_means
+            else None
         )
         metrics[f"full_panel_num_{bucket_name}_slots"] = count
         metrics[f"full_panel_{bucket_name}_observed_mean_magnetization"] = observed_mean
@@ -488,7 +492,9 @@ def _evaluate_loss_from_h_x(
     x_0 = np.asarray(panel_context["x_0"], dtype=float)
     h_x_array = np.asarray(h_x, dtype=float)
     if h_x_array.shape != x.shape:
-        raise ValueError(f"h_x shape {h_x_array.shape} does not match x shape {x.shape}.")
+        raise ValueError(
+            f"h_x shape {h_x_array.shape} does not match x shape {x.shape}."
+        )
     return float(
         evaluate_mple_loss_from_parts(
             x=x,
@@ -541,7 +547,9 @@ def _score_test_point_predictions(
     x = np.asarray(panel_context["x"], dtype=float)
     h_x_array = np.asarray(h_x, dtype=float)
     if x.shape != h_x_array.shape:
-        raise ValueError(f"h_x shape {h_x_array.shape} does not match x shape {x.shape}.")
+        raise ValueError(
+            f"h_x shape {h_x_array.shape} does not match x shape {x.shape}."
+        )
     masks = _test_metric_masks(
         panel_context=panel_context,
         test_loss_mask=test_loss_mask,
@@ -600,7 +608,9 @@ def _score_test_point_predictions(
         "post_s_test_ece_treated": metrics["post_s_test_treated_ece"],
         "num_post_s_test_slots_treated": metrics["num_post_s_test_treated_slots"],
         "post_s_test_loss_untreated": metrics["post_s_test_untreated_loss"],
-        "post_s_test_brier_score_untreated": metrics["post_s_test_untreated_brier_score"],
+        "post_s_test_brier_score_untreated": metrics[
+            "post_s_test_untreated_brier_score"
+        ],
         "post_s_test_ece_untreated": metrics["post_s_test_untreated_ece"],
         "num_post_s_test_slots_untreated": metrics["num_post_s_test_untreated_slots"],
     }
@@ -614,7 +624,9 @@ def _expected_spin_to_h_x(
     expected_spin_array = np.asarray(expected_spin, dtype=float)
     if np.any(expected_spin_array < -1.0) or np.any(expected_spin_array > 1.0):
         raise ValueError("expected_spin entries must lie in [-1, 1].")
-    clipped = np.clip(expected_spin_array, -1.0 + float(clip_eps), 1.0 - float(clip_eps))
+    clipped = np.clip(
+        expected_spin_array, -1.0 + float(clip_eps), 1.0 - float(clip_eps)
+    )
     return np.arctanh(clipped)
 
 
@@ -987,14 +999,64 @@ def evaluate_test_metrics(
         validation_loss_mask=test_loss_mask,
         validation_sampling=sampling,
     )
+    h_x = _compute_h_x_from_bundle(bundle, panel_context)
+    deterministic_metrics = _score_test_point_predictions(
+        panel_context=panel_context,
+        h_x=h_x,
+        test_loss_mask=test_loss_mask,
+    )
+    training_mask = np.asarray(training_loss_mask, dtype=bool)
+    scored_test_mask = np.asarray(test_loss_mask, dtype=bool)
+    full_panel_metrics = _compute_full_panel_regeneration_magnetization_metrics(
+        panel_context=panel_context,
+        bundle=bundle,
+        training_loss_mask=training_mask,
+        test_loss_mask=scored_test_mask,
+        sampling=sampling,
+    )
+    return {
+        "training_loss": float(fold_metrics["fit_loss"]),
+        "num_training_slots": int(np.count_nonzero(training_mask)),
+        "test_loss": deterministic_metrics["test_loss"],
+        "test_brier_score": deterministic_metrics["test_brier_score"],
+        "test_ece": deterministic_metrics["test_ece"],
+        "num_test_slots": int(np.count_nonzero(scored_test_mask)),
+        "post_s_test_loss": deterministic_metrics["post_s_test_loss"],
+        "post_s_test_brier_score": deterministic_metrics["post_s_test_brier_score"],
+        "post_s_test_ece": deterministic_metrics["post_s_test_ece"],
+        "num_post_s_test_slots": int(deterministic_metrics["num_post_s_test_slots"]),
+        "test_mean_magnetization_abs_diff": fold_metrics[
+            "validation_mean_magnetization_abs_diff"
+        ],
+        "test_observed_mean_magnetization": fold_metrics[
+            "validation_observed_mean_magnetization"
+        ],
+        "test_sampled_mean_magnetization_mean": fold_metrics[
+            "validation_sampled_mean_magnetization_mean"
+        ],
+        "post_s_test_mean_magnetization_abs_diff": fold_metrics[
+            "post_s_validation_mean_magnetization_abs_diff"
+        ],
+        "post_s_test_observed_mean_magnetization": fold_metrics[
+            "post_s_validation_observed_mean_magnetization"
+        ],
+        "post_s_test_sampled_mean_magnetization_mean": fold_metrics[
+            "post_s_validation_sampled_mean_magnetization_mean"
+        ],
+        **full_panel_metrics,
+    }
 
 
-def _snn_realized_prediction(fit_root: str | Path, panel_context: dict[str, object]) -> np.ndarray:
+def _snn_realized_prediction(
+    fit_root: str | Path, panel_context: dict[str, object]
+) -> np.ndarray:
     """Select the realized-treatment prediction from saved SNN surfaces."""
     artifacts = load_fit_snn_counterfactual_artifacts(fit_root)
     z = np.asarray(panel_context["z"], dtype=float)
     if z.shape != artifacts.treated_completed_matrix.shape:
-        raise ValueError("SNN completed surfaces do not match the realized intervention panel.")
+        raise ValueError(
+            "SNN completed surfaces do not match the realized intervention panel."
+        )
     return np.where(
         z > 0.0,
         np.asarray(artifacts.treated_completed_matrix, dtype=float),
@@ -1086,55 +1148,15 @@ def evaluate_saved_snn_test_metrics(
     }
     metrics: dict[str, float | int | bool | None] = {}
     for prefix, mask in masks.items():
-        metrics.update(_snn_recovery_metrics(x=x, prediction=prediction, mask=mask, prefix=prefix))
-    metrics["status"] = "completed" if metrics["test_complete_coverage"] else "failed_incomplete_coverage"
+        metrics.update(
+            _snn_recovery_metrics(x=x, prediction=prediction, mask=mask, prefix=prefix)
+        )
+    metrics["status"] = (
+        "completed"
+        if metrics["test_complete_coverage"]
+        else "failed_incomplete_coverage"
+    )
     return metrics
-    h_x = _compute_h_x_from_bundle(bundle, panel_context)
-    deterministic_metrics = _score_test_point_predictions(
-        panel_context=panel_context,
-        h_x=h_x,
-        test_loss_mask=test_loss_mask,
-    )
-    training_mask = np.asarray(training_loss_mask, dtype=bool)
-    scored_test_mask = np.asarray(test_loss_mask, dtype=bool)
-    full_panel_metrics = _compute_full_panel_regeneration_magnetization_metrics(
-        panel_context=panel_context,
-        bundle=bundle,
-        training_loss_mask=training_mask,
-        test_loss_mask=scored_test_mask,
-        sampling=sampling,
-    )
-    return {
-        "training_loss": float(fold_metrics["fit_loss"]),
-        "num_training_slots": int(np.count_nonzero(training_mask)),
-        "test_loss": deterministic_metrics["test_loss"],
-        "test_brier_score": deterministic_metrics["test_brier_score"],
-        "test_ece": deterministic_metrics["test_ece"],
-        "num_test_slots": int(np.count_nonzero(scored_test_mask)),
-        "post_s_test_loss": deterministic_metrics["post_s_test_loss"],
-        "post_s_test_brier_score": deterministic_metrics["post_s_test_brier_score"],
-        "post_s_test_ece": deterministic_metrics["post_s_test_ece"],
-        "num_post_s_test_slots": int(deterministic_metrics["num_post_s_test_slots"]),
-        "test_mean_magnetization_abs_diff": fold_metrics[
-            "validation_mean_magnetization_abs_diff"
-        ],
-        "test_observed_mean_magnetization": fold_metrics[
-            "validation_observed_mean_magnetization"
-        ],
-        "test_sampled_mean_magnetization_mean": fold_metrics[
-            "validation_sampled_mean_magnetization_mean"
-        ],
-        "post_s_test_mean_magnetization_abs_diff": fold_metrics[
-            "post_s_validation_mean_magnetization_abs_diff"
-        ],
-        "post_s_test_observed_mean_magnetization": fold_metrics[
-            "post_s_validation_observed_mean_magnetization"
-        ],
-        "post_s_test_sampled_mean_magnetization_mean": fold_metrics[
-            "post_s_validation_sampled_mean_magnetization_mean"
-        ],
-        **full_panel_metrics,
-    }
 
 
 def evaluate_test_metrics_by_treatment(
