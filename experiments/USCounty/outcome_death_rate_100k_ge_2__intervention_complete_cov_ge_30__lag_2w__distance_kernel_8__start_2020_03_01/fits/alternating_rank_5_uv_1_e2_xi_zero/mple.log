@@ -1,7 +1,7 @@
 2026-06-10 10:05:42 | INFO | Loading data...
 2026-06-10 10:05:42 | INFO | Using panel artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/panel_data.npz
 2026-06-10 10:05:42 | INFO | Using x_0 artifact: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/x_0.npy
-2026-06-10 10:05:42 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/fits/alternating_rank_3_uv_1_e2_xi_zero/fit_realized_config.yaml
+2026-06-10 10:05:42 | INFO | Using fit config: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/fits/alternating_rank_5_uv_1_e2_xi_zero/fit_realized_config.yaml
 2026-06-10 10:05:42 | INFO | Using model artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
 2026-06-10 10:05:42 | INFO | Using truth artifact directory: /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01
 2026-06-10 10:05:42 | INFO | Configured optimizer mode: alternating_latent_rank
@@ -42,5 +42,5 @@
 2026-06-10 10:07:22 | INFO | Field and interaction diagnostics:
 2026-06-10 10:07:22 | INFO |   estimated_field_max_abs_entry: 7.468391
 2026-06-10 10:07:22 | INFO |   estimated_field_rank: 5.000000
-2026-06-10 10:07:22 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/fits/alternating_rank_3_uv_1_e2_xi_zero/mple_summary.csv
-2026-06-10 10:07:22 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/fits/alternating_rank_3_uv_1_e2_xi_zero/mple.log
+2026-06-10 10:07:22 | INFO | Saved summary table to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/fits/alternating_rank_5_uv_1_e2_xi_zero/mple_summary.csv
+2026-06-10 10:07:22 | INFO | Log saved to /orcd/home/002/phevosp/MPLE-Causal-Inference/experiments/USCounty/outcome_death_rate_100k_ge_2__intervention_complete_cov_ge_30__lag_2w__distance_kernel_8__start_2020_03_01/fits/alternating_rank_5_uv_1_e2_xi_zero/mple.log

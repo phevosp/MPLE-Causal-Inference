@@ -24,7 +24,7 @@ variants:
     latent_rank: 5
     lambda_uv_ridge: .05
 
-  - name: alternating_rank_3_uv_1_e2_xi_zero
+  - name: alternating_rank_5_uv_1_e2_xi_zero
     optimizer_mode: alternating_latent_rank
     latent_rank: 5
     lambda_uv_ridge: 0.01
